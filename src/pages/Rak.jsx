@@ -139,16 +139,34 @@ function PetaRak({ rak, penempatan, skuMaster }) {
   });
   const groupKeys = Object.keys(groups).sort();
 
-  // SKU yang saat ini benar-benar mengisi rak ini (stok masih > 0). Bisa lebih
-  // dari satu kalau rak dipakai bareng beberapa ukuran dari produk yang sama.
+  // SKU yang saat ini benar-benar mengisi rak ini (stok masih > 0), pakai
+  // aturan yang sama dengan cariPerluDitempatkanUlang: 1 rak = 1 SKU,
+  // penempatan TERBARU di rak itu yang menang (skuForRak). SKU lama yang
+  // sudah ditimpa SKU lain tidak ditampilkan lagi di sini, kecuali dia
+  // varian ukuran dari SKU pemenang (boleh nebeng rak yang sama) DAN
+  // penempatan terbarunya sendiri masih memang rak ini.
   const skuDiRak = (kodeRak) => {
-    const skuSet = new Set(
+    const pemenang = skuForRak(kodeRak, penempatan);
+    if (!pemenang) return [];
+
+    const kandidat = new Set(
       (penempatan || []).filter((p) => p.rak_code === kodeRak).map((p) => p.sku)
     );
-    return [...skuSet].filter((sku) => {
-      const s = (skuMaster || []).find((x) => x.sku === sku);
-      return s && s.stok > 0;
-    });
+
+    return [...kandidat]
+      .filter((sku) => {
+        const s = (skuMaster || []).find((x) => x.sku === sku);
+        if (!s || !(s.stok > 0)) return false;
+        if (sku === pemenang) return true;
+        return (
+          rakForSku(sku, penempatan) === kodeRak &&
+          sameProdukKecualiUkuran(pemenang, sku, skuMaster)
+        );
+      })
+      .map((sku) => ({
+        sku,
+        stok: (skuMaster || []).find((x) => x.sku === sku)?.stok ?? 0,
+      }));
   };
 
   return (
@@ -193,10 +211,18 @@ function PetaRak({ rak, penempatan, skuMaster }) {
                           <div className="text-[10px] text-emerald-400/70 italic">Kosong</div>
                         ) : (
                           <div className="flex flex-col gap-0.5">
-                            {skus.map((sku) => (
-                              <span key={sku} className="font-mono text-[10px] text-slate-300 truncate" title={sku}>
-                                {sku}
-                              </span>
+                            {skus.map(({ sku, stok }) => (
+                              <div key={sku} className="flex items-center justify-between gap-1">
+                                <span
+                                  className="font-mono text-[10px] text-slate-300 truncate"
+                                  title={sku}
+                                >
+                                  {sku}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-medium shrink-0">
+                                  {stok}x
+                                </span>
+                              </div>
                             ))}
                           </div>
                         )}
