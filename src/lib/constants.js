@@ -70,7 +70,6 @@ export const NAV = [
       { key: "tempatkan", label: "Tempatkan Barang" },
       { key: "master", label: "Master Rak" },
       { key: "peta", label: "Peta Rak" },
-      { key: "penempatan", label: "Penempatan Barang" },
     ],
   },
   { key: "cetak-label", label: "Cetak Label", icon: Printer },

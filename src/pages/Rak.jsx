@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowDownUp, CheckCircle2 } from "lucide-react";
+import { useMemo } from "react";
+import { Plus, MapPin, PackagePlus, AlertTriangle } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
-import { fmtTgl, sameProdukKecualiUkuran } from "../lib/api";
+import { sameProdukKecualiUkuran } from "../lib/api";
 
 // Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
 function rakForSku(sku, penempatan) {
@@ -32,8 +32,7 @@ export function cariPerluDitempatkanUlang(skuMaster, penempatan) {
 }
 
 export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
-  if (sub === "peta") return <PetaRak rak={rak} />;
-  if (sub === "penempatan") return <PenempatanBarang penempatan={penempatan} rak={rak} skuMaster={skuMaster} />;
+  if (sub === "peta") return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} />;
   if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
   return <TempatkanRak items={items} skuMaster={skuMaster} penempatan={penempatan} setModal={setModal} />;
 }
@@ -131,7 +130,7 @@ function MasterRak({ rak, setModal }) {
   );
 }
 
-function PetaRak({ rak }) {
+function PetaRak({ rak, penempatan, skuMaster }) {
   const groups = {};
   rak.forEach((r) => {
     const key = r.meja || "Tanpa Meja";
@@ -140,9 +139,24 @@ function PetaRak({ rak }) {
   });
   const groupKeys = Object.keys(groups).sort();
 
+  // SKU yang saat ini benar-benar mengisi rak ini (stok masih > 0). Bisa lebih
+  // dari satu kalau rak dipakai bareng beberapa ukuran dari produk yang sama.
+  const skuDiRak = (kodeRak) => {
+    const skuSet = new Set(
+      (penempatan || []).filter((p) => p.rak_code === kodeRak).map((p) => p.sku)
+    );
+    return [...skuSet].filter((sku) => {
+      const s = (skuMaster || []).find((x) => x.sku === sku);
+      return s && s.stok > 0;
+    });
+  };
+
   return (
     <div>
-      <PageHeader title="Peta Rak" description="Tampilan visual rak, dikelompokkan per meja, agar mudah dilacak lokasinya." />
+      <PageHeader
+        title="Peta Rak"
+        description="Tampilan visual rak, dikelompokkan per meja, lengkap dengan SKU yang mengisi tiap rak."
+      />
       {rak.length === 0 ? (
         <EmptyState label="Belum ada rak untuk dipetakan." />
       ) : (
@@ -153,128 +167,45 @@ function PetaRak({ rak }) {
               <div className="flex flex-wrap gap-2">
                 {groups[meja]
                   .sort((a, b) => (a.baris || "").localeCompare(b.baris || ""))
-                  .map((r) => (
-                    <div
-                      key={r.id}
-                      className="w-20 h-20 rounded-lg border border-sky-500/30 bg-sky-500/10 flex flex-col items-center justify-center gap-1"
-                      title={r.code}
-                    >
-                      <MapPin size={14} className="text-sky-400" />
-                      <span className="font-mono text-[11px] text-sky-300 text-center px-1 truncate w-full">
-                        {r.code}
-                      </span>
-                    </div>
-                  ))}
+                  .map((r) => {
+                    const skus = skuDiRak(r.code);
+                    const kosong = skus.length === 0;
+                    return (
+                      <div
+                        key={r.id}
+                        className={`w-32 rounded-lg border p-2.5 flex flex-col gap-1.5 ${
+                          kosong
+                            ? "border-emerald-500/30 bg-emerald-500/5"
+                            : "border-sky-500/30 bg-sky-500/10"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <MapPin size={13} className={kosong ? "text-emerald-400" : "text-sky-400"} />
+                          <span
+                            className={`font-mono text-xs font-semibold truncate ${
+                              kosong ? "text-emerald-300" : "text-sky-300"
+                            }`}
+                          >
+                            {r.code}
+                          </span>
+                        </div>
+                        {kosong ? (
+                          <div className="text-[10px] text-emerald-400/70 italic">Kosong</div>
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            {skus.map((sku) => (
+                              <span key={sku} className="font-mono text-[10px] text-slate-300 truncate" title={sku}>
+                                {sku}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const SORT_OPTIONS = [
-  { key: "waktu", label: "Waktu Terbaru" },
-  { key: "sku", label: "SKU (A–Z)" },
-  { key: "rak", label: "Rak (A–Z)" },
-];
-
-function PenempatanBarang({ penempatan, rak, skuMaster }) {
-  const [sortBy, setSortBy] = useState("waktu");
-
-  const sorted = useMemo(() => {
-    const arr = [...(penempatan || [])];
-    if (sortBy === "sku") arr.sort((a, b) => (a.sku || "").localeCompare(b.sku || ""));
-    else if (sortBy === "rak") arr.sort((a, b) => (a.rak_code || "").localeCompare(b.rak_code || ""));
-    else arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    return arr;
-  }, [penempatan, sortBy]);
-
-  // Rak dianggap kosong kalau dari SEMUA SKU yang pernah ditempatkan di situ
-  // (bisa lebih dari satu kalau berbagi rak antar ukuran), tidak ada satupun
-  // yang stoknya masih > 0.
-  const rakKosong = useMemo(() => {
-    return (rak || []).filter((r) => {
-      const skuDiRakIni = new Set(
-        (penempatan || []).filter((p) => p.rak_code === r.code).map((p) => p.sku)
-      );
-      if (skuDiRakIni.size === 0) return true;
-      return ![...skuDiRakIni].some((sku) => {
-        const skuData = (skuMaster || []).find((s) => s.sku === sku);
-        return skuData && skuData.stok > 0;
-      });
-    });
-  }, [rak, penempatan, skuMaster]);
-
-  return (
-    <div>
-      <PageHeader title="Penempatan Barang" description="Riwayat penempatan barang ke rak, per SKU." />
-
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 mb-4">
-        <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold mb-2">
-          <CheckCircle2 size={14} /> Rak Kosong ({rakKosong.length})
-        </div>
-        {rakKosong.length === 0 ? (
-          <div className="text-[11px] text-slate-500">Semua rak sedang terisi.</div>
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {rakKosong.map((r) => (
-              <span
-                key={r.id}
-                className="font-mono text-[11px] px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
-              >
-                {r.code}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-1.5 mb-3 text-xs text-slate-500">
-        <ArrowDownUp size={13} />
-        <span>Urutkan:</span>
-        <div className="flex gap-1">
-          {SORT_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => setSortBy(opt.key)}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition ${
-                sortBy === opt.key
-                  ? "bg-sky-500/15 border-sky-500/40 text-sky-300"
-                  : "border-slate-800 text-slate-400 hover:border-slate-700"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {sorted.length === 0 ? (
-        <EmptyState label="Belum ada penempatan barang." />
-      ) : (
-        <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[520px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
-                <th className="px-4 py-2.5">Waktu</th>
-                <th className="px-4 py-2.5">SKU</th>
-                <th className="px-4 py-2.5">Rak</th>
-                <th className="px-4 py-2.5">Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((p) => (
-                <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-400 text-xs">{fmtTgl(p.created_at)}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs">{p.sku}</td>
-                  <td className="px-4 py-2.5 text-sky-400 font-mono text-xs">{p.rak_code}</td>
-                  <td className="px-4 py-2.5">{p.qty}x</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
     </div>
