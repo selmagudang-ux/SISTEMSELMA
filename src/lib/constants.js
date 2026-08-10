@@ -79,7 +79,6 @@ export const NAV = [
       { key: "master", label: "Master Rak" },
       { key: "peta", label: "Peta Rak" },
       { key: "penempatan", label: "Penempatan Barang" },
-      { key: "konflik", label: "Rak Tertimpa" },
     ],
   },
   { key: "cetak-label", label: "Cetak Label", icon: Printer },

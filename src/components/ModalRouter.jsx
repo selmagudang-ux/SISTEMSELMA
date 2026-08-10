@@ -386,6 +386,29 @@ export default function ModalRouter({
     );
   }
 
+  if (modal.type === "advance-rak-ulang") {
+    return (
+      <TempatkanRakForm
+        item={modal.item}
+        rakList={rakList}
+        penempatan={penempatan}
+        onClose={close}
+        saving={saving}
+        onSubmit={(rakCode, qty) =>
+          run(async () => {
+            // SKU ini sudah pernah melewati tahap "rak" sebelumnya — rak lamanya
+            // sudah ditimpa SKU lain. Cukup catat penempatan baru; stage item
+            // tidak diubah karena barangnya sendiri sudah lanjut ke tahap berikutnya.
+            await sb("penempatan", {
+              method: "POST",
+              body: JSON.stringify({ sku: modal.item.sku, rak_code: rakCode, qty }),
+            });
+          }, "Barang ditempatkan ulang di rak baru")
+        }
+      />
+    );
+  }
+
   if (modal.type === "advance-verifikasi") {
     return (
       <VerifikasiForm

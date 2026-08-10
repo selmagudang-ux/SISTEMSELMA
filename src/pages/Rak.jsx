@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowDownUp, CheckCircle2 } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { fmtTgl } from "../lib/api";
 
@@ -15,23 +15,45 @@ function skuForRak(rakCode, penempatan) {
   return found ? found.sku : "";
 }
 
-export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
-  if (sub === "peta") return <PetaRak rak={rak} />;
-  if (sub === "penempatan") return <PenempatanBarang penempatan={penempatan} />;
-  if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
-  if (sub === "konflik") return <RakTertimpa skuMaster={skuMaster} penempatan={penempatan} />;
-  return <TempatkanRak items={items} setModal={setModal} />;
+// SKU dengan stok > 0 tapi rak yang seharusnya ditempatinya sudah ditimpa SKU lain
+// (aturan: 1 rak = 1 SKU, penempatan terbaru di rak yang sama menang) — perlu ditempatkan ulang.
+function cariPerluDitempatkanUlang(skuMaster, penempatan) {
+  const out = [];
+  (skuMaster || []).forEach((s) => {
+    if (!s.stok || s.stok <= 0) return;
+    const rakSeharusnya = rakForSku(s.sku, penempatan);
+    if (!rakSeharusnya) return; // belum pernah ditempatkan di rak sama sekali
+    const skuSekarang = skuForRak(rakSeharusnya, penempatan);
+    if (skuSekarang && skuSekarang !== s.sku) {
+      out.push({ sku: s.sku, stok: s.stok, rakLama: rakSeharusnya, ditimpaOleh: skuSekarang });
+    }
+  });
+  return out;
 }
 
-function TempatkanRak({ items, setModal }) {
+export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
+  if (sub === "peta") return <PetaRak rak={rak} />;
+  if (sub === "penempatan") return <PenempatanBarang penempatan={penempatan} rak={rak} skuMaster={skuMaster} />;
+  if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
+  return <TempatkanRak items={items} skuMaster={skuMaster} penempatan={penempatan} setModal={setModal} />;
+}
+
+function TempatkanRak({ items, skuMaster, penempatan, setModal }) {
   const menungguRak = items.filter((i) => i.stage === "rak");
+  const perluUlang = useMemo(
+    () => cariPerluDitempatkanUlang(skuMaster, penempatan),
+    [skuMaster, penempatan]
+  );
+
+  const totalKosong = menungguRak.length === 0 && perluUlang.length === 0;
+
   return (
     <div>
       <PageHeader
         title="Tempatkan Barang"
-        description="Barang yang sudah punya SKU tapi belum ditempatkan di rak. Klik untuk pilih rak dan jumlahnya."
+        description="Barang yang sudah punya SKU tapi belum ditempatkan di rak, termasuk SKU yang rak lamanya sudah ditimpa SKU lain dan perlu rak baru."
       />
-      {menungguRak.length === 0 ? (
+      {totalKosong ? (
         <EmptyState label="Tidak ada barang yang menunggu penempatan rak." />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -45,6 +67,26 @@ function TempatkanRak({ items, setModal }) {
               <div className="text-xs font-mono text-slate-300">{item.sku || `#${item.id.slice(0, 8)}`}</div>
               <div className="text-[11px] text-slate-500 mt-0.5">{item.jumlah}x</div>
               <div className="mt-2 text-[11px] font-medium text-sky-400">Tempatkan di rak →</div>
+            </button>
+          ))}
+          {perluUlang.map((r) => (
+            <button
+              key={`ulang-${r.sku}`}
+              onClick={() =>
+                setModal({
+                  type: "advance-rak-ulang",
+                  item: { sku: r.sku, jumlah: r.stok },
+                })
+              }
+              className="text-left bg-slate-900 border border-amber-500/40 hover:border-amber-500/70 rounded-lg p-3 transition"
+            >
+              <AlertTriangle size={16} className="text-amber-400 mb-2" />
+              <div className="text-xs font-mono text-slate-300">{r.sku}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">{r.stok}x</div>
+              <div className="text-[10px] text-amber-400/80 mt-1">
+                Rak {r.rakLama} ditimpa {r.ditimpaOleh}
+              </div>
+              <div className="mt-2 text-[11px] font-medium text-amber-400">Tempatkan rak baru →</div>
             </button>
           ))}
         </div>
@@ -132,68 +174,79 @@ function PetaRak({ rak }) {
   );
 }
 
-function RakTertimpa({ skuMaster, penempatan }) {
-  // SKU dengan stok > 0 tapi rak yang seharusnya ditempatinya sudah ditimpa SKU lain
-  // (aturan: 1 rak = 1 SKU, penempatan terbaru di rak yang sama menang).
-  const list = useMemo(() => {
-    const out = [];
-    (skuMaster || []).forEach((s) => {
-      if (!s.stok || s.stok <= 0) return;
-      const rakSeharusnya = rakForSku(s.sku, penempatan);
-      if (!rakSeharusnya) return; // belum pernah ditempatkan di rak sama sekali
-      const skuSekarang = skuForRak(rakSeharusnya, penempatan);
-      if (skuSekarang && skuSekarang !== s.sku) {
-        out.push({ sku: s.sku, stok: s.stok, rak: rakSeharusnya, ditimpaOleh: skuSekarang });
-      }
+const SORT_OPTIONS = [
+  { key: "waktu", label: "Waktu Terbaru" },
+  { key: "sku", label: "SKU (A–Z)" },
+  { key: "rak", label: "Rak (A–Z)" },
+];
+
+function PenempatanBarang({ penempatan, rak, skuMaster }) {
+  const [sortBy, setSortBy] = useState("waktu");
+
+  const sorted = useMemo(() => {
+    const arr = [...(penempatan || [])];
+    if (sortBy === "sku") arr.sort((a, b) => (a.sku || "").localeCompare(b.sku || ""));
+    else if (sortBy === "rak") arr.sort((a, b) => (a.rak_code || "").localeCompare(b.rak_code || ""));
+    else arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return arr;
+  }, [penempatan, sortBy]);
+
+  // Rak dianggap kosong kalau tidak ada penempatan terbaru di situ, atau SKU yang
+  // terakhir menempatinya sudah habis stoknya (sudah dipindah/keluar semua).
+  const rakKosong = useMemo(() => {
+    return (rak || []).filter((r) => {
+      const skuDiRak = skuForRak(r.code, penempatan);
+      if (!skuDiRak) return true;
+      const skuData = (skuMaster || []).find((s) => s.sku === skuDiRak);
+      return !skuData || !skuData.stok || skuData.stok <= 0;
     });
-    return out;
-  }, [skuMaster, penempatan]);
+  }, [rak, penempatan, skuMaster]);
 
-  return (
-    <div>
-      <PageHeader
-        title="Rak Tertimpa"
-        description="SKU yang masih ada stoknya, tapi rak yang tercatat untuknya sudah ditempati SKU lain (butuh ditempatkan ulang)."
-      />
-      {list.length === 0 ? (
-        <EmptyState label="Tidak ada SKU dengan rak tertimpa saat ini." />
-      ) : (
-        <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
-            <thead>
-              <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
-                <th className="px-4 py-2.5">SKU</th>
-                <th className="px-4 py-2.5">Stok</th>
-                <th className="px-4 py-2.5">Rak Tercatat</th>
-                <th className="px-4 py-2.5">Ditimpa Oleh SKU</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r) => (
-                <tr key={r.sku} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">{r.sku}</td>
-                  <td className="px-4 py-2.5">{r.stok}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{r.rak}</td>
-                  <td className="px-4 py-2.5">
-                    <span className="flex items-center gap-1 text-amber-400 text-xs font-mono">
-                      <AlertTriangle size={13} /> {r.ditimpaOleh}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PenempatanBarang({ penempatan }) {
   return (
     <div>
       <PageHeader title="Penempatan Barang" description="Riwayat penempatan barang ke rak, per SKU." />
-      {penempatan.length === 0 ? (
+
+      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 mb-4">
+        <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold mb-2">
+          <CheckCircle2 size={14} /> Rak Kosong ({rakKosong.length})
+        </div>
+        {rakKosong.length === 0 ? (
+          <div className="text-[11px] text-slate-500">Semua rak sedang terisi.</div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {rakKosong.map((r) => (
+              <span
+                key={r.id}
+                className="font-mono text-[11px] px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
+              >
+                {r.code}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5 mb-3 text-xs text-slate-500">
+        <ArrowDownUp size={13} />
+        <span>Urutkan:</span>
+        <div className="flex gap-1">
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setSortBy(opt.key)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition ${
+                sortBy === opt.key
+                  ? "bg-sky-500/15 border-sky-500/40 text-sky-300"
+                  : "border-slate-800 text-slate-400 hover:border-slate-700"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {sorted.length === 0 ? (
         <EmptyState label="Belum ada penempatan barang." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
@@ -207,7 +260,7 @@ function PenempatanBarang({ penempatan }) {
               </tr>
             </thead>
             <tbody>
-              {penempatan.map((p) => (
+              {sorted.map((p) => (
                 <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-400 text-xs">{fmtTgl(p.created_at)}</td>
                   <td className="px-4 py-2.5 font-mono text-xs">{p.sku}</td>
