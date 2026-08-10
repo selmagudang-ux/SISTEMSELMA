@@ -9,8 +9,14 @@ function rakForSku(sku, penempatan) {
   return found ? found.rak_code : "";
 }
 
-export default function CetakLabel({ items, skuMaster, penempatan }) {
-  const [tab, setTab] = useState("barang"); // "barang" | "sku"
+// Cari SKU yang sedang menempati sebuah rak (aturan: 1 rak = 1 SKU, ambil penempatan terbaru).
+function skuForRak(rakCode, penempatan) {
+  const found = (penempatan || []).find((p) => p.rak_code === rakCode);
+  return found ? found.sku : "";
+}
+
+export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
+  const [tab, setTab] = useState("barang"); // "barang" | "sku" | "rak"
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState({}); // { key: qty }
 
@@ -38,9 +44,20 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
     [items, skuMap]
   );
   const skuList = skuMaster || [];
+  // Rak yang sedang berisi SKU aktif (aturan 1 rak = 1 SKU).
+  const rakList = useMemo(
+    () =>
+      (rak || [])
+        .map((r) => ({ ...r, occupantSku: skuForRak(r.code, penempatan) }))
+        .filter((r) => r.occupantSku && skuMap[r.occupantSku]),
+    [rak, penempatan, skuMap]
+  );
 
   const filteredBarang = barangList.filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
   const filteredSku = skuList.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+  const filteredRak = rakList.filter(
+    (r) => r.code.toLowerCase().includes(q.toLowerCase()) || r.occupantSku.toLowerCase().includes(q.toLowerCase())
+  );
 
   const toggle = (key, defaultQty) => {
     setSelected((prev) => {
@@ -61,9 +78,13 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
       const next = {};
       filteredBarang.forEach((i) => (next[i.id] = i.jumlah || 1));
       setSelected(next);
-    } else {
+    } else if (tab === "sku") {
       const next = {};
       filteredSku.forEach((s) => (next[s.sku] = 1));
+      setSelected(next);
+    } else {
+      const next = {};
+      filteredRak.forEach((r) => (next[r.code] = 1));
       setSelected(next);
     }
   };
@@ -82,19 +103,29 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
           out.push({ key: `${i.id}-${n}`, sku: i.sku, rak: i.rak_code || "", kode });
         }
       });
-    } else {
+    } else if (tab === "sku") {
       filteredSku.forEach((s) => {
         const qty = selected[s.sku];
         if (!qty) return;
         const kode = priceCode(s.grosir, s.tengah, s.ecer);
-        const rak = rakForSku(s.sku, penempatan);
+        const rakCode = rakForSku(s.sku, penempatan);
         for (let n = 0; n < qty; n++) {
-          out.push({ key: `${s.sku}-${n}`, sku: s.sku, rak, kode });
+          out.push({ key: `${s.sku}-${n}`, sku: s.sku, rak: rakCode, kode });
+        }
+      });
+    } else {
+      filteredRak.forEach((r) => {
+        const qty = selected[r.code];
+        if (!qty) return;
+        const s = skuMap[r.occupantSku];
+        const kode = priceCode(s.grosir, s.tengah, s.ecer);
+        for (let n = 0; n < qty; n++) {
+          out.push({ key: `${r.code}-${n}`, sku: r.occupantSku, rak: r.code, kode });
         }
       });
     }
     return out;
-  }, [tab, filteredBarang, filteredSku, selected, skuMap, penempatan]);
+  }, [tab, filteredBarang, filteredSku, filteredRak, selected, skuMap, penempatan]);
 
   const totalTerpilih = Object.values(selected).filter((v) => v > 0).length;
 
@@ -116,6 +147,7 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
           {[
             { key: "barang", label: "Per Barang" },
             { key: "sku", label: "Per SKU" },
+            { key: "rak", label: "Per Rak" },
           ].map((t) => (
             <button
               key={t.key}
@@ -159,16 +191,22 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
         </div>
 
         {/* ---- Daftar pilihan ---- */}
-        {(tab === "barang" ? filteredBarang : filteredSku).length === 0 ? (
-          <EmptyState label="Tidak ada data yang cocok." />
+        {(tab === "barang" ? filteredBarang : tab === "sku" ? filteredSku : filteredRak).length === 0 ? (
+          <EmptyState
+            label={
+              tab === "rak"
+                ? "Tidak ada rak yang sedang berisi SKU."
+                : "Tidak ada data yang cocok."
+            }
+          />
         ) : (
           <div className="rounded-xl border border-slate-800 overflow-x-auto mb-5">
             <table className="w-full text-sm min-w-[560px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                   <th className="px-4 py-2.5 w-8"></th>
-                  <th className="px-4 py-2.5">SKU</th>
-                  <th className="px-4 py-2.5">Kode Rak</th>
+                  <th className="px-4 py-2.5">{tab === "rak" ? "Kode Rak" : "SKU"}</th>
+                  <th className="px-4 py-2.5">{tab === "rak" ? "SKU" : "Kode Rak"}</th>
                   <th className="px-4 py-2.5">Kode Harga</th>
                   <th className="px-4 py-2.5">Jumlah Label</th>
                 </tr>
@@ -205,9 +243,10 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
                         </tr>
                       );
                     })
-                  : filteredSku.map((s) => {
+                  : tab === "sku"
+                  ? filteredSku.map((s) => {
                       const kode = priceCode(s.grosir, s.tengah, s.ecer);
-                      const rak = rakForSku(s.sku, penempatan);
+                      const rakCode = rakForSku(s.sku, penempatan);
                       const checked = selected[s.sku] != null;
                       return (
                         <tr key={s.sku} className="border-b border-slate-800/60 last:border-0">
@@ -220,7 +259,7 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
                             />
                           </td>
                           <td className="px-4 py-2 font-mono text-xs">{s.sku}</td>
-                          <td className="px-4 py-2 text-slate-400">{rak || "—"}</td>
+                          <td className="px-4 py-2 text-slate-400">{rakCode || "—"}</td>
                           <td className="px-4 py-2 font-mono text-amber-400">{kode}</td>
                           <td className="px-4 py-2">
                             <input
@@ -229,6 +268,36 @@ export default function CetakLabel({ items, skuMaster, penempatan }) {
                               disabled={!checked}
                               value={selected[s.sku] ?? 1}
                               onChange={(e) => setQty(s.sku, e.target.value)}
+                              className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-amber-500 disabled:opacity-40"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  : filteredRak.map((r) => {
+                      const s = skuMap[r.occupantSku];
+                      const kode = priceCode(s.grosir, s.tengah, s.ecer);
+                      const checked = selected[r.code] != null;
+                      return (
+                        <tr key={r.code} className="border-b border-slate-800/60 last:border-0">
+                          <td className="px-4 py-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggle(r.code, 1)}
+                              className="accent-amber-500"
+                            />
+                          </td>
+                          <td className="px-4 py-2 font-mono text-xs">{r.code}</td>
+                          <td className="px-4 py-2 text-slate-400 font-mono">{r.occupantSku}</td>
+                          <td className="px-4 py-2 font-mono text-amber-400">{kode}</td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              min="0"
+                              disabled={!checked}
+                              value={selected[r.code] ?? 1}
+                              onChange={(e) => setQty(r.code, e.target.value)}
                               className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-amber-500 disabled:opacity-40"
                             />
                           </td>

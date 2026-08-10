@@ -223,7 +223,7 @@ export default function SistemSelmaApp() {
                 <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} setModal={setModal} />
               )}
               {nav.menu === "cetak-label" && (
-                <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} />
+                <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} />
               )}
               {nav.menu === "foto" && (
                 <FotoProduk sub={nav.sub || "sample"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
@@ -251,6 +251,7 @@ export default function SistemSelmaApp() {
           settings={settings}
           rakList={rak}
           skuMaster={skuMaster}
+          penempatan={penempatan}
           saving={saving}
           setSaving={setSaving}
           reload={loadAll}

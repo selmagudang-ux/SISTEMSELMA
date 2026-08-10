@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { ModalShell, Field, Select, inputClass } from "./ui";
 import { fmtRp, calcHarga } from "../lib/api";
 
@@ -164,9 +165,60 @@ export function TambahSkuLamaForm({ item, skuMaster, onClose, onSubmit, saving }
   );
 }
 
-export function TempatkanRakForm({ item, rakList, onClose, onSubmit, saving }) {
+export function TempatkanRakForm({ item, rakList, penempatan, onClose, onSubmit, saving }) {
   const [rakCode, setRakCode] = useState("");
   const [qty, setQty] = useState(item.jumlah || 1);
+  const [confirmingOverride, setConfirmingOverride] = useState(false);
+
+  // Aturan: 1 rak hanya untuk 1 SKU. Penempatan terbaru untuk rak yang sama
+  // dianggap sebagai "SKU yang sedang menempati" rak itu.
+  // (penempatan sudah diurutkan created_at desc saat dimuat, jadi .find = data terbaru)
+  const occupant = useMemo(() => {
+    if (!rakCode) return null;
+    return (penempatan || []).find((p) => p.rak_code === rakCode) || null;
+  }, [rakCode, penempatan]);
+
+  const conflict = occupant && occupant.sku !== item.sku;
+
+  const handleClick = () => {
+    if (conflict && !confirmingOverride) {
+      setConfirmingOverride(true);
+      return;
+    }
+    onSubmit(rakCode, qty);
+  };
+
+  if (confirmingOverride && conflict) {
+    return (
+      <ModalShell title={`Tempatkan — ${item.sku}`} onClose={onClose}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Rak <span className="font-mono">{rakCode}</span> saat ini berisi SKU{" "}
+            <span className="font-mono">{occupant.sku}</span>. Menempatkan SKU{" "}
+            <span className="font-mono">{item.sku}</span> di sini akan menimpanya (satu rak hanya untuk satu SKU).
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setConfirmingOverride(false)}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => onSubmit(rakCode, qty)}
+            className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            {saving ? "Menyimpan…" : "Ya, Timpa SKU"}
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
   return (
     <ModalShell title={`Tempatkan — ${item.sku}`} onClose={onClose}>
       <Field label="Rak">
@@ -177,12 +229,21 @@ export function TempatkanRakForm({ item, rakList, onClose, onSubmit, saving }) {
           ))}
         </select>
       </Field>
+      {conflict && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span>. Akan diminta konfirmasi
+            sebelum menimpa.
+          </div>
+        </div>
+      )}
       <Field label="Jumlah">
         <input type="number" min="1" className={inputClass} value={qty} onChange={(e) => setQty(Number(e.target.value))} />
       </Field>
       <button
         disabled={!rakCode || saving}
-        onClick={() => onSubmit(rakCode, qty)}
+        onClick={handleClick}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan & Lanjut ke Sample"}

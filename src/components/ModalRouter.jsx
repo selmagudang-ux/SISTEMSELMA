@@ -7,7 +7,7 @@ import {
 } from "./forms";
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, saving, setSaving, reload, showToast,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, saving, setSaving, reload, showToast,
 }) {
   const close = () => setModal(null);
 
@@ -316,6 +316,7 @@ export default function ModalRouter({
       <TempatkanRakForm
         item={modal.item}
         rakList={rakList}
+        penempatan={penempatan}
         onClose={close}
         saving={saving}
         onSubmit={(rakCode, qty) =>
