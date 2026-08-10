@@ -144,7 +144,9 @@ export default function ModalRouter({
             tahap {meta?.label || item.stage}) akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.
             {stokSudahMasuk && (
               <div className="mt-1.5 text-red-200/90">
-                Stok SKU ini sudah tercatat — stok akan otomatis dikurangi {item.jumlah}x dan dicatat di riwayat stok.
+                Stok SKU ini sudah tercatat — stok akan otomatis dikurangi {item.jumlah}x dan dicatat di riwayat
+                stok. Kalau ini barang terakhir untuk SKU <span className="font-mono">{item.sku}</span>, SKU-nya
+                (di Master SKU) dan penempatan raknya akan ikut dihapus otomatis supaya tidak ada data nyangkut.
               </div>
             )}
           </div>
@@ -165,10 +167,6 @@ export default function ModalRouter({
                   const existing = skuMaster.find((s) => s.sku === item.sku);
                   if (existing) {
                     const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
-                    await sb(`sku_master?id=eq.${existing.id}`, {
-                      method: "PATCH",
-                      body: JSON.stringify({ stok: stokBaru }),
-                    });
                     await sb("stock_history", {
                       method: "POST",
                       body: JSON.stringify({
@@ -180,6 +178,25 @@ export default function ModalRouter({
                         note: "Barang dihapus dari sistem",
                       }),
                     });
+
+                    // Cek apakah masih ada barang lain (selain yang dihapus ini) yang
+                    // memakai SKU yang sama — kalau tidak ada, SKU ini "yatim" dan
+                    // dibersihkan sekalian (SKU + penempatan rak) supaya tidak ada
+                    // data nyangkut di Master SKU / Stok / Rak walau barangnya sudah dihapus.
+                    const barangLain = await sb(
+                      `items?select=id&sku=eq.${encodeURIComponent(item.sku)}&id=neq.${item.id}`
+                    );
+                    const skuMasihDipakai = (barangLain || []).length > 0;
+
+                    if (skuMasihDipakai) {
+                      await sb(`sku_master?id=eq.${existing.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ stok: stokBaru }),
+                      });
+                    } else {
+                      await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
+                      await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                    }
                   }
                 }
                 await sb(`items?id=eq.${item.id}`, { method: "DELETE" });
