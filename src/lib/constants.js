@@ -52,7 +52,6 @@ export const NAV = [
     key: "sku-harga", label: "SKU & Harga", icon: Tag,
     children: [
       { key: "buat", label: "Buat SKU" },
-      { key: "master-sku", label: "Master SKU" },
       { key: "master-harga", label: "Master Harga" },
     ],
   },
