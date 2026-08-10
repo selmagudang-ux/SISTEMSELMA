@@ -38,6 +38,8 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
 
   // Ukuran & posisi lembar stiker — bisa disesuaikan dengan kertas stiker yang dipakai.
   const [layout, setLayout] = useState({
+    ukuranKertas: "A4", // A4 | Letter | F4
+    orientasi: "portrait", // portrait | landscape
     kolom: 3,
     baris: 6,
     marginAtas: 8,
@@ -318,7 +320,34 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
 
         {/* ---- Pengaturan ukuran kertas stiker ---- */}
         <div className="rounded-xl border border-slate-800 p-4 mb-5">
-          <div className="text-xs font-semibold text-slate-300 mb-3">Pengaturan Kertas Stiker (A4)</div>
+          <div className="text-xs font-semibold text-slate-300 mb-3">Pengaturan Kertas Stiker</div>
+
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <label className="block">
+              <div className="text-[11px] text-slate-500 mb-1">Ukuran Kertas</div>
+              <select
+                value={layout.ukuranKertas}
+                onChange={(e) => setLayout((prev) => ({ ...prev, ukuranKertas: e.target.value }))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+              >
+                <option value="A4">A4</option>
+                <option value="Letter">Letter</option>
+                <option value="F4">F4 (Folio)</option>
+              </select>
+            </label>
+            <label className="block">
+              <div className="text-[11px] text-slate-500 mb-1">Orientasi</div>
+              <select
+                value={layout.orientasi}
+                onChange={(e) => setLayout((prev) => ({ ...prev, orientasi: e.target.value }))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+              >
+                <option value="portrait">Portrait (Tegak)</option>
+                <option value="landscape">Landscape (Rebah)</option>
+              </select>
+            </label>
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
             {[
               ["kolom", "Kolom"],
@@ -356,7 +385,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
           </label>
           <p className="text-[11px] text-slate-500 mt-3">
             Sesuaikan ukuran ini dengan kertas stiker fisik yang dipakai agar posisi cetak pas. Maksimal{" "}
-            {layout.kolom * layout.baris} label per lembar A4.
+            {layout.kolom * layout.baris} label per lembar {layout.ukuranKertas}.
           </p>
         </div>
 
@@ -375,7 +404,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
       {/* ====== Area cetak (hanya tampil saat print) ====== */}
       <div className="hidden print:block">
         <style>{`
-          @page { size: A4; margin: 0; }
+          @page { size: ${layout.ukuranKertas === "F4" ? "215mm 330mm" : layout.ukuranKertas} ${layout.orientasi}; margin: 0; }
           .ss-print-sheet {
             padding-top: ${layout.marginAtas}mm;
             padding-left: ${layout.marginKiri}mm;
