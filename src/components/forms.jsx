@@ -101,6 +101,69 @@ export function BuatSkuForm({ item, master, settings, onClose, onSubmit, saving 
   );
 }
 
+export function TambahSkuLamaForm({ item, skuMaster, onClose, onSubmit, saving }) {
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState(null);
+
+  const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <ModalShell title={`Tambah ke SKU — ${item.jumlah}x barang lama`} onClose={onClose}>
+      <p className="text-xs text-slate-500 mb-3">
+        Barang lama tidak membuat SKU baru — pilih SKU yang sudah ada, stoknya akan ditambah {item.jumlah}x.
+      </p>
+
+      <Field label="Cari SKU">
+        <input
+          className={inputClass}
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setSelected(null);
+          }}
+          placeholder="Ketik kode SKU…"
+        />
+      </Field>
+
+      <div className="max-h-56 overflow-y-auto border border-slate-800 rounded-lg mb-3 divide-y divide-slate-800">
+        {filtered.length === 0 ? (
+          <div className="px-3 py-4 text-xs text-slate-500 text-center">Tidak ada SKU yang cocok.</div>
+        ) : (
+          filtered.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setSelected(s)}
+              className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm ${
+                selected?.id === s.id ? "bg-amber-500/15" : "hover:bg-slate-900"
+              }`}
+            >
+              <span className="font-mono text-xs text-slate-200">{s.sku}</span>
+              <span className="text-[11px] text-slate-500">Stok: {s.stok}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {selected && (
+        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+          <div className="text-[11px] text-slate-500">Stok setelah ditambah</div>
+          <div className="font-mono text-sm text-amber-400">
+            {selected.stok} + {item.jumlah} = {selected.stok + item.jumlah}
+          </div>
+        </div>
+      )}
+
+      <button
+        disabled={!selected || saving}
+        onClick={() => onSubmit(selected)}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Tambahkan Stok & Lanjut ke Rak"}
+      </button>
+    </ModalShell>
+  );
+}
+
 export function TempatkanRakForm({ item, rakList, onClose, onSubmit, saving }) {
   const [rakCode, setRakCode] = useState("");
   const [qty, setQty] = useState(item.jumlah || 1);

@@ -2,7 +2,7 @@ import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor } from "../lib/api";
 import {
-  BarangMasukForm, BuatSkuForm, TempatkanRakForm, VerifikasiForm, TambahRakForm,
+  BarangMasukForm, BuatSkuForm, TambahSkuLamaForm, TempatkanRakForm, VerifikasiForm, TambahRakForm,
 } from "./forms";
 
 export default function ModalRouter({
@@ -133,6 +133,42 @@ export default function ModalRouter({
           run(async () => {
             await sb("items", { method: "POST", body: JSON.stringify(vals) });
           }, "Barang masuk dicatat")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "tambah-sku-lama") {
+    return (
+      <TambahSkuLamaForm
+        item={modal.item}
+        skuMaster={skuMaster}
+        onClose={close}
+        saving={saving}
+        onSubmit={(selectedSku) =>
+          run(async () => {
+            const jumlah = modal.item.jumlah || 1;
+            const stokBaru = selectedSku.stok + jumlah;
+            await sb(`sku_master?id=eq.${selectedSku.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ stok: stokBaru }),
+            });
+            await sb(`items?id=eq.${modal.item.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ sku: selectedSku.sku, stage: "rak" }),
+            });
+            await sb("stock_history", {
+              method: "POST",
+              body: JSON.stringify({
+                sku: selectedSku.sku,
+                type: "masuk",
+                qty_before: selectedSku.stok,
+                qty_change: jumlah,
+                qty_after: stokBaru,
+                note: "Barang lama ditambahkan ke SKU yang sudah ada",
+              }),
+            });
+          }, "Stok ditambahkan ke SKU")
         }
       />
     );
