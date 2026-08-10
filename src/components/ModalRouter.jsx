@@ -179,13 +179,16 @@ export default function ModalRouter({
                       }),
                     });
 
-                    // Cek apakah masih ada barang lain (selain yang dihapus ini) yang
-                    // memakai SKU yang sama — kalau tidak ada, SKU ini "yatim" dan
-                    // dibersihkan sekalian (SKU + penempatan rak) supaya tidak ada
-                    // data nyangkut di Master SKU / Stok / Rak walau barangnya sudah dihapus.
-                    const barangLain = await sb(
-                      `items?select=id&sku=eq.${encodeURIComponent(item.sku)}&id=neq.${item.id}`
-                    );
+                    // Hapus dulu baris barangnya SEBELUM cek/hapus sku_master — selama baris
+                    // barang ini masih ada, kolom items.sku masih mereferensikan sku_master.sku
+                    // (foreign key), jadi sku_master tidak bisa dihapus lebih dulu.
+                    await sb(`items?id=eq.${item.id}`, { method: "DELETE" });
+
+                    // Cek apakah masih ada barang lain yang memakai SKU yang sama — kalau
+                    // tidak ada, SKU ini "yatim" dan dibersihkan sekalian (SKU + penempatan
+                    // rak) supaya tidak ada data nyangkut di Master SKU / Stok / Rak walau
+                    // barangnya sudah dihapus.
+                    const barangLain = await sb(`items?select=id&sku=eq.${encodeURIComponent(item.sku)}`);
                     const skuMasihDipakai = (barangLain || []).length > 0;
 
                     if (skuMasihDipakai) {
@@ -194,12 +197,24 @@ export default function ModalRouter({
                         body: JSON.stringify({ stok: stokBaru }),
                       });
                     } else {
-                      await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
-                      await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                      // Barang sudah terhapus (langkah utama sudah sukses) — sisanya cuma
+                      // beres-beres. Dibungkus try/catch supaya kalau ada kendala tak terduga
+                      // di sini, tidak dilaporkan sebagai "gagal hapus barang" ke user.
+                      try {
+                        // Hapus penempatan dulu baru sku_master (kalau penempatan.sku juga
+                        // punya foreign key ke sku_master.sku, urutan ini menghindari error yang sama).
+                        await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                        await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
+                      } catch (e) {
+                        console.error("Gagal membersihkan SKU/penempatan yatim:", e);
+                      }
                     }
+                  } else {
+                    await sb(`items?id=eq.${item.id}`, { method: "DELETE" });
                   }
+                } else {
+                  await sb(`items?id=eq.${item.id}`, { method: "DELETE" });
                 }
-                await sb(`items?id=eq.${item.id}`, { method: "DELETE" });
               }, "Barang dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
