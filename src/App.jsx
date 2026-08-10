@@ -180,6 +180,7 @@ function MainApp({ session, onLogout }) {
 
       <div className="flex-1 min-w-0">
         {/* Header */}
+        {nav.menu !== "cetak-label" && (
         <header className="border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-20">
           <div className="px-5 py-3 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
@@ -209,6 +210,7 @@ function MainApp({ session, onLogout }) {
             </div>
           </div>
         </header>
+        )}
 
         <main className="px-5 py-6 max-w-6xl">
           {error && (
