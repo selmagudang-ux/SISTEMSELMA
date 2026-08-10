@@ -256,6 +256,21 @@ export default function ModalRouter({
         onSubmit={(skuFields, hargaAsli) =>
           run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
+
+            // Kode dari kolom combobox yang belum ada di Master Data (diketik manual)
+            // dibuat otomatis di sini, sebelum SKU dibuat.
+            const tipeFields = ["bahan", "peruntukan", "kategori", "subkategori", "warna", "ukuran"];
+            for (const tipe of tipeFields) {
+              const kode = skuFields[tipe];
+              const sudahAda = (master[tipe] || []).some((m) => m.kode === kode);
+              if (kode && !sudahAda) {
+                await sb("master_data", {
+                  method: "POST",
+                  body: JSON.stringify({ tipe, kode, label: kode }),
+                });
+              }
+            }
+
             const harga = calcHarga(hargaAsli, settings);
             const sku = `${skuFields.bahan}${skuFields.peruntukan}${skuFields.kategori}-${skuFields.subkategori}-${skuFields.model}-${skuFields.warna}-${skuFields.ukuran}`;
             const jumlah = modal.item.jumlah || 1;

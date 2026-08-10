@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { ModalShell, Field, Select, inputClass } from "./ui";
+import { ModalShell, Field, Combobox, inputClass } from "./ui";
 import { fmtRp, calcHarga } from "../lib/api";
 
 export function BarangMasukForm({ onClose, onSubmit, saving, presetStatus }) {
@@ -65,12 +65,12 @@ export function BuatSkuForm({ item, master, settings, onClose, onSubmit, saving 
   return (
     <ModalShell title={`Buat SKU — ${item.jumlah}x barang`} onClose={onClose}>
       <div className="grid grid-cols-2 gap-x-3">
-        <Field label="Bahan"><Select value={bahan} onChange={setBahan} options={master.bahan || []} /></Field>
-        <Field label="Peruntukan"><Select value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} /></Field>
-        <Field label="Kategori"><Select value={kategori} onChange={setKategori} options={master.kategori || []} /></Field>
-        <Field label="Subkategori"><Select value={subkategori} onChange={setSubkategori} options={master.subkategori || []} /></Field>
-        <Field label="Warna"><Select value={warna} onChange={setWarna} options={master.warna || []} /></Field>
-        <Field label="Ukuran"><Select value={ukuran} onChange={setUkuran} options={master.ukuran || []} /></Field>
+        <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} /></Field>
+        <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} /></Field>
+        <Field label="Kategori"><Combobox value={kategori} onChange={setKategori} options={master.kategori || []} /></Field>
+        <Field label="Subkategori"><Combobox value={subkategori} onChange={setSubkategori} options={master.subkategori || []} /></Field>
+        <Field label="Warna"><Combobox value={warna} onChange={setWarna} options={master.warna || []} /></Field>
+        <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} /></Field>
       </div>
       <Field label="Model (kode bebas)">
         <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />

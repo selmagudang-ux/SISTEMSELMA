@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { X, Inbox, Sparkles } from "lucide-react";
 
 export const inputClass =
@@ -38,6 +39,87 @@ export function Select({ value, onChange, options, placeholder }) {
         </option>
       ))}
     </select>
+  );
+}
+
+// Kolom pilih yang bisa diketik manual (combobox).
+// - Mengetik akan memfilter daftar opsi (kode/label yang cocok saja yang muncul).
+// - Kalau kode yang diketik belum ada di opsi, tetap bisa dipakai — nanti
+//   dianggap "kode baru" oleh pemanggilnya (mis. dibuat otomatis ke Master Data saat disimpan).
+export function Combobox({ value, onChange, options, placeholder }) {
+  const [query, setQuery] = useState(value || "");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    setQuery(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter((o) => o.kode.toLowerCase().includes(q) || o.label.toLowerCase().includes(q))
+    : options;
+  const exactMatch = options.some((o) => o.kode.toLowerCase() === q);
+
+  const commit = (kode) => {
+    setQuery(kode);
+    onChange(kode);
+    setOpen(false);
+  };
+
+  const handleChange = (raw) => {
+    setQuery(raw);
+    onChange(raw.trim().toUpperCase());
+    setOpen(true);
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <input
+        className={inputClass}
+        value={query}
+        placeholder={placeholder || "Ketik atau pilih…"}
+        onChange={(e) => handleChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        autoComplete="off"
+      />
+      {open && (
+        <div className="absolute z-10 mt-1 w-full max-h-44 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+          {filtered.length > 0 ? (
+            filtered.map((o) => (
+              <button
+                key={o.kode}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commit(o.kode)}
+                className="w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900"
+              >
+                <span className="text-slate-200">{o.label}</span>
+                <span className="font-mono text-[11px] text-amber-400">{o.kode}</span>
+              </button>
+            ))
+          ) : q ? (
+            <div className="px-3 py-2 text-xs text-slate-500">
+              Tidak ada yang cocok — kode baru{" "}
+              <span className="font-mono text-amber-400">"{query.trim().toUpperCase()}"</span> akan dibuat otomatis.
+            </div>
+          ) : (
+            <div className="px-3 py-2 text-xs text-slate-500">Ketik untuk mencari atau membuat kode baru…</div>
+          )}
+        </div>
+      )}
+      {q && !exactMatch && (
+        <div className="text-[10px] text-amber-500/80 mt-1">Kode baru, akan dibuat otomatis saat disimpan.</div>
+      )}
+    </div>
   );
 }
 
