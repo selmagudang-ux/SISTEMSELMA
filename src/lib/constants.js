@@ -136,4 +136,4 @@ export function allowedMenus(role) {
 
 export function roleLabel(role) {
   return ROLES.find((r) => r.key === role)?.label || role;
-} 
+}
