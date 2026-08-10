@@ -66,10 +66,9 @@ function MainApp({ session, onLogout }) {
     setNav({ menu, sub });
   };
 
-  // Aksi satu-klik untuk tahap yang tidak butuh form (sample, marketplace)
+  // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
   const quickAdvance = async (item, stage) => {
     const patches = {
-      sample: { sample_status: "diambil", stage: "verifikasi" },
       marketplace: {
         marketplace_status: "sudah",
         marketplace_uploaded_at: new Date().toISOString(),
@@ -77,7 +76,6 @@ function MainApp({ session, onLogout }) {
       },
     };
     const messages = {
-      sample: "Sample ditandai diambil",
       marketplace: "Ditandai sudah upload — selesai!",
     };
     try {
@@ -139,8 +137,7 @@ function MainApp({ session, onLogout }) {
     "sku-harga.buat": stageCounts.sku,
     rak: stageCounts.rak,
     "rak.tempatkan": stageCounts.rak,
-    foto: stageCounts.sample + stageCounts.verifikasi,
-    "foto.sample": stageCounts.sample,
+    foto: stageCounts.verifikasi,
     "foto.pemotretan": stageCounts.verifikasi,
     marketplace: stageCounts.marketplace,
     "marketplace.belum": stageCounts.marketplace,
@@ -259,7 +256,7 @@ function MainApp({ session, onLogout }) {
                 <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} />
               )}
               {nav.menu === "foto" && (
-                <FotoProduk sub={nav.sub || "sample"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
+                <FotoProduk items={items} setModal={setModal} />
               )}
               {nav.menu === "marketplace" && (
                 <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} />

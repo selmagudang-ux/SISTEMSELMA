@@ -3,12 +3,11 @@ import {
   Camera, ShoppingBag, TrendingUp, Database, Settings, Boxes, Printer,
 } from "lucide-react";
 
-export const STAGE_ORDER = ["sku", "rak", "sample", "verifikasi", "marketplace", "selesai"];
+export const STAGE_ORDER = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
 
 export const STAGE_META = {
   sku: { label: "Buat SKU", icon: Boxes, color: "amber" },
   rak: { label: "Rak", icon: MapPin, color: "sky" },
-  sample: { label: "Sample", icon: PackagePlus, color: "violet" },
   verifikasi: { label: "Verifikasi Foto", icon: Camera, color: "pink" },
   marketplace: { label: "Marketplace", icon: ShoppingBag, color: "teal" },
   selesai: { label: "Selesai", icon: ClipboardList, color: "emerald" },
@@ -82,13 +81,7 @@ export const NAV = [
     ],
   },
   { key: "cetak-label", label: "Cetak Label", icon: Printer },
-  {
-    key: "foto", label: "Foto Produk", icon: Camera,
-    children: [
-      { key: "sample", label: "Sample Foto" },
-      { key: "pemotretan", label: "Pemotretan" },
-    ],
-  },
+  { key: "foto", label: "Foto Produk", icon: Camera },
   {
     key: "marketplace", label: "Marketplace", icon: ShoppingBag,
     children: [

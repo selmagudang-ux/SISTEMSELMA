@@ -378,7 +378,7 @@ export default function ModalRouter({
             });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ rak_code: rakCode, stage: "sample" }),
+              body: JSON.stringify({ rak_code: rakCode, stage: "verifikasi" }),
             });
           }, "Barang ditempatkan di rak")
         }
