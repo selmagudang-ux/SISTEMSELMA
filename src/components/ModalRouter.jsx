@@ -146,7 +146,8 @@ export default function ModalRouter({
               <div className="mt-1.5 text-red-200/90">
                 Stok SKU ini sudah tercatat — stok akan otomatis dikurangi {item.jumlah}x dan dicatat di riwayat
                 stok. Kalau ini barang terakhir untuk SKU <span className="font-mono">{item.sku}</span>, SKU-nya
-                (di Master SKU) dan penempatan raknya akan ikut dihapus otomatis supaya tidak ada data nyangkut.
+                (di Master SKU), penempatan raknya, dan riwayat stoknya akan ikut dihapus otomatis supaya tidak
+                ada data nyangkut.
               </div>
             )}
           </div>
@@ -166,19 +167,6 @@ export default function ModalRouter({
                 if (stokSudahMasuk) {
                   const existing = skuMaster.find((s) => s.sku === item.sku);
                   if (existing) {
-                    const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
-                    await sb("stock_history", {
-                      method: "POST",
-                      body: JSON.stringify({
-                        sku: item.sku,
-                        type: "keluar",
-                        qty_before: existing.stok,
-                        qty_change: -(item.jumlah || 0),
-                        qty_after: stokBaru,
-                        note: "Barang dihapus dari sistem",
-                      }),
-                    });
-
                     // Hapus dulu baris barangnya SEBELUM cek/hapus sku_master — selama baris
                     // barang ini masih ada, kolom items.sku masih mereferensikan sku_master.sku
                     // (foreign key), jadi sku_master tidak bisa dihapus lebih dulu.
@@ -186,23 +174,39 @@ export default function ModalRouter({
 
                     // Cek apakah masih ada barang lain yang memakai SKU yang sama — kalau
                     // tidak ada, SKU ini "yatim" dan dibersihkan sekalian (SKU + penempatan
-                    // rak) supaya tidak ada data nyangkut di Master SKU / Stok / Rak walau
-                    // barangnya sudah dihapus.
+                    // rak + riwayat stok) supaya tidak ada data nyangkut di Master SKU / Stok /
+                    // Rak walau barangnya sudah dihapus.
                     const barangLain = await sb(`items?select=id&sku=eq.${encodeURIComponent(item.sku)}`);
                     const skuMasihDipakai = (barangLain || []).length > 0;
 
                     if (skuMasihDipakai) {
+                      // SKU masih dipakai barang lain — cukup catat pengurangan stoknya.
+                      const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
+                      await sb("stock_history", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          sku: item.sku,
+                          type: "keluar",
+                          qty_before: existing.stok,
+                          qty_change: -(item.jumlah || 0),
+                          qty_after: stokBaru,
+                          note: "Barang dihapus dari sistem",
+                        }),
+                      });
                       await sb(`sku_master?id=eq.${existing.id}`, {
                         method: "PATCH",
                         body: JSON.stringify({ stok: stokBaru }),
                       });
                     } else {
+                      // Barang terakhir untuk SKU ini — SKU akan dihapus total, jadi tidak
+                      // perlu dicatat ke riwayat stok (SKU-nya sendiri tidak akan tersisa).
                       // Barang sudah terhapus (langkah utama sudah sukses) — sisanya cuma
                       // beres-beres. Dibungkus try/catch supaya kalau ada kendala tak terduga
                       // di sini, tidak dilaporkan sebagai "gagal hapus barang" ke user.
                       try {
-                        // Hapus penempatan dulu baru sku_master (kalau penempatan.sku juga
-                        // punya foreign key ke sku_master.sku, urutan ini menghindari error yang sama).
+                        // stock_history & penempatan juga punya foreign key ke sku_master.sku,
+                        // jadi keduanya harus dihapus dulu sebelum sku_master.
+                        await sb(`stock_history?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
                         await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
                         await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
                       } catch (e) {

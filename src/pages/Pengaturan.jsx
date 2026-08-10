@@ -128,6 +128,9 @@ function SkuYatimCleaner({ reload, showToast }) {
     setCleaning(true);
     try {
       for (const s of orphans) {
+        // stock_history & penempatan juga punya foreign key ke sku_master.sku,
+        // jadi keduanya harus dihapus dulu sebelum sku_master.
+        await sb(`stock_history?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
         await sb(`penempatan?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
         await sb(`sku_master?id=eq.${s.id}`, { method: "DELETE" });
       }
