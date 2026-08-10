@@ -125,7 +125,7 @@ export const ROLES = [
 // "dashboard" sengaja dibuka untuk semua role sebagai halaman awal setelah login.
 export const ROLE_MENUS = {
   superadmin: NAV.map((n) => n.key), // semuanya
-  gudang: ["dashboard", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
+  gudang: ["dashboard", "barang-masuk", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
   pemotretan: ["dashboard", "foto"],
   marketplace: ["dashboard", "marketplace"],
 };
