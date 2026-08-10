@@ -17,7 +17,7 @@ function skuForRak(rakCode, penempatan) {
 
 // SKU dengan stok > 0 tapi rak yang seharusnya ditempatinya sudah ditimpa SKU lain
 // (aturan: 1 rak = 1 SKU, penempatan terbaru di rak yang sama menang) — perlu ditempatkan ulang.
-function cariPerluDitempatkanUlang(skuMaster, penempatan) {
+export function cariPerluDitempatkanUlang(skuMaster, penempatan) {
   const out = [];
   (skuMaster || []).forEach((s) => {
     if (!s.stok || s.stok <= 0) return;

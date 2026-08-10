@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, Plus, AlertCircle, Loader2 } from "lucide-react";
+import { RefreshCw, Plus, AlertCircle, Loader2, Bell } from "lucide-react";
 import { sb } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
@@ -12,7 +12,7 @@ import BarangMasuk from "./pages/BarangMasuk";
 import DataBarang from "./pages/DataBarang";
 import SkuHarga from "./pages/SkuHarga";
 import Stok from "./pages/Stok";
-import Rak from "./pages/Rak";
+import Rak, { cariPerluDitempatkanUlang } from "./pages/Rak";
 import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
@@ -54,6 +54,7 @@ function MainApp({ session, onLogout }) {
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
   const hasNotifiedRef = useRef(false);
+  const hasNotifiedRakRef = useRef(false);
 
   const showToast = (msg, kind = "ok", duration = 3200) => {
     setToast({ msg, kind });
@@ -132,11 +133,17 @@ function MainApp({ session, onLogout }) {
   }, {});
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
   const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
+
+  // SKU tanpa rak = barang yang belum pernah ditempatkan + SKU yang rak lamanya
+  // sudah ditimpa SKU lain (butuh ditempatkan ulang).
+  const perluRakUlang = cariPerluDitempatkanUlang(skuMaster, penempatan);
+  const tanpaRakCount = stageCounts.rak + perluRakUlang.length;
+
   const sidebarBadges = {
     "sku-harga": stageCounts.sku,
     "sku-harga.buat": stageCounts.sku,
-    rak: stageCounts.rak,
-    "rak.tempatkan": stageCounts.rak,
+    rak: tanpaRakCount,
+    "rak.tempatkan": tanpaRakCount,
     foto: stageCounts.verifikasi,
     "foto.pemotretan": stageCounts.verifikasi,
     marketplace: stageCounts.marketplace,
@@ -158,6 +165,20 @@ function MainApp({ session, onLogout }) {
       }
     }
   }, [loading, items, belumSelesaiCount]);
+
+  // Notif terpisah khusus SKU tanpa rak — digeser sedikit biar tidak tabrakan
+  // dengan toast "belum selesai" di atas (toast cuma bisa tampil satu per waktu).
+  useEffect(() => {
+    if (!loading && !hasNotifiedRakRef.current && items.length > 0) {
+      hasNotifiedRakRef.current = true;
+      if (tanpaRakCount > 0) {
+        const delay = belumSelesaiCount > 0 ? 6300 : 0;
+        setTimeout(() => {
+          showToast(`${tanpaRakCount} SKU belum punya rak — cek Tempatkan Barang`, "warn", 5000);
+        }, delay);
+      }
+    }
+  }, [loading, items, tanpaRakCount, belumSelesaiCount]);
 
   const { menuLabel, subLabel } = findNavLabel(nav.menu, nav.sub);
   const canSee = (menuKey) => allowed.includes(menuKey);
@@ -189,6 +210,20 @@ function MainApp({ session, onLogout }) {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              {canSee("rak") && (
+                <button
+                  onClick={() => navigate("rak", "tempatkan")}
+                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                  title={tanpaRakCount > 0 ? `${tanpaRakCount} SKU belum punya rak` : "Tidak ada SKU tanpa rak"}
+                >
+                  <Bell size={14} />
+                  {tanpaRakCount > 0 && (
+                    <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                      {tanpaRakCount}
+                    </span>
+                  )}
+                </button>
+              )}
               <button
                 onClick={loadAll}
                 className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
