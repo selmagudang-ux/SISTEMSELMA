@@ -41,13 +41,6 @@ export const MASTER_TIPE = [
 export const NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   {
-    key: "barang-masuk", label: "Barang Masuk", icon: PackagePlus,
-    children: [
-      { key: "baru", label: "Barang Baru" },
-      { key: "lama", label: "Barang Lama" },
-    ],
-  },
-  {
     key: "data-barang", label: "Data Barang", icon: ClipboardList,
     children: [
       { key: "semua", label: "Semua Barang" },
@@ -116,8 +109,10 @@ export const ROLES = [
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
 // "dashboard" sengaja dibuka untuk semua role sebagai halaman awal setelah login.
+// "barang-masuk" sengaja tetap disertakan walau sudah tidak ada di sidebar NAV —
+// dipakai untuk izin tombol tambah cepat "+ Barang Masuk" di header.
 export const ROLE_MENUS = {
-  superadmin: NAV.map((n) => n.key), // semuanya
+  superadmin: [...NAV.map((n) => n.key), "barang-masuk"],
   gudang: ["dashboard", "barang-masuk", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
   pemotretan: ["dashboard", "foto"],
   marketplace: ["dashboard", "marketplace"],
