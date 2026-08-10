@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Plus, AlertCircle, Loader2 } from "lucide-react";
 import { sb } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus } from "./lib/constants";
+import { getSession, logout } from "./lib/auth";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
+import Login from "./pages/Login";
 
 import Dashboard from "./pages/Dashboard";
 import BarangMasuk from "./pages/BarangMasuk";
@@ -19,7 +21,22 @@ import MasterData from "./pages/MasterData";
 import Pengaturan from "./pages/Pengaturan";
 
 export default function SistemSelmaApp() {
-  const [nav, setNav] = useState({ menu: "dashboard", sub: null });
+  const [session, setSession] = useState(() => getSession());
+
+  if (!session) {
+    return <Login onLogin={setSession} />;
+  }
+
+  return <MainApp session={session} onLogout={() => { logout(); setSession(null); }} />;
+}
+
+function MainApp({ session, onLogout }) {
+  const allowed = allowedMenus(session.role);
+
+  const [nav, setNav] = useState({
+    menu: allowed.includes("dashboard") ? "dashboard" : allowed[0],
+    sub: null,
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -43,7 +60,11 @@ export default function SistemSelmaApp() {
     setTimeout(() => setToast(null), duration);
   };
 
-  const navigate = (menu, sub) => setNav({ menu, sub });
+  // Cegah akses ke menu yang tidak diizinkan untuk role ini (mis. lewat state lama).
+  const navigate = (menu, sub) => {
+    if (!allowed.includes(menu)) return;
+    setNav({ menu, sub });
+  };
 
   // Aksi satu-klik untuk tahap yang tidak butuh form (sample, marketplace)
   const quickAdvance = async (item, stage) => {
@@ -142,6 +163,7 @@ export default function SistemSelmaApp() {
   }, [loading, items, belumSelesaiCount]);
 
   const { menuLabel, subLabel } = findNavLabel(nav.menu, nav.sub);
+  const canSee = (menuKey) => allowed.includes(menuKey);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
@@ -151,6 +173,9 @@ export default function SistemSelmaApp() {
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
         badges={sidebarBadges}
+        allowedMenuKeys={allowed}
+        user={session}
+        onLogout={onLogout}
       />
 
       <div className="flex-1 min-w-0">
@@ -173,12 +198,14 @@ export default function SistemSelmaApp() {
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               </button>
-              <button
-                onClick={() => setModal({ type: "barang-masuk" })}
-                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-              >
-                <Plus size={14} /> <span className="hidden sm:inline">Barang Masuk</span>
-              </button>
+              {canSee("barang-masuk") && (
+                <button
+                  onClick={() => setModal({ type: "barang-masuk" })}
+                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+                >
+                  <Plus size={14} /> <span className="hidden sm:inline">Barang Masuk</span>
+                </button>
+              )}
             </div>
           </div>
         </header>
@@ -193,6 +220,10 @@ export default function SistemSelmaApp() {
           {loading && items.length === 0 ? (
             <div className="flex items-center justify-center py-24 text-slate-500 gap-2 text-sm">
               <Loader2 size={18} className="animate-spin" /> Memuat data…
+            </div>
+          ) : !canSee(nav.menu) ? (
+            <div className="flex items-center justify-center py-24 text-slate-500 text-sm">
+              Anda tidak punya akses ke halaman ini.
             </div>
           ) : (
             <>
@@ -236,7 +267,7 @@ export default function SistemSelmaApp() {
                 <MasterData master={master} reload={loadAll} showToast={showToast} />
               )}
               {nav.menu === "pengaturan" && (
-                <Pengaturan settings={settings} reload={loadAll} showToast={showToast} />
+                <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
               )}
             </>
           )}

@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
-import { Trash2, Search, AlertTriangle } from "lucide-react";
+import { Trash2, Search, AlertTriangle, UserPlus, KeyRound } from "lucide-react";
 import { PageHeader, Field, inputClass, EmptyState } from "../components/ui";
 import { sb, calcHarga, fmtRp } from "../lib/api";
+import { ROLES, roleLabel } from "../lib/constants";
+import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 const FIELDS = [
   { key: "round_to", label: "Pembulatan (Rp)", hint: "Harga tengah/ecer/grosir dibulatkan ke kelipatan ini." },
 ];
 
-export default function Pengaturan({ settings, reload, showToast }) {
+export default function Pengaturan({ settings, reload, showToast, session }) {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -20,6 +22,7 @@ export default function Pengaturan({ settings, reload, showToast }) {
       <div>
         <PageHeader title="Pengaturan" description="Atur persentase markup yang dipakai untuk menghitung harga jual." />
         <EmptyState label="Data pengaturan belum tersedia di Supabase." />
+        {session?.role === "superadmin" && <UserManager showToast={showToast} />}
       </div>
     );
   }
@@ -92,6 +95,164 @@ export default function Pengaturan({ settings, reload, showToast }) {
       </div>
 
       <SkuYatimCleaner reload={reload} showToast={showToast} />
+
+      {session?.role === "superadmin" && <UserManager showToast={showToast} />}
+    </div>
+  );
+}
+
+// Kelola user login (username, nama, role, password) — hanya untuk superadmin.
+function UserManager({ showToast }) {
+  const [users, setUsers] = useState(null);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [form, setForm] = useState({ username: "", password: "", nama: "", role: "gudang" });
+  const [saving, setSaving] = useState(false);
+  const [pwEdit, setPwEdit] = useState(null); // {id, value}
+
+  const load = async () => {
+    setLoadingUsers(true);
+    try {
+      setUsers(await listUsers());
+    } catch (e) {
+      showToast(e.message || "Gagal memuat daftar user", "err");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  const tambah = async (e) => {
+    e.preventDefault();
+    if (!form.username.trim() || !form.password || !form.nama.trim()) {
+      showToast("Username, nama, dan password wajib diisi", "err");
+      return;
+    }
+    setSaving(true);
+    try {
+      await createUser(form);
+      setForm({ username: "", password: "", nama: "", role: "gudang" });
+      await load();
+      showToast("User baru ditambahkan");
+    } catch (e) {
+      showToast(e.message?.includes("duplicate") ? "Username sudah dipakai" : e.message || "Gagal menambah user", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hapus = async (u) => {
+    if (!confirm(`Hapus user "${u.username}"?`)) return;
+    try {
+      await deleteUser(u.id);
+      await load();
+      showToast("User dihapus");
+    } catch (e) {
+      showToast(e.message || "Gagal menghapus user", "err");
+    }
+  };
+
+  const simpanPassword = async (u) => {
+    if (!pwEdit?.value) return;
+    try {
+      await updateUserPassword(u.id, pwEdit.value);
+      setPwEdit(null);
+      showToast("Password diperbarui");
+    } catch (e) {
+      showToast(e.message || "Gagal mengubah password", "err");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
+      <div className="text-sm font-semibold mb-1">Kelola User Login</div>
+      <p className="text-xs text-slate-500 mb-4 max-w-xl">
+        Tambah, hapus, atau ubah password akun login. Hanya Super Admin yang bisa mengakses bagian ini.
+      </p>
+
+      <form onSubmit={tambah} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pb-4 border-b border-slate-800">
+        <Field label="Username">
+          <input className={inputClass} value={form.username} onChange={(e) => set("username", e.target.value)} autoComplete="off" />
+        </Field>
+        <Field label="Nama">
+          <input className={inputClass} value={form.nama} onChange={(e) => set("nama", e.target.value)} />
+        </Field>
+        <Field label="Password">
+          <input type="password" className={inputClass} value={form.password} onChange={(e) => set("password", e.target.value)} autoComplete="new-password" />
+        </Field>
+        <Field label="Role">
+          <select className={inputClass} value={form.role} onChange={(e) => set("role", e.target.value)}>
+            {ROLES.map((r) => (
+              <option key={r.key} value={r.key}>{r.label}</option>
+            ))}
+          </select>
+        </Field>
+        <button
+          disabled={saving}
+          className="sm:col-span-2 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        >
+          <UserPlus size={14} /> {saving ? "Menyimpan…" : "Tambah User"}
+        </button>
+      </form>
+
+      {loadingUsers ? (
+        <div className="text-xs text-slate-500">Memuat daftar user…</div>
+      ) : !users || users.length === 0 ? (
+        <EmptyState label="Belum ada user." />
+      ) : (
+        <div className="divide-y divide-slate-800 border border-slate-800 rounded-lg overflow-hidden">
+          {users.map((u) => (
+            <div key={u.id} className="px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-slate-200 truncate">{u.nama}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    @{u.username} · {roleLabel(u.role)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => setPwEdit(pwEdit?.id === u.id ? null : { id: u.id, value: "" })}
+                    title="Ubah password"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-900"
+                  >
+                    <KeyRound size={14} />
+                  </button>
+                  <button
+                    onClick={() => hapus(u)}
+                    title="Hapus user"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-900"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+              {pwEdit?.id === u.id && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="password"
+                    autoFocus
+                    placeholder="Password baru"
+                    className={inputClass}
+                    value={pwEdit.value}
+                    onChange={(e) => setPwEdit({ id: u.id, value: e.target.value })}
+                  />
+                  <button
+                    onClick={() => simpanPassword(u)}
+                    className="flex-shrink-0 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+                  >
+                    Simpan
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

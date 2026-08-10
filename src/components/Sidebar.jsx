@@ -1,8 +1,17 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, Warehouse, X, Menu } from "lucide-react";
-import { NAV } from "../lib/constants";
+import { ChevronDown, Warehouse, X, Menu, LogOut } from "lucide-react";
+import { NAV, roleLabel } from "../lib/constants";
 
-export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen, badges = {} }) {
+export default function Sidebar({
+  active,
+  onNavigate,
+  mobileOpen,
+  setMobileOpen,
+  badges = {},
+  allowedMenuKeys,
+  user,
+  onLogout,
+}) {
   const [expanded, setExpanded] = useState(() => new Set([active.menu]));
 
   // Pastikan grup dari menu aktif selalu terbuka.
@@ -23,6 +32,11 @@ export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen,
     onNavigate(menuKey, subKey);
     setMobileOpen(false);
   };
+
+  // Hanya tampilkan menu yang diizinkan untuk role user yang sedang login.
+  const visibleNav = allowedMenuKeys
+    ? NAV.filter((item) => allowedMenuKeys.includes(item.key))
+    : NAV;
 
   return (
     <>
@@ -56,7 +70,7 @@ export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen,
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2 px-2">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const hasChildren = !!item.children?.length;
             const isActiveGroup = active.menu === item.key;
@@ -122,6 +136,25 @@ export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen,
             );
           })}
         </nav>
+
+        {user && (
+          <div className="border-t border-slate-800 px-3 py-3 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0 text-xs font-bold text-slate-300">
+              {(user.nama || user.username || "?").slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-slate-200 truncate">{user.nama || user.username}</div>
+              <div className="text-[10px] text-slate-500 truncate">{roleLabel(user.role)}</div>
+            </div>
+            <button
+              onClick={onLogout}
+              title="Keluar"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-900 flex-shrink-0"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
+        )}
       </aside>
     </>
   );

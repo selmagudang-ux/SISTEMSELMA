@@ -110,3 +110,30 @@ export function findNavLabel(menuKey, subKey) {
   const sub = menu.children?.find((c) => c.key === subKey);
   return { menuLabel: menu.label, subLabel: sub ? sub.label : "" };
 }
+
+// =========================================================
+// LOGIN — role & hak akses menu
+// =========================================================
+export const ROLES = [
+  { key: "superadmin", label: "Super Admin" },
+  { key: "gudang", label: "Gudang" },
+  { key: "pemotretan", label: "Pemotretan" },
+  { key: "marketplace", label: "Admin Marketplace" },
+];
+
+// Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
+// "dashboard" sengaja dibuka untuk semua role sebagai halaman awal setelah login.
+export const ROLE_MENUS = {
+  superadmin: NAV.map((n) => n.key), // semuanya
+  gudang: ["dashboard", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
+  pemotretan: ["dashboard", "foto"],
+  marketplace: ["dashboard", "marketplace"],
+};
+
+export function allowedMenus(role) {
+  return ROLE_MENUS[role] || ["dashboard"];
+}
+
+export function roleLabel(role) {
+  return ROLES.find((r) => r.key === role)?.label || role;
+}
