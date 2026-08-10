@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
 import { EmptyState } from "../components/ui";
 import { priceCode } from "../lib/api";
@@ -31,26 +31,48 @@ const warnaCss = (key) => (WARNA_OPTIONS.find((w) => w.key === key) || WARNA_OPT
 
 const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "" };
 
+// Pengaturan kertas stiker terakhir disimpan di HP/komputer supaya tidak perlu diatur ulang.
+const LAYOUT_STORAGE_KEY = "ss-cetak-label-layout";
+const DEFAULT_LAYOUT = {
+  ukuranKertas: "A4", // A4 | Letter | F4
+  orientasi: "portrait", // portrait | landscape
+  posisi: "kiri", // kiri | tengah
+  kolom: 3,
+  baris: 6,
+  marginAtas: 8,
+  marginKiri: 8,
+  lebarLabel: 63,
+  tinggiLabel: 46,
+  gapX: 2,
+  gapY: 2,
+  spasiBaris: 2,
+  border: true,
+};
+function loadLayout() {
+  try {
+    const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!saved) return DEFAULT_LAYOUT;
+    return { ...DEFAULT_LAYOUT, ...JSON.parse(saved) };
+  } catch {
+    return DEFAULT_LAYOUT;
+  }
+}
+
 export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
   const [tab, setTab] = useState("barang"); // "barang" | "sku" | "rak"
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState({}); // { key: { qty, warna, catatan } }
 
   // Ukuran & posisi lembar stiker — bisa disesuaikan dengan kertas stiker yang dipakai.
-  const [layout, setLayout] = useState({
-    ukuranKertas: "A4", // A4 | Letter | F4
-    orientasi: "portrait", // portrait | landscape
-    kolom: 3,
-    baris: 6,
-    marginAtas: 8,
-    marginKiri: 8,
-    lebarLabel: 63,
-    tinggiLabel: 46,
-    gapX: 2,
-    gapY: 2,
-    spasiBaris: 2,
-    border: true,
-  });
+  const [layout, setLayout] = useState(loadLayout);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+    } catch {
+      // abaikan jika penyimpanan tidak tersedia (mis. mode private browsing)
+    }
+  }, [layout]);
 
   const skuMap = useMemo(() => {
     const m = {};
@@ -322,7 +344,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
         <div className="rounded-xl border border-slate-800 p-4 mb-5">
           <div className="text-xs font-semibold text-slate-300 mb-3">Pengaturan Kertas Stiker</div>
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <label className="block">
               <div className="text-[11px] text-slate-500 mb-1">Ukuran Kertas</div>
               <select
@@ -344,6 +366,17 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
               >
                 <option value="portrait">Portrait (Tegak)</option>
                 <option value="landscape">Landscape (Rebah)</option>
+              </select>
+            </label>
+            <label className="block">
+              <div className="text-[11px] text-slate-500 mb-1">Tata Letak</div>
+              <select
+                value={layout.posisi}
+                onChange={(e) => setLayout((prev) => ({ ...prev, posisi: e.target.value }))}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+              >
+                <option value="kiri">Rata Kiri (pakai margin)</option>
+                <option value="tengah">Di Tengah Halaman</option>
               </select>
             </label>
           </div>
@@ -405,9 +438,13 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
       <div className="hidden print:block">
         <style>{`
           @page { size: ${layout.ukuranKertas === "F4" ? "215mm 330mm" : layout.ukuranKertas} ${layout.orientasi}; margin: 0; }
-          .ss-print-sheet {
+          .ss-print-page {
             padding-top: ${layout.marginAtas}mm;
-            padding-left: ${layout.marginKiri}mm;
+            display: flex;
+            justify-content: ${layout.posisi === "tengah" ? "center" : "flex-start"};
+          }
+          .ss-print-sheet {
+            padding-left: ${layout.posisi === "tengah" ? 0 : layout.marginKiri}mm;
             display: flex;
             flex-wrap: wrap;
           }
@@ -435,17 +472,22 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
           .ss-print-catatan { font-size: 8pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
           .ss-print-kode { font-size: 17pt; font-weight: 800; letter-spacing: 0.5px; }
         `}</style>
-        <div className="ss-print-sheet">
-          {labels.map((l) => (
-            <div key={l.key} className="ss-print-label">
-              <div className="ss-print-rak">{l.rak}</div>
-              <div>
-                <div className="ss-print-sku" style={{ color: warnaCss(l.warna) }}>{l.sku}</div>
-                {l.catatan && <div className="ss-print-catatan">{l.catatan}</div>}
+        <div className="ss-print-page">
+          <div
+            className="ss-print-sheet"
+            style={{ width: `${layout.kolom * (layout.lebarLabel + layout.gapX)}mm` }}
+          >
+            {labels.map((l) => (
+              <div key={l.key} className="ss-print-label">
+                <div className="ss-print-rak">{l.rak}</div>
+                <div>
+                  <div className="ss-print-sku" style={{ color: warnaCss(l.warna) }}>{l.sku}</div>
+                  {l.catatan && <div className="ss-print-catatan">{l.catatan}</div>}
+                </div>
+                <div className="ss-print-kode">{l.kode}</div>
               </div>
-              <div className="ss-print-kode">{l.kode}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
