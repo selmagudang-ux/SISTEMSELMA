@@ -67,6 +67,7 @@ export const NAV = [
     key: "stok", label: "Stok", icon: BarChart3,
     children: [
       { key: "barang", label: "Stok Barang" },
+      { key: "keluar", label: "Barang Keluar" },
       { key: "hitung", label: "Hitung Qty" },
       { key: "riwayat", label: "Riwayat Stok" },
     ],
@@ -78,6 +79,7 @@ export const NAV = [
       { key: "master", label: "Master Rak" },
       { key: "peta", label: "Peta Rak" },
       { key: "penempatan", label: "Penempatan Barang" },
+      { key: "konflik", label: "Rak Tertimpa" },
     ],
   },
   { key: "cetak-label", label: "Cetak Label", icon: Printer },

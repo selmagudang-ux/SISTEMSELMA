@@ -1,11 +1,25 @@
-import { Plus, MapPin, PackagePlus } from "lucide-react";
+import { useMemo } from "react";
+import { Plus, MapPin, PackagePlus, AlertTriangle } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { fmtTgl } from "../lib/api";
 
-export default function Rak({ sub, items, rak, penempatan, setModal }) {
+// Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
+function rakForSku(sku, penempatan) {
+  const found = (penempatan || []).find((p) => p.sku === sku);
+  return found ? found.rak_code : "";
+}
+
+// Cari SKU yang SAAT INI menempati sebuah rak (aturan: 1 rak = 1 SKU, ambil penempatan terbaru).
+function skuForRak(rakCode, penempatan) {
+  const found = (penempatan || []).find((p) => p.rak_code === rakCode);
+  return found ? found.sku : "";
+}
+
+export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
   if (sub === "peta") return <PetaRak rak={rak} />;
   if (sub === "penempatan") return <PenempatanBarang penempatan={penempatan} />;
   if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
+  if (sub === "konflik") return <RakTertimpa skuMaster={skuMaster} penempatan={penempatan} />;
   return <TempatkanRak items={items} setModal={setModal} />;
 }
 
@@ -112,6 +126,63 @@ function PetaRak({ rak }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RakTertimpa({ skuMaster, penempatan }) {
+  // SKU dengan stok > 0 tapi rak yang seharusnya ditempatinya sudah ditimpa SKU lain
+  // (aturan: 1 rak = 1 SKU, penempatan terbaru di rak yang sama menang).
+  const list = useMemo(() => {
+    const out = [];
+    (skuMaster || []).forEach((s) => {
+      if (!s.stok || s.stok <= 0) return;
+      const rakSeharusnya = rakForSku(s.sku, penempatan);
+      if (!rakSeharusnya) return; // belum pernah ditempatkan di rak sama sekali
+      const skuSekarang = skuForRak(rakSeharusnya, penempatan);
+      if (skuSekarang && skuSekarang !== s.sku) {
+        out.push({ sku: s.sku, stok: s.stok, rak: rakSeharusnya, ditimpaOleh: skuSekarang });
+      }
+    });
+    return out;
+  }, [skuMaster, penempatan]);
+
+  return (
+    <div>
+      <PageHeader
+        title="Rak Tertimpa"
+        description="SKU yang masih ada stoknya, tapi rak yang tercatat untuknya sudah ditempati SKU lain (butuh ditempatkan ulang)."
+      />
+      {list.length === 0 ? (
+        <EmptyState label="Tidak ada SKU dengan rak tertimpa saat ini." />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-x-auto">
+          <table className="w-full text-sm min-w-[560px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
+                <th className="px-4 py-2.5">SKU</th>
+                <th className="px-4 py-2.5">Stok</th>
+                <th className="px-4 py-2.5">Rak Tercatat</th>
+                <th className="px-4 py-2.5">Ditimpa Oleh SKU</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((r) => (
+                <tr key={r.sku} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-200">{r.sku}</td>
+                  <td className="px-4 py-2.5">{r.stok}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{r.rak}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="flex items-center gap-1 text-amber-400 text-xs font-mono">
+                      <AlertTriangle size={13} /> {r.ditimpaOleh}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

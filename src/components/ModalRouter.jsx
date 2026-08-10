@@ -3,7 +3,7 @@ import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor } from "../lib/api";
 import {
-  BarangMasukForm, BuatSkuForm, TambahSkuLamaForm, TempatkanRakForm, VerifikasiForm, TambahRakForm,
+  BarangMasukForm, BuatSkuForm, TambahSkuLamaForm, TempatkanRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
 } from "./forms";
 
 export default function ModalRouter({
@@ -402,6 +402,38 @@ export default function ModalRouter({
               body: JSON.stringify({ foto_url: url, stage: "marketplace" }),
             });
           }, "Foto verifikasi tersimpan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "barang-keluar") {
+    return (
+      <BarangKeluarForm
+        item={modal.item}
+        onClose={close}
+        saving={saving}
+        onSubmit={(qty, note) =>
+          run(async () => {
+            const existing = skuMaster.find((s) => s.sku === modal.item.sku);
+            const stokSaatIni = existing ? existing.stok : modal.item.stok;
+            const stokBaru = Math.max(stokSaatIni - qty, 0);
+            await sb(`sku_master?id=eq.${modal.item.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ stok: stokBaru }),
+            });
+            await sb("stock_history", {
+              method: "POST",
+              body: JSON.stringify({
+                sku: modal.item.sku,
+                type: "keluar",
+                qty_before: stokSaatIni,
+                qty_change: -qty,
+                qty_after: stokBaru,
+                note,
+              }),
+            });
+          }, "Barang keluar dicatat, stok diperbarui")
         }
       />
     );

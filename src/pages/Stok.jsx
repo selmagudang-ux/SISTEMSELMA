@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Search, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle2, MinusCircle } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtTgl } from "../lib/api";
 
-export default function Stok({ sub, skuMaster, penempatan, stockHistory }) {
+export default function Stok({ sub, skuMaster, penempatan, stockHistory, setModal }) {
+  if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "hitung") return <HitungQty skuMaster={skuMaster} penempatan={penempatan} />;
   if (sub === "riwayat") return <RiwayatStok stockHistory={stockHistory} />;
   return <StokBarang skuMaster={skuMaster} />;
@@ -46,6 +47,55 @@ function StokBarang({ skuMaster }) {
                   <span className="text-sm font-semibold text-slate-200">{s.stok}</span>
                 )}
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BarangKeluar({ skuMaster, setModal }) {
+  const [q, setQ] = useState("");
+  const sorted = [...skuMaster]
+    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => (b.stok || 0) - (a.stok || 0));
+
+  return (
+    <div>
+      <PageHeader
+        title="Barang Keluar"
+        description="Catat pengurangan stok di luar alur Marketplace — misalnya terjual langsung, rusak, hilang, atau retur ke supplier."
+      />
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+      {sorted.length === 0 ? (
+        <EmptyState label="Belum ada data stok." />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {sorted.map((s, i) => (
+            <div
+              key={s.id}
+              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <div>
+                <div className="font-mono text-xs text-slate-300">{s.sku}</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Stok: {s.stok || 0}</div>
+              </div>
+              <button
+                disabled={!s.stok || s.stok <= 0}
+                onClick={() => setModal({ type: "barang-keluar", item: s })}
+                className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <MinusCircle size={13} /> Catat Keluar
+              </button>
             </div>
           ))}
         </div>

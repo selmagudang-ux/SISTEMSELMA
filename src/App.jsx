@@ -247,10 +247,10 @@ function MainApp({ session, onLogout }) {
                 <SkuHarga sub={nav.sub || "buat"} items={items} skuMaster={skuMaster} setModal={setModal} />
               )}
               {nav.menu === "stok" && (
-                <Stok sub={nav.sub || "barang"} skuMaster={skuMaster} penempatan={penempatan} stockHistory={stockHistory} />
+                <Stok sub={nav.sub || "barang"} skuMaster={skuMaster} penempatan={penempatan} stockHistory={stockHistory} setModal={setModal} />
               )}
               {nav.menu === "rak" && (
-                <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} setModal={setModal} />
+                <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />
               )}
               {nav.menu === "cetak-label" && (
                 <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} />

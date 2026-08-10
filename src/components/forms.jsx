@@ -318,6 +318,81 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
   );
 }
 
+export function BarangKeluarForm({ item, onClose, onSubmit, saving }) {
+  const [qty, setQty] = useState(1);
+  const [alasan, setAlasan] = useState("terjual-langsung");
+  const [catatan, setCatatan] = useState("");
+
+  const ALASAN_OPTIONS = [
+    { key: "terjual-langsung", label: "Terjual di luar sistem" },
+    { key: "rusak", label: "Rusak / Cacat" },
+    { key: "hilang", label: "Hilang" },
+    { key: "retur-supplier", label: "Retur ke Supplier" },
+    { key: "lainnya", label: "Lainnya" },
+  ];
+
+  const stokBaru = Math.max((item.stok || 0) - (Number(qty) || 0), 0);
+  const valid = qty > 0 && qty <= (item.stok || 0);
+
+  return (
+    <ModalShell title={`Barang Keluar — ${item.sku}`} onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">Stok saat ini</div>
+        <div className="font-mono text-sm text-amber-400">{item.stok || 0}</div>
+      </div>
+
+      <Field label="Jumlah Keluar">
+        <input
+          type="number"
+          min="1"
+          max={item.stok || 0}
+          className={inputClass}
+          value={qty}
+          onChange={(e) => setQty(Number(e.target.value))}
+        />
+      </Field>
+
+      <Field label="Alasan">
+        <select value={alasan} onChange={(e) => setAlasan(e.target.value)} className={inputClass}>
+          {ALASAN_OPTIONS.map((a) => (
+            <option key={a.key} value={a.key}>{a.label}</option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Catatan (opsional)">
+        <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Detail tambahan…" />
+      </Field>
+
+      {!valid && qty > (item.stok || 0) && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>Jumlah keluar tidak boleh melebihi stok yang tersedia ({item.stok || 0}).</div>
+        </div>
+      )}
+
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">Stok setelah dikurangi</div>
+        <div className="font-mono text-sm text-slate-200">
+          {item.stok || 0} - {qty || 0} = {stokBaru}
+        </div>
+      </div>
+
+      <button
+        disabled={!valid || saving}
+        onClick={() => {
+          const alasanLabel = ALASAN_OPTIONS.find((a) => a.key === alasan)?.label || alasan;
+          const note = catatan ? `${alasanLabel} — ${catatan}` : alasanLabel;
+          onSubmit(Number(qty), note);
+        }}
+        className="w-full bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Catat Barang Keluar"}
+      </button>
+    </ModalShell>
+  );
+}
+
 export function TambahRakForm({ onClose, onSubmit, saving }) {
   const [code, setCode] = useState("");
   const [meja, setMeja] = useState("");
