@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { ChevronDown, Warehouse, X, Menu } from "lucide-react";
 import { NAV } from "../lib/constants";
 
-export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen }) {
+export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen, badges = {} }) {
   const [expanded, setExpanded] = useState(() => new Set([active.menu]));
 
   // Pastikan grup dari menu aktif selalu terbuka.
@@ -78,6 +78,11 @@ export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen 
                 >
                   <Icon size={16} className="flex-shrink-0" />
                   <span className="flex-1 text-left">{item.label}</span>
+                  {typeof badges[item.key] === "number" && badges[item.key] > 0 && (
+                    <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+                      {badges[item.key]}
+                    </span>
+                  )}
                   {hasChildren && (
                     <ChevronDown
                       size={14}

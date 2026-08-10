@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Plus, AlertCircle, Loader2 } from "lucide-react";
 import { sb } from "./lib/api";
 import { STAGE_ORDER, findNavLabel } from "./lib/constants";
@@ -35,6 +35,7 @@ export default function SistemSelmaApp() {
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
+  const hasNotifiedRef = useRef(false);
 
   const showToast = (msg, kind = "ok") => {
     setToast({ msg, kind });
@@ -110,12 +111,30 @@ export default function SistemSelmaApp() {
     return acc;
   }, {});
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
+  const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
+  const sidebarBadges = { "data-barang": belumSelesaiCount };
+
+  // Notif sekali saat data pertama kali selesai dimuat (bukan tiap reload manual).
+  useEffect(() => {
+    if (!loading && !hasNotifiedRef.current && items.length > 0) {
+      hasNotifiedRef.current = true;
+      if (belumSelesaiCount > 0) {
+        showToast(`Ada ${belumSelesaiCount} barang yang belum selesai`, "warn");
+      }
+    }
+  }, [loading, items, belumSelesaiCount]);
 
   const { menuLabel, subLabel } = findNavLabel(nav.menu, nav.sub);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
-      <Sidebar active={nav} onNavigate={navigate} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
+      <Sidebar
+        active={nav}
+        onNavigate={navigate}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        badges={sidebarBadges}
+      />
 
       <div className="flex-1 min-w-0">
         {/* Header */}
@@ -222,7 +241,11 @@ export default function SistemSelmaApp() {
       {toast && (
         <div
           className={`fixed bottom-5 right-5 px-4 py-3 rounded-lg text-sm font-medium shadow-xl z-50 ${
-            toast.kind === "ok" ? "bg-emerald-500 text-slate-950" : "bg-red-500 text-white"
+            toast.kind === "ok"
+              ? "bg-emerald-500 text-slate-950"
+              : toast.kind === "warn"
+              ? "bg-amber-500 text-slate-950"
+              : "bg-red-500 text-white"
           }`}
         >
           {toast.msg}
