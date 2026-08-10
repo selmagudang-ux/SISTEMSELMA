@@ -96,17 +96,23 @@ export default function Sidebar({ active, onNavigate, mobileOpen, setMobileOpen,
                     {item.children.map((child) => {
                       const isActiveChild =
                         isActiveGroup && active.sub === child.key;
+                      const childBadge = badges[`${item.key}.${child.key}`];
                       return (
                         <button
                           key={child.key}
                           onClick={() => go(item.key, child.key)}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-md text-[13px] transition ${
+                          className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[13px] transition ${
                             isActiveChild
                               ? "bg-amber-500/15 text-amber-400 font-medium"
                               : "text-slate-500 hover:text-slate-200 hover:bg-slate-900"
                           }`}
                         >
-                          {child.label}
+                          <span className="flex-1">{child.label}</span>
+                          {typeof childBadge === "number" && childBadge > 0 && (
+                            <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                              {childBadge}
+                            </span>
+                          )}
                         </button>
                       );
                     })}

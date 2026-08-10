@@ -112,7 +112,17 @@ export default function SistemSelmaApp() {
   }, {});
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
   const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
-  const sidebarBadges = { "data-barang": belumSelesaiCount };
+  const sidebarBadges = {
+    "sku-harga": stageCounts.sku,
+    "sku-harga.buat": stageCounts.sku,
+    rak: stageCounts.rak,
+    "rak.tempatkan": stageCounts.rak,
+    foto: stageCounts.sample + stageCounts.verifikasi,
+    "foto.sample": stageCounts.sample,
+    "foto.pemotretan": stageCounts.verifikasi,
+    marketplace: stageCounts.marketplace,
+    "marketplace.belum": stageCounts.marketplace,
+  };
   const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
     .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
     .filter((s) => s.count > 0);
