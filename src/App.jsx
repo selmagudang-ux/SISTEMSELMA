@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Plus, AlertCircle, Loader2 } from "lucide-react";
 import { sb } from "./lib/api";
-import { STAGE_ORDER, findNavLabel } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel } from "./lib/constants";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
 
@@ -37,9 +37,9 @@ export default function SistemSelmaApp() {
   const [saving, setSaving] = useState(false);
   const hasNotifiedRef = useRef(false);
 
-  const showToast = (msg, kind = "ok") => {
+  const showToast = (msg, kind = "ok", duration = 3200) => {
     setToast({ msg, kind });
-    setTimeout(() => setToast(null), 3200);
+    setTimeout(() => setToast(null), duration);
   };
 
   const navigate = (menu, sub) => setNav({ menu, sub });
@@ -113,13 +113,19 @@ export default function SistemSelmaApp() {
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
   const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
   const sidebarBadges = { "data-barang": belumSelesaiCount };
+  const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
+    .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
+    .filter((s) => s.count > 0);
 
   // Notif sekali saat data pertama kali selesai dimuat (bukan tiap reload manual).
   useEffect(() => {
     if (!loading && !hasNotifiedRef.current && items.length > 0) {
       hasNotifiedRef.current = true;
       if (belumSelesaiCount > 0) {
-        showToast(`Ada ${belumSelesaiCount} barang yang belum selesai`, "warn");
+        const rincian = belumSelesaiBreakdown
+          .map((s) => `${s.count} di ${s.label}`)
+          .join(", ");
+        showToast(`${belumSelesaiCount} barang belum selesai: ${rincian}`, "warn", 6000);
       }
     }
   }, [loading, items, belumSelesaiCount]);
@@ -240,7 +246,7 @@ export default function SistemSelmaApp() {
 
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 px-4 py-3 rounded-lg text-sm font-medium shadow-xl z-50 ${
+          className={`fixed bottom-5 right-5 max-w-xs px-4 py-3 rounded-lg text-sm font-medium shadow-xl z-50 ${
             toast.kind === "ok"
               ? "bg-emerald-500 text-slate-950"
               : toast.kind === "warn"
