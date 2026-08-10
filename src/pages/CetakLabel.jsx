@@ -46,6 +46,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
     tinggiLabel: 46,
     gapX: 2,
     gapY: 2,
+    spasiBaris: 2,
     border: true,
   });
 
@@ -328,6 +329,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
               ["tinggiLabel", "Tinggi Label (mm)"],
               ["gapX", "Jarak Kolom (mm)"],
               ["gapY", "Jarak Baris (mm)"],
+              ["spasiBaris", "Jarak Antar Tulisan (mm)"],
             ].map(([key, label]) => (
               <label key={key} className="block">
                 <div className="text-[11px] text-slate-500 mb-1">{label}</div>
@@ -390,7 +392,8 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
+            gap: ${layout.spasiBaris}mm;
             break-inside: avoid;
             overflow: hidden;
             font-family: Arial, Helvetica, sans-serif;
