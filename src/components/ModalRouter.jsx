@@ -1,3 +1,4 @@
+import { Trash2, AlertTriangle } from "lucide-react";
 import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor } from "../lib/api";
@@ -118,6 +119,76 @@ export default function ModalRouter({
               <span className="text-slate-200 font-mono text-xs">{val}</span>
             </div>
           ))}
+        </div>
+        <button
+          onClick={() => setModal({ type: "hapus-item", item })}
+          className="w-full mt-3 flex items-center justify-center gap-1.5 border border-red-500/30 text-red-300 hover:bg-red-500/10 text-xs font-semibold py-2.5 rounded-lg"
+        >
+          <Trash2 size={14} /> Hapus Barang
+        </button>
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "hapus-item") {
+    const item = modal.item;
+    const meta = STAGE_META[item.stage];
+    // Stok baru masuk ke sku_master begitu tahap "sku" selesai (stage sudah lewat "sku").
+    const stokSudahMasuk = !!item.sku && item.stage !== "sku";
+    return (
+      <ModalShell title="Hapus Barang" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Barang <span className="font-mono">{item.sku || `#${item.id.slice(0, 8)}`}</span> ({item.jumlah}x,
+            tahap {meta?.label || item.stage}) akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.
+            {stokSudahMasuk && (
+              <div className="mt-1.5 text-red-200/90">
+                Stok SKU ini sudah tercatat — stok akan otomatis dikurangi {item.jumlah}x dan dicatat di riwayat stok.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                if (stokSudahMasuk) {
+                  const existing = skuMaster.find((s) => s.sku === item.sku);
+                  if (existing) {
+                    const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
+                    await sb(`sku_master?id=eq.${existing.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ stok: stokBaru }),
+                    });
+                    await sb("stock_history", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        sku: item.sku,
+                        type: "keluar",
+                        qty_before: existing.stok,
+                        qty_change: -(item.jumlah || 0),
+                        qty_after: stokBaru,
+                        note: "Barang dihapus dari sistem",
+                      }),
+                    });
+                  }
+                }
+                await sb(`items?id=eq.${item.id}`, { method: "DELETE" });
+              }, "Barang dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
         </div>
       </ModalShell>
     );
