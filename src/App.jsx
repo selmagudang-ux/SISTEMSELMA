@@ -5,7 +5,7 @@ import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus } from "./lib/const
 import { getSession, logout } from "./lib/auth";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
-import Login from "./pages/Logggggin";
+import Login from "./pages/Login";
 
 import Dashboard from "./pages/Dashboard";
 import BarangMasuk from "./pages/BarangMasuk";
