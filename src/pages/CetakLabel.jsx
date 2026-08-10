@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
-import { PageHeader, EmptyState } from "../components/ui";
+import { EmptyState } from "../components/ui";
 import { priceCode } from "../lib/api";
 
 // Cari kode rak untuk sebuah SKU dari data penempatan (ambil yang paling baru).
@@ -224,11 +224,6 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
 
   return (
     <div>
-      <PageHeader
-        title="Cetak Label Harga"
-        description="Pilih barang, SKU, atau rak, atur jumlah label, warna teks, dan catatan, lalu cetak ke kertas stiker A4."
-      />
-
       {/* ====== Area layar (tidak ikut tercetak) ====== */}
       <div className="print:hidden">
         <div className="flex gap-2 mb-4">
