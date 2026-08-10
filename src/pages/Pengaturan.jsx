@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Trash2, Search, AlertTriangle } from "lucide-react";
 import { PageHeader, Field, inputClass, EmptyState } from "../components/ui";
 import { sb, calcHarga, fmtRp } from "../lib/api";
 
@@ -89,6 +90,102 @@ export default function Pengaturan({ settings, reload, showToast }) {
           </div>
         </div>
       </div>
+
+      <SkuYatimCleaner reload={reload} showToast={showToast} />
+    </div>
+  );
+}
+
+// Pembersihan SKU "yatim" — sisa data sku_master (& penempatan raknya) dari barang
+// yang sudah dihapus sebelum fitur pembersihan otomatis ada. Hanya SKU yang benar-benar
+// sudah tidak dipakai barang manapun yang akan dihapus.
+function SkuYatimCleaner({ reload, showToast }) {
+  const [checking, setChecking] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [orphans, setOrphans] = useState(null); // null = belum dicek, [] = dicek & bersih, [...] = ketemu
+
+  const cek = async () => {
+    setChecking(true);
+    setOrphans(null);
+    try {
+      const [itemsRes, skuRes] = await Promise.all([
+        sb("items?select=sku"),
+        sb("sku_master?select=id,sku,stok&order=sku"),
+      ]);
+      const dipakai = new Set((itemsRes || []).filter((i) => i.sku).map((i) => i.sku));
+      const yatim = (skuRes || []).filter((s) => !dipakai.has(s.sku));
+      setOrphans(yatim);
+      if (yatim.length === 0) showToast("Tidak ada SKU yatim — data sudah bersih");
+    } catch (e) {
+      showToast(e.message || "Gagal mengecek data", "err");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const bersihkan = async () => {
+    if (!orphans || orphans.length === 0) return;
+    setCleaning(true);
+    try {
+      for (const s of orphans) {
+        await sb(`penempatan?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
+        await sb(`sku_master?id=eq.${s.id}`, { method: "DELETE" });
+      }
+      showToast(`${orphans.length} SKU yatim dibersihkan`);
+      setOrphans(null);
+      await reload();
+    } catch (e) {
+      showToast(e.message || "Gagal membersihkan data", "err");
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  const totalStokYatim = (orphans || []).reduce((a, s) => a + (s.stok || 0), 0);
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
+      <div className="text-sm font-semibold mb-1">Pemeliharaan Data</div>
+      <p className="text-xs text-slate-500 mb-3 max-w-xl">
+        Cek apakah ada SKU di Master SKU yang sudah tidak punya barang sama sekali (misalnya sisa dari barang yang
+        dihapus sebelum sistem membersihkannya otomatis). SKU seperti ini bikin angka di Dashboard (Total SKU, Total
+        Stok) terlihat tidak sesuai dengan Data Barang.
+      </p>
+
+      <button
+        onClick={cek}
+        disabled={checking}
+        className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700"
+      >
+        <Search size={14} /> {checking ? "Mengecek…" : "Cek SKU Yatim"}
+      </button>
+
+      {orphans && orphans.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
+            <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+            <div>
+              Ditemukan <span className="font-semibold">{orphans.length} SKU</span> yang sudah tidak punya barang
+              (total stok tercatat {totalStokYatim}x). Hapus SKU ini beserta data penempatan raknya?
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto border border-slate-800 rounded-lg mb-3 divide-y divide-slate-800">
+            {orphans.map((s) => (
+              <div key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="font-mono text-xs text-slate-200">{s.sku}</span>
+                <span className="text-[11px] text-slate-500">Stok: {s.stok}</span>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={bersihkan}
+            disabled={cleaning}
+            className="flex items-center gap-1.5 bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg"
+          >
+            <Trash2 size={14} /> {cleaning ? "Membersihkan…" : `Hapus ${orphans.length} SKU Yatim`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
