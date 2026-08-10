@@ -3,12 +3,7 @@ import { PageHeader, Field, inputClass, EmptyState } from "../components/ui";
 import { sb, calcHarga, fmtRp } from "../lib/api";
 
 const FIELDS = [
-  { key: "dasar_tambahan", label: "Tambahan Harga Dasar (Rp)", hint: "Ditambahkan ke harga asli sebelum hitung HPP." },
-  { key: "hpp_percent", label: "HPP (%)", hint: "Persentase dari harga dasar." },
-  { key: "grosir_percent", label: "Grosir (%)", hint: "Persentase dari HPP." },
-  { key: "tengah_multiplier", label: "Pengali Harga Tengah", hint: "Dikali dengan HPP." },
-  { key: "ecer_multiplier", label: "Pengali Harga Ecer", hint: "Dikali dengan Harga Tengah." },
-  { key: "round_to", label: "Pembulatan (Rp)", hint: "Harga dibulatkan ke kelipatan ini." },
+  { key: "round_to", label: "Pembulatan (Rp)", hint: "Harga tengah/ecer/grosir dibulatkan ke kelipatan ini." },
 ];
 
 export default function Pengaturan({ settings, reload, showToast }) {
@@ -36,11 +31,6 @@ export default function Pengaturan({ settings, reload, showToast }) {
       await sb(`settings?id=eq.${settings.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          dasar_tambahan: Number(form.dasar_tambahan),
-          hpp_percent: Number(form.hpp_percent),
-          grosir_percent: Number(form.grosir_percent),
-          tengah_multiplier: Number(form.tengah_multiplier),
-          ecer_multiplier: Number(form.ecer_multiplier),
           round_to: Number(form.round_to),
         }),
       });
@@ -57,10 +47,17 @@ export default function Pengaturan({ settings, reload, showToast }) {
 
   return (
     <div>
-      <PageHeader title="Pengaturan" description="Atur persentase markup yang dipakai untuk menghitung harga jual di seluruh SKU." />
+      <PageHeader title="Pengaturan" description="Aturan harga jual sudah tetap (lihat rincian di bawah) — di sini cuma atur pembulatan." />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-3xl">
         <div className="rounded-xl border border-slate-800 p-4">
+          <div className="text-xs text-slate-500 mb-3 space-y-1">
+            <div>• Harga Asli minimal Rp 7.000</div>
+            <div>• HPP = Harga Asli + 10%</div>
+            <div>• Tengah = HPP × 3 (HPP &lt; 10rb) / × 2,5 (HPP &lt; 20rb) / × 2 (HPP ≥ 20rb)</div>
+            <div>• Ecer = Tengah × 2</div>
+            <div>• Grosir = HPP + 50%</div>
+          </div>
           {FIELDS.map((f) => (
             <Field key={f.key} label={f.label}>
               <input
