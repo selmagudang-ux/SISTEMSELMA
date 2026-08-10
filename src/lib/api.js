@@ -74,6 +74,13 @@ export function calcHarga(hargaAsli, settings) {
 export const fmtRp = (n) =>
   "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
 
+// Kode harga untuk label: ambil ribuan tiap harga (000 dibuang), gabung jadi satu string.
+// Contoh: grosir 5.000, tengah 10.000, ecer 20.000 -> "5" + "10" + "20" = "51020"
+export function priceCode(grosir, tengah, ecer) {
+  const part = (n) => String(Math.round((Number(n) || 0) / 1000));
+  return `${part(grosir)}${part(tengah)}${part(ecer)}`;
+}
+
 export const fmtTgl = (iso) => {
   if (!iso) return "—";
   try {

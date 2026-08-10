@@ -11,6 +11,7 @@ import DataBarang from "./pages/DataBarang";
 import SkuHarga from "./pages/SkuHarga";
 import Stok from "./pages/Stok";
 import Rak from "./pages/Rak";
+import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
 import Laporan from "./pages/Laporan";
@@ -220,6 +221,9 @@ export default function SistemSelmaApp() {
               )}
               {nav.menu === "rak" && (
                 <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} setModal={setModal} />
+              )}
+              {nav.menu === "cetak-label" && (
+                <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} />
               )}
               {nav.menu === "foto" && (
                 <FotoProduk sub={nav.sub || "sample"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
