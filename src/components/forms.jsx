@@ -277,7 +277,6 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
         <input
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={handleFile}
           className={inputClass}
         />

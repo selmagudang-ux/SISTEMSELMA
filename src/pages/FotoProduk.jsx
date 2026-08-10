@@ -1,9 +1,8 @@
 import { Package, ImageOff } from "lucide-react";
-import { PageHeader, EmptyState, ComingSoon } from "../components/ui";
+import { PageHeader, EmptyState } from "../components/ui";
 
 export default function FotoProduk({ sub, items, quickAdvance, setModal }) {
   if (sub === "pemotretan") return <Pemotretan items={items} setModal={setModal} />;
-  if (sub === "editing") return <Editing />;
   return <SampleFoto items={items} quickAdvance={quickAdvance} />;
 }
 
@@ -80,18 +79,6 @@ function Pemotretan({ items, setModal }) {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function Editing() {
-  return (
-    <div>
-      <PageHeader title="Editing" description="Edit foto produk sebelum diupload ke marketplace." />
-      <ComingSoon
-        title="Fitur Editing Foto segera hadir"
-        description="Nanti di sini bisa crop, kasih background, dan watermark foto produk langsung dari sistem, tanpa perlu aplikasi lain."
-      />
     </div>
   );
 }

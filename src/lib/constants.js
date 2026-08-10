@@ -87,7 +87,6 @@ export const NAV = [
     children: [
       { key: "sample", label: "Sample Foto" },
       { key: "pemotretan", label: "Pemotretan" },
-      { key: "editing", label: "Editing" },
     ],
   },
   {
