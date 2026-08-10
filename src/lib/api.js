@@ -102,3 +102,17 @@ export function labelFor(master, tipe, kode) {
   const found = (master[tipe] || []).find((m) => m.kode === kode);
   return found ? found.label : kode || "—";
 }
+
+// Dua SKU dianggap "produk yang sama" (boleh berbagi rak) kalau semua atribut
+// pembentuknya sama PERSIS kecuali ukuran. Butuh data sku_master untuk
+// membandingkan field-nya (kode SKU sendiri sudah menyertakan ukuran di dalamnya).
+const FIELD_PEMBANDING = ["bahan", "peruntukan", "kategori", "subkategori", "model", "warna"];
+
+export function sameProdukKecualiUkuran(skuA, skuB, skuMaster) {
+  if (!skuA || !skuB) return false;
+  if (skuA === skuB) return true;
+  const a = (skuMaster || []).find((s) => s.sku === skuA);
+  const b = (skuMaster || []).find((s) => s.sku === skuB);
+  if (!a || !b) return false;
+  return FIELD_PEMBANDING.every((f) => (a[f] || "") === (b[f] || ""));
+}

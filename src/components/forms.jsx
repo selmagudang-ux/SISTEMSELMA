@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { ModalShell, Field, Combobox, inputClass } from "./ui";
-import { fmtRp, calcHarga } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
 
 export function BarangMasukForm({ onClose, onSubmit, saving, presetStatus }) {
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
@@ -165,20 +165,22 @@ export function TambahSkuLamaForm({ item, skuMaster, onClose, onSubmit, saving }
   );
 }
 
-export function TempatkanRakForm({ item, rakList, penempatan, onClose, onSubmit, saving }) {
+export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose, onSubmit, saving }) {
   const [rakCode, setRakCode] = useState("");
   const [qty, setQty] = useState(item.jumlah || 1);
   const [confirmingOverride, setConfirmingOverride] = useState(false);
 
-  // Aturan: 1 rak hanya untuk 1 SKU. Penempatan terbaru untuk rak yang sama
-  // dianggap sebagai "SKU yang sedang menempati" rak itu.
-  // (penempatan sudah diurutkan created_at desc saat dimuat, jadi .find = data terbaru)
+  // Aturan: 1 rak untuk 1 SKU — KECUALI kalau SKU yang menempati rak itu adalah
+  // produk yang sama dan cuma beda ukuran, itu boleh digabung di rak yang sama.
+  // Penempatan terbaru untuk rak yang sama dianggap "SKU yang sedang menempati"
+  // (penempatan sudah diurutkan created_at desc saat dimuat, jadi .find = data terbaru).
   const occupant = useMemo(() => {
     if (!rakCode) return null;
     return (penempatan || []).find((p) => p.rak_code === rakCode) || null;
   }, [rakCode, penempatan]);
 
-  const conflict = occupant && occupant.sku !== item.sku;
+  const bolehGabung = occupant && sameProdukKecualiUkuran(occupant.sku, item.sku, skuMaster);
+  const conflict = occupant && occupant.sku !== item.sku && !bolehGabung;
 
   const handleClick = () => {
     if (conflict && !confirmingOverride) {
@@ -195,8 +197,9 @@ export function TempatkanRakForm({ item, rakList, penempatan, onClose, onSubmit,
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div>
             Rak <span className="font-mono">{rakCode}</span> saat ini berisi SKU{" "}
-            <span className="font-mono">{occupant.sku}</span>. Menempatkan SKU{" "}
-            <span className="font-mono">{item.sku}</span> di sini akan menimpanya (satu rak hanya untuk satu SKU).
+            <span className="font-mono">{occupant.sku}</span>, produk yang berbeda. Menempatkan SKU{" "}
+            <span className="font-mono">{item.sku}</span> di sini akan menimpanya (satu rak hanya untuk satu SKU,
+            kecuali produk sama dan cuma beda ukuran).
           </div>
         </div>
         <div className="flex gap-2">
@@ -229,12 +232,21 @@ export function TempatkanRakForm({ item, rakList, penempatan, onClose, onSubmit,
           ))}
         </select>
       </Field>
+      {bolehGabung && (
+        <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> — produk yang sama, cuma
+            beda ukuran. Boleh digabung, tidak akan menimpa.
+          </div>
+        </div>
+      )}
       {conflict && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
-            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span>. Akan diminta konfirmasi
-            sebelum menimpa.
+            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> (produk berbeda). Akan
+            diminta konfirmasi sebelum menimpa.
           </div>
         </div>
       )}

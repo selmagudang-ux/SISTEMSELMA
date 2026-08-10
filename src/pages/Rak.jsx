@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowDownUp, CheckCircle2 } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
-import { fmtTgl } from "../lib/api";
+import { fmtTgl, sameProdukKecualiUkuran } from "../lib/api";
 
 // Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
 function rakForSku(sku, penempatan) {
@@ -24,9 +24,9 @@ export function cariPerluDitempatkanUlang(skuMaster, penempatan) {
     const rakSeharusnya = rakForSku(s.sku, penempatan);
     if (!rakSeharusnya) return; // belum pernah ditempatkan di rak sama sekali
     const skuSekarang = skuForRak(rakSeharusnya, penempatan);
-    if (skuSekarang && skuSekarang !== s.sku) {
-      out.push({ sku: s.sku, stok: s.stok, rakLama: rakSeharusnya, ditimpaOleh: skuSekarang });
-    }
+    if (!skuSekarang || skuSekarang === s.sku) return;
+    if (sameProdukKecualiUkuran(skuSekarang, s.sku, skuMaster)) return; // cuma beda ukuran, boleh gabung
+    out.push({ sku: s.sku, stok: s.stok, rakLama: rakSeharusnya, ditimpaOleh: skuSekarang });
   });
   return out;
 }
@@ -191,14 +191,19 @@ function PenempatanBarang({ penempatan, rak, skuMaster }) {
     return arr;
   }, [penempatan, sortBy]);
 
-  // Rak dianggap kosong kalau tidak ada penempatan terbaru di situ, atau SKU yang
-  // terakhir menempatinya sudah habis stoknya (sudah dipindah/keluar semua).
+  // Rak dianggap kosong kalau dari SEMUA SKU yang pernah ditempatkan di situ
+  // (bisa lebih dari satu kalau berbagi rak antar ukuran), tidak ada satupun
+  // yang stoknya masih > 0.
   const rakKosong = useMemo(() => {
     return (rak || []).filter((r) => {
-      const skuDiRak = skuForRak(r.code, penempatan);
-      if (!skuDiRak) return true;
-      const skuData = (skuMaster || []).find((s) => s.sku === skuDiRak);
-      return !skuData || !skuData.stok || skuData.stok <= 0;
+      const skuDiRakIni = new Set(
+        (penempatan || []).filter((p) => p.rak_code === r.code).map((p) => p.sku)
+      );
+      if (skuDiRakIni.size === 0) return true;
+      return ![...skuDiRakIni].some((sku) => {
+        const skuData = (skuMaster || []).find((s) => s.sku === sku);
+        return skuData && skuData.stok > 0;
+      });
     });
   }, [rak, penempatan, skuMaster]);
 

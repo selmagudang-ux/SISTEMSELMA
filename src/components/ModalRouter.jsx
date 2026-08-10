@@ -368,6 +368,7 @@ export default function ModalRouter({
         item={modal.item}
         rakList={rakList}
         penempatan={penempatan}
+        skuMaster={skuMaster}
         onClose={close}
         saving={saving}
         onSubmit={(rakCode, qty) =>
@@ -392,6 +393,7 @@ export default function ModalRouter({
         item={modal.item}
         rakList={rakList}
         penempatan={penempatan}
+        skuMaster={skuMaster}
         onClose={close}
         saving={saving}
         onSubmit={(rakCode, qty) =>
