@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Search, AlertTriangle, CheckCircle2, MinusCircle } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { fmtTgl } from "../lib/api";
+import { fmtTgl, downloadCsv } from "../lib/api";
 
 export default function Stok({ sub, skuMaster, penempatan, stockHistory, setModal }) {
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
@@ -16,9 +16,32 @@ function StokBarang({ skuMaster }) {
     .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (b.stok || 0) - (a.stok || 0));
 
+  const handleDownload = () => {
+    downloadCsv(
+      `stok-barang-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "sku", label: "SKU" },
+        { key: "stok", label: "Stok" },
+      ],
+      sorted
+    );
+  };
+
   return (
     <div>
-      <PageHeader title="Stok Barang" description="Level stok terkini untuk setiap SKU." />
+      <PageHeader
+        title="Stok Barang"
+        description="Level stok terkini untuk setiap SKU."
+        action={
+          <button
+            onClick={handleDownload}
+            disabled={sorted.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Download CSV
+          </button>
+        }
+      />
       <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
         <Search size={14} className="text-slate-500" />
         <input
@@ -163,9 +186,37 @@ function HitungQty({ skuMaster, penempatan }) {
 }
 
 function RiwayatStok({ stockHistory }) {
+  const handleDownload = () => {
+    downloadCsv(
+      `riwayat-stok-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "waktu", label: "Waktu" },
+        { key: "sku", label: "SKU" },
+        { key: "type", label: "Tipe" },
+        { key: "qty_before", label: "Sebelum" },
+        { key: "qty_change", label: "Perubahan" },
+        { key: "qty_after", label: "Sesudah" },
+        { key: "note", label: "Catatan" },
+      ],
+      stockHistory.map((h) => ({ ...h, waktu: fmtTgl(h.created_at) }))
+    );
+  };
+
   return (
     <div>
-      <PageHeader title="Riwayat Stok" description="Catatan setiap perubahan stok — masuk, keluar, atau penyesuaian." />
+      <PageHeader
+        title="Riwayat Stok"
+        description="Catatan setiap perubahan stok — masuk, keluar, atau penyesuaian."
+        action={
+          <button
+            onClick={handleDownload}
+            disabled={stockHistory.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Download CSV
+          </button>
+        }
+      />
       {stockHistory.length === 0 ? (
         <EmptyState label="Belum ada riwayat stok." />
       ) : (

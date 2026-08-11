@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Search, Boxes } from "lucide-react";
+import { Search, Boxes, Download } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { fmtRp } from "../lib/api";
+import { fmtRp, downloadCsv } from "../lib/api";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
@@ -46,9 +46,38 @@ function BuatSkuList({ items, setModal }) {
 function MasterSku({ skuMaster, setModal }) {
   const [q, setQ] = useState("");
   const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+
+  const handleDownload = () => {
+    downloadCsv(
+      `master-sku-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "sku", label: "SKU" },
+        { key: "stok", label: "Stok" },
+        { key: "harga_asli", label: "Harga Asli" },
+        { key: "hpp", label: "HPP" },
+        { key: "grosir", label: "Grosir" },
+        { key: "tengah", label: "Tengah" },
+        { key: "ecer", label: "Ecer" },
+      ],
+      filtered
+    );
+  };
+
   return (
     <div>
-      <PageHeader title="Master SKU" description="Semua kode SKU yang pernah dibuat, lengkap dengan stok dan harga." />
+      <PageHeader
+        title="Master SKU"
+        description="Semua kode SKU yang pernah dibuat, lengkap dengan stok dan harga."
+        action={
+          <button
+            onClick={handleDownload}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Download CSV
+          </button>
+        }
+      />
       <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
         <Search size={14} className="text-slate-500" />
         <input

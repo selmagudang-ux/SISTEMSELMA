@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Search, Camera, Trash2 } from "lucide-react";
+import { Search, Camera, Trash2, Download } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
+import { downloadCsv } from "../lib/api";
 import { rakForSku } from "./Rak";
 
 export default function DataBarang({ items, penempatan, setModal }) {
@@ -20,11 +21,42 @@ export default function DataBarang({ items, penempatan, setModal }) {
     );
   });
 
+  const handleDownload = () => {
+    downloadCsv(
+      `data-barang-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "tanggal", label: "Tanggal" },
+        { key: "sku", label: "SKU" },
+        { key: "jumlah", label: "Jumlah" },
+        { key: "gudang", label: "Gudang" },
+        { key: "rak", label: "Rak" },
+        { key: "tahap", label: "Tahap" },
+      ],
+      filtered.map((i) => ({
+        tanggal: i.tanggal,
+        sku: i.sku || "",
+        jumlah: i.jumlah,
+        gudang: i.gudang || "",
+        rak: rakSaatIni(i) || "",
+        tahap: STAGE_META[i.stage]?.label || i.stage,
+      }))
+    );
+  };
+
   return (
     <div>
       <PageHeader
         title="Data Barang"
         description="Cari dan lihat detail semua barang yang tercatat di sistem."
+        action={
+          <button
+            onClick={handleDownload}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Download CSV
+          </button>
+        }
       />
 
       <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">

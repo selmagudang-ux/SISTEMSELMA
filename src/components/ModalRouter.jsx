@@ -411,7 +411,11 @@ export default function ModalRouter({
         onSubmit={(file) =>
           run(async () => {
             const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-            const path = `${modal.item.id}-${Date.now()}.${ext}`;
+            // Nama file foto dibuat dari SKU barang (bukan id internal) supaya langsung
+            // gampang dikenali di Storage. Kalau SKU-nya sama diupload ulang, filenya
+            // akan menimpa foto lama (x-upsert sudah aktif di sbUploadFoto).
+            const skuSafe = (modal.item.sku || modal.item.id).replace(/[^a-zA-Z0-9-_]/g, "-");
+            const path = `${skuSafe}.${ext}`;
             const url = await sbUploadFoto(file, path);
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",

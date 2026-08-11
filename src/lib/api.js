@@ -116,3 +116,28 @@ export function sameProdukKecualiUkuran(skuA, skuB, skuMaster) {
   if (!a || !b) return false;
   return FIELD_PEMBANDING.every((f) => (a[f] || "") === (b[f] || ""));
 }
+
+// =========================================================
+// EXPORT / DOWNLOAD DATA (CSV)
+// =========================================================
+// columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),
+// label dipakai sebagai judul kolom. rows: array of object (mis. items, sku_master, dll).
+export function downloadCsv(filename, columns, rows) {
+  const escape = (val) => {
+    const s = val === null || val === undefined ? "" : String(val);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = columns.map((c) => escape(c.label)).join(",");
+  const lines = (rows || []).map((row) => columns.map((c) => escape(row[c.key])).join(","));
+  // Tambah BOM (\uFEFF) supaya Excel langsung baca sebagai UTF-8, bukan cuma teks polos.
+  const csv = "\uFEFF" + [header, ...lines].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
