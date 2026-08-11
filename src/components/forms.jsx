@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, inputClass } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
+import { rakForSku } from "../pages/Rak";
 
 export function BarangMasukForm({ onClose, onSubmit, saving }) {
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
@@ -51,9 +52,34 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");
   const [model, setModel] = useState("1");
+  const [modelTouched, setModelTouched] = useState(false);
   const [warna, setWarna] = useState("");
   const [ukuran, setUkuran] = useState("");
   const [hargaAsli, setHargaAsli] = useState("");
+
+  // Rekomendasi nomor Model berikutnya: cari SKU lain dengan kombinasi bahan +
+  // peruntukan + kategori + subkategori yang sama, ambil nomor model tertinggi + 1.
+  // Kalau belum ada kombinasi yang sama sama sekali, rekomendasinya "1".
+  const modelSuggestion = useMemo(() => {
+    if (!bahan || !peruntukan || !kategori || !subkategori) return null;
+    const numbers = (skuMaster || [])
+      .filter(
+        (s) =>
+          s.bahan === bahan &&
+          s.peruntukan === peruntukan &&
+          s.kategori === kategori &&
+          s.subkategori === subkategori
+      )
+      .map((s) => Number(s.model))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    return String((numbers.length ? Math.max(...numbers) : 0) + 1);
+  }, [bahan, peruntukan, kategori, subkategori, skuMaster]);
+
+  // Isi otomatis field Model dengan rekomendasi selama user belum mengetik manual
+  // sendiri — begitu user ubah field Model, berhenti menimpa supaya tidak mengganggu.
+  useEffect(() => {
+    if (modelSuggestion && !modelTouched) setModel(modelSuggestion);
+  }, [modelSuggestion, modelTouched]);
 
   const ready = bahan && peruntukan && kategori && subkategori && model && warna && ukuran && hargaAsli;
   const preview =
@@ -79,7 +105,32 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
           <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} /></Field>
         </div>
         <Field label="Model (kode bebas)">
-          <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />
+          <input
+            className={inputClass}
+            value={model}
+            onChange={(e) => {
+              setModel(e.target.value);
+              setModelTouched(true);
+            }}
+          />
+          {modelSuggestion && (
+            <p className="text-[11px] text-slate-500 mt-1.5">
+              Rekomendasi nomor berikutnya untuk kombinasi ini:{" "}
+              <span className="text-amber-400 font-medium">{modelSuggestion}</span>
+              {model !== modelSuggestion && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModel(modelSuggestion);
+                    setModelTouched(false);
+                  }}
+                  className="ml-2 text-amber-400 hover:underline"
+                >
+                  Pakai
+                </button>
+              )}
+            </p>
+          )}
         </Field>
         <Field label="Harga Asli (Rp)">
           <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
@@ -204,7 +255,11 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
 }
 
 export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose, onSubmit, saving }) {
-  const [rakCode, setRakCode] = useState("");
+  // Rekomendasi rak untuk "barang lama": kalau SKU ini sudah pernah ditempatkan
+  // di rak sebelumnya, tawarkan rak yang sama itu sebagai default (penempatan
+  // sudah diurutkan created_at desc, jadi rakForSku = penempatan terbaru).
+  const rakRekomendasi = useMemo(() => rakForSku(item.sku, penempatan), [item.sku, penempatan]);
+  const [rakCode, setRakCode] = useState(() => rakRekomendasi || "");
   const [qty, setQty] = useState(item.jumlah || 1);
   const [confirmingOverride, setConfirmingOverride] = useState(false);
 
@@ -270,6 +325,20 @@ export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose
           placeholder="Ketik atau pilih rak…"
         />
       </Field>
+      {rakRekomendasi && rakCode !== rakRekomendasi && (
+        <div className="flex items-center justify-between gap-2 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <span>
+            Rekomendasi: rak <span className="font-mono">{rakRekomendasi}</span> — sebelumnya dipakai SKU ini.
+          </span>
+          <button
+            type="button"
+            onClick={() => setRakCode(rakRekomendasi)}
+            className="text-sky-300 hover:underline font-medium flex-shrink-0"
+          >
+            Pakai
+          </button>
+        </div>
+      )}
       {bolehGabung && (
         <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />

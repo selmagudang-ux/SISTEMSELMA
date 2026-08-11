@@ -180,3 +180,70 @@ export function groupByKategori(list) {
     return { kategori, groups };
   });
 }
+
+// =========================================================
+// DOWNLOAD FOTO PRODUK
+// Nama file = kode SKU. Kalau cuma 1 foto -> download langsung.
+// Kalau lebih dari 1 -> semuanya dibungkus jadi satu file ZIP
+// (pakai JSZip, dimuat lazy lewat dynamic import).
+// =========================================================
+function extFromUrl(url) {
+  const match = /\.([a-zA-Z0-9]+)(?:\?.*)?$/.exec(url || "");
+  return match ? match[1].toLowerCase() : "jpg";
+}
+
+function safeFileName(name) {
+  return (name || "foto").replace(/[^a-zA-Z0-9-_]/g, "-");
+}
+
+function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// fotos: [{ sku, url }] — url yang kosong/null otomatis dilewati.
+// opts.onProgress(done, total): dipanggil selagi tiap foto diunduh.
+export async function downloadFotos(fotos, opts = {}) {
+  const { onProgress } = opts;
+  const list = (fotos || []).filter((f) => f.url);
+  if (list.length === 0) return;
+
+  if (list.length === 1) {
+    const { sku, url } = list[0];
+    const res = await fetch(url);
+    const blob = await res.blob();
+    onProgress?.(1, 1);
+    triggerBlobDownload(blob, `${safeFileName(sku)}.${extFromUrl(url)}`);
+    return;
+  }
+
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  const namaDipakai = new Map(); // hindari nama file bentrok kalau ada SKU yang sama
+
+  let done = 0;
+  for (const { sku, url } of list) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const base = safeFileName(sku);
+      const ext = extFromUrl(url);
+      const n = (namaDipakai.get(base) || 0) + 1;
+      namaDipakai.set(base, n);
+      zip.file(n === 1 ? `${base}.${ext}` : `${base}-${n}.${ext}`, blob);
+    } catch (e) {
+      console.error("Gagal ambil foto untuk", sku, e);
+    }
+    done += 1;
+    onProgress?.(done, list.length);
+  }
+
+  const zipBlob = await zip.generateAsync({ type: "blob" });
+  triggerBlobDownload(zipBlob, `foto-produk-${new Date().toISOString().slice(0, 10)}.zip`);
+}

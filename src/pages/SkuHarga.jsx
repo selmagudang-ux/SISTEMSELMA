@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Search, Boxes, Download, FileDown, Loader2 } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2 } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { fmtRp, downloadCsv, groupByKategori } from "../lib/api";
-import { generateKatalogPdf } from "../lib/PdfKatalog";
+import { fmtRp, downloadCsv, downloadFotos, groupByKategori } from "../lib/api";
+import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
@@ -47,6 +47,7 @@ function BuatSkuList({ items, setModal }) {
 function MasterSku({ skuMaster, items, setModal }) {
   const [q, setQ] = useState("");
   const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
+  const [unduhFoto, setUnduhFoto] = useState(null); // { done, total } selagi foto diunduh
   const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
 
   const handleDownload = () => {
@@ -78,6 +79,23 @@ function MasterSku({ skuMaster, items, setModal }) {
     }
   };
 
+  // Download foto tiap SKU yang tampil di daftar (nama file = kode SKU).
+  // Kalau cuma 1 foto -> langsung download. Kalau lebih -> dibungkus ZIP.
+  const handleDownloadFoto = async () => {
+    if (filtered.length === 0 || unduhFoto) return;
+    const fotos = filtered.map((s) => ({ sku: s.sku, url: fotoUntukSku(s.sku, items) }));
+    if (fotos.every((f) => !f.url)) {
+      alert("Tidak ada foto untuk SKU pada daftar ini.");
+      return;
+    }
+    setUnduhFoto({ done: 0, total: fotos.filter((f) => f.url).length });
+    try {
+      await downloadFotos(fotos, { onProgress: (done, total) => setUnduhFoto({ done, total }) });
+    } finally {
+      setUnduhFoto(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -91,6 +109,22 @@ function MasterSku({ skuMaster, items, setModal }) {
               className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
             >
               <Download size={14} /> Download CSV
+            </button>
+            <button
+              onClick={handleDownloadFoto}
+              disabled={filtered.length === 0 || !!unduhFoto}
+              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+            >
+              {unduhFoto ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Mengunduh foto {unduhFoto.done}/{unduhFoto.total}…
+                </>
+              ) : (
+                <>
+                  <ImageDown size={14} /> Download Foto
+                </>
+              )}
             </button>
             <button
               onClick={handleDownloadPdf}

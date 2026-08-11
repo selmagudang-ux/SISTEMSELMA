@@ -36,7 +36,9 @@ const SUBKATEGORI_BAND_H = 6;
 
 // Cari foto paling relevan untuk satu SKU: ambil dari barang (items)
 // dengan SKU yang sama, yang paling baru dan sudah punya foto_url.
-function fotoUntukSku(sku, items) {
+// Diekspor supaya halaman lain (mis. tombol "Download Foto" di Master SKU)
+// bisa pakai sumber foto yang sama persis dengan yang dipakai PDF Katalog.
+export function fotoUntukSku(sku, items) {
   const kandidat = (items || [])
     .filter((i) => i.sku === sku && i.foto_url)
     .sort(
