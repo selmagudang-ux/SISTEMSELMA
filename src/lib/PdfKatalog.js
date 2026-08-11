@@ -13,15 +13,15 @@ const PAGE_H = 297;
 const MARGIN = 12;
 const HEADER_H = 16; // tinggi pita judul di tiap halaman
 const COLS = 2;
-const ROWS = 3;
+const ROWS = 2; // dikurangi dari 3 -> 2 supaya kartu lebih tinggi, cukup ruang untuk foto persegi (1:1)
 const GUTTER = 6;
 
 const CARD_W = (PAGE_W - MARGIN * 2 - GUTTER * (COLS - 1)) / COLS;
 const CARD_H = (PAGE_H - MARGIN * 2 - HEADER_H - GUTTER * (ROWS - 1)) / ROWS;
 const IMG_PAD = 2;
 const IMG_W = CARD_W - IMG_PAD * 2;
-const IMG_H = CARD_H * 0.56;
-const IMG_ASPECT = IMG_W / IMG_H; // dipakai supaya foto tidak gepeng/melar
+const IMG_H = IMG_W; // foto persegi 1:1
+const IMG_ASPECT = IMG_W / IMG_H; // = 1 (persegi)
 
 // Cari foto paling relevan untuk satu SKU: ambil dari barang (items)
 // dengan SKU yang sama, yang paling baru dan sudah punya foto_url.
