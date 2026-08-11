@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound } from "lucide-react";
-import { PageHeader, EmptyState, Field, inputClass } from "../components/ui";
+import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb } from "../lib/api";
 import { ROLES, roleLabel } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
@@ -111,11 +111,11 @@ function UserManager({ showToast }) {
           <input type="password" className={inputClass} value={form.password} onChange={(e) => set("password", e.target.value)} autoComplete="new-password" />
         </Field>
         <Field label="Role">
-          <select className={inputClass} value={form.role} onChange={(e) => set("role", e.target.value)}>
-            {ROLES.map((r) => (
-              <option key={r.key} value={r.key}>{r.label}</option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={form.role}
+            onChange={(v) => set("role", v)}
+            options={ROLES.map((r) => ({ value: r.key, label: r.label }))}
+          />
         </Field>
         <button
           disabled={saving}

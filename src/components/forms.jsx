@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { ModalShell, Field, Combobox, inputClass } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, inputClass } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
 
 export function BarangMasukForm({ onClose, onSubmit, saving }) {
@@ -234,12 +234,12 @@ export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose
   return (
     <ModalShell title={`Tempatkan — ${item.sku}`} onClose={onClose}>
       <Field label="Rak">
-        <select value={rakCode} onChange={(e) => setRakCode(e.target.value)} className={inputClass}>
-          <option value="">Pilih rak…</option>
-          {rakList.map((r) => (
-            <option key={r.id} value={r.code}>{r.code}</option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={rakCode}
+          onChange={setRakCode}
+          options={rakList.map((r) => ({ value: r.code, label: r.code }))}
+          placeholder="Ketik atau pilih rak…"
+        />
       </Field>
       {bolehGabung && (
         <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
@@ -374,11 +374,11 @@ export function BarangKeluarForm({ item, onClose, onSubmit, saving }) {
       </Field>
 
       <Field label="Alasan">
-        <select value={alasan} onChange={(e) => setAlasan(e.target.value)} className={inputClass}>
-          {ALASAN_OPTIONS.map((a) => (
-            <option key={a.key} value={a.key}>{a.label}</option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={alasan}
+          onChange={setAlasan}
+          options={ALASAN_OPTIONS.map((a) => ({ value: a.key, label: a.label }))}
+        />
       </Field>
 
       <Field label="Catatan (opsional)">

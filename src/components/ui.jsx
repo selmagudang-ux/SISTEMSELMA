@@ -123,6 +123,85 @@ export function Combobox({ value, onChange, options, placeholder }) {
   );
 }
 
+// Dropdown yang bisa diketik untuk MEMFILTER opsi yang sudah ada (bukan combobox
+// master-data yang bisa bikin kode baru). Dipakai untuk semua dropdown pilihan
+// referensi di aplikasi ini: Rak, Alasan Barang Keluar, Role User, Warna Label, dst.
+// options: [{ value, label }]
+export function SearchableSelect({ value, onChange, options, placeholder, disabled, compact }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  const selectedOption = options.find((o) => String(o.value) === String(value));
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter(
+        (o) => o.label.toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q)
+      )
+    : options;
+
+  const commit = (opt) => {
+    onChange(opt.value);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const sizeClass = compact ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm";
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <input
+        disabled={disabled}
+        className={`w-full bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-amber-500 disabled:opacity-40 ${sizeClass}`}
+        value={open ? query : selectedOption ? selectedOption.label : ""}
+        placeholder={placeholder || "Ketik untuk mencari…"}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setQuery("");
+          setOpen(true);
+        }}
+        autoComplete="off"
+      />
+      {open && (
+        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+          {filtered.length > 0 ? (
+            filtered.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commit(o)}
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900 ${
+                  String(o.value) === String(value) ? "bg-amber-500/15 text-amber-400" : "text-slate-200"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-slate-500">Tidak ada yang cocok.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function StatCard({ label, value, accent }) {
   return (
     <div className="rounded-xl border border-slate-800 p-4 bg-slate-900/50">

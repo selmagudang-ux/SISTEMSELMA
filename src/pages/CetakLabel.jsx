@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
-import { EmptyState } from "../components/ui";
+import { EmptyState, SearchableSelect } from "../components/ui";
 import { priceCode } from "../lib/api";
 import { rakForSku, skuForRak } from "./Rak";
 
@@ -209,16 +209,13 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
           />
         </td>
         <td className="px-3 py-2">
-          <select
+          <SearchableSelect
+            compact
             disabled={!checked}
             value={row?.warna ?? "hitam"}
-            onChange={(e) => patchRow(key, { warna: e.target.value })}
-            className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-amber-500 disabled:opacity-40"
-          >
-            {WARNA_OPTIONS.map((w) => (
-              <option key={w.key} value={w.key}>{w.label}</option>
-            ))}
-          </select>
+            onChange={(v) => patchRow(key, { warna: v })}
+            options={WARNA_OPTIONS.map((w) => ({ value: w.key, label: w.label }))}
+          />
         </td>
         <td className="px-3 py-2">
           <input
