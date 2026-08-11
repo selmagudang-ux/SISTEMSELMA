@@ -141,3 +141,42 @@ export function downloadCsv(filename, columns, rows) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// =========================================================
+// PENGELOMPOKAN PER KATEGORI -> SUBKATEGORI
+// Dipakai di Master SKU, Master Harga, dan PDF Katalog supaya
+// urutan & label grup selalu konsisten di ketiga tempat.
+// Struktur hasil: [{ kategori, groups: [{ subkategori, items }] }]
+// - Item tanpa kategori/subkategori masuk grup "Tanpa Kategori" /
+//   "Tanpa Subkategori", selalu ditaruh paling akhir.
+// =========================================================
+export const TANPA_KATEGORI = "Tanpa Kategori";
+export const TANPA_SUBKATEGORI = "Tanpa Subkategori";
+
+export function groupByKategori(list) {
+  const byKategori = new Map();
+  for (const item of list) {
+    const kategori = item.kategori?.trim() || TANPA_KATEGORI;
+    const subkategori = item.subkategori?.trim() || TANPA_SUBKATEGORI;
+    if (!byKategori.has(kategori)) byKategori.set(kategori, new Map());
+    const bySub = byKategori.get(kategori);
+    if (!bySub.has(subkategori)) bySub.set(subkategori, []);
+    bySub.get(subkategori).push(item);
+  }
+
+  const sortKeys = (keys) =>
+    keys.sort((a, b) => {
+      if (a === TANPA_KATEGORI || a === TANPA_SUBKATEGORI) return 1;
+      if (b === TANPA_KATEGORI || b === TANPA_SUBKATEGORI) return -1;
+      return a.localeCompare(b, "id");
+    });
+
+  return sortKeys(Array.from(byKategori.keys())).map((kategori) => {
+    const bySub = byKategori.get(kategori);
+    const groups = sortKeys(Array.from(bySub.keys())).map((subkategori) => ({
+      subkategori,
+      items: bySub.get(subkategori),
+    }));
+    return { kategori, groups };
+  });
+}

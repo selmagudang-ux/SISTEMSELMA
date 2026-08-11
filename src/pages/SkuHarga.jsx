@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Search, Boxes, Download, FileDown, Loader2 } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { fmtRp, downloadCsv } from "../lib/api";
+import { fmtRp, downloadCsv, groupByKategori } from "../lib/api";
 import { generateKatalogPdf } from "../lib/PdfKatalog";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
@@ -120,45 +120,65 @@ function MasterSku({ skuMaster, items, setModal }) {
           className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
         />
       </div>
-      <div className="rounded-xl border border-slate-800 overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
-          <thead>
-            <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
-              <th className="px-4 py-2.5">SKU</th>
-              <th className="px-4 py-2.5">Stok</th>
-              <th className="px-4 py-2.5">Harga Asli</th>
-              <th className="px-4 py-2.5">HPP</th>
-              <th className="px-4 py-2.5">Grosir</th>
-              <th className="px-4 py-2.5">Tengah</th>
-              <th className="px-4 py-2.5">Ecer</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-500">Belum ada SKU.</td>
-              </tr>
-            )}
-            {filtered.map((s) => (
-              <tr
-                key={s.id}
-                onClick={() => setModal({ type: "detail-sku", item: s })}
-                className="border-b border-slate-800/60 last:border-0 hover:bg-slate-900/50 cursor-pointer"
-              >
-                <td className="px-4 py-2.5 font-mono text-xs">{s.sku}</td>
-                <td className="px-4 py-2.5">
-                  {s.stok <= 0 ? <Badge color="red">Habis</Badge> : s.stok}
-                </td>
-                <td className="px-4 py-2.5 text-slate-400">{fmtRp(s.harga_asli)}</td>
-                <td className="px-4 py-2.5 text-slate-400">{fmtRp(s.hpp)}</td>
-                <td className="px-4 py-2.5">{fmtRp(s.grosir)}</td>
-                <td className="px-4 py-2.5">{fmtRp(s.tengah)}</td>
-                <td className="px-4 py-2.5 font-semibold text-amber-400">{fmtRp(s.ecer)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {filtered.length === 0 ? (
+        <EmptyState label="Belum ada SKU." />
+      ) : (
+        <div className="space-y-6">
+          {groupByKategori(filtered).map(({ kategori, groups }) => (
+            <div key={kategori}>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-amber-400">{kategori}</h3>
+                <span className="text-[11px] text-slate-500">
+                  ({groups.reduce((n, g) => n + g.items.length, 0)} SKU)
+                </span>
+              </div>
+              <div className="space-y-4">
+                {groups.map(({ subkategori, items: subItems }) => (
+                  <div key={subkategori}>
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 pl-1">
+                      {subkategori}
+                    </div>
+                    <div className="rounded-xl border border-slate-800 overflow-x-auto">
+                      <table className="w-full text-sm min-w-[720px]">
+                        <thead>
+                          <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
+                            <th className="px-4 py-2.5">SKU</th>
+                            <th className="px-4 py-2.5">Stok</th>
+                            <th className="px-4 py-2.5">Harga Asli</th>
+                            <th className="px-4 py-2.5">HPP</th>
+                            <th className="px-4 py-2.5">Grosir</th>
+                            <th className="px-4 py-2.5">Tengah</th>
+                            <th className="px-4 py-2.5">Ecer</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {subItems.map((s) => (
+                            <tr
+                              key={s.id}
+                              onClick={() => setModal({ type: "detail-sku", item: s })}
+                              className="border-b border-slate-800/60 last:border-0 hover:bg-slate-900/50 cursor-pointer"
+                            >
+                              <td className="px-4 py-2.5 font-mono text-xs">{s.sku}</td>
+                              <td className="px-4 py-2.5">
+                                {s.stok <= 0 ? <Badge color="red">Habis</Badge> : s.stok}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-400">{fmtRp(s.harga_asli)}</td>
+                              <td className="px-4 py-2.5 text-slate-400">{fmtRp(s.hpp)}</td>
+                              <td className="px-4 py-2.5">{fmtRp(s.grosir)}</td>
+                              <td className="px-4 py-2.5">{fmtRp(s.tengah)}</td>
+                              <td className="px-4 py-2.5 font-semibold text-amber-400">{fmtRp(s.ecer)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -300,23 +320,44 @@ function MasterHarga({ skuMaster, items }) {
       {filtered.length === 0 ? (
         <EmptyState label="Belum ada data harga." />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((s) => (
-            <div key={s.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-              <div className="font-mono text-xs text-slate-300 mb-3">{s.sku}</div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500 text-xs">Grosir</span>
-                  <span className="text-slate-200">{fmtRp(s.grosir)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 text-xs">Tengah</span>
-                  <span className="text-slate-200">{fmtRp(s.tengah)}</span>
-                </div>
-                <div className="flex justify-between border-t border-slate-800 pt-1.5 mt-1.5">
-                  <span className="text-slate-500 text-xs">Ecer</span>
-                  <span className="text-amber-400 font-semibold">{fmtRp(s.ecer)}</span>
-                </div>
+        <div className="space-y-6">
+          {groupByKategori(filtered).map(({ kategori, groups }) => (
+            <div key={kategori}>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-sm font-semibold text-amber-400">{kategori}</h3>
+                <span className="text-[11px] text-slate-500">
+                  ({groups.reduce((n, g) => n + g.items.length, 0)} SKU)
+                </span>
+              </div>
+              <div className="space-y-4">
+                {groups.map(({ subkategori, items: subItems }) => (
+                  <div key={subkategori}>
+                    <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 pl-1">
+                      {subkategori}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {subItems.map((s) => (
+                        <div key={s.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+                          <div className="font-mono text-xs text-slate-300 mb-3">{s.sku}</div>
+                          <div className="space-y-1.5 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-slate-500 text-xs">Grosir</span>
+                              <span className="text-slate-200">{fmtRp(s.grosir)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-500 text-xs">Tengah</span>
+                              <span className="text-slate-200">{fmtRp(s.tengah)}</span>
+                            </div>
+                            <div className="flex justify-between border-t border-slate-800 pt-1.5 mt-1.5">
+                              <span className="text-slate-500 text-xs">Ecer</span>
+                              <span className="text-amber-400 font-semibold">{fmtRp(s.ecer)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           ))}

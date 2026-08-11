@@ -3,9 +3,12 @@
 // Dipakai di halaman Master SKU (SKU & Harga). Semua proses
 // terjadi di browser (client-side), tidak ada data yang
 // dikirim ke server manapun.
+//
+// Katalog dikelompokkan per Kategori -> Subkategori: tiap
+// grup diberi pita judul sendiri sebelum baris kartu produknya.
 // =========================================================
 import { jsPDF } from "jspdf";
-import { fmtRp } from "./api";
+import { fmtRp, groupByKategori } from "./api";
 
 // ----- Layout katalog (satuan: mm, kertas A4) -----
 const PAGE_W = 210;
@@ -13,15 +16,23 @@ const PAGE_H = 297;
 const MARGIN = 12;
 const HEADER_H = 16; // tinggi pita judul di tiap halaman
 const COLS = 2;
-const ROWS = 2; // dikurangi dari 3 -> 2 supaya kartu lebih tinggi, cukup ruang untuk foto persegi (1:1)
 const GUTTER = 6;
 
 const CARD_W = (PAGE_W - MARGIN * 2 - GUTTER * (COLS - 1)) / COLS;
-const CARD_H = (PAGE_H - MARGIN * 2 - HEADER_H - GUTTER * (ROWS - 1)) / ROWS;
+// Tinggi kartu ditentukan dari lebar (foto persegi + area teks harga),
+// dipakai juga untuk menghitung berapa baris kartu muat per halaman.
+const CARD_H = CARD_W + 24;
 const IMG_PAD = 2;
 const IMG_W = CARD_W - IMG_PAD * 2;
 const IMG_H = IMG_W; // foto persegi 1:1
 const IMG_ASPECT = IMG_W / IMG_H; // = 1 (persegi)
+
+const CONTENT_TOP = MARGIN + HEADER_H;
+const CONTENT_BOTTOM = PAGE_H - MARGIN;
+
+// Tinggi pita judul kategori & sub-kategori di dalam konten halaman.
+const KATEGORI_BAND_H = 8;
+const SUBKATEGORI_BAND_H = 6;
 
 // Cari foto paling relevan untuk satu SKU: ambil dari barang (items)
 // dengan SKU yang sama, yang paling baru dan sudah punya foto_url.
@@ -96,6 +107,32 @@ function drawFooter(doc, pageNum, totalPages) {
   doc.text(`Halaman ${pageNum} / ${totalPages}`, PAGE_W / 2, PAGE_H - 6, {
     align: "center",
   });
+}
+
+// Pita judul KATEGORI — band solid, menonjol, dipakai tiap ganti kategori.
+function drawKategoriBand(doc, label, y) {
+  doc.setFillColor(180, 83, 9); // amber-700
+  doc.rect(MARGIN, y, PAGE_W - MARGIN * 2, KATEGORI_BAND_H, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.text(label.toUpperCase(), MARGIN + 3, y + KATEGORI_BAND_H / 2 + 1.2);
+}
+
+// Label SUBKATEGORI — lebih ringan, di bawah pita kategori.
+function drawSubkategoriBand(doc, label, y) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139); // slate-500
+  doc.text(label, MARGIN + 1, y + SUBKATEGORI_BAND_H - 1.5);
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.2);
+  doc.line(
+    MARGIN + doc.getTextWidth(label) + 4,
+    y + SUBKATEGORI_BAND_H - 2.3,
+    PAGE_W - MARGIN,
+    y + SUBKATEGORI_BAND_H - 2.3
+  );
 }
 
 function drawCard(doc, sku, fotoDataUrl, x, y) {
@@ -187,24 +224,57 @@ export async function generateKatalogPdf(skuList, items, opts = {}) {
   );
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const perPage = COLS * ROWS;
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
   const tanggalCetak = new Date().toLocaleDateString("id-ID", {
     day: "2-digit",
     month: "long",
     year: "numeric",
   });
 
-  skuList.forEach((s, idx) => {
-    const posInPage = idx % perPage;
-    if (idx > 0 && posInPage === 0) doc.addPage();
-    if (posInPage === 0) drawHeader(doc, judul, `Dicetak ${tanggalCetak}`);
+  const kategoriList = groupByKategori(skuList);
 
-    const col = posInPage % COLS;
-    const row = Math.floor(posInPage / COLS);
-    const x = MARGIN + col * (CARD_W + GUTTER);
-    const y = MARGIN + HEADER_H + row * (CARD_H + GUTTER);
-    drawCard(doc, s, fotoMap[s.sku], x, y);
+  let page = 1;
+  let cursorY = CONTENT_TOP; // posisi vertikal berjalan di halaman aktif
+  drawHeader(doc, judul, `Dicetak ${tanggalCetak}`);
+
+  const newPage = () => {
+    doc.addPage();
+    page += 1;
+    cursorY = CONTENT_TOP;
+    drawHeader(doc, judul, `Dicetak ${tanggalCetak}`);
+  };
+
+  // Pastikan tersisa minimal `h` mm di halaman aktif; kalau tidak, pindah halaman baru.
+  const ensureSpace = (h) => {
+    if (cursorY + h > CONTENT_BOTTOM) newPage();
+  };
+
+  kategoriList.forEach(({ kategori, groups }) => {
+    // Pita kategori butuh ruang untuk dirinya + minimal 1 baris kartu di bawahnya,
+    // supaya judul kategori tidak "menggantung sendirian" di ujung halaman.
+    ensureSpace(KATEGORI_BAND_H + 2 + SUBKATEGORI_BAND_H + CARD_H);
+    drawKategoriBand(doc, kategori, cursorY);
+    cursorY += KATEGORI_BAND_H + 3;
+
+    groups.forEach(({ subkategori, items: subItems }) => {
+      ensureSpace(SUBKATEGORI_BAND_H + CARD_H);
+      drawSubkategoriBand(doc, subkategori, cursorY);
+      cursorY += SUBKATEGORI_BAND_H;
+
+      subItems.forEach((s, idx) => {
+        const col = idx % COLS;
+        if (col === 0) ensureSpace(CARD_H + GUTTER);
+        const x = MARGIN + col * (CARD_W + GUTTER);
+        const y = cursorY;
+        drawCard(doc, s, fotoMap[s.sku], x, y);
+        if (col === COLS - 1 || idx === subItems.length - 1) {
+          cursorY += CARD_H + GUTTER;
+        }
+      });
+
+      cursorY += 4; // jarak antar subkategori
+    });
+
+    cursorY += 4; // jarak antar kategori
   });
 
   const pageCount = doc.internal.getNumberOfPages();
