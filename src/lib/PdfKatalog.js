@@ -36,20 +36,24 @@ function fotoUntukSku(sku, items) {
   return kandidat[0]?.foto_url || null;
 }
 
-// Crop gambar mengikuti rasio target (mirip object-fit: cover di CSS)
-// lalu hasilkan JPEG data-URL supaya ukuran file PDF tetap kecil.
-function cropToAspect(img, aspect, targetWidthPx = 700) {
+// Muat foto UTUH ke area target (mirip object-fit: contain di CSS) —
+// tidak ada bagian foto yang dipotong. Kalau rasio foto beda dari rasio
+// area (mis. foto portrait dimuat ke area landscape), sisa ruang di
+// kiri-kanan/atas-bawah diisi putih supaya kartu tetap rapi.
+function fitToAspect(img, aspect, targetWidthPx = 700) {
   const w = targetWidthPx;
   const h = Math.round(targetWidthPx / aspect);
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d");
-  const scale = Math.max(w / img.width, h / img.height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  const scale = Math.min(w / img.width, h / img.height);
   const sw = img.width * scale;
   const sh = img.height * scale;
   ctx.drawImage(img, (w - sw) / 2, (h - sh) / 2, sw, sh);
-  return canvas.toDataURL("image/jpeg", 0.82);
+  return canvas.toDataURL("image/jpeg", 0.9);
 }
 
 // Muat satu foto dari URL Supabase Storage jadi data-URL siap pakai.
@@ -62,7 +66,7 @@ function loadImageAsDataUrl(url) {
     img.crossOrigin = "anonymous";
     img.onload = () => {
       try {
-        resolve(cropToAspect(img, IMG_ASPECT));
+        resolve(fitToAspect(img, IMG_ASPECT));
       } catch {
         resolve(null);
       }
