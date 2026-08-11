@@ -143,7 +143,7 @@ function HitungQty({ skuMaster, penempatan }) {
     <div>
       <PageHeader
         title="Hitung Qty"
-        description="Bandingkan jumlah stok di Master SKU dengan total yang sudah ditempatkan di rak — untuk mengecek selisih."
+        description="Bandingkan jumlah stok di Master Barang dengan total yang sudah ditempatkan di rak — untuk mengecek selisih."
       />
       {rows.length === 0 ? (
         <EmptyState label="Belum ada data untuk dihitung." />

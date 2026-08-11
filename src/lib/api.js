@@ -144,7 +144,7 @@ export function downloadCsv(filename, columns, rows) {
 
 // =========================================================
 // PENGELOMPOKAN PER KATEGORI -> SUBKATEGORI
-// Dipakai di Master SKU, Master Harga, dan PDF Katalog supaya
+// Dipakai di Master Barang dan PDF Katalog supaya
 // urutan & label grup selalu konsisten di ketiga tempat.
 // Struktur hasil: [{ kategori, groups: [{ subkategori, items }] }]
 // - Item tanpa kategori/subkategori masuk grup "Tanpa Kategori" /

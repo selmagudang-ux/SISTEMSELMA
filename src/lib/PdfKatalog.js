@@ -1,6 +1,6 @@
 // =========================================================
 // GENERATE PDF KATALOG PRODUK (foto + SKU + harga)
-// Dipakai di halaman Master SKU (SKU & Harga). Semua proses
+// Dipakai di halaman Master Barang (SKU & Harga). Semua proses
 // terjadi di browser (client-side), tidak ada data yang
 // dikirim ke server manapun.
 //
@@ -36,7 +36,7 @@ const SUBKATEGORI_BAND_H = 6;
 
 // Cari foto paling relevan untuk satu SKU: ambil dari barang (items)
 // dengan SKU yang sama, yang paling baru dan sudah punya foto_url.
-// Diekspor supaya halaman lain (mis. tombol "Download Foto" di Master SKU)
+// Diekspor supaya halaman lain (mis. tombol "Download Foto" di Master Barang)
 // bisa pakai sumber foto yang sama persis dengan yang dipakai PDF Katalog.
 export function fotoUntukSku(sku, items) {
   const kandidat = (items || [])

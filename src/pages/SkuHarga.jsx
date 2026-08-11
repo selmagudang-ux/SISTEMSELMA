@@ -6,8 +6,7 @@ import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
-  if (sub === "master-harga") return <MasterHarga skuMaster={skuMaster} items={items} setModal={setModal} />;
-  return <MasterSku skuMaster={skuMaster} items={items} setModal={setModal} />;
+  return <MasterBarang skuMaster={skuMaster} items={items} setModal={setModal} />;
 }
 
 function BuatSkuList({ items, setModal }) {
@@ -44,146 +43,7 @@ function BuatSkuList({ items, setModal }) {
   );
 }
 
-function MasterSku({ skuMaster, items, setModal }) {
-  const [q, setQ] = useState("");
-  const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
-  const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
-
-  const handleDownload = () => {
-    downloadCsv(
-      `master-sku-${new Date().toISOString().slice(0, 10)}.csv`,
-      [
-        { key: "sku", label: "SKU" },
-        { key: "stok", label: "Stok" },
-        { key: "harga_asli", label: "Harga Asli" },
-        { key: "hpp", label: "HPP" },
-        { key: "grosir", label: "Grosir" },
-        { key: "tengah", label: "Tengah" },
-        { key: "ecer", label: "Ecer" },
-      ],
-      filtered
-    );
-  };
-
-  const handleDownloadPdf = async () => {
-    if (filtered.length === 0 || cetak) return;
-    setCetak({ done: 0, total: filtered.length });
-    try {
-      await generateKatalogPdf(filtered, items, {
-        judul: "Katalog Produk",
-        onProgress: (done, total) => setCetak({ done, total }),
-      });
-    } finally {
-      setCetak(null);
-    }
-  };
-
-  return (
-    <div>
-      <PageHeader
-        title="Master SKU"
-        description="Semua kode SKU yang pernah dibuat, lengkap dengan stok dan harga."
-        action={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleDownload}
-              disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-            >
-              <Download size={14} /> Download CSV
-            </button>
-            <button
-              onClick={handleDownloadPdf}
-              disabled={filtered.length === 0 || !!cetak}
-              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-            >
-              {cetak ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Memuat foto {cetak.done}/{cetak.total}…
-                </>
-              ) : (
-                <>
-                  <FileDown size={14} /> Download PDF Katalog
-                </>
-              )}
-            </button>
-          </div>
-        }
-      />
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
-      </div>
-      {filtered.length === 0 ? (
-        <EmptyState label="Belum ada SKU." />
-      ) : (
-        <div className="space-y-6">
-          {groupByKategori(filtered).map(({ kategori, groups }) => (
-            <div key={kategori}>
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-amber-400">{kategori}</h3>
-                <span className="text-[11px] text-slate-500">
-                  ({groups.reduce((n, g) => n + g.items.length, 0)} SKU)
-                </span>
-              </div>
-              <div className="space-y-4">
-                {groups.map(({ subkategori, items: subItems }) => (
-                  <div key={subkategori}>
-                    <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 pl-1">
-                      {subkategori}
-                    </div>
-                    <div className="rounded-xl border border-slate-800 overflow-x-auto">
-                      <table className="w-full text-sm min-w-[720px]">
-                        <thead>
-                          <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
-                            <th className="px-4 py-2.5">SKU</th>
-                            <th className="px-4 py-2.5">Stok</th>
-                            <th className="px-4 py-2.5">Harga Asli</th>
-                            <th className="px-4 py-2.5">HPP</th>
-                            <th className="px-4 py-2.5">Grosir</th>
-                            <th className="px-4 py-2.5">Tengah</th>
-                            <th className="px-4 py-2.5">Ecer</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {subItems.map((s) => (
-                            <tr
-                              key={s.id}
-                              onClick={() => setModal({ type: "detail-sku", item: s })}
-                              className="border-b border-slate-800/60 last:border-0 hover:bg-slate-900/50 cursor-pointer"
-                            >
-                              <td className="px-4 py-2.5 font-mono text-xs">{s.sku}</td>
-                              <td className="px-4 py-2.5">
-                                {s.stok <= 0 ? <Badge color="red">Habis</Badge> : s.stok}
-                              </td>
-                              <td className="px-4 py-2.5 text-slate-400">{fmtRp(s.harga_asli)}</td>
-                              <td className="px-4 py-2.5 text-slate-400">{fmtRp(s.hpp)}</td>
-                              <td className="px-4 py-2.5">{fmtRp(s.grosir)}</td>
-                              <td className="px-4 py-2.5">{fmtRp(s.tengah)}</td>
-                              <td className="px-4 py-2.5 font-semibold text-amber-400">{fmtRp(s.ecer)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MasterHarga({ skuMaster, items, setModal }) {
+function MasterBarang({ skuMaster, items, setModal }) {
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");
@@ -223,7 +83,7 @@ function MasterHarga({ skuMaster, items, setModal }) {
 
   const handleDownloadCsv = () => {
     downloadCsv(
-      `master-sku-${new Date().toISOString().slice(0, 10)}.csv`,
+      `master-barang-${new Date().toISOString().slice(0, 10)}.csv`,
       [
         { key: "sku", label: "SKU" },
         { key: "stok", label: "Stok" },
@@ -273,8 +133,8 @@ function MasterHarga({ skuMaster, items, setModal }) {
   return (
     <div>
       <PageHeader
-        title="Master Harga"
-        description="Daftar harga jual per SKU (Grosir / Tengah / Ecer). Untuk ubah persentase markup, buka menu Pengaturan."
+        title="Master Barang"
+        description="Data lengkap tiap SKU — foto, harga asli, HPP, dan harga jual (Grosir / Tengah / Ecer). Untuk ubah persentase markup, buka menu Pengaturan."
         action={
           <div className="flex items-center gap-2">
             <button
@@ -352,7 +212,7 @@ function MasterHarga({ skuMaster, items, setModal }) {
         </select>
       </div>
       {filtered.length === 0 ? (
-        <EmptyState label="Belum ada data harga." />
+        <EmptyState label="Belum ada barang." />
       ) : (
         <div className="space-y-6">
           {groupByKategori(filtered).map(({ kategori, groups }) => (
@@ -373,12 +233,39 @@ function MasterHarga({ skuMaster, items, setModal }) {
                       {subItems.map((s) => {
                         const adaHargaBaru =
                           s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
+                        const foto = fotoUntukSku(s.sku, items);
                         return (
-                          <div key={s.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-                            <div className="font-mono text-xs text-slate-300 mb-3">{s.sku}</div>
+                          <div
+                            key={s.id}
+                            onClick={() => setModal({ type: "detail-sku", item: s })}
+                            className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 cursor-pointer hover:border-amber-500/40"
+                          >
+                            <div className="flex items-center gap-3 mb-3">
+                              {foto ? (
+                                <img
+                                  src={foto}
+                                  alt={s.sku}
+                                  className="w-12 h-12 rounded-lg object-cover border border-slate-800 flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-lg border border-dashed border-slate-800 flex-shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <div className="font-mono text-xs text-slate-300 truncate">{s.sku}</div>
+                                <div className="mt-0.5">
+                                  {s.stok <= 0 ? <Badge color="red">Habis</Badge> : (
+                                    <span className="text-[11px] text-slate-500">Stok {s.stok}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                             <div className="flex justify-between text-sm mb-1.5">
                               <span className="text-slate-500 text-xs">Harga Asli</span>
                               <span className="text-slate-400">{fmtRp(s.harga_asli)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm mb-1.5">
+                              <span className="text-slate-500 text-xs">HPP</span>
+                              <span className="text-slate-400">{fmtRp(s.hpp)}</span>
                             </div>
                             <div className="space-y-1.5 text-sm">
                               <div className="flex justify-between">
@@ -402,13 +289,19 @@ function MasterHarga({ skuMaster, items, setModal }) {
                                 </div>
                                 <div className="flex gap-1.5">
                                   <button
-                                    onClick={() => setModal({ type: "pilih-harga", item: s, pilih: "lama" })}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setModal({ type: "pilih-harga", item: s, pilih: "lama" });
+                                    }}
                                     className="flex-1 text-[11px] font-medium border border-slate-700 hover:border-slate-600 text-slate-300 rounded-md py-1.5"
                                   >
                                     Pakai Lama
                                   </button>
                                   <button
-                                    onClick={() => setModal({ type: "pilih-harga", item: s, pilih: "baru" })}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setModal({ type: "pilih-harga", item: s, pilih: "baru" });
+                                    }}
                                     className="flex-1 text-[11px] font-medium bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md py-1.5"
                                   >
                                     Pakai Baru

@@ -145,7 +145,7 @@ export default function ModalRouter({
               <div className="mt-1.5 text-red-200/90">
                 Stok SKU ini sudah tercatat — stok akan otomatis dikurangi {item.jumlah}x dan dicatat di riwayat
                 stok. Kalau ini barang terakhir untuk SKU <span className="font-mono">{item.sku}</span>, SKU-nya
-                (di Master SKU), penempatan raknya, dan riwayat stoknya akan ikut dihapus otomatis supaya tidak
+                (di Master Barang), penempatan raknya, dan riwayat stoknya akan ikut dihapus otomatis supaya tidak
                 ada data nyangkut.
               </div>
             )}
@@ -173,7 +173,7 @@ export default function ModalRouter({
 
                     // Cek apakah masih ada barang lain yang memakai SKU yang sama — kalau
                     // tidak ada, SKU ini "yatim" dan dibersihkan sekalian (SKU + penempatan
-                    // rak + riwayat stok) supaya tidak ada data nyangkut di Master SKU / Stok /
+                    // rak + riwayat stok) supaya tidak ada data nyangkut di Master Barang / Stok /
                     // Rak walau barangnya sudah dihapus.
                     const barangLain = await sb(`items?select=id&sku=eq.${encodeURIComponent(item.sku)}`);
                     const skuMasihDipakai = (barangLain || []).length > 0;
@@ -262,7 +262,7 @@ export default function ModalRouter({
             const patchBody = { stok: stokBaru };
             // Kalau barang lama ini masuk dengan harga asli yang beda dari harga
             // yang tercatat sekarang, jangan langsung timpa harga_asli — simpan dulu
-            // sebagai "harga baru" yang menunggu keputusan di Master Harga (pilih
+            // sebagai "harga baru" yang menunggu keputusan di Master Barang (pilih
             // mau pakai harga lama atau harga baru). Harga jual yang berlaku
             // sekarang tidak berubah sampai keputusan itu dibuat.
             if (hargaAsliBaru != null) patchBody.harga_asli_baru = hargaAsliBaru;

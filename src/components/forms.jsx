@@ -224,7 +224,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
           />
           {hargaBaru && Number(hargaBaru) !== selected.harga_asli && (
             <p className="text-[11px] text-amber-400 mt-1.5">
-              Harga beda dari harga lama — nanti di Master Harga akan muncul pilihan mau pakai harga lama atau
+              Harga beda dari harga lama — nanti di Master Barang akan muncul pilihan mau pakai harga lama atau
               harga baru ini. Stok tetap masuk dulu memakai harga jual yang berlaku sekarang.
             </p>
           )}
