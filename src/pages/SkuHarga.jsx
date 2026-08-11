@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Search, Boxes, Download, FileDown, Loader2 } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv } from "../lib/api";
-import { generateKatalogPdf } from "../lib/pdfKatalog";
+import { generateKatalogPdf } from "../lib/PdfKatalog";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
