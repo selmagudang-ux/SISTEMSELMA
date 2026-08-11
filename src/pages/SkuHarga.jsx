@@ -6,7 +6,7 @@ import { generateKatalogPdf } from "../lib/PdfKatalog";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
-  if (sub === "master-harga") return <MasterHarga skuMaster={skuMaster} />;
+  if (sub === "master-harga") return <MasterHarga skuMaster={skuMaster} items={items} />;
   return <MasterSku skuMaster={skuMaster} items={items} setModal={setModal} />;
 }
 
@@ -163,14 +163,72 @@ function MasterSku({ skuMaster, items, setModal }) {
   );
 }
 
-function MasterHarga({ skuMaster }) {
+function MasterHarga({ skuMaster, items }) {
   const [q, setQ] = useState("");
+  const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
   const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+
+  const handleDownloadCsv = () => {
+    downloadCsv(
+      `master-sku-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "sku", label: "SKU" },
+        { key: "stok", label: "Stok" },
+        { key: "harga_asli", label: "Harga Asli" },
+        { key: "hpp", label: "HPP" },
+        { key: "grosir", label: "Grosir" },
+        { key: "tengah", label: "Tengah" },
+        { key: "ecer", label: "Ecer" },
+      ],
+      filtered
+    );
+  };
+
+  const handleDownloadPdf = async () => {
+    if (filtered.length === 0 || cetak) return;
+    setCetak({ done: 0, total: filtered.length });
+    try {
+      await generateKatalogPdf(filtered, items, {
+        judul: "Katalog Produk",
+        onProgress: (done, total) => setCetak({ done, total }),
+      });
+    } finally {
+      setCetak(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Master Harga"
         description="Daftar harga jual per SKU (Grosir / Tengah / Ecer). Untuk ubah persentase markup, buka menu Pengaturan."
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadCsv}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+            >
+              <Download size={14} /> Download CSV
+            </button>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={filtered.length === 0 || !!cetak}
+              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+            >
+              {cetak ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Memuat foto {cetak.done}/{cetak.total}…
+                </>
+              ) : (
+                <>
+                  <FileDown size={14} /> Download PDF Katalog
+                </>
+              )}
+            </button>
+          </div>
+        }
       />
       <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
         <Search size={14} className="text-slate-500" />
