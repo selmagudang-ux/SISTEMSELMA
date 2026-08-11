@@ -6,7 +6,7 @@ import { generateKatalogPdf } from "../lib/PdfKatalog";
 
 export default function SkuHarga({ sub, items, skuMaster, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
-  if (sub === "master-harga") return <MasterHarga skuMaster={skuMaster} items={items} />;
+  if (sub === "master-harga") return <MasterHarga skuMaster={skuMaster} items={items} setModal={setModal} />;
   return <MasterSku skuMaster={skuMaster} items={items} setModal={setModal} />;
 }
 
@@ -183,7 +183,7 @@ function MasterSku({ skuMaster, items, setModal }) {
   );
 }
 
-function MasterHarga({ skuMaster, items }) {
+function MasterHarga({ skuMaster, items, setModal }) {
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");
@@ -336,25 +336,55 @@ function MasterHarga({ skuMaster, items }) {
                       {subkategori}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {subItems.map((s) => (
-                        <div key={s.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-                          <div className="font-mono text-xs text-slate-300 mb-3">{s.sku}</div>
-                          <div className="space-y-1.5 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-slate-500 text-xs">Grosir</span>
-                              <span className="text-slate-200">{fmtRp(s.grosir)}</span>
+                      {subItems.map((s) => {
+                        const adaHargaBaru =
+                          s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
+                        return (
+                          <div key={s.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
+                            <div className="font-mono text-xs text-slate-300 mb-3">{s.sku}</div>
+                            <div className="flex justify-between text-sm mb-1.5">
+                              <span className="text-slate-500 text-xs">Harga Asli</span>
+                              <span className="text-slate-400">{fmtRp(s.harga_asli)}</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-500 text-xs">Tengah</span>
-                              <span className="text-slate-200">{fmtRp(s.tengah)}</span>
+                            <div className="space-y-1.5 text-sm">
+                              <div className="flex justify-between">
+                                <span className="text-slate-500 text-xs">Grosir</span>
+                                <span className="text-slate-200">{fmtRp(s.grosir)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-500 text-xs">Tengah</span>
+                                <span className="text-slate-200">{fmtRp(s.tengah)}</span>
+                              </div>
+                              <div className="flex justify-between border-t border-slate-800 pt-1.5 mt-1.5">
+                                <span className="text-slate-500 text-xs">Ecer</span>
+                                <span className="text-amber-400 font-semibold">{fmtRp(s.ecer)}</span>
+                              </div>
                             </div>
-                            <div className="flex justify-between border-t border-slate-800 pt-1.5 mt-1.5">
-                              <span className="text-slate-500 text-xs">Ecer</span>
-                              <span className="text-amber-400 font-semibold">{fmtRp(s.ecer)}</span>
-                            </div>
+                            {adaHargaBaru && (
+                              <div className="mt-3 pt-3 border-t border-amber-500/30">
+                                <div className="text-[11px] text-amber-400 mb-2">
+                                  Barang lama masuk dengan harga baru: {fmtRp(s.harga_asli_baru)}. Pilih mau
+                                  pakai harga yang mana:
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <button
+                                    onClick={() => setModal({ type: "pilih-harga", item: s, pilih: "lama" })}
+                                    className="flex-1 text-[11px] font-medium border border-slate-700 hover:border-slate-600 text-slate-300 rounded-md py-1.5"
+                                  >
+                                    Pakai Lama
+                                  </button>
+                                  <button
+                                    onClick={() => setModal({ type: "pilih-harga", item: s, pilih: "baru" })}
+                                    className="flex-1 text-[11px] font-medium bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md py-1.5"
+                                  >
+                                    Pakai Baru
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ))}

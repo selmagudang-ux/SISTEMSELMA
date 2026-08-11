@@ -255,13 +255,20 @@ export default function ModalRouter({
         skuMaster={skuMaster}
         onClose={close}
         saving={saving}
-        onSubmitExisting={(selectedSku) =>
+        onSubmitExisting={(selectedSku, hargaAsliBaru) =>
           run(async () => {
             const jumlah = modal.item.jumlah || 1;
             const stokBaru = selectedSku.stok + jumlah;
+            const patchBody = { stok: stokBaru };
+            // Kalau barang lama ini masuk dengan harga asli yang beda dari harga
+            // yang tercatat sekarang, jangan langsung timpa harga_asli — simpan dulu
+            // sebagai "harga baru" yang menunggu keputusan di Master Harga (pilih
+            // mau pakai harga lama atau harga baru). Harga jual yang berlaku
+            // sekarang tidak berubah sampai keputusan itu dibuat.
+            if (hargaAsliBaru != null) patchBody.harga_asli_baru = hargaAsliBaru;
             await sb(`sku_master?id=eq.${selectedSku.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ stok: stokBaru }),
+              body: JSON.stringify(patchBody),
             });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
@@ -456,6 +463,84 @@ export default function ModalRouter({
           }, "Barang keluar dicatat, stok diperbarui")
         }
       />
+    );
+  }
+
+  if (modal.type === "pilih-harga") {
+    const s = modal.item;
+    const pakaiBaru = modal.pilih === "baru";
+    const hargaTerpilih = pakaiBaru ? s.harga_asli_baru : s.harga_asli;
+    const preview = settings ? calcHarga(hargaTerpilih, settings) : null;
+    return (
+      <ModalShell title="Pilih Harga Asli" onClose={close}>
+        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+          <div className="text-[11px] text-slate-500">SKU</div>
+          <div className="font-mono text-sm text-amber-400">{s.sku}</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+          <div className={`rounded-lg border px-3 py-2 ${!pakaiBaru ? "border-amber-500/50 bg-amber-500/10" : "border-slate-800"}`}>
+            <div className="text-slate-500">Harga Lama</div>
+            <div className="text-slate-200 font-semibold mt-0.5">{fmtRp(s.harga_asli)}</div>
+          </div>
+          <div className={`rounded-lg border px-3 py-2 ${pakaiBaru ? "border-amber-500/50 bg-amber-500/10" : "border-slate-800"}`}>
+            <div className="text-slate-500">Harga Baru</div>
+            <div className="text-slate-200 font-semibold mt-0.5">{fmtRp(s.harga_asli_baru)}</div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">
+          Kamu memilih pakai <span className="text-amber-400 font-medium">{pakaiBaru ? "Harga Baru" : "Harga Lama"}</span>{" "}
+          ({fmtRp(hargaTerpilih)}) sebagai Harga Asli SKU ini. Harga jual (HPP, Grosir, Tengah, Ecer) akan dihitung
+          ulang otomatis dari harga ini.
+        </p>
+        {preview && (
+          <div className="rounded-lg border border-slate-800 overflow-hidden mb-4 text-xs">
+            {[
+              ["HPP", fmtRp(preview.hpp)],
+              ["Grosir", fmtRp(preview.grosir)],
+              ["Tengah", fmtRp(preview.tengah)],
+              ["Ecer", fmtRp(preview.ecer)],
+            ].map(([label, val], i) => (
+              <div key={label} className={`flex items-center justify-between px-3 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+                <span className="text-slate-500">{label}</span>
+                <span className="text-slate-200">{val}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving || !settings}
+            onClick={() =>
+              run(async () => {
+                if (!settings) throw new Error("Pengaturan harga belum termuat");
+                const harga = calcHarga(hargaTerpilih, settings);
+                await sb(`sku_master?id=eq.${s.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({
+                    harga_asli: hargaTerpilih,
+                    harga_dasar: harga.hargaDasar,
+                    hpp: harga.hpp,
+                    grosir: harga.grosir,
+                    tengah: harga.tengah,
+                    ecer: harga.ecer,
+                    harga_asli_baru: null,
+                  }),
+                });
+              }, "Harga SKU diperbarui")
+            }
+            className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
+          >
+            {saving ? "Menyimpan…" : "Pakai Harga Ini"}
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 

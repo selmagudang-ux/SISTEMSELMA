@@ -40,6 +40,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState(null);
   const [mode, setMode] = useState("cari"); // "cari" | "buat"
+  const [hargaBaru, setHargaBaru] = useState("");
 
   const filtered = q.trim()
     ? skuMaster.filter((s) => s.sku.toLowerCase().includes(q.trim().toLowerCase()))
@@ -135,7 +136,10 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
           filtered.map((s) => (
             <button
               key={s.id}
-              onClick={() => setSelected(s)}
+              onClick={() => {
+                setSelected(s);
+                setHargaBaru("");
+              }}
               className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm ${
                 selected?.id === s.id ? "bg-amber-500/15" : "hover:bg-slate-900"
               }`}
@@ -153,12 +157,37 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
           <div className="font-mono text-sm text-amber-400">
             {selected.stok} + {item.jumlah} = {selected.stok + item.jumlah}
           </div>
+          <div className="text-[11px] text-slate-500 mt-2">Harga asli SKU ini saat ini</div>
+          <div className="font-mono text-sm text-slate-300">{fmtRp(selected.harga_asli)}</div>
         </div>
+      )}
+
+      {selected && (
+        <Field label="Harga Asli barang ini (kosongkan kalau sama)">
+          <input
+            type="number"
+            className={inputClass}
+            value={hargaBaru}
+            onChange={(e) => setHargaBaru(e.target.value)}
+            placeholder={`${selected.harga_asli}`}
+          />
+          {hargaBaru && Number(hargaBaru) !== selected.harga_asli && (
+            <p className="text-[11px] text-amber-400 mt-1.5">
+              Harga beda dari harga lama — nanti di Master Harga akan muncul pilihan mau pakai harga lama atau
+              harga baru ini. Stok tetap masuk dulu memakai harga jual yang berlaku sekarang.
+            </p>
+          )}
+        </Field>
       )}
 
       <button
         disabled={!selected || saving}
-        onClick={() => onSubmitExisting(selected)}
+        onClick={() =>
+          onSubmitExisting(
+            selected,
+            hargaBaru && Number(hargaBaru) !== selected.harga_asli ? Number(hargaBaru) : null
+          )
+        }
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg mb-2"
       >
         {saving ? "Menyimpan…" : "Tambahkan Stok & Lanjut ke Rak"}
