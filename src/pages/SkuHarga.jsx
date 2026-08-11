@@ -15,31 +15,28 @@ function BuatSkuList({ items, setModal }) {
     <div>
       <PageHeader
         title="Buat SKU"
-        description="Barang baru yang belum punya SKU akan membuat SKU baru. Barang lama tinggal ditambahkan ke SKU yang sudah ada."
+        description="Cari dulu apakah SKU-nya sudah ada. Kalau ketemu, stok tinggal ditambahkan. Kalau belum ada, buat SKU baru."
       />
       {belumSku.length === 0 ? (
         <EmptyState label="Tidak ada barang yang menunggu pembuatan SKU." />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {belumSku.map((item) => {
-            const isLama = item.status === "lama";
-            return (
-              <button
-                key={item.id}
-                onClick={() => setModal({ type: isLama ? "tambah-sku-lama" : "advance-sku", item })}
-                className="text-left bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-lg p-3 transition"
-              >
-                <Boxes size={16} className="text-amber-400 mb-2" />
-                <div className="text-xs font-mono text-slate-300">#{item.id.slice(0, 8)}</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">
-                  {item.jumlah}x · {item.status} · {item.tanggal}
-                </div>
-                <div className="mt-2 text-[11px] font-medium text-amber-400">
-                  {isLama ? "Tambah ke SKU →" : "Buat SKU →"}
-                </div>
-              </button>
-            );
-          })}
+          {belumSku.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setModal({ type: "buat-sku", item })}
+              className="text-left bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-lg p-3 transition"
+            >
+              <Boxes size={16} className="text-amber-400 mb-2" />
+              <div className="text-xs font-mono text-slate-300">#{item.id.slice(0, 8)}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {item.jumlah}x · {item.tanggal}
+              </div>
+              <div className="mt-2 text-[11px] font-medium text-amber-400">
+                Cari / Buat SKU →
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </div>

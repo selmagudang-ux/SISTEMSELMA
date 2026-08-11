@@ -2,27 +2,26 @@ import { Plus } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
 
-export default function BarangMasuk({ sub, items, setModal }) {
-  const label = sub === "baru" ? "Barang Baru" : "Barang Lama";
-  const list = items.filter((i) => i.status === sub);
+export default function BarangMasuk({ items, setModal }) {
+  const list = items;
 
   return (
     <div>
       <PageHeader
-        title={`Barang Masuk — ${label}`}
-        description={`Catat barang ${sub === "baru" ? "baru" : "lama/bekas"} yang masuk ke gudang.`}
+        title="Barang Masuk"
+        description="Catat barang yang masuk ke gudang. Status baru/lama sudah tidak perlu dipilih di sini — nanti otomatis ditentukan lewat pencarian SKU saat pembuatan SKU."
         action={
           <button
-            onClick={() => setModal({ type: "barang-masuk", presetStatus: sub })}
+            onClick={() => setModal({ type: "barang-masuk" })}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
           >
-            <Plus size={14} /> Tambah {label}
+            <Plus size={14} /> Tambah Barang Masuk
           </button>
         }
       />
 
       {list.length === 0 ? (
-        <EmptyState label={`Belum ada catatan ${label.toLowerCase()}.`} />
+        <EmptyState label="Belum ada catatan barang masuk." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
           <table className="w-full text-sm min-w-[560px]">

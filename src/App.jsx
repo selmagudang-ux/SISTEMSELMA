@@ -215,7 +215,7 @@ function MainApp({ session, onLogout }) {
             <div className="flex items-center gap-2 flex-shrink-0">
               {canSee("data-barang") && belumSelesaiCount > 0 && (
                 <button
-                  onClick={() => navigate("data-barang", "semua")}
+                  onClick={() => navigate("data-barang", null)}
                   className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
                   title={`${belumSelesaiCount} barang belum selesai`}
                 >
@@ -287,10 +287,10 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "barang-masuk" && (
-                <BarangMasuk sub={nav.sub || "baru"} items={items} setModal={setModal} />
+                <BarangMasuk items={items} setModal={setModal} />
               )}
               {nav.menu === "data-barang" && (
-                <DataBarang sub={nav.sub || "semua"} items={items} penempatan={penempatan} setModal={setModal} />
+                <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga sub={nav.sub || "buat"} items={items} skuMaster={skuMaster} setModal={setModal} />

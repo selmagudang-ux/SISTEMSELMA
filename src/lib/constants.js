@@ -40,14 +40,7 @@ export const MASTER_TIPE = [
 // =========================================================
 export const NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  {
-    key: "data-barang", label: "Data Barang", icon: ClipboardList,
-    children: [
-      { key: "semua", label: "Semua Barang" },
-      { key: "baru", label: "Barang Baru" },
-      { key: "lama", label: "Barang Lama" },
-    ],
-  },
+  { key: "data-barang", label: "Data Barang", icon: ClipboardList },
   {
     key: "sku-harga", label: "SKU & Harga", icon: Tag,
     children: [

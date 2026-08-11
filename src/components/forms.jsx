@@ -3,11 +3,10 @@ import { AlertTriangle } from "lucide-react";
 import { ModalShell, Field, Combobox, inputClass } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
 
-export function BarangMasukForm({ onClose, onSubmit, saving, presetStatus }) {
+export function BarangMasukForm({ onClose, onSubmit, saving }) {
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
   const [gudang, setGudang] = useState("");
   const [jumlah, setJumlah] = useState(1);
-  const [status, setStatus] = useState(presetStatus || "baru");
 
   return (
     <ModalShell title="Barang Masuk" onClose={onClose}>
@@ -20,24 +19,9 @@ export function BarangMasukForm({ onClose, onSubmit, saving, presetStatus }) {
       <Field label="Jumlah">
         <input type="number" min="1" className={inputClass} value={jumlah} onChange={(e) => setJumlah(Number(e.target.value))} />
       </Field>
-      <Field label="Status">
-        <div className="flex gap-2">
-          {["baru", "lama"].map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatus(s)}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium border ${
-                status === s ? "bg-amber-500 border-amber-500 text-slate-950" : "border-slate-800 text-slate-400"
-              }`}
-            >
-              {s === "baru" ? "Barang Baru" : "Barang Lama"}
-            </button>
-          ))}
-        </div>
-      </Field>
       <button
         disabled={saving || jumlah < 1}
-        onClick={() => onSubmit({ tanggal, gudang: gudang || null, jumlah, status })}
+        onClick={() => onSubmit({ tanggal, gudang: gudang || null, jumlah })}
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan"}
@@ -46,7 +30,21 @@ export function BarangMasukForm({ onClose, onSubmit, saving, presetStatus }) {
   );
 }
 
-export function BuatSkuForm({ item, master, settings, onClose, onSubmit, saving }) {
+// Form pembuatan SKU — DIGABUNG jadi satu alur "search-first":
+// 1) User cari dulu apakah SKU-nya sudah ada (ketik kode SKU).
+// 2) Kalau ketemu → pilih dari hasil pencarian, stok tinggal ditambahkan ke SKU itu.
+// 3) Kalau tidak ketemu → lanjut ke form pembuatan SKU baru (bahan/kategori/dst).
+// Ini menggantikan pemisahan lama "Barang Baru" vs "Barang Lama" yang dulu
+// ditentukan di form Barang Masuk — sekarang keputusannya murni dari hasil pencarian.
+export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSubmitExisting, onSubmitNew, saving }) {
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [mode, setMode] = useState("cari"); // "cari" | "buat"
+
+  const filtered = q.trim()
+    ? skuMaster.filter((s) => s.sku.toLowerCase().includes(q.trim().toLowerCase()))
+    : skuMaster;
+
   const [bahan, setBahan] = useState("");
   const [peruntukan, setPeruntukan] = useState("");
   const [kategori, setKategori] = useState("");
@@ -62,56 +60,57 @@ export function BuatSkuForm({ item, master, settings, onClose, onSubmit, saving 
       ? `${bahan}${peruntukan}${kategori}-${subkategori}-${model}-${warna}-${ukuran}`
       : null;
 
+  if (mode === "buat") {
+    return (
+      <ModalShell title={`Buat SKU Baru — ${item.jumlah}x barang`} onClose={onClose}>
+        <button
+          onClick={() => setMode("cari")}
+          className="text-xs text-slate-500 hover:text-slate-300 mb-3"
+        >
+          ← Kembali ke pencarian SKU
+        </button>
+        <div className="grid grid-cols-2 gap-x-3">
+          <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} /></Field>
+          <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} /></Field>
+          <Field label="Kategori"><Combobox value={kategori} onChange={setKategori} options={master.kategori || []} /></Field>
+          <Field label="Subkategori"><Combobox value={subkategori} onChange={setSubkategori} options={master.subkategori || []} /></Field>
+          <Field label="Warna"><Combobox value={warna} onChange={setWarna} options={master.warna || []} /></Field>
+          <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} /></Field>
+        </div>
+        <Field label="Model (kode bebas)">
+          <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />
+        </Field>
+        <Field label="Harga Asli (Rp)">
+          <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
+        </Field>
+
+        {preview && (
+          <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+            <div className="text-[11px] text-slate-500">SKU</div>
+            <div className="font-mono text-sm text-amber-400">{preview}</div>
+            {settings && hargaAsli && (
+              <div className="text-[11px] text-slate-500 mt-1.5">
+                Ecer: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(hargaAsli, settings).ecer)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <button
+          disabled={!ready || saving}
+          onClick={() => onSubmitNew({ bahan, peruntukan, kategori, subkategori, model, warna, ukuran }, Number(hargaAsli))}
+          className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        >
+          {saving ? "Menyimpan…" : "Buat SKU & Lanjut ke Rak"}
+        </button>
+      </ModalShell>
+    );
+  }
+
   return (
     <ModalShell title={`Buat SKU — ${item.jumlah}x barang`} onClose={onClose}>
-      <div className="grid grid-cols-2 gap-x-3">
-        <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} /></Field>
-        <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} /></Field>
-        <Field label="Kategori"><Combobox value={kategori} onChange={setKategori} options={master.kategori || []} /></Field>
-        <Field label="Subkategori"><Combobox value={subkategori} onChange={setSubkategori} options={master.subkategori || []} /></Field>
-        <Field label="Warna"><Combobox value={warna} onChange={setWarna} options={master.warna || []} /></Field>
-        <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} /></Field>
-      </div>
-      <Field label="Model (kode bebas)">
-        <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />
-      </Field>
-      <Field label="Harga Asli (Rp)">
-        <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
-      </Field>
-
-      {preview && (
-        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-          <div className="text-[11px] text-slate-500">SKU</div>
-          <div className="font-mono text-sm text-amber-400">{preview}</div>
-          {settings && hargaAsli && (
-            <div className="text-[11px] text-slate-500 mt-1.5">
-              Ecer: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(hargaAsli, settings).ecer)}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      <button
-        disabled={!ready || saving}
-        onClick={() => onSubmit({ bahan, peruntukan, kategori, subkategori, model, warna, ukuran }, Number(hargaAsli))}
-        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
-      >
-        {saving ? "Menyimpan…" : "Buat SKU & Lanjut ke Rak"}
-      </button>
-    </ModalShell>
-  );
-}
-
-export function TambahSkuLamaForm({ item, skuMaster, onClose, onSubmit, saving }) {
-  const [q, setQ] = useState("");
-  const [selected, setSelected] = useState(null);
-
-  const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
-
-  return (
-    <ModalShell title={`Tambah ke SKU — ${item.jumlah}x barang lama`} onClose={onClose}>
       <p className="text-xs text-slate-500 mb-3">
-        Barang lama tidak membuat SKU baru — pilih SKU yang sudah ada, stoknya akan ditambah {item.jumlah}x.
+        Cari dulu apakah SKU-nya sudah ada. Kalau ketemu, stok tinggal ditambahkan. Kalau belum ada, buat SKU baru.
       </p>
 
       <Field label="Cari SKU">
@@ -123,12 +122,15 @@ export function TambahSkuLamaForm({ item, skuMaster, onClose, onSubmit, saving }
             setSelected(null);
           }}
           placeholder="Ketik kode SKU…"
+          autoFocus
         />
       </Field>
 
       <div className="max-h-56 overflow-y-auto border border-slate-800 rounded-lg mb-3 divide-y divide-slate-800">
         {filtered.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-slate-500 text-center">Tidak ada SKU yang cocok.</div>
+          <div className="px-3 py-4 text-xs text-slate-500 text-center">
+            {q.trim() ? "SKU tidak ditemukan." : "Belum ada SKU tersimpan."}
+          </div>
         ) : (
           filtered.map((s) => (
             <button
@@ -156,10 +158,17 @@ export function TambahSkuLamaForm({ item, skuMaster, onClose, onSubmit, saving }
 
       <button
         disabled={!selected || saving}
-        onClick={() => onSubmit(selected)}
-        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        onClick={() => onSubmitExisting(selected)}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg mb-2"
       >
         {saving ? "Menyimpan…" : "Tambahkan Stok & Lanjut ke Rak"}
+      </button>
+
+      <button
+        onClick={() => setMode("buat")}
+        className="w-full border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium py-2.5 rounded-lg"
+      >
+        SKU tidak ditemukan? Buat SKU baru →
       </button>
     </ModalShell>
   );

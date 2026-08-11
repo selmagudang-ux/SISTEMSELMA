@@ -4,15 +4,13 @@ import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
 import { rakForSku } from "./Rak";
 
-export default function DataBarang({ sub, items, penempatan, setModal }) {
+export default function DataBarang({ items, penempatan, setModal }) {
   const [q, setQ] = useState("");
 
-  const label = sub === "semua" ? "Semua Barang" : sub === "baru" ? "Barang Baru" : "Barang Lama";
-  const bySub = sub === "semua" ? items : items.filter((i) => i.status === sub);
   // Kode rak diambil dari data penempatan terbaru (sumber yang sama dengan Peta Rak),
   // BUKAN dari field items.rak_code yang bisa basi kalau SKU-nya sudah dipindah rak.
   const rakSaatIni = (i) => rakForSku(i.sku, penempatan);
-  const filtered = bySub.filter((i) => {
+  const filtered = items.filter((i) => {
     const s = q.toLowerCase();
     if (!s) return true;
     return (
@@ -25,7 +23,7 @@ export default function DataBarang({ sub, items, penempatan, setModal }) {
   return (
     <div>
       <PageHeader
-        title={`Data Barang — ${label}`}
+        title="Data Barang"
         description="Cari dan lihat detail semua barang yang tercatat di sistem."
       />
 
@@ -50,7 +48,6 @@ export default function DataBarang({ sub, items, penempatan, setModal }) {
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">SKU</th>
                 <th className="px-4 py-2.5">Jumlah</th>
-                <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5">Rak</th>
                 <th className="px-4 py-2.5">Tahap</th>
                 <th className="px-4 py-2.5"></th>
@@ -77,7 +74,6 @@ export default function DataBarang({ sub, items, penempatan, setModal }) {
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{i.tanggal}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
                     <td className="px-4 py-2.5">{i.jumlah}x</td>
-                    <td className="px-4 py-2.5 text-slate-400 capitalize">{i.status}</td>
                     <td className="px-4 py-2.5 text-slate-400">{rakSaatIni(i) || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge color={meta.color}>{meta.label}</Badge>

@@ -3,7 +3,7 @@ import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor } from "../lib/api";
 import {
-  BarangMasukForm, BuatSkuForm, TambahSkuLamaForm, TempatkanRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
+  BarangMasukForm, SkuEntryForm, TempatkanRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
 } from "./forms";
 
 export default function ModalRouter({
@@ -92,7 +92,6 @@ export default function ModalRouter({
     const rows = [
       ["Tanggal masuk", item.tanggal],
       ["Gudang", item.gudang || "—"],
-      ["Status", item.status],
       ["Jumlah", `${item.jumlah}x`],
       ["SKU", item.sku || "Belum ada"],
       ["Rak", item.rak_code || "Belum ditempatkan"],
@@ -235,7 +234,6 @@ export default function ModalRouter({
       <BarangMasukForm
         onClose={close}
         saving={saving}
-        presetStatus={modal.presetStatus}
         onSubmit={(vals) =>
           run(async () => {
             await sb("items", { method: "POST", body: JSON.stringify(vals) });
@@ -245,14 +243,19 @@ export default function ModalRouter({
     );
   }
 
-  if (modal.type === "tambah-sku-lama") {
+  // Alur pembuatan SKU digabung jadi satu: user cari dulu apakah SKU-nya sudah
+  // ada (onSubmitExisting → tambah stok ke SKU itu), kalau tidak ketemu baru
+  // dibuat SKU baru (onSubmitNew).
+  if (modal.type === "buat-sku") {
     return (
-      <TambahSkuLamaForm
+      <SkuEntryForm
         item={modal.item}
+        master={master}
+        settings={settings}
         skuMaster={skuMaster}
         onClose={close}
         saving={saving}
-        onSubmit={(selectedSku) =>
+        onSubmitExisting={(selectedSku) =>
           run(async () => {
             const jumlah = modal.item.jumlah || 1;
             const stokBaru = selectedSku.stok + jumlah;
@@ -272,24 +275,12 @@ export default function ModalRouter({
                 qty_before: selectedSku.stok,
                 qty_change: jumlah,
                 qty_after: stokBaru,
-                note: "Barang lama ditambahkan ke SKU yang sudah ada",
+                note: "Ditambahkan ke SKU yang sudah ada",
               }),
             });
           }, "Stok ditambahkan ke SKU")
         }
-      />
-    );
-  }
-
-  if (modal.type === "advance-sku") {
-    return (
-      <BuatSkuForm
-        item={modal.item}
-        master={master}
-        settings={settings}
-        onClose={close}
-        saving={saving}
-        onSubmit={(skuFields, hargaAsli) =>
+        onSubmitNew={(skuFields, hargaAsli) =>
           run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
 
