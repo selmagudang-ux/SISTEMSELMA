@@ -165,8 +165,40 @@ function MasterSku({ skuMaster, items, setModal }) {
 
 function MasterHarga({ skuMaster, items }) {
   const [q, setQ] = useState("");
+  const [kategori, setKategori] = useState("");
+  const [subkategori, setSubkategori] = useState("");
   const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
-  const filtered = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+
+  // Daftar kategori unik dari semua SKU yang ada, buat isi dropdown.
+  const kategoriOptions = Array.from(
+    new Set(skuMaster.map((s) => s.kategori).filter(Boolean))
+  ).sort();
+
+  // Daftar subkategori unik — kalau kategori sudah dipilih, subkategori
+  // dipersempit hanya yang muncul di kategori itu saja.
+  const subkategoriOptions = Array.from(
+    new Set(
+      skuMaster
+        .filter((s) => !kategori || s.kategori === kategori)
+        .map((s) => s.subkategori)
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const filtered = skuMaster.filter((s) => {
+    if (!s.sku.toLowerCase().includes(q.toLowerCase())) return false;
+    if (kategori && s.kategori !== kategori) return false;
+    if (subkategori && s.subkategori !== subkategori) return false;
+    return true;
+  });
+
+  // Kalau kategori diganti dan subkategori yang sedang dipilih ternyata
+  // tidak ada di kategori baru itu, reset supaya tidak nyangkut jadi
+  // filter kosong yang membingungkan.
+  const handleKategoriChange = (val) => {
+    setKategori(val);
+    setSubkategori("");
+  };
 
   const handleDownloadCsv = () => {
     downloadCsv(
@@ -188,8 +220,11 @@ function MasterHarga({ skuMaster, items }) {
     if (filtered.length === 0 || cetak) return;
     setCetak({ done: 0, total: filtered.length });
     try {
+      const judulParts = ["Katalog Produk"];
+      if (kategori) judulParts.push(kategori);
+      if (subkategori) judulParts.push(subkategori);
       await generateKatalogPdf(filtered, items, {
-        judul: "Katalog Produk",
+        judul: judulParts.join(" — "),
         onProgress: (done, total) => setCetak({ done, total }),
       });
     } finally {
@@ -230,14 +265,37 @@ function MasterHarga({ skuMaster, items }) {
           </div>
         }
       />
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[200px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <select
+          value={kategori}
+          onChange={(e) => handleKategoriChange(e.target.value)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none"
+        >
+          <option value="">Semua Kategori</option>
+          {kategoriOptions.map((k) => (
+            <option key={k} value={k}>{k}</option>
+          ))}
+        </select>
+        <select
+          value={subkategori}
+          onChange={(e) => setSubkategori(e.target.value)}
+          disabled={subkategoriOptions.length === 0}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none disabled:opacity-40"
+        >
+          <option value="">Semua Subkategori</option>
+          {subkategoriOptions.map((sk) => (
+            <option key={sk} value={sk}>{sk}</option>
+          ))}
+        </select>
       </div>
       {filtered.length === 0 ? (
         <EmptyState label="Belum ada data harga." />
