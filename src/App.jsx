@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, Plus, AlertCircle, Loader2, Bell } from "lucide-react";
+import { RefreshCw, Plus, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
@@ -12,12 +12,11 @@ import BarangMasuk from "./pages/BarangMasuk";
 import DataBarang from "./pages/DataBarang";
 import SkuHarga from "./pages/SkuHarga";
 import Stok from "./pages/Stok";
-import Rak, { cariPerluDitempatkanUlang } from "./pages/Rak";
+import Rak, { cariPerluDitempatkanUlang, rakTerpakai } from "./pages/Rak";
 import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
 import Laporan from "./pages/Laporan";
-import MasterData from "./pages/MasterData";
 import Pengaturan from "./pages/Pengaturan";
 
 export default function SistemSelmaApp() {
@@ -138,6 +137,9 @@ function MainApp({ session, onLogout }) {
   // sudah ditimpa SKU lain (butuh ditempatkan ulang).
   const perluRakUlang = cariPerluDitempatkanUlang(skuMaster, penempatan);
   const tanpaRakCount = stageCounts.rak + perluRakUlang.length;
+  // Rak Terpakai (Dashboard) = rak yang benar-benar masih diisi SKU berstok > 0,
+  // pakai logika yang SAMA dengan Peta Rak supaya angkanya selalu sinkron.
+  const rakTerpakaiCount = rakTerpakai(rak, penempatan, skuMaster).length;
 
   const sidebarBadges = {
     "sku-harga": stageCounts.sku,
@@ -197,9 +199,10 @@ function MainApp({ session, onLogout }) {
       />
 
       <div className="flex-1 min-w-0">
-        {/* Header */}
-        {nav.menu !== "cetak-label" && (
-        <header className="border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-20">
+        {/* Header — selalu tampil di semua halaman (termasuk Cetak Label) supaya
+            tombol buka menu di HP tetap bisa diakses. Disembunyikan otomatis saat
+            print lewat class print:hidden. */}
+        <header className="print:hidden border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-20">
           <div className="px-5 py-3 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <MobileMenuButton onClick={() => setMobileOpen(true)} />
@@ -210,13 +213,25 @@ function MainApp({ session, onLogout }) {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
+              {canSee("data-barang") && belumSelesaiCount > 0 && (
+                <button
+                  onClick={() => navigate("data-barang", "semua")}
+                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                  title={`${belumSelesaiCount} barang belum selesai`}
+                >
+                  <Bell size={14} />
+                  <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                    {belumSelesaiCount}
+                  </span>
+                </button>
+              )}
               {canSee("rak") && (
                 <button
                   onClick={() => navigate("rak", "tempatkan")}
                   className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
                   title={tanpaRakCount > 0 ? `${tanpaRakCount} SKU belum punya rak` : "Tidak ada SKU tanpa rak"}
                 >
-                  <Bell size={14} />
+                  <MapPin size={14} />
                   {tanpaRakCount > 0 && (
                     <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
                       {tanpaRakCount}
@@ -242,7 +257,6 @@ function MainApp({ session, onLogout }) {
             </div>
           </div>
         </header>
-        )}
 
         <main className="px-5 py-6 max-w-6xl">
           {error && (
@@ -266,7 +280,7 @@ function MainApp({ session, onLogout }) {
                   stageCounts={stageCounts}
                   skuCount={skuMaster.length}
                   totalStok={totalStok}
-                  rakCount={rak.length}
+                  rakCount={rakTerpakaiCount}
                   items={items}
                   onNavigate={navigate}
                   setModal={setModal}
@@ -276,7 +290,7 @@ function MainApp({ session, onLogout }) {
                 <BarangMasuk sub={nav.sub || "baru"} items={items} setModal={setModal} />
               )}
               {nav.menu === "data-barang" && (
-                <DataBarang sub={nav.sub || "semua"} items={items} setModal={setModal} />
+                <DataBarang sub={nav.sub || "semua"} items={items} penempatan={penempatan} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga sub={nav.sub || "buat"} items={items} skuMaster={skuMaster} setModal={setModal} />
@@ -297,9 +311,6 @@ function MainApp({ session, onLogout }) {
                 <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} />
               )}
               {nav.menu === "laporan" && <Laporan items={items} skuMaster={skuMaster} rak={rak} />}
-              {nav.menu === "master-data" && (
-                <MasterData master={master} reload={loadAll} showToast={showToast} />
-              )}
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
               )}

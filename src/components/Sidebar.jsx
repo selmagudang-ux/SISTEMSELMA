@@ -42,12 +42,12 @@ export default function Sidebar({
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-30 lg:hidden"
+          className="print:hidden fixed inset-0 bg-black/60 z-30 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
       <aside
-        className={`fixed lg:sticky top-0 left-0 h-screen w-64 flex-shrink-0 bg-slate-950 border-r border-slate-800 z-40 flex flex-col transition-transform duration-200 ${
+        className={`print:hidden fixed lg:sticky top-0 left-0 h-screen w-64 flex-shrink-0 bg-slate-950 border-r border-slate-800 z-40 flex flex-col transition-transform duration-200 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0`}
       >

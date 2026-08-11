@@ -2,19 +2,23 @@ import { useState } from "react";
 import { Search, Camera, Trash2 } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
+import { rakForSku } from "./Rak";
 
-export default function DataBarang({ sub, items, setModal }) {
+export default function DataBarang({ sub, items, penempatan, setModal }) {
   const [q, setQ] = useState("");
 
   const label = sub === "semua" ? "Semua Barang" : sub === "baru" ? "Barang Baru" : "Barang Lama";
   const bySub = sub === "semua" ? items : items.filter((i) => i.status === sub);
+  // Kode rak diambil dari data penempatan terbaru (sumber yang sama dengan Peta Rak),
+  // BUKAN dari field items.rak_code yang bisa basi kalau SKU-nya sudah dipindah rak.
+  const rakSaatIni = (i) => rakForSku(i.sku, penempatan);
   const filtered = bySub.filter((i) => {
     const s = q.toLowerCase();
     if (!s) return true;
     return (
       (i.sku || "").toLowerCase().includes(s) ||
       (i.gudang || "").toLowerCase().includes(s) ||
-      (i.rak_code || "").toLowerCase().includes(s)
+      rakSaatIni(i).toLowerCase().includes(s)
     );
   });
 
@@ -74,7 +78,7 @@ export default function DataBarang({ sub, items, setModal }) {
                     <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
                     <td className="px-4 py-2.5">{i.jumlah}x</td>
                     <td className="px-4 py-2.5 text-slate-400 capitalize">{i.status}</td>
-                    <td className="px-4 py-2.5 text-slate-400">{i.rak_code || "—"}</td>
+                    <td className="px-4 py-2.5 text-slate-400">{rakSaatIni(i) || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge color={meta.color}>{meta.label}</Badge>
                     </td>

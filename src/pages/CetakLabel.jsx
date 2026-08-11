@@ -2,18 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
 import { EmptyState } from "../components/ui";
 import { priceCode } from "../lib/api";
-
-// Cari kode rak untuk sebuah SKU dari data penempatan (ambil yang paling baru).
-function rakForSku(sku, penempatan) {
-  const found = (penempatan || []).find((p) => p.sku === sku);
-  return found ? found.rak_code : "";
-}
-
-// Cari SKU yang sedang menempati sebuah rak (aturan: 1 rak = 1 SKU, ambil penempatan terbaru).
-function skuForRak(rakCode, penempatan) {
-  const found = (penempatan || []).find((p) => p.rak_code === rakCode);
-  return found ? found.sku : "";
-}
+import { rakForSku, skuForRak } from "./Rak";
 
 // SKU versi singkat untuk label cetak: Bahan+Peruntukan+Kategori - Subkategori - Model
 // (warna & ukuran tidak ikut ditampilkan di label).
@@ -140,11 +129,12 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
         if (!row || !row.qty) return;
         const s = skuMap[i.sku];
         const kode = priceCode(s.grosir, s.tengah, s.ecer);
+        const rakCode = rakForSku(i.sku, penempatan);
         for (let n = 0; n < row.qty; n++) {
           out.push({
             key: `${i.id}-${n}`,
             sku: shortSku(s),
-            rak: i.rak_code || "",
+            rak: rakCode,
             kode,
             warna: row.warna,
             catatan: row.catatan,
@@ -322,7 +312,8 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
                   ? filteredBarang.map((i) => {
                       const s = skuMap[i.sku];
                       const kode = priceCode(s.grosir, s.tengah, s.ecer);
-                      return renderRow(i.id, i.rak_code, i.sku, kode, i.jumlah || 1);
+                      const rakCode = rakForSku(i.sku, penempatan);
+                      return renderRow(i.id, rakCode, i.sku, kode, i.jumlah || 1);
                     })
                   : tab === "sku"
                   ? filteredSku.map((s) => {

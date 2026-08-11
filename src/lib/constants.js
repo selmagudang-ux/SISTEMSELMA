@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, PackagePlus, ClipboardList, Tag, BarChart3, MapPin,
-  Camera, ShoppingBag, TrendingUp, Database, Settings, Boxes, Printer,
+  Camera, ShoppingBag, TrendingUp, Settings, Boxes, Printer,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
@@ -83,7 +83,6 @@ export const NAV = [
     ],
   },
   { key: "laporan", label: "Laporan", icon: TrendingUp },
-  { key: "master-data", label: "Master Data", icon: Database },
   { key: "pengaturan", label: "Pengaturan", icon: Settings },
 ];
 

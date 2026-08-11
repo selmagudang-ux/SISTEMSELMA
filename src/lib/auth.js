@@ -2,6 +2,10 @@ import { sb } from "./api";
 
 const SESSION_KEY = "selma_session";
 
+// Sengaja pakai sessionStorage (bukan localStorage): sesi otomatis hilang saat
+// tab/browser ditutup, jadi user harus login lagi. Masih tetap login selama
+// tab dibiarkan terbuka / di-refresh.
+
 // Hash SHA-256 (hex) — dipakai untuk cocokkan password dengan yang di Supabase
 // (kolom app_users.password_hash dibuat dengan encode(digest(pw,'sha256'),'hex')).
 export async function sha256Hex(text) {
@@ -32,13 +36,13 @@ export async function login(username, password) {
     role: user.role,
     loginAt: new Date().toISOString(),
   };
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
   return session;
 }
 
 export function getSession() {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    const raw = sessionStorage.getItem(SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -46,7 +50,7 @@ export function getSession() {
 }
 
 export function logout() {
-  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
 }
 
 // ---- Kelola user (dipakai di halaman Pengaturan, khusus superadmin) ----

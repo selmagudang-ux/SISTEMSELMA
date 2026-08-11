@@ -4,15 +4,28 @@ import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran } from "../lib/api";
 
 // Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
-function rakForSku(sku, penempatan) {
+// Diekspor supaya halaman lain (Data Barang, Cetak Label) bisa pakai sumber yang sama
+// dan tidak ketinggalan sinkron dengan Peta Rak saat SKU ditempatkan ulang.
+export function rakForSku(sku, penempatan) {
   const found = (penempatan || []).find((p) => p.sku === sku);
   return found ? found.rak_code : "";
 }
 
 // Cari SKU yang SAAT INI menempati sebuah rak (aturan: 1 rak = 1 SKU, ambil penempatan terbaru).
-function skuForRak(rakCode, penempatan) {
+export function skuForRak(rakCode, penempatan) {
   const found = (penempatan || []).find((p) => p.rak_code === rakCode);
   return found ? found.sku : "";
+}
+
+// Daftar kode rak yang BENAR-BENAR sedang terisi (masih ada SKU dengan stok > 0),
+// dipakai bareng Peta Rak supaya angka "Rak Terpakai" di Dashboard selalu sinkron.
+export function rakTerpakai(rak, penempatan, skuMaster) {
+  return (rak || []).filter((r) => {
+    const pemenang = skuForRak(r.code, penempatan);
+    if (!pemenang) return false;
+    const s = (skuMaster || []).find((x) => x.sku === pemenang);
+    return !!s && s.stok > 0;
+  });
 }
 
 // SKU dengan stok > 0 tapi rak yang seharusnya ditempatinya sudah ditimpa SKU lain
@@ -191,7 +204,7 @@ function PetaRak({ rak, penempatan, skuMaster }) {
                     return (
                       <div
                         key={r.id}
-                        className={`w-32 rounded-lg border p-2.5 flex flex-col gap-1.5 ${
+                        className={`w-44 rounded-lg border p-2.5 flex flex-col gap-1.5 ${
                           kosong
                             ? "border-emerald-500/30 bg-emerald-500/5"
                             : "border-sky-500/30 bg-sky-500/10"
@@ -200,7 +213,7 @@ function PetaRak({ rak, penempatan, skuMaster }) {
                         <div className="flex items-center gap-1.5">
                           <MapPin size={13} className={kosong ? "text-emerald-400" : "text-sky-400"} />
                           <span
-                            className={`font-mono text-xs font-semibold truncate ${
+                            className={`font-mono text-xs font-semibold ${
                               kosong ? "text-emerald-300" : "text-sky-300"
                             }`}
                           >
@@ -210,13 +223,10 @@ function PetaRak({ rak, penempatan, skuMaster }) {
                         {kosong ? (
                           <div className="text-[10px] text-emerald-400/70 italic">Kosong</div>
                         ) : (
-                          <div className="flex flex-col gap-0.5">
+                          <div className="flex flex-col gap-1">
                             {skus.map(({ sku, stok }) => (
-                              <div key={sku} className="flex items-center justify-between gap-1">
-                                <span
-                                  className="font-mono text-[10px] text-slate-300 truncate"
-                                  title={sku}
-                                >
+                              <div key={sku} className="flex items-start justify-between gap-1.5">
+                                <span className="font-mono text-[10px] text-slate-300 break-all">
                                   {sku}
                                 </span>
                                 <span className="text-[10px] text-slate-500 font-medium shrink-0">
