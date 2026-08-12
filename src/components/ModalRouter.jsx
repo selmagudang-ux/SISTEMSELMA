@@ -579,12 +579,27 @@ export default function ModalRouter({
         saving={saving}
         onSubmit={(rakBaru) =>
           run(async () => {
-            // Ubah rak_code baris penempatan yang sudah ada (bukan bikin baris
-            // baru) supaya rak lamanya langsung kosong, bukan malah ganda.
-            await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
-              method: "PATCH",
-              body: JSON.stringify({ rak_code: rakBaru }),
-            });
+            // Kalau rak tujuan sudah punya baris penempatan utk SKU yang SAMA PERSIS,
+            // gabungkan qty-nya ke baris itu (tambahkan) lalu hapus baris lama —
+            // supaya tidak "ketimpa"/hilang dan tidak dobel baris utk sku+rak yang sama.
+            // Kalau rak tujuan belum ada SKU ini, cukup pindahkan (ubah rak_code) seperti biasa.
+            const baris = (penempatan || []).find((p) => p.id === modal.item.penempatanId);
+            const tujuanSama = (penempatan || []).find(
+              (p) => p.rak_code === rakBaru && p.sku === modal.item.sku && p.id !== modal.item.penempatanId
+            );
+            if (tujuanSama) {
+              const qtyGabung = (Number(tujuanSama.qty) || 0) + (Number(baris?.qty) || 0);
+              await sb(`penempatan?id=eq.${tujuanSama.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ qty: qtyGabung }),
+              });
+              await sb(`penempatan?id=eq.${modal.item.penempatanId}`, { method: "DELETE" });
+            } else {
+              await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
+                method: "PATCH",
+                body: JSON.stringify({ rak_code: rakBaru }),
+              });
+            }
           }, "SKU dipindahkan ke rak baru")
         }
       />

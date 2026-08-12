@@ -385,6 +385,7 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
     return (penempatan || []).find((p) => p.rak_code === rakCode) || null;
   }, [rakCode, penempatan]);
 
+  const skuSamaPersis = occupant && occupant.sku === item.sku;
   const bolehGabung = occupant && sameProdukKecualiUkuran(occupant.sku, item.sku, skuMaster);
   const conflict = occupant && occupant.sku !== item.sku && !bolehGabung;
   const rakSamaDenganLama = rakCode === item.rakLama;
@@ -446,8 +447,17 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
         <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
-            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> — produk yang sama, cuma
-            beda ukuran. Boleh digabung, tidak akan menimpa.
+            {skuSamaPersis ? (
+              <>
+                Rak ini sudah berisi SKU yang sama persis. Qty akan <b>ditambahkan</b> ke qty yang sudah ada di
+                rak ini, tidak akan menimpa.
+              </>
+            ) : (
+              <>
+                Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> — produk yang sama, cuma
+                beda ukuran. Boleh digabung, tidak akan menimpa.
+              </>
+            )}
           </div>
         </div>
       )}
