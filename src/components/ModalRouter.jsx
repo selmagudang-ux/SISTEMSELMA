@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw } from "lucide-react";
-import { ModalShell } from "./ui";
+import { ModalShell, Badge } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode } from "../lib/api";
 import {
@@ -184,7 +184,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
-  pelangganGrosir, tokoGrosir,
+  pelangganGrosir, tokoGrosir, detailPesananGrosir,
 }) {
   const close = () => setModal(null);
 
@@ -328,6 +328,129 @@ export default function ModalRouter({
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >
             <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-detail-pesanan") {
+    const p = modal.item;
+    const pelanggan = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id);
+    const toko = (tokoGrosir || []).find((x) => x.id === p.toko_id);
+    const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    const dibatalkan = p.status === "Batal";
+    return (
+      <ModalShell title={`Pesanan ${p.nomor_pesanan}`} onClose={close}>
+        <div className="flex items-center gap-2 mb-3">
+          <Badge color={p.status_bayar === "Lunas" ? "emerald" : "amber"}>{p.status_bayar}</Badge>
+          {dibatalkan && <Badge color="red">Dibatalkan</Badge>}
+        </div>
+        <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+          {[
+            ["Pelanggan", pelanggan ? `${pelanggan.nama} (${pelanggan.kode})` : "—"],
+            ["Toko Pengirim", toko ? `${toko.nama_toko} (${toko.kode})` : "—"],
+            ["Tanggal", p.tanggal],
+            ["Metode Bayar", p.metode_bayar || "—"],
+            ["Catatan", p.catatan || "—"],
+          ].map(([label, val], i) => (
+            <div
+              key={label}
+              className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <span className="text-slate-500 text-xs">{label}</span>
+              <span className="text-slate-200 text-right">{val}</span>
+            </div>
+          ))}
+        </div>
+        <div className="text-xs text-slate-500 mb-1.5">Item</div>
+        <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+          {detailItems.map((d, i) => (
+            <div
+              key={d.id}
+              className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <div className="min-w-0">
+                <div className="text-slate-200 truncate">{d.nama_produk}</div>
+                <div className="text-[11px] text-slate-500">
+                  {d.qty} x {fmtRp(d.harga)} {d.sumber_produk === "manual" ? "· manual" : ""}
+                </div>
+              </div>
+              <div className="text-slate-200 font-medium flex-shrink-0 ml-2">{fmtRp(d.subtotal)}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 mb-3">
+          <span className="text-xs text-slate-400">Total</span>
+          <span className="text-base font-bold text-amber-400">{fmtRp(p.total)}</span>
+        </div>
+        {!dibatalkan && (
+          <button
+            onClick={() => setModal({ type: "grosir-batalkan-pesanan", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-red-500/30 text-red-300 hover:bg-red-500/10"
+          >
+            <Trash2 size={14} /> Batalkan Pesanan
+          </button>
+        )}
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-batalkan-pesanan") {
+    const p = modal.item;
+    const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    return (
+      <ModalShell title={`Batalkan Pesanan ${p.nomor_pesanan}`} onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Pesanan akan ditandai <span className="font-semibold">Batal</span>. Stok Data Barang yang terpotong
+            dari pesanan ini akan dikembalikan otomatis. Item manual tidak terpengaruh (tidak ikut sistem stok).
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                // Kembalikan stok untuk tiap item yang berasal dari Data Barang.
+                for (const d of detailItems) {
+                  if (d.sumber_produk !== "sku" || !d.sku) continue;
+                  const s = skuMaster.find((x) => x.sku === d.sku);
+                  const stokSaatIni = s ? s.stok : 0;
+                  const stokBaru = stokSaatIni + Number(d.qty);
+                  await sb(`sku_master?sku=eq.${encodeURIComponent(d.sku)}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ stok: stokBaru }),
+                  });
+                  await sb("stock_history", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      sku: d.sku,
+                      type: "masuk",
+                      qty_before: stokSaatIni,
+                      qty_change: Number(d.qty),
+                      qty_after: stokBaru,
+                      note: `Pesanan grosir ${p.nomor_pesanan} dibatalkan`,
+                    }),
+                  });
+                }
+                await sb(`grosir_pesanan?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ status: "Batal" }),
+                });
+              }, "Pesanan dibatalkan, stok dikembalikan")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Batalkan
           </button>
         </div>
       </ModalShell>

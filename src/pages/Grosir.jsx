@@ -1,13 +1,21 @@
 import { useState } from "react";
 import { Search, Plus, Pencil, Trash2, X, ShoppingCart } from "lucide-react";
-import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
+import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge } from "../components/ui";
 import { sb, fmtRp, nextKode, todayDDMMYYYY } from "../lib/api";
 
 export default function Grosir({
-  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, reload, showToast, setModal,
+  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, reload, showToast, setModal,
 }) {
   if (sub === "toko") return <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />;
   if (sub === "pelanggan") return <PelangganList pelangganGrosir={pelangganGrosir} setModal={setModal} />;
+  if (sub === "semua-pesanan")
+    return (
+      <SemuaPesanan
+        pesananGrosir={pesananGrosir}
+        pelangganGrosir={pelangganGrosir}
+        setModal={setModal}
+      />
+    );
   return (
     <BuatPesanan
       pelangganGrosir={pelangganGrosir}
@@ -93,6 +101,83 @@ function PelangganList({ pelangganGrosir, setModal }) {
                 </button>
               </div>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SemuaPesanan({ pesananGrosir, pelangganGrosir, setModal }) {
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const namaPelanggan = (id) => pelangganGrosir.find((p) => p.id === id)?.nama || "—";
+
+  const filtered = (pesananGrosir || []).filter((p) => {
+    const s = q.trim().toLowerCase();
+    const matchQ =
+      !s ||
+      p.nomor_pesanan?.toLowerCase().includes(s) ||
+      namaPelanggan(p.pelanggan_id).toLowerCase().includes(s);
+    const matchStatus = !statusFilter || p.status_bayar === statusFilter;
+    return matchQ && matchStatus;
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Semua Pesanan"
+        description="Riwayat pesanan grosir. Klik salah satu untuk lihat detail item."
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[200px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari nomor pesanan atau nama pelanggan…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className={`${inputClass} w-auto`}
+        >
+          <option value="">Semua Status</option>
+          <option value="Belum Bayar">Belum Bayar</option>
+          <option value="Lunas">Lunas</option>
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState label={q || statusFilter ? "Tidak ada pesanan yang cocok." : "Belum ada pesanan grosir."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {filtered.map((p, i) => (
+            <button
+              key={p.id}
+              onClick={() => setModal({ type: "grosir-detail-pesanan", item: p })}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-left ${
+                i % 2 ? "bg-slate-950" : "bg-slate-900"
+              } hover:bg-slate-800/60`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-amber-400">{p.nomor_pesanan}</span>
+                  {p.status === "Batal" && <Badge color="red">Batal</Badge>}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                  {namaPelanggan(p.pelanggan_id)} · {p.tanggal}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                <Badge color={p.status_bayar === "Lunas" ? "emerald" : "amber"}>{p.status_bayar}</Badge>
+                <span className="text-sm font-semibold text-slate-200">Rp {Number(p.total).toLocaleString("id-ID")}</span>
+              </div>
+            </button>
           ))}
         </div>
       )}
