@@ -16,6 +16,7 @@ import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from 
 import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
+import Grosir from "./pages/Grosir";
 import Laporan from "./pages/Laporan";
 import Pengaturan from "./pages/Pengaturan";
 
@@ -49,6 +50,8 @@ function MainApp({ session, onLogout }) {
   const [settings, setSettings] = useState(null);
   const [penempatan, setPenempatan] = useState([]);
   const [stockHistory, setStockHistory] = useState([]);
+  const [pelangganGrosir, setPelangganGrosir] = useState([]);
+  const [tokoGrosir, setTokoGrosir] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
@@ -94,7 +97,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes] = await Promise.all([
         sb("items?select=*&order=created_at.desc"),
         sb("sku_master?select=*&order=created_at.desc"),
         sb("rak?select=*&order=code"),
@@ -102,6 +105,8 @@ function MainApp({ session, onLogout }) {
         sb("settings?select=*"),
         sb("penempatan?select=*&order=created_at.desc"),
         sb("stock_history?select=*&order=created_at.desc"),
+        sb("grosir_pelanggan?select=*&order=nama"),
+        sb("grosir_toko?select=*&order=nama_toko"),
       ]);
       setItems(itemsRes || []);
       setSkuMaster(skuRes || []);
@@ -115,6 +120,8 @@ function MainApp({ session, onLogout }) {
       setSettings((settingsRes || [])[0] || null);
       setPenempatan(penempatanRes || []);
       setStockHistory(historyRes || []);
+      setPelangganGrosir(pelangganRes || []);
+      setTokoGrosir(tokoRes || []);
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -319,6 +326,9 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "marketplace" && (
                 <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
               )}
+              {nav.menu === "grosir" && (
+                <Grosir sub={nav.sub || "pelanggan"} pelangganGrosir={pelangganGrosir} tokoGrosir={tokoGrosir} setModal={setModal} />
+              )}
               {nav.menu === "laporan" && <Laporan items={items} skuMaster={skuMaster} rak={rak} />}
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
@@ -343,6 +353,8 @@ function MainApp({ session, onLogout }) {
           reload={loadAll}
           showToast={showToast}
           session={session}
+          pelangganGrosir={pelangganGrosir}
+          tokoGrosir={tokoGrosir}
         />
       )}
 

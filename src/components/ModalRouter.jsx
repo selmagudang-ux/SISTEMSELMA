@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw } from "lucide-react";
 import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
-import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos } from "../lib/api";
+import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
-  GantiPasswordForm,
+  GantiPasswordForm, PelangganForm, TokoForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak } from "../pages/Rak";
@@ -184,6 +184,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
+  pelangganGrosir, tokoGrosir,
 }) {
   const close = () => setModal(null);
 
@@ -212,6 +213,124 @@ export default function ModalRouter({
           }, "Password berhasil diganti")
         }
       />
+    );
+  }
+
+  if (modal.type === "grosir-pelanggan-form") {
+    const p = modal.item; // null = tambah baru, ada isinya = edit
+    return (
+      <PelangganForm
+        pelanggan={p}
+        kodeBaru={p ? null : nextKode(pelangganGrosir, "kode", "PLG-")}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            if (p) {
+              await sb(`grosir_pelanggan?id=eq.${p.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ nama: data.nama, wa: data.wa, alamat: data.alamat, kota: data.kota, catatan: data.catatan }),
+              });
+            } else {
+              await sb("grosir_pelanggan", { method: "POST", body: JSON.stringify(data) });
+            }
+          }, p ? "Pelanggan diperbarui" : "Pelanggan ditambahkan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "hapus-grosir-pelanggan") {
+    const p = modal.item;
+    return (
+      <ModalShell title="Hapus Pelanggan" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Pelanggan <span className="font-mono">{p.kode}</span> ({p.nama}) akan dihapus permanen. Tindakan ini
+            tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`grosir_pelanggan?id=eq.${p.id}`, { method: "DELETE" });
+              }, "Pelanggan dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-toko-form") {
+    const t = modal.item;
+    return (
+      <TokoForm
+        toko={t}
+        kodeBaru={t ? null : nextKode(tokoGrosir, "kode", "TKO-")}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            if (t) {
+              await sb(`grosir_toko?id=eq.${t.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ nama_toko: data.nama_toko, alamat: data.alamat, telepon: data.telepon, jenis_toko: data.jenis_toko }),
+              });
+            } else {
+              await sb("grosir_toko", { method: "POST", body: JSON.stringify(data) });
+            }
+          }, t ? "Toko diperbarui" : "Toko ditambahkan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "hapus-grosir-toko") {
+    const t = modal.item;
+    return (
+      <ModalShell title="Hapus Toko" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Toko <span className="font-mono">{t.kode}</span> ({t.nama_toko}) akan dihapus permanen. Tindakan ini
+            tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`grosir_toko?id=eq.${t.id}`, { method: "DELETE" });
+              }, "Toko dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 

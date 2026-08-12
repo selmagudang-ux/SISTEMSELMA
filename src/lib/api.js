@@ -118,6 +118,23 @@ export function sameProdukKecualiUkuran(skuA, skuB, skuMaster) {
 }
 
 // =========================================================
+// GROSIR — helper umum
+// =========================================================
+// Bikin kode urut berikutnya dari sebuah daftar, mis. "PLG-0001", "PLG-0002".
+// list: array of object, field: nama kolom kode, prefix: mis. "PLG-".
+export function nextKode(list, field, prefix) {
+  let max = 0;
+  (list || []).forEach((item) => {
+    const kode = item[field];
+    if (typeof kode === "string" && kode.startsWith(prefix)) {
+      const num = parseInt(kode.slice(prefix.length), 10);
+      if (!isNaN(num) && num > max) max = num;
+    }
+  });
+  return prefix + String(max + 1).padStart(4, "0");
+}
+
+// =========================================================
 // EXPORT / DOWNLOAD DATA (CSV)
 // =========================================================
 // columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),

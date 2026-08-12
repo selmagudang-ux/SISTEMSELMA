@@ -772,6 +772,86 @@ export function TambahRakForm({ onClose, onSubmit, saving }) {
 // sengaja tetap diizinkan (kadang perlu rapikan penomoran), tapi pemanggilnya
 // (ModalRouter) yang tanggung jawab menyamakan rak_code di penempatan & items
 // yang masih menunjuk ke kode lama, supaya datanya tidak jadi anak hilang.
+// Form tambah/edit Pelanggan Grosir. Kalau `pelanggan` diisi berarti mode
+// edit (kode tidak bisa diubah, sudah dipakai sebagai referensi di pesanan
+// nanti); kalau kosong berarti tambah baru (kode dibuat otomatis oleh
+// pemanggil / ModalRouter sebelum form ini tampil, lihat prop `kodeBaru`).
+export function PelangganForm({ pelanggan, kodeBaru, onClose, onSubmit, saving }) {
+  const [nama, setNama] = useState(pelanggan?.nama || "");
+  const [wa, setWa] = useState(pelanggan?.wa || "");
+  const [alamat, setAlamat] = useState(pelanggan?.alamat || "");
+  const [kota, setKota] = useState(pelanggan?.kota || "");
+  const [catatan, setCatatan] = useState(pelanggan?.catatan || "");
+  const kode = pelanggan?.kode || kodeBaru;
+
+  return (
+    <ModalShell title={pelanggan ? `Edit Pelanggan — ${kode}` : "Tambah Pelanggan"} onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">Kode Pelanggan</div>
+        <div className="font-mono text-sm text-amber-400">{kode}</div>
+      </div>
+      <Field label="Nama"><input className={inputClass} value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama pelanggan / toko" /></Field>
+      <Field label="No. WA"><input className={inputClass} value={wa} onChange={(e) => setWa(e.target.value)} placeholder="08xxxxxxxxxx" /></Field>
+      <Field label="Alamat"><input className={inputClass} value={alamat} onChange={(e) => setAlamat(e.target.value)} /></Field>
+      <Field label="Kota"><input className={inputClass} value={kota} onChange={(e) => setKota(e.target.value)} /></Field>
+      <Field label="Catatan"><input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Opsional" /></Field>
+      <button
+        disabled={!nama.trim() || saving}
+        onClick={() =>
+          onSubmit({
+            kode,
+            nama: nama.trim(),
+            wa: wa.trim() || null,
+            alamat: alamat.trim() || null,
+            kota: kota.trim() || null,
+            catatan: catatan.trim() || null,
+          })
+        }
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Form tambah/edit Toko Pengirim / Reseller.
+export function TokoForm({ toko, kodeBaru, onClose, onSubmit, saving }) {
+  const [namaToko, setNamaToko] = useState(toko?.nama_toko || "");
+  const [alamat, setAlamat] = useState(toko?.alamat || "");
+  const [telepon, setTelepon] = useState(toko?.telepon || "");
+  const [jenisToko, setJenisToko] = useState(toko?.jenis_toko || "");
+  const kode = toko?.kode || kodeBaru;
+
+  return (
+    <ModalShell title={toko ? `Edit Toko — ${kode}` : "Tambah Toko Pengirim"} onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">Kode Toko</div>
+        <div className="font-mono text-sm text-amber-400">{kode}</div>
+      </div>
+      <Field label="Nama Toko"><input className={inputClass} value={namaToko} onChange={(e) => setNamaToko(e.target.value)} /></Field>
+      <Field label="Alamat"><input className={inputClass} value={alamat} onChange={(e) => setAlamat(e.target.value)} /></Field>
+      <Field label="Telepon"><input className={inputClass} value={telepon} onChange={(e) => setTelepon(e.target.value)} /></Field>
+      <Field label="Jenis Toko"><input className={inputClass} value={jenisToko} onChange={(e) => setJenisToko(e.target.value)} placeholder="Opsional" /></Field>
+      <button
+        disabled={!namaToko.trim() || saving}
+        onClick={() =>
+          onSubmit({
+            kode,
+            nama_toko: namaToko.trim(),
+            alamat: alamat.trim() || null,
+            telepon: telepon.trim() || null,
+            jenis_toko: jenisToko.trim() || null,
+          })
+        }
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
 export function EditRakForm({ rak, onClose, onSubmit, saving }) {
   const [code, setCode] = useState(rak.code || "");
   const [meja, setMeja] = useState(rak.meja || "");
