@@ -12,6 +12,7 @@ import {
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak } from "../pages/Rak";
+import { EditPesananForm } from "../pages/Grosir";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
@@ -187,7 +188,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
-  pelangganGrosir, tokoGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
+  pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
   const close = () => setModal(null);
 
@@ -557,6 +558,14 @@ export default function ModalRouter({
         )}
         {!dibatalkan && (
           <button
+            onClick={() => setModal({ type: "grosir-edit-pesanan", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 mb-2"
+          >
+            Edit Item Pesanan
+          </button>
+        )}
+        {!dibatalkan && (
+          <button
             onClick={() => setModal({ type: "grosir-batalkan-pesanan", item: p })}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-red-500/30 text-red-300 hover:bg-red-500/10"
           >
@@ -564,6 +573,134 @@ export default function ModalRouter({
           </button>
         )}
       </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-edit-pesanan") {
+    const p = modal.item;
+    const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
+
+    return (
+      <EditPesananForm
+        pesanan={p}
+        detailItems={detailItems}
+        tokoGrosir={tokoGrosir}
+        skuMaster={skuMaster}
+        produkManualGrosir={produkManualGrosir}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            // 1. Kembalikan dulu qty lama (dari item ber-sumber SKU) ke stok,
+            //    supaya perhitungan qty baru di bawah selalu mulai dari basis
+            //    yang benar — sama seperti alur "batalkan pesanan", tapi di
+            //    sini pesanannya tidak dibatalkan, cuma item-nya diganti.
+            const stokWorking = {}; // { sku: stokTerbaruSementara }
+            const getStok = (sku) => {
+              if (stokWorking[sku] === undefined) {
+                stokWorking[sku] = Number(skuMaster.find((s) => s.sku === sku)?.stok) || 0;
+              }
+              return stokWorking[sku];
+            };
+
+            for (const d of detailItems) {
+              if (d.sumber_produk !== "sku" || !d.sku) continue;
+              const stokSebelum = getStok(d.sku);
+              const stokBaru = stokSebelum + Number(d.qty);
+              stokWorking[d.sku] = stokBaru;
+              await sb(`sku_master?sku=eq.${encodeURIComponent(d.sku)}`, {
+                method: "PATCH",
+                body: JSON.stringify({ stok: stokBaru }),
+              });
+              await sb("stock_history", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku: d.sku,
+                  type: "masuk",
+                  qty_before: stokSebelum,
+                  qty_change: Number(d.qty),
+                  qty_after: stokBaru,
+                  note: `Edit pesanan grosir ${p.nomor_pesanan} — qty lama dikembalikan`,
+                }),
+              });
+            }
+
+            // 2. Hapus semua detail item lama, lalu simpan ulang item baru +
+            //    potong stok sesuai qty baru (mengikuti pola simpan di BuatPesanan).
+            for (const d of detailItems) {
+              await sb(`grosir_detail_pesanan?id=eq.${d.id}`, { method: "DELETE" });
+            }
+
+            for (const it of data.items) {
+              let produkManualId = it.produk_manual_id || null;
+              if (it.sumber_produk === "manual" && !produkManualId) {
+                const kodeBaru = nextKode(produkManualGrosir, "kode", "PRM-");
+                const [produkBaru] = await sb("grosir_produk_manual", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    kode: kodeBaru,
+                    nama_produk: it.nama_produk.trim(),
+                    harga: Number(it.harga) || 0,
+                    stok: 0,
+                  }),
+                });
+                produkManualId = produkBaru.id;
+              }
+
+              await sb("grosir_detail_pesanan", {
+                method: "POST",
+                body: JSON.stringify({
+                  pesanan_id: p.id,
+                  sumber_produk: it.sumber_produk,
+                  sku: it.sumber_produk === "sku" ? it.sku : null,
+                  produk_manual_id: it.sumber_produk === "manual" ? produkManualId : null,
+                  nama_produk: it.nama_produk,
+                  qty: it.qty,
+                  harga: it.harga,
+                  subtotal: it.qty * it.harga,
+                }),
+              });
+
+              if (it.sumber_produk === "sku") {
+                const stokSebelum = getStok(it.sku);
+                const stokBaru = Math.max(stokSebelum - it.qty, 0);
+                stokWorking[it.sku] = stokBaru;
+                await sb(`sku_master?sku=eq.${encodeURIComponent(it.sku)}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ stok: stokBaru }),
+                });
+                await sb("stock_history", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    sku: it.sku,
+                    type: "keluar",
+                    qty_before: stokSebelum,
+                    qty_change: -it.qty,
+                    qty_after: stokBaru,
+                    note: `Edit pesanan grosir ${p.nomor_pesanan}`,
+                  }),
+                });
+              }
+            }
+
+            // 3. Update header pesanan: toko, metode bayar, catatan, total,
+            //    dan status bayar dihitung ulang otomatis dari total baru vs
+            //    total yang sudah dibayar (StatusBayar tidak pernah diisi manual).
+            const statusBaru = hitungStatusBayar(data.total, totalDibayar);
+            await sb(`grosir_pesanan?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                toko_id: data.tokoId,
+                metode_bayar: data.metodeBayar,
+                catatan: data.catatan,
+                total: data.total,
+                status_bayar: statusBaru,
+              }),
+            });
+          }, "Pesanan diperbarui")
+        }
+      />
     );
   }
 

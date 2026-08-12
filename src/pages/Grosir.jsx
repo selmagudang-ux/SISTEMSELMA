@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Search, Plus, Pencil, Trash2, X, ShoppingCart } from "lucide-react";
-import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge } from "../components/ui";
+import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell } from "../components/ui";
 import { sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan } from "../lib/api";
 
 export default function Grosir({
@@ -297,7 +297,7 @@ function TokoList({ tokoGrosir, setModal }) {
 // BUAT PESANAN GROSIR
 // =========================================================
 let _itemRowSeq = 0;
-const newItemRow = (sumberProduk) => ({
+export const newItemRow = (sumberProduk) => ({
   _key: `row-${++_itemRowSeq}`,
   sumber_produk: sumberProduk, // 'sku' | 'manual'
   sku: "",
@@ -571,7 +571,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   );
 }
 
-function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
+export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
   const skuOptions = skuMaster.map((s) => ({
     value: s.sku,
     label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}`,
@@ -657,5 +657,169 @@ function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, onRemove
         {error && <span className="text-[11px] text-red-400">{error}</span>}
       </div>
     </div>
+  );
+}
+
+// =========================================================
+// EDIT ITEM PESANAN
+// Form terkontrol (presentational) — semua penyimpanan/penyesuaian stok
+// dilakukan di ModalRouter lewat prop onSubmit, supaya konsisten dengan
+// pola form lain (mis. BayarHutangForm di forms.jsx).
+// =========================================================
+export function EditPesananForm({
+  pesanan, detailItems, tokoGrosir, skuMaster, produkManualGrosir, onClose, saving, onSubmit,
+}) {
+  const [tokoId, setTokoId] = useState(pesanan.toko_id || "");
+  const [metodeBayar, setMetodeBayar] = useState(pesanan.metode_bayar || "Cash");
+  const [catatan, setCatatan] = useState(pesanan.catatan || "");
+  const [rows, setRows] = useState(() =>
+    (detailItems || []).map((d) => ({
+      _key: `row-${++_itemRowSeq}`,
+      sumber_produk: d.sumber_produk,
+      sku: d.sumber_produk === "sku" ? d.sku : "",
+      produk_manual_id: d.sumber_produk === "manual" ? d.produk_manual_id || "" : "",
+      nama_produk: d.nama_produk,
+      qty: d.qty,
+      harga: d.harga,
+      stokTersedia: null,
+    }))
+  );
+
+  // Stok "seolah pesanan ini belum ada" — qty asli pesanan ini dikembalikan
+  // dulu secara virtual ke stok saat ini, supaya validasi qty di form edit
+  // tidak salah anggap stok kurang gara-gara qty lama sudah kepotong.
+  const originalQtyPerSku = {};
+  (detailItems || []).forEach((d) => {
+    if (d.sumber_produk === "sku" && d.sku) {
+      originalQtyPerSku[d.sku] = (originalQtyPerSku[d.sku] || 0) + Number(d.qty || 0);
+    }
+  });
+  const editableSkuMaster = (skuMaster || []).map((s) =>
+    originalQtyPerSku[s.sku] ? { ...s, stok: (Number(s.stok) || 0) + originalQtyPerSku[s.sku] } : s
+  );
+
+  const tokoOptions = (tokoGrosir || []).map((t) => ({ value: t.id, label: `${t.nama_toko} (${t.kode})` }));
+
+  const addRow = (sumberProduk) => setRows((prev) => [...prev, newItemRow(sumberProduk)]);
+  const removeRow = (key) => setRows((prev) => prev.filter((r) => r._key !== key));
+  const updateRow = (key, patch) =>
+    setRows((prev) => prev.map((r) => (r._key === key ? { ...r, ...patch } : r)));
+
+  const qtyTerpakaiPerSku = (skuKey, kecualiKey) =>
+    rows
+      .filter((r) => r.sumber_produk === "sku" && r.sku === skuKey && r._key !== kecualiKey)
+      .reduce((a, r) => a + (Number(r.qty) || 0), 0);
+
+  const total = rows.reduce((a, r) => a + (Number(r.qty) || 0) * (Number(r.harga) || 0), 0);
+
+  const rowError = (r) => {
+    if (r.sumber_produk === "sku") {
+      if (!r.sku) return "Pilih SKU dulu";
+      if (!r.qty || r.qty <= 0) return "Qty harus > 0";
+      const stokSaatIni = editableSkuMaster.find((s) => s.sku === r.sku)?.stok || 0;
+      const sudahDipakai = qtyTerpakaiPerSku(r.sku, r._key);
+      if (r.qty + sudahDipakai > stokSaatIni) return `Stok tidak cukup (sisa ${stokSaatIni - sudahDipakai})`;
+    } else {
+      if (!r.nama_produk.trim()) return "Nama produk wajib diisi";
+      if (!r.qty || r.qty <= 0) return "Qty harus > 0";
+    }
+    return null;
+  };
+
+  const errors = rows.map(rowError);
+  const canSubmit = rows.length > 0 && errors.every((e) => !e) && !saving;
+
+  const toko = tokoGrosir.find((t) => t.id === tokoId);
+
+  const submit = () => {
+    onSubmit({
+      tokoId: tokoId || null,
+      namaToko: toko ? toko.nama_toko : null,
+      metodeBayar,
+      catatan: catatan.trim() || null,
+      total,
+      items: rows.map((r) => ({
+        sumber_produk: r.sumber_produk,
+        sku: r.sumber_produk === "sku" ? r.sku : null,
+        produk_manual_id: r.sumber_produk === "manual" ? r.produk_manual_id || null : null,
+        nama_produk: r.nama_produk,
+        qty: Number(r.qty),
+        harga: Number(r.harga),
+      })),
+    });
+  };
+
+  return (
+    <ModalShell title={`Edit Pesanan ${pesanan.nomor_pesanan}`} onClose={onClose}>
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+        <Field label="Toko Pengirim (opsional)">
+          <SearchableSelect value={tokoId} onChange={setTokoId} options={tokoOptions} placeholder="Cari toko…" />
+        </Field>
+        <Field label="Metode Bayar">
+          <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
+            <option value="Cash">Cash</option>
+            <option value="Transfer">Transfer</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Catatan (opsional)">
+        <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
+      </Field>
+
+      <div className="my-3 flex items-center gap-2">
+        <button
+          onClick={() => addRow("sku")}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
+        >
+          <Plus size={14} /> Dari Data Barang
+        </button>
+        <button
+          onClick={() => addRow("manual")}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
+        >
+          <Plus size={14} /> Item Manual
+        </button>
+      </div>
+
+      {rows.length === 0 ? (
+        <EmptyState label="Belum ada item. Tambahkan dari Data Barang atau input manual." />
+      ) : (
+        <div className="space-y-2 mb-4">
+          {rows.map((r, i) => (
+            <ItemRow
+              key={r._key}
+              row={r}
+              error={errors[i]}
+              skuMaster={editableSkuMaster}
+              produkManualGrosir={produkManualGrosir}
+              onChange={(patch) => updateRow(r._key, patch)}
+              onRemove={() => removeRow(r._key)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 mb-4">
+        <span className="text-sm text-slate-400">Total Pesanan</span>
+        <span className="text-lg font-bold text-amber-400">{fmtRp(total)}</span>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={!canSubmit}
+          onClick={submit}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
+        >
+          {saving ? "Menyimpan…" : "Simpan Perubahan"}
+        </button>
+      </div>
+    </ModalShell>
   );
 }

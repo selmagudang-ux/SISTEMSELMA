@@ -382,6 +382,7 @@ function MainApp({ session, onLogout }) {
           session={session}
           pelangganGrosir={pelangganGrosir}
           tokoGrosir={tokoGrosir}
+          produkManualGrosir={produkManualGrosir}
           pesananGrosir={pesananGrosir}
           detailPesananGrosir={detailPesananGrosir}
           pembayaranGrosir={pembayaranGrosir}
