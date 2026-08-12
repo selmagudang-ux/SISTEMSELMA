@@ -2,10 +2,13 @@ import { useState } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw } from "lucide-react";
 import { ModalShell, Badge } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
-import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode } from "../lib/api";
+import {
+  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode,
+  totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
+} from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
-  GantiPasswordForm, PelangganForm, TokoForm,
+  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak } from "../pages/Rak";
@@ -184,7 +187,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
-  pelangganGrosir, tokoGrosir, detailPesananGrosir,
+  pelangganGrosir, tokoGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
   const close = () => setModal(null);
 
@@ -339,11 +342,18 @@ export default function ModalRouter({
     const pelanggan = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id);
     const toko = (tokoGrosir || []).find((x) => x.id === p.toko_id);
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    const riwayatBayar = (pembayaranGrosir || [])
+      .filter((b) => b.pesanan_id === p.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
+    const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
     const dibatalkan = p.status === "Batal";
     return (
       <ModalShell title={`Pesanan ${p.nomor_pesanan}`} onClose={close}>
         <div className="flex items-center gap-2 mb-3">
-          <Badge color={p.status_bayar === "Lunas" ? "emerald" : "amber"}>{p.status_bayar}</Badge>
+          <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+            {p.status_bayar}
+          </Badge>
           {dibatalkan && <Badge color="red">Dibatalkan</Badge>}
         </div>
         <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
@@ -380,10 +390,52 @@ export default function ModalRouter({
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 mb-3">
-          <span className="text-xs text-slate-400">Total</span>
-          <span className="text-base font-bold text-amber-400">{fmtRp(p.total)}</span>
+        <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+          {[
+            ["Total", fmtRp(p.total)],
+            ["Sudah Dibayar", fmtRp(totalDibayar)],
+            ["Sisa Hutang", sisaHutang > 0 ? fmtRp(sisaHutang) : "Lunas"],
+          ].map(([label, val], i) => (
+            <div
+              key={label}
+              className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <span className="text-slate-500 text-xs">{label}</span>
+              <span className={`text-right font-semibold ${label === "Sisa Hutang" && sisaHutang > 0 ? "text-red-400" : "text-slate-200"}`}>
+                {val}
+              </span>
+            </div>
+          ))}
         </div>
+
+        {riwayatBayar.length > 0 && (
+          <>
+            <div className="text-xs text-slate-500 mb-1.5">Riwayat Pembayaran</div>
+            <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+              {riwayatBayar.map((b, i) => (
+                <div
+                  key={b.id}
+                  className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+                >
+                  <div className="min-w-0">
+                    <div className="text-slate-200 text-xs">{new Date(b.created_at).toLocaleString("id-ID")}</div>
+                    <div className="text-[11px] text-slate-500">{b.metode_bayar}{b.catatan ? ` · ${b.catatan}` : ""}</div>
+                  </div>
+                  <div className="text-emerald-400 font-medium flex-shrink-0 ml-2">{fmtRp(b.jumlah)}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {!dibatalkan && sisaHutang > 0 && (
+          <button
+            onClick={() => setModal({ type: "grosir-bayar-hutang", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 mb-2"
+          >
+            Catat Pembayaran
+          </button>
+        )}
         {!dibatalkan && (
           <button
             onClick={() => setModal({ type: "grosir-batalkan-pesanan", item: p })}
@@ -393,6 +445,85 @@ export default function ModalRouter({
           </button>
         )}
       </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-bayar-hutang") {
+    const p = modal.item;
+    const pelanggan = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id);
+    const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
+    const saldoDeposit = pelanggan ? saldoDepositPelanggan(pelanggan.id, depositGrosir) : 0;
+
+    return (
+      <BayarHutangForm
+        pesanan={p}
+        sisaHutang={sisaHutang}
+        saldoDeposit={saldoDeposit}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            const jumlahDiterima = Number(data.jumlah) || 0;
+            if (jumlahDiterima <= 0) throw new Error("Jumlah pembayaran harus lebih dari 0");
+            const metode = data.metodeBayar || "Cash";
+
+            // Uang yang benar-benar dipakai melunasi pesanan ini dibatasi maksimal sisa hutangnya.
+            const bayarKeOrder = Math.min(jumlahDiterima, sisaHutang);
+            let kelebihan = jumlahDiterima - bayarKeOrder;
+
+            if (metode === "Deposit" && bayarKeOrder > saldoDeposit + 0.0001) {
+              throw new Error(
+                `Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk membayar ${fmtRp(bayarKeOrder)}`
+              );
+            }
+            if (metode === "Deposit") kelebihan = 0; // bayar pakai deposit tidak menghasilkan deposit baru
+
+            const nomorBayar = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
+            await sb("grosir_pembayaran", {
+              method: "POST",
+              body: JSON.stringify({
+                nomor_bayar: nomorBayar,
+                pesanan_id: p.id,
+                pelanggan_id: p.pelanggan_id,
+                jumlah: bayarKeOrder,
+                metode_bayar: metode,
+                catatan: data.catatan || null,
+              }),
+            });
+
+            if (metode === "Deposit") {
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.pelanggan_id,
+                  jumlah: -bayarKeOrder,
+                  keterangan: `Dipakai bayar pesanan ${p.nomor_pesanan}`,
+                  pesanan_id_terkait: p.id,
+                }),
+              });
+            } else if (kelebihan > 0.0001) {
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.pelanggan_id,
+                  jumlah: kelebihan,
+                  keterangan: `Kelebihan bayar pesanan ${p.nomor_pesanan}`,
+                  pesanan_id_terkait: p.id,
+                }),
+              });
+            }
+
+            const sisaSesudah = sisaHutang - bayarKeOrder;
+            const statusBaru = hitungStatusBayar(Number(p.total) || 0, (Number(p.total) || 0) - sisaSesudah);
+            await sb(`grosir_pesanan?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ status_bayar: statusBaru }),
+            });
+          }, "Pembayaran tercatat")
+        }
+      />
     );
   }
 

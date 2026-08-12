@@ -142,6 +142,56 @@ export function todayDDMMYYYY() {
 }
 
 // =========================================================
+// GROSIR — CICILAN HUTANG & DEPOSIT PELANGGAN
+// (helper hitung dinamis, sama pola dengan sistem grosir lama:
+//  sisa hutang & saldo deposit TIDAK disimpan sebagai angka statis,
+//  selalu dihitung ulang dari riwayat grosir_pembayaran / grosir_deposit
+//  supaya tidak pernah "basi" / tidak sinkron.)
+// =========================================================
+
+// Total yang sudah dibayar untuk satu pesanan (dari grosir_pembayaran).
+export function totalDibayarPesanan(pesananId, pembayaranList) {
+  return (pembayaranList || [])
+    .filter((b) => b.pesanan_id === pesananId)
+    .reduce((a, b) => a + (Number(b.jumlah) || 0), 0);
+}
+
+// Sisa hutang satu pesanan = Total - TotalDibayar (minimal 0).
+export function sisaHutangPesanan(pesanan, pembayaranList) {
+  const dibayar = totalDibayarPesanan(pesanan.id, pembayaranList);
+  return Math.max(0, (Number(pesanan.total) || 0) - dibayar);
+}
+
+// Status bayar otomatis (dipakai lagi setelah tiap pembayaran dicatat):
+//  Belum Bayar -> belum ada pembayaran sama sekali
+//  Sebagian    -> sudah dibayar sebagian, masih ada sisa
+//  Lunas       -> sisa <= 0
+export function hitungStatusBayar(total, totalDibayar) {
+  if (totalDibayar <= 0.0001) return "Belum Bayar";
+  if (totalDibayar >= total - 0.0001) return "Lunas";
+  return "Sebagian";
+}
+
+// Saldo deposit satu pelanggan = akumulasi seluruh baris grosir_deposit miliknya.
+export function saldoDepositPelanggan(pelangganId, depositList) {
+  return (depositList || [])
+    .filter((d) => d.pelanggan_id === pelangganId)
+    .reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
+}
+
+// Peta {pelangganId: totalSisaHutang} lintas semua pesanan aktif (bukan Batal) milik tiap pelanggan.
+export function totalHutangPerPelanggan(pesananList, pembayaranList) {
+  const map = {};
+  (pesananList || []).forEach((p) => {
+    if (p.status === "Batal") return;
+    const sisa = sisaHutangPesanan(p, pembayaranList);
+    if (sisa <= 0.0001) return;
+    map[p.pelanggan_id] = (map[p.pelanggan_id] || 0) + sisa;
+  });
+  return map;
+}
+
+// =========================================================
 // EXPORT / DOWNLOAD DATA (CSV)
 // =========================================================
 // columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),

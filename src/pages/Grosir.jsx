@@ -1,18 +1,27 @@
 import { useState } from "react";
 import { Search, Plus, Pencil, Trash2, X, ShoppingCart } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge } from "../components/ui";
-import { sb, fmtRp, nextKode, todayDDMMYYYY } from "../lib/api";
+import { sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan } from "../lib/api";
 
 export default function Grosir({
-  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, reload, showToast, setModal,
+  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, reload, showToast, setModal,
 }) {
   if (sub === "toko") return <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />;
-  if (sub === "pelanggan") return <PelangganList pelangganGrosir={pelangganGrosir} setModal={setModal} />;
+  if (sub === "pelanggan")
+    return (
+      <PelangganList
+        pelangganGrosir={pelangganGrosir}
+        pesananGrosir={pesananGrosir}
+        pembayaranGrosir={pembayaranGrosir}
+        setModal={setModal}
+      />
+    );
   if (sub === "semua-pesanan")
     return (
       <SemuaPesanan
         pesananGrosir={pesananGrosir}
         pelangganGrosir={pelangganGrosir}
+        pembayaranGrosir={pembayaranGrosir}
         setModal={setModal}
       />
     );
@@ -28,8 +37,9 @@ export default function Grosir({
   );
 }
 
-function PelangganList({ pelangganGrosir, setModal }) {
+function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, setModal }) {
   const [q, setQ] = useState("");
+  const hutangMap = totalHutangPerPelanggan(pesananGrosir, pembayaranGrosir);
   const filtered = (pelangganGrosir || []).filter((p) => {
     const s = q.trim().toLowerCase();
     if (!s) return true;
@@ -83,6 +93,11 @@ function PelangganList({ pelangganGrosir, setModal }) {
                 <div className="text-[11px] text-slate-500 mt-0.5">
                   {[p.wa, p.kota].filter(Boolean).join(" · ") || "—"}
                 </div>
+                {hutangMap[p.id] > 0 && (
+                  <div className="mt-1">
+                    <Badge color="red">Hutang {fmtRp(hutangMap[p.id])}</Badge>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button
@@ -108,7 +123,7 @@ function PelangganList({ pelangganGrosir, setModal }) {
   );
 }
 
-function SemuaPesanan({ pesananGrosir, pelangganGrosir, setModal }) {
+function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setModal }) {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -148,6 +163,7 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, setModal }) {
         >
           <option value="">Semua Status</option>
           <option value="Belum Bayar">Belum Bayar</option>
+          <option value="Sebagian">Sebagian</option>
           <option value="Lunas">Lunas</option>
         </select>
       </div>
@@ -174,8 +190,17 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, setModal }) {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                <Badge color={p.status_bayar === "Lunas" ? "emerald" : "amber"}>{p.status_bayar}</Badge>
-                <span className="text-sm font-semibold text-slate-200">Rp {Number(p.total).toLocaleString("id-ID")}</span>
+                <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                  {p.status_bayar}
+                </Badge>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-slate-200">{fmtRp(p.total)}</div>
+                  {p.status_bayar !== "Lunas" && p.status !== "Batal" && (
+                    <div className="text-[10px] text-red-400">
+                      Sisa {fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}
+                    </div>
+                  )}
+                </div>
               </div>
             </button>
           ))}

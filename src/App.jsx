@@ -55,6 +55,8 @@ function MainApp({ session, onLogout }) {
   const [produkManualGrosir, setProdukManualGrosir] = useState([]);
   const [pesananGrosir, setPesananGrosir] = useState([]);
   const [detailPesananGrosir, setDetailPesananGrosir] = useState([]);
+  const [pembayaranGrosir, setPembayaranGrosir] = useState([]);
+  const [depositGrosir, setDepositGrosir] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
@@ -100,7 +102,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes] = await Promise.all([
         sb("items?select=*&order=created_at.desc"),
         sb("sku_master?select=*&order=created_at.desc"),
         sb("rak?select=*&order=code"),
@@ -113,6 +115,8 @@ function MainApp({ session, onLogout }) {
         sb("grosir_produk_manual?select=*&order=nama_produk"),
         sb("grosir_pesanan?select=*&order=created_at.desc"),
         sb("grosir_detail_pesanan?select=*"),
+        sb("grosir_pembayaran?select=*&order=created_at.desc"),
+        sb("grosir_deposit?select=*&order=created_at.desc"),
       ]);
       setItems(itemsRes || []);
       setSkuMaster(skuRes || []);
@@ -131,6 +135,8 @@ function MainApp({ session, onLogout }) {
       setProdukManualGrosir(produkManualRes || []);
       setPesananGrosir(pesananRes || []);
       setDetailPesananGrosir(detailPesananRes || []);
+      setPembayaranGrosir(pembayaranRes || []);
+      setDepositGrosir(depositRes || []);
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -344,6 +350,7 @@ function MainApp({ session, onLogout }) {
                   skuMaster={skuMaster}
                   pesananGrosir={pesananGrosir}
                   detailPesananGrosir={detailPesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
                   reload={loadAll}
                   showToast={showToast}
                   setModal={setModal}
@@ -376,6 +383,8 @@ function MainApp({ session, onLogout }) {
           pelangganGrosir={pelangganGrosir}
           tokoGrosir={tokoGrosir}
           detailPesananGrosir={detailPesananGrosir}
+          pembayaranGrosir={pembayaranGrosir}
+          depositGrosir={depositGrosir}
         />
       )}
 
