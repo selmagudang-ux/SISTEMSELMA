@@ -139,7 +139,10 @@ function MainApp({ session, onLogout }) {
   const tanpaRakCount = stageCounts.rak + perluRakUlang.length;
   // Rak Terpakai (Dashboard) = rak yang benar-benar masih diisi SKU berstok > 0,
   // pakai logika yang SAMA dengan Peta Rak supaya angkanya selalu sinkron.
-  const rakTerpakaiCount = rakTerpakai(rak, penempatan, skuMaster).length;
+  const rakTerpakaiList = rakTerpakai(rak, penempatan, skuMaster);
+  const rakTerpakaiCount = rakTerpakaiList.length;
+  // Rak Kosong (Dashboard) = rak yang terdaftar tapi tidak ada di daftar rak terpakai.
+  const rakKosong = rak.filter((r) => !rakTerpakaiList.some((t) => t.id === r.id));
 
   const sidebarBadges = {
     "sku-harga": stageCounts.sku,
@@ -281,6 +284,7 @@ function MainApp({ session, onLogout }) {
                   skuCount={skuMaster.length}
                   totalStok={totalStok}
                   rakCount={rakTerpakaiCount}
+                  rakKosong={rakKosong}
                   items={items}
                   onNavigate={navigate}
                   setModal={setModal}
@@ -293,7 +297,7 @@ function MainApp({ session, onLogout }) {
                 <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
-                <SkuHarga sub={nav.sub || "buat"} items={items} skuMaster={skuMaster} setModal={setModal} />
+                <SkuHarga sub={nav.sub || "buat"} items={items} skuMaster={skuMaster} master={master} setModal={setModal} />
               )}
               {nav.menu === "stok" && (
                 <Stok sub={nav.sub || "barang"} skuMaster={skuMaster} penempatan={penempatan} stockHistory={stockHistory} setModal={setModal} />

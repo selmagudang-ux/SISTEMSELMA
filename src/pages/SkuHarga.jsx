@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2 } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { fmtRp, downloadCsv, downloadFotos, groupByKategori } from "../lib/api";
+import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "../lib/api";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 
-export default function SkuHarga({ sub, items, skuMaster, setModal }) {
+export default function SkuHarga({ sub, items, skuMaster, master, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
-  return <MasterBarang skuMaster={skuMaster} items={items} setModal={setModal} />;
+  return <MasterBarang skuMaster={skuMaster} items={items} master={master} setModal={setModal} />;
 }
 
 function BuatSkuList({ items, setModal }) {
@@ -43,12 +43,27 @@ function BuatSkuList({ items, setModal }) {
   );
 }
 
-function MasterBarang({ skuMaster, items, setModal }) {
+function MasterBarang({ skuMaster, items, master, setModal }) {
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");
   const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
   const [unduhFoto, setUnduhFoto] = useState(null); // { done, total } selagi foto diunduh
+  const [selected, setSelected] = useState(() => new Set()); // sku yang dipilih untuk download foto
+
+  // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
+  // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
+  const kategoriLabel = (kode) => labelFor(master || {}, "kategori", kode);
+  const subkategoriLabel = (kode) => labelFor(master || {}, "subkategori", kode);
+
+  const toggleSelect = (sku) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(sku)) next.delete(sku);
+      else next.add(sku);
+      return next;
+    });
+  };
 
   // Daftar kategori unik dari semua SKU yang ada, buat isi dropdown.
   const kategoriOptions = Array.from(
@@ -102,8 +117,8 @@ function MasterBarang({ skuMaster, items, setModal }) {
     setCetak({ done: 0, total: filtered.length });
     try {
       const judulParts = ["Katalog Produk"];
-      if (kategori) judulParts.push(kategori);
-      if (subkategori) judulParts.push(subkategori);
+      if (kategori) judulParts.push(kategoriLabel(kategori));
+      if (subkategori) judulParts.push(subkategoriLabel(subkategori));
       await generateKatalogPdf(filtered, items, {
         judul: judulParts.join(" — "),
         onProgress: (done, total) => setCetak({ done, total }),
@@ -113,11 +128,14 @@ function MasterBarang({ skuMaster, items, setModal }) {
     }
   };
 
-  // Download foto tiap SKU yang tampil di daftar (nama file = kode SKU).
+  // Download foto tiap SKU (nama file = kode SKU). Kalau ada barang yang dicentang,
+  // hanya foto barang yang dipilih itu yang diunduh — kalau tidak ada yang dicentang,
+  // pakai semua SKU yang sedang tampil di daftar (sesuai filter).
   // Kalau cuma 1 foto -> langsung download. Kalau lebih -> dibungkus ZIP.
   const handleDownloadFoto = async () => {
-    if (filtered.length === 0 || unduhFoto) return;
-    const fotos = filtered.map((s) => ({ sku: s.sku, url: fotoUntukSku(s.sku, items) }));
+    const sumber = selected.size > 0 ? skuMaster.filter((s) => selected.has(s.sku)) : filtered;
+    if (sumber.length === 0 || unduhFoto) return;
+    const fotos = sumber.map((s) => ({ sku: s.sku, url: fotoUntukSku(s.sku, items) }));
     if (fotos.every((f) => !f.url)) {
       alert("Tidak ada foto untuk SKU pada daftar ini.");
       return;
@@ -146,7 +164,7 @@ function MasterBarang({ skuMaster, items, setModal }) {
             </button>
             <button
               onClick={handleDownloadFoto}
-              disabled={filtered.length === 0 || !!unduhFoto}
+              disabled={(selected.size === 0 && filtered.length === 0) || !!unduhFoto}
               className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
             >
               {unduhFoto ? (
@@ -156,10 +174,19 @@ function MasterBarang({ skuMaster, items, setModal }) {
                 </>
               ) : (
                 <>
-                  <ImageDown size={14} /> Download Foto
+                  <ImageDown size={14} />
+                  {selected.size > 0 ? `Download Foto Terpilih (${selected.size})` : "Download Foto"}
                 </>
               )}
             </button>
+            {selected.size > 0 && (
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-[11px] text-slate-500 hover:text-slate-300 underline"
+              >
+                Batal pilih
+              </button>
+            )}
             <button
               onClick={handleDownloadPdf}
               disabled={filtered.length === 0 || !!cetak}
@@ -196,7 +223,7 @@ function MasterBarang({ skuMaster, items, setModal }) {
         >
           <option value="">Semua Kategori</option>
           {kategoriOptions.map((k) => (
-            <option key={k} value={k}>{k}</option>
+            <option key={k} value={k}>{kategoriLabel(k)}</option>
           ))}
         </select>
         <select
@@ -207,7 +234,7 @@ function MasterBarang({ skuMaster, items, setModal }) {
         >
           <option value="">Semua Subkategori</option>
           {subkategoriOptions.map((sk) => (
-            <option key={sk} value={sk}>{sk}</option>
+            <option key={sk} value={sk}>{subkategoriLabel(sk)}</option>
           ))}
         </select>
       </div>
@@ -218,7 +245,7 @@ function MasterBarang({ skuMaster, items, setModal }) {
           {groupByKategori(filtered).map(({ kategori, groups }) => (
             <div key={kategori}>
               <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-sm font-semibold text-amber-400">{kategori}</h3>
+                <h3 className="text-sm font-semibold text-amber-400">{kategoriLabel(kategori)}</h3>
                 <span className="text-[11px] text-slate-500">
                   ({groups.reduce((n, g) => n + g.items.length, 0)} SKU)
                 </span>
@@ -227,20 +254,50 @@ function MasterBarang({ skuMaster, items, setModal }) {
                 {groups.map(({ subkategori, items: subItems }) => (
                   <div key={subkategori}>
                     <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 pl-1">
-                      {subkategori}
+                      {subkategoriLabel(subkategori)}
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {subItems.map((s) => {
                         const adaHargaBaru =
                           s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
                         const foto = fotoUntukSku(s.sku, items);
+                        const dipilih = selected.has(s.sku);
                         return (
                           <div
                             key={s.id}
                             onClick={() => setModal({ type: "detail-sku", item: s })}
-                            className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 cursor-pointer hover:border-amber-500/40"
+                            className={`relative rounded-xl border bg-slate-900/50 p-4 cursor-pointer transition ${
+                              dipilih ? "border-amber-500/60 ring-1 ring-amber-500/30" : "border-slate-800 hover:border-amber-500/40"
+                            }`}
                           >
-                            <div className="flex items-center gap-3 mb-3">
+                            {adaHargaBaru && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setModal({ type: "pilih-harga", item: s });
+                                }}
+                                title="Ada perubahan harga asli — klik untuk pilih harga yang dipakai"
+                                className="absolute top-2.5 right-2.5 flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full pl-1.5 pr-2 py-0.5 hover:bg-red-500/25"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                Harga Baru
+                              </button>
+                            )}
+                            <div className="flex items-center gap-3 mb-3 pr-4">
+                              <label
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md border border-slate-700 bg-slate-950 cursor-pointer"
+                                title="Pilih untuk download foto"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={dipilih}
+                                  onChange={() => toggleSelect(s.sku)}
+                                  className="sr-only"
+                                />
+                                {dipilih && <Check size={13} className="text-amber-400" />}
+                              </label>
                               {foto ? (
                                 <img
                                   src={foto}
@@ -281,34 +338,6 @@ function MasterBarang({ skuMaster, items, setModal }) {
                                 <span className="text-amber-400 font-semibold">{fmtRp(s.ecer)}</span>
                               </div>
                             </div>
-                            {adaHargaBaru && (
-                              <div className="mt-3 pt-3 border-t border-amber-500/30">
-                                <div className="text-[11px] text-amber-400 mb-2">
-                                  Barang lama masuk dengan harga baru: {fmtRp(s.harga_asli_baru)}. Pilih mau
-                                  pakai harga yang mana:
-                                </div>
-                                <div className="flex gap-1.5">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setModal({ type: "pilih-harga", item: s, pilih: "lama" });
-                                    }}
-                                    className="flex-1 text-[11px] font-medium border border-slate-700 hover:border-slate-600 text-slate-300 rounded-md py-1.5"
-                                  >
-                                    Pakai Lama
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setModal({ type: "pilih-harga", item: s, pilih: "baru" });
-                                    }}
-                                    className="flex-1 text-[11px] font-medium bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-md py-1.5"
-                                  >
-                                    Pakai Baru
-                                  </button>
-                                </div>
-                              </div>
-                            )}
                           </div>
                         );
                       })}

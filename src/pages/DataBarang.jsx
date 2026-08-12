@@ -46,7 +46,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
   return (
     <div>
       <PageHeader
-        title="Data Barang"
+        title="Alur Barang"
         description="Cari dan lihat detail semua barang yang tercatat di sistem."
         action={
           <button

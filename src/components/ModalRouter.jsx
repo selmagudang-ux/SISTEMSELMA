@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Trash2, AlertTriangle } from "lucide-react";
 import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
@@ -5,6 +6,95 @@ import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
 } from "./forms";
+
+// Modal pilih Harga Lama / Harga Baru. Dibuka dari kartu Master Barang lewat
+// tanda merah "Harga Baru" — pemilihan lama/baru dilakukan DI DALAM modal ini
+// (bukan langsung di kartu), supaya tampilan awal daftar tetap ringkas.
+function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
+  const [pilih, setPilih] = useState(null); // null | "lama" | "baru"
+  const hargaTerpilih = pilih === "baru" ? item.harga_asli_baru : pilih === "lama" ? item.harga_asli : null;
+  const preview = pilih && settings ? calcHarga(hargaTerpilih, settings) : null;
+
+  return (
+    <ModalShell title="Pilih Harga Asli" onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">SKU</div>
+        <div className="font-mono text-sm text-amber-400">{item.sku}</div>
+      </div>
+      <p className="text-xs text-slate-400 mb-2">
+        Barang ini masuk lagi dengan harga asli yang berbeda. Pilih dulu mau pakai harga yang mana:
+      </p>
+      <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+        <button
+          type="button"
+          onClick={() => setPilih("lama")}
+          className={`text-left rounded-lg border px-3 py-2 transition ${
+            pilih === "lama" ? "border-amber-500/60 bg-amber-500/10" : "border-slate-800 hover:border-slate-700"
+          }`}
+        >
+          <div className="text-slate-500">Harga Lama</div>
+          <div className="text-slate-200 font-semibold mt-0.5">{fmtRp(item.harga_asli)}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPilih("baru")}
+          className={`text-left rounded-lg border px-3 py-2 transition ${
+            pilih === "baru" ? "border-amber-500/60 bg-amber-500/10" : "border-slate-800 hover:border-slate-700"
+          }`}
+        >
+          <div className="text-slate-500">Harga Baru</div>
+          <div className="text-slate-200 font-semibold mt-0.5">{fmtRp(item.harga_asli_baru)}</div>
+        </button>
+      </div>
+      {pilih ? (
+        <>
+          <p className="text-xs text-slate-400 mb-3">
+            Kamu memilih pakai{" "}
+            <span className="text-amber-400 font-medium">{pilih === "baru" ? "Harga Baru" : "Harga Lama"}</span> (
+            {fmtRp(hargaTerpilih)}) sebagai Harga Asli SKU ini. Harga jual (HPP, Grosir, Tengah, Ecer) akan dihitung
+            ulang otomatis dari harga ini.
+          </p>
+          {preview && (
+            <div className="rounded-lg border border-slate-800 overflow-hidden mb-4 text-xs">
+              {[
+                ["HPP", fmtRp(preview.hpp)],
+                ["Grosir", fmtRp(preview.grosir)],
+                ["Tengah", fmtRp(preview.tengah)],
+                ["Ecer", fmtRp(preview.ecer)],
+              ].map(([label, val], i) => (
+                <div
+                  key={label}
+                  className={`flex items-center justify-between px-3 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+                >
+                  <span className="text-slate-500">{label}</span>
+                  <span className="text-slate-200">{val}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <p className="text-xs text-slate-500 mb-4">Pilih salah satu kartu harga di atas dulu.</p>
+      )}
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={saving || !settings || !pilih}
+          onClick={() => onConfirm(hargaTerpilih)}
+          className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
+        >
+          {saving ? "Menyimpan…" : "Pakai Harga Ini"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, saving, setSaving, reload, showToast,
@@ -468,79 +558,31 @@ export default function ModalRouter({
 
   if (modal.type === "pilih-harga") {
     const s = modal.item;
-    const pakaiBaru = modal.pilih === "baru";
-    const hargaTerpilih = pakaiBaru ? s.harga_asli_baru : s.harga_asli;
-    const preview = settings ? calcHarga(hargaTerpilih, settings) : null;
     return (
-      <ModalShell title="Pilih Harga Asli" onClose={close}>
-        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-          <div className="text-[11px] text-slate-500">SKU</div>
-          <div className="font-mono text-sm text-amber-400">{s.sku}</div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-          <div className={`rounded-lg border px-3 py-2 ${!pakaiBaru ? "border-amber-500/50 bg-amber-500/10" : "border-slate-800"}`}>
-            <div className="text-slate-500">Harga Lama</div>
-            <div className="text-slate-200 font-semibold mt-0.5">{fmtRp(s.harga_asli)}</div>
-          </div>
-          <div className={`rounded-lg border px-3 py-2 ${pakaiBaru ? "border-amber-500/50 bg-amber-500/10" : "border-slate-800"}`}>
-            <div className="text-slate-500">Harga Baru</div>
-            <div className="text-slate-200 font-semibold mt-0.5">{fmtRp(s.harga_asli_baru)}</div>
-          </div>
-        </div>
-        <p className="text-xs text-slate-400 mb-3">
-          Kamu memilih pakai <span className="text-amber-400 font-medium">{pakaiBaru ? "Harga Baru" : "Harga Lama"}</span>{" "}
-          ({fmtRp(hargaTerpilih)}) sebagai Harga Asli SKU ini. Harga jual (HPP, Grosir, Tengah, Ecer) akan dihitung
-          ulang otomatis dari harga ini.
-        </p>
-        {preview && (
-          <div className="rounded-lg border border-slate-800 overflow-hidden mb-4 text-xs">
-            {[
-              ["HPP", fmtRp(preview.hpp)],
-              ["Grosir", fmtRp(preview.grosir)],
-              ["Tengah", fmtRp(preview.tengah)],
-              ["Ecer", fmtRp(preview.ecer)],
-            ].map(([label, val], i) => (
-              <div key={label} className={`flex items-center justify-between px-3 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
-                <span className="text-slate-500">{label}</span>
-                <span className="text-slate-200">{val}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex gap-2">
-          <button
-            onClick={close}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
-          >
-            Batal
-          </button>
-          <button
-            disabled={saving || !settings}
-            onClick={() =>
-              run(async () => {
-                if (!settings) throw new Error("Pengaturan harga belum termuat");
-                const harga = calcHarga(hargaTerpilih, settings);
-                await sb(`sku_master?id=eq.${s.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({
-                    harga_asli: hargaTerpilih,
-                    harga_dasar: harga.hargaDasar,
-                    hpp: harga.hpp,
-                    grosir: harga.grosir,
-                    tengah: harga.tengah,
-                    ecer: harga.ecer,
-                    harga_asli_baru: null,
-                  }),
-                });
-              }, "Harga SKU diperbarui")
-            }
-            className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
-          >
-            {saving ? "Menyimpan…" : "Pakai Harga Ini"}
-          </button>
-        </div>
-      </ModalShell>
+      <PilihHargaModal
+        item={s}
+        settings={settings}
+        saving={saving}
+        onClose={close}
+        onConfirm={(hargaTerpilih) =>
+          run(async () => {
+            if (!settings) throw new Error("Pengaturan harga belum termuat");
+            const harga = calcHarga(hargaTerpilih, settings);
+            await sb(`sku_master?id=eq.${s.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                harga_asli: hargaTerpilih,
+                harga_dasar: harga.hargaDasar,
+                hpp: harga.hpp,
+                grosir: harga.grosir,
+                tengah: harga.tengah,
+                ecer: harga.ecer,
+                harga_asli_baru: null,
+              }),
+            });
+          }, "Harga SKU diperbarui")
+        }
+      />
     );
   }
 

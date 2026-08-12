@@ -239,7 +239,7 @@ function SkuYatimCleaner({ reload, showToast }) {
       <p className="text-xs text-slate-500 mb-3 max-w-xl">
         Cek apakah ada SKU di Master Barang yang sudah tidak punya barang sama sekali (misalnya sisa dari barang yang
         dihapus sebelum sistem membersihkannya otomatis). SKU seperti ini bikin angka di Dashboard (Total SKU, Total
-        Stok) terlihat tidak sesuai dengan Data Barang.
+        Stok) terlihat tidak sesuai dengan Alur Barang.
       </p>
 
       <button

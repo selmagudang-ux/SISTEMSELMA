@@ -1,9 +1,10 @@
-import { Camera } from "lucide-react";
+import { Camera, MapPin } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import { StatCard, PageHeader, EmptyState } from "../components/ui";
 
-export default function Dashboard({ stageCounts, skuCount, totalStok, rakCount, items, onNavigate, setModal }) {
+export default function Dashboard({ stageCounts, skuCount, totalStok, rakCount, rakKosong, items, onNavigate, setModal }) {
   const recent = items.slice(0, 6);
+  const daftarRakKosong = rakKosong || [];
   return (
     <div>
       <PageHeader
@@ -15,6 +16,7 @@ export default function Dashboard({ stageCounts, skuCount, totalStok, rakCount, 
         <StatCard label="Total SKU" value={skuCount} />
         <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} />
         <StatCard label="Rak Terpakai" value={rakCount} />
+        <StatCard label="Rak Kosong" value={daftarRakKosong.length} accent="text-emerald-400" />
         <StatCard label="Barang Aktif" value={items.filter((i) => i.stage !== "selesai").length} />
       </div>
 
@@ -35,6 +37,34 @@ export default function Dashboard({ stageCounts, skuCount, totalStok, rakCount, 
             </button>
           );
         })}
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold">Rak Kosong</div>
+          <button
+            onClick={() => onNavigate && onNavigate("rak", "peta")}
+            className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+          >
+            Lihat Peta Rak →
+          </button>
+        </div>
+        {daftarRakKosong.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="Tidak ada rak kosong — semua rak sedang terisi." />
+          </div>
+        ) : (
+          <div className="p-4 flex flex-wrap gap-2">
+            {daftarRakKosong.map((r) => (
+              <span
+                key={r.id}
+                className="flex items-center gap-1.5 text-xs font-mono font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5"
+              >
+                <MapPin size={12} /> {r.code}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-slate-800 overflow-hidden">
