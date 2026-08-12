@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
 import { EmptyState, SearchableSelect } from "../components/ui";
-import { priceCode } from "../lib/api";
+import { priceCode, labelFor } from "../lib/api";
 import { rakForSku, skuForRak } from "./Rak";
 
 // SKU versi singkat untuk label cetak: Bahan+Peruntukan+Kategori - Subkategori - Model
@@ -36,6 +36,7 @@ const DEFAULT_LAYOUT = {
   gapY: 2,
   spasiBaris: 2,
   border: true,
+  tampilkanWarna: false, // tampilkan/sembunyikan warna produk (dari kategori Warna di SKU) di label cetak
 };
 function loadLayout() {
   try {
@@ -47,7 +48,7 @@ function loadLayout() {
   }
 }
 
-export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
+export default function CetakLabel({ items, skuMaster, penempatan, rak, master }) {
   const [tab, setTab] = useState("barang"); // "barang" | "sku" | "rak"
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState({}); // { key: { qty, warna, catatan } }
@@ -137,6 +138,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
             rak: rakCode,
             kode,
             warna: row.warna,
+            warnaProduk: labelFor(master, "warna", s.warna),
             catatan: row.catatan,
           });
         }
@@ -154,6 +156,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
             rak: rakCode,
             kode,
             warna: row.warna,
+            warnaProduk: labelFor(master, "warna", s.warna),
             catatan: row.catatan,
           });
         }
@@ -171,13 +174,14 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
             rak: r.code,
             kode,
             warna: row.warna,
+            warnaProduk: labelFor(master, "warna", s.warna),
             catatan: row.catatan,
           });
         }
       });
     }
     return out;
-  }, [tab, filteredBarang, filteredSku, filteredRak, selected, skuMap, penempatan]);
+  }, [tab, filteredBarang, filteredSku, filteredRak, selected, skuMap, penempatan, master]);
 
   const totalTerpilih = Object.keys(selected).length;
 
@@ -404,6 +408,15 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
             />
             Tampilkan garis kotak (border) di setiap label
           </label>
+          <label className="flex items-center gap-2 text-xs text-slate-300 mt-2">
+            <input
+              type="checkbox"
+              checked={layout.tampilkanWarna}
+              onChange={(e) => setLayout((prev) => ({ ...prev, tampilkanWarna: e.target.checked }))}
+              className="accent-amber-500"
+            />
+            Tampilkan warna produk (dari kategori Warna di SKU) di label
+          </label>
           <p className="text-[11px] text-slate-500 mt-3">
             Sesuaikan ukuran ini dengan kertas stiker fisik yang dipakai agar posisi cetak pas. Maksimal{" "}
             {layout.kolom * layout.baris} label per lembar {layout.ukuranKertas}.
@@ -458,6 +471,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
           .ss-print-rak { font-size: 13pt; font-weight: 700; }
           .ss-print-sku { font-size: 13pt; font-weight: 800; }
           .ss-print-catatan { font-size: 8pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
+          .ss-print-warna { font-size: 8pt; font-weight: 600; color: #333; margin-top: 0.5mm; }
           .ss-print-kode { font-size: 17pt; font-weight: 800; letter-spacing: 0.5px; }
         `}</style>
         <div className="ss-print-page">
@@ -470,6 +484,9 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
                 <div className="ss-print-rak">{l.rak}</div>
                 <div>
                   <div className="ss-print-sku" style={{ color: warnaCss(l.warna) }}>{l.sku}</div>
+                  {layout.tampilkanWarna && l.warnaProduk && l.warnaProduk !== "—" && (
+                    <div className="ss-print-warna">{l.warnaProduk}</div>
+                  )}
                   {l.catatan && <div className="ss-print-catatan">{l.catatan}</div>}
                 </div>
                 <div className="ss-print-kode">{l.kode}</div>

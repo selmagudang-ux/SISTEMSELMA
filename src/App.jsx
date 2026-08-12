@@ -307,7 +307,7 @@ function MainApp({ session, onLogout }) {
                 <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />
               )}
               {nav.menu === "cetak-label" && (
-                <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} />
+                <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} master={master} />
               )}
               {nav.menu === "foto" && (
                 <FotoProduk items={items} setModal={setModal} />
