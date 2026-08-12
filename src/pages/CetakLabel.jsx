@@ -18,7 +18,7 @@ const WARNA_OPTIONS = [
 ];
 const warnaCss = (key) => (WARNA_OPTIONS.find((w) => w.key === key) || WARNA_OPTIONS[0]).css;
 
-const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "" };
+const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "", tampilkanWarnaProduk: false };
 
 // Pengaturan kertas stiker terakhir disimpan di HP/komputer supaya tidak perlu diatur ulang.
 const LAYOUT_STORAGE_KEY = "ss-cetak-label-layout";
@@ -36,7 +36,6 @@ const DEFAULT_LAYOUT = {
   gapY: 2,
   spasiBaris: 2,
   border: true,
-  tampilkanWarna: false, // tampilkan/sembunyikan warna produk (dari kategori Warna di SKU) di label cetak
 };
 function loadLayout() {
   try {
@@ -138,7 +137,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
             rak: rakCode,
             kode,
             warna: row.warna,
-            warnaProduk: labelFor(master, "warna", s.warna),
+            warnaProduk: row.tampilkanWarnaProduk ? labelFor(master, "warna", s.warna) : null,
             catatan: row.catatan,
           });
         }
@@ -156,7 +155,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
             rak: rakCode,
             kode,
             warna: row.warna,
-            warnaProduk: labelFor(master, "warna", s.warna),
+            warnaProduk: row.tampilkanWarnaProduk ? labelFor(master, "warna", s.warna) : null,
             catatan: row.catatan,
           });
         }
@@ -174,7 +173,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
             rak: r.code,
             kode,
             warna: row.warna,
-            warnaProduk: labelFor(master, "warna", s.warna),
+            warnaProduk: row.tampilkanWarnaProduk ? labelFor(master, "warna", s.warna) : null,
             catatan: row.catatan,
           });
         }
@@ -219,6 +218,16 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
             value={row?.warna ?? "hitam"}
             onChange={(v) => patchRow(key, { warna: v })}
             options={WARNA_OPTIONS.map((w) => ({ value: w.key, label: w.label }))}
+          />
+        </td>
+        <td className="px-3 py-2 text-center">
+          <input
+            type="checkbox"
+            disabled={!checked}
+            checked={row?.tampilkanWarnaProduk ?? false}
+            onChange={(e) => patchRow(key, { tampilkanWarnaProduk: e.target.checked })}
+            className="accent-amber-500 disabled:opacity-40"
+            title="Tampilkan warna produk (dari kategori Warna di SKU) di label SKU ini"
           />
         </td>
         <td className="px-3 py-2">
@@ -296,7 +305,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
           />
         ) : (
           <div className="rounded-xl border border-slate-800 overflow-x-auto mb-5">
-            <table className="w-full text-sm min-w-[760px]">
+            <table className="w-full text-sm min-w-[860px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                   <th className="px-3 py-2.5 w-8"></th>
@@ -305,6 +314,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
                   <th className="px-3 py-2.5">Kode Harga</th>
                   <th className="px-3 py-2.5">Jumlah</th>
                   <th className="px-3 py-2.5">Warna</th>
+                  <th className="px-3 py-2.5 text-center">Warna Produk?</th>
                   <th className="px-3 py-2.5">Catatan</th>
                 </tr>
               </thead>
@@ -408,15 +418,6 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
             />
             Tampilkan garis kotak (border) di setiap label
           </label>
-          <label className="flex items-center gap-2 text-xs text-slate-300 mt-2">
-            <input
-              type="checkbox"
-              checked={layout.tampilkanWarna}
-              onChange={(e) => setLayout((prev) => ({ ...prev, tampilkanWarna: e.target.checked }))}
-              className="accent-amber-500"
-            />
-            Tampilkan warna produk (dari kategori Warna di SKU) di label
-          </label>
           <p className="text-[11px] text-slate-500 mt-3">
             Sesuaikan ukuran ini dengan kertas stiker fisik yang dipakai agar posisi cetak pas. Maksimal{" "}
             {layout.kolom * layout.baris} label per lembar {layout.ukuranKertas}.
@@ -484,7 +485,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
                 <div className="ss-print-rak">{l.rak}</div>
                 <div>
                   <div className="ss-print-sku" style={{ color: warnaCss(l.warna) }}>{l.sku}</div>
-                  {layout.tampilkanWarna && l.warnaProduk && l.warnaProduk !== "—" && (
+                  {l.warnaProduk && l.warnaProduk !== "—" && (
                     <div className="ss-print-warna">{l.warnaProduk}</div>
                   )}
                   {l.catatan && <div className="ss-print-catatan">{l.catatan}</div>}
