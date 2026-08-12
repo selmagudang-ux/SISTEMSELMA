@@ -52,6 +52,7 @@ function MainApp({ session, onLogout }) {
   const [stockHistory, setStockHistory] = useState([]);
   const [pelangganGrosir, setPelangganGrosir] = useState([]);
   const [tokoGrosir, setTokoGrosir] = useState([]);
+  const [produkManualGrosir, setProdukManualGrosir] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
@@ -97,7 +98,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes] = await Promise.all([
         sb("items?select=*&order=created_at.desc"),
         sb("sku_master?select=*&order=created_at.desc"),
         sb("rak?select=*&order=code"),
@@ -107,6 +108,7 @@ function MainApp({ session, onLogout }) {
         sb("stock_history?select=*&order=created_at.desc"),
         sb("grosir_pelanggan?select=*&order=nama"),
         sb("grosir_toko?select=*&order=nama_toko"),
+        sb("grosir_produk_manual?select=*&order=nama_produk"),
       ]);
       setItems(itemsRes || []);
       setSkuMaster(skuRes || []);
@@ -122,6 +124,7 @@ function MainApp({ session, onLogout }) {
       setStockHistory(historyRes || []);
       setPelangganGrosir(pelangganRes || []);
       setTokoGrosir(tokoRes || []);
+      setProdukManualGrosir(produkManualRes || []);
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -327,7 +330,16 @@ function MainApp({ session, onLogout }) {
                 <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
               )}
               {nav.menu === "grosir" && (
-                <Grosir sub={nav.sub || "pelanggan"} pelangganGrosir={pelangganGrosir} tokoGrosir={tokoGrosir} setModal={setModal} />
+                <Grosir
+                  sub={nav.sub || "pesanan"}
+                  pelangganGrosir={pelangganGrosir}
+                  tokoGrosir={tokoGrosir}
+                  produkManualGrosir={produkManualGrosir}
+                  skuMaster={skuMaster}
+                  reload={loadAll}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
               )}
               {nav.menu === "laporan" && <Laporan items={items} skuMaster={skuMaster} rak={rak} />}
               {nav.menu === "pengaturan" && (

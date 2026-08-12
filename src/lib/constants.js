@@ -79,6 +79,7 @@ export const NAV = [
   {
     key: "grosir", label: "Grosir", icon: Store,
     children: [
+      { key: "pesanan", label: "Buat Pesanan" },
       { key: "pelanggan", label: "Pelanggan" },
       { key: "toko", label: "Toko Pengirim" },
     ],

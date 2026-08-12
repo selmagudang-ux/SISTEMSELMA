@@ -134,6 +134,13 @@ export function nextKode(list, field, prefix) {
   return prefix + String(max + 1).padStart(4, "0");
 }
 
+// Tanggal hari ini format ddMMyyyy (dipakai untuk prefix nomor pesanan grosir harian).
+export function todayDDMMYYYY() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
+}
+
 // =========================================================
 // EXPORT / DOWNLOAD DATA (CSV)
 // =========================================================
