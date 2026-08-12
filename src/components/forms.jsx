@@ -4,24 +4,47 @@ import { ModalShell, Field, Combobox, SearchableSelect, inputClass } from "./ui"
 import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
+// Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
+// tetap fleksibel untuk kasus di luar Pembelian & Retur.
+const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
+
 export function BarangMasukForm({ onClose, onSubmit, saving }) {
   const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
-  const [gudang, setGudang] = useState("");
+  const [jenis, setJenis] = useState("Pembelian");
+  const [jenisLainnya, setJenisLainnya] = useState("");
   const [jumlah, setJumlah] = useState(1);
+
+  // Nilai yang dikirim ke kolom "gudang" (tetap dipakai supaya tidak perlu ubah
+  // struktur data) — kalau pilih "Lainnya", pakai teks bebas yang diketik user.
+  const gudang = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
 
   return (
     <ModalShell title="Barang Masuk" onClose={onClose}>
       <Field label="Tanggal">
         <input type="date" className={inputClass} value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
       </Field>
-      <Field label="Gudang (opsional)">
-        <input className={inputClass} value={gudang} onChange={(e) => setGudang(e.target.value)} placeholder="Contoh: Gudang A" />
+      <Field label="Jenis Barang Masuk">
+        <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
+          {JENIS_BARANG_MASUK.map((j) => (
+            <option key={j} value={j}>{j}</option>
+          ))}
+        </select>
       </Field>
+      {jenis === "Lainnya" && (
+        <Field label="Keterangan">
+          <input
+            className={inputClass}
+            value={jenisLainnya}
+            onChange={(e) => setJenisLainnya(e.target.value)}
+            placeholder="Contoh: Konsinyasi, Hadiah, dll"
+          />
+        </Field>
+      )}
       <Field label="Jumlah">
         <input type="number" min="1" className={inputClass} value={jumlah} onChange={(e) => setJumlah(Number(e.target.value))} />
       </Field>
       <button
-        disabled={saving || jumlah < 1}
+        disabled={saving || jumlah < 1 || (jenis === "Lainnya" && !gudang)}
         onClick={() => onSubmit({ tanggal, gudang: gudang || null, jumlah })}
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >

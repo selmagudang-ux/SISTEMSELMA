@@ -9,7 +9,7 @@ export default function BarangMasuk({ items, setModal }) {
     <div>
       <PageHeader
         title="Barang Masuk"
-        description="Catat barang yang masuk ke gudang. Status baru/lama sudah tidak perlu dipilih di sini — nanti otomatis ditentukan lewat pencarian SKU saat pembuatan SKU."
+        description="Catat barang yang masuk ke gudang — pilih jenisnya (Pembelian/Retur/Lainnya). Status baru/lama sudah tidak perlu dipilih di sini — nanti otomatis ditentukan lewat pencarian SKU saat pembuatan SKU."
         action={
           <button
             onClick={() => setModal({ type: "barang-masuk" })}
@@ -28,7 +28,7 @@ export default function BarangMasuk({ items, setModal }) {
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5">Tanggal</th>
-                <th className="px-4 py-2.5">Gudang</th>
+                <th className="px-4 py-2.5">Jenis</th>
                 <th className="px-4 py-2.5">Jumlah</th>
                 <th className="px-4 py-2.5">SKU</th>
                 <th className="px-4 py-2.5">Tahap</th>
