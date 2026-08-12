@@ -187,7 +187,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
-  pelangganGrosir, tokoGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
+  pelangganGrosir, tokoGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
   const close = () => setModal(null);
 
@@ -240,6 +240,125 @@ export default function ModalRouter({
           }, p ? "Pelanggan diperbarui" : "Pelanggan ditambahkan")
         }
       />
+    );
+  }
+
+  if (modal.type === "grosir-riwayat-pelanggan") {
+    const p = modal.item;
+    const pesananPelanggan = (pesananGrosir || [])
+      .filter((ps) => ps.pelanggan_id === p.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const pembayaranPelanggan = (pembayaranGrosir || [])
+      .filter((b) => b.pelanggan_id === p.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const depositPelanggan = (depositGrosir || [])
+      .filter((d) => d.pelanggan_id === p.id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const totalHutang = pesananPelanggan
+      .filter((ps) => ps.status !== "Batal")
+      .reduce((a, ps) => a + sisaHutangPesanan(ps, pembayaranGrosir), 0);
+    const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+
+    return (
+      <ModalShell title={`Riwayat — ${p.nama}`} onClose={close}>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5">
+            <div className="text-[11px] text-slate-500">Total Hutang</div>
+            <div className={`text-base font-bold ${totalHutang > 0 ? "text-red-400" : "text-slate-200"}`}>
+              {fmtRp(totalHutang)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5">
+            <div className="text-[11px] text-slate-500">Saldo Deposit</div>
+            <div className="text-base font-bold text-emerald-400">{fmtRp(saldoDeposit)}</div>
+          </div>
+        </div>
+
+        <div className="text-xs text-slate-500 mb-1.5">Pesanan ({pesananPelanggan.length})</div>
+        {pesananPelanggan.length === 0 ? (
+          <div className="text-xs text-slate-600 mb-4">Belum ada pesanan.</div>
+        ) : (
+          <div className="rounded-lg border border-slate-800 overflow-hidden mb-4">
+            {pesananPelanggan.map((ps, i) => {
+              const sisa = sisaHutangPesanan(ps, pembayaranGrosir);
+              return (
+                <button
+                  key={ps.id}
+                  onClick={() => setModal({ type: "grosir-detail-pesanan", item: ps })}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm ${
+                    i % 2 ? "bg-slate-950" : "bg-slate-900"
+                  } hover:bg-slate-800/60`}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-amber-400">{ps.nomor_pesanan}</span>
+                      {ps.status === "Batal" && <Badge color="red">Batal</Badge>}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{ps.tanggal}</div>
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-2">
+                    <Badge color={ps.status_bayar === "Lunas" ? "emerald" : ps.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                      {ps.status_bayar}
+                    </Badge>
+                    <div className="text-slate-200 font-medium mt-0.5">{fmtRp(ps.total)}</div>
+                    {sisa > 0 && ps.status !== "Batal" && (
+                      <div className="text-[10px] text-red-400">Sisa {fmtRp(sisa)}</div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="text-xs text-slate-500 mb-1.5">Riwayat Pembayaran ({pembayaranPelanggan.length})</div>
+        {pembayaranPelanggan.length === 0 ? (
+          <div className="text-xs text-slate-600 mb-4">Belum ada pembayaran.</div>
+        ) : (
+          <div className="rounded-lg border border-slate-800 overflow-hidden mb-4">
+            {pembayaranPelanggan.map((b, i) => {
+              const pesananTerkait = pesananPelanggan.find((ps) => ps.id === b.pesanan_id);
+              return (
+                <div
+                  key={b.id}
+                  className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+                >
+                  <div className="min-w-0">
+                    <div className="text-slate-200 text-xs">
+                      {pesananTerkait?.nomor_pesanan || "—"} · {b.metode_bayar}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{new Date(b.created_at).toLocaleString("id-ID")}</div>
+                  </div>
+                  <div className="text-emerald-400 font-medium flex-shrink-0 ml-2">{fmtRp(b.jumlah)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="text-xs text-slate-500 mb-1.5">Riwayat Deposit ({depositPelanggan.length})</div>
+        {depositPelanggan.length === 0 ? (
+          <div className="text-xs text-slate-600">Belum ada mutasi deposit.</div>
+        ) : (
+          <div className="rounded-lg border border-slate-800 overflow-hidden">
+            {depositPelanggan.map((d, i) => (
+              <div
+                key={d.id}
+                className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0">
+                  <div className="text-slate-200 text-xs">{d.keterangan || "—"}</div>
+                  <div className="text-[11px] text-slate-500">{new Date(d.created_at).toLocaleString("id-ID")}</div>
+                </div>
+                <div className={`font-medium flex-shrink-0 ml-2 ${Number(d.jumlah) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {Number(d.jumlah) >= 0 ? "+" : ""}
+                  {fmtRp(d.jumlah)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </ModalShell>
     );
   }
 

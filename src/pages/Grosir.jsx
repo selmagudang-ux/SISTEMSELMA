@@ -4,7 +4,7 @@ import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge } fr
 import { sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan } from "../lib/api";
 
 export default function Grosir({
-  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, reload, showToast, setModal,
+  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
 }) {
   if (sub === "toko") return <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />;
   if (sub === "pelanggan")
@@ -13,6 +13,7 @@ export default function Grosir({
         pelangganGrosir={pelangganGrosir}
         pesananGrosir={pesananGrosir}
         pembayaranGrosir={pembayaranGrosir}
+        depositGrosir={depositGrosir}
         setModal={setModal}
       />
     );
@@ -37,7 +38,7 @@ export default function Grosir({
   );
 }
 
-function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, setModal }) {
+function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depositGrosir, setModal }) {
   const [q, setQ] = useState("");
   const hutangMap = totalHutangPerPelanggan(pesananGrosir, pembayaranGrosir);
   const filtered = (pelangganGrosir || []).filter((p) => {
@@ -81,9 +82,12 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, setMo
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {filtered.map((p, i) => (
-            <div
+            <button
               key={p.id}
-              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              onClick={() => setModal({ type: "grosir-riwayat-pelanggan", item: p })}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-left ${
+                i % 2 ? "bg-slate-950" : "bg-slate-900"
+              } hover:bg-slate-800/60`}
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -99,7 +103,7 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, setMo
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => setModal({ type: "grosir-pelanggan-form", item: p })}
                   className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800"
@@ -115,7 +119,7 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, setMo
                   <Trash2 size={14} />
                 </button>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
