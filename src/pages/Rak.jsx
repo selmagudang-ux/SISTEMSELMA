@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft } from "lucide-react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2 } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran } from "../lib/api";
 
@@ -150,13 +150,29 @@ function MasterRak({ rak, setModal }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {rak.map((r) => (
-            <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+            <div key={r.id} className="group relative rounded-xl border border-slate-800 bg-slate-900/50 p-3">
               <div className="flex items-center gap-1.5 text-sky-400">
                 <MapPin size={14} />
                 <span className="font-mono font-semibold text-sm">{r.code}</span>
               </div>
               <div className="text-[11px] text-slate-500 mt-1">
                 {r.meja ? `Meja ${r.meja}` : ""} {r.baris ? `· Baris ${r.baris}` : ""}
+              </div>
+              <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+                <button
+                  onClick={() => setModal({ type: "edit-rak", item: r })}
+                  title="Edit rak"
+                  className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-amber-400 border border-slate-800"
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  onClick={() => setModal({ type: "hapus-rak", item: r })}
+                  title="Hapus rak"
+                  className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-red-400 border border-slate-800"
+                >
+                  <Trash2 size={12} />
+                </button>
               </div>
             </div>
           ))}

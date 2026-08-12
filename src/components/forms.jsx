@@ -704,3 +704,37 @@ export function TambahRakForm({ onClose, onSubmit, saving }) {
     </ModalShell>
   );
 }
+
+// Edit data rak (kode, meja, baris) — dipakai dari Master Rak. Ubah kode rak
+// sengaja tetap diizinkan (kadang perlu rapikan penomoran), tapi pemanggilnya
+// (ModalRouter) yang tanggung jawab menyamakan rak_code di penempatan & items
+// yang masih menunjuk ke kode lama, supaya datanya tidak jadi anak hilang.
+export function EditRakForm({ rak, onClose, onSubmit, saving }) {
+  const [code, setCode] = useState(rak.code || "");
+  const [meja, setMeja] = useState(rak.meja || "");
+  const [baris, setBaris] = useState(rak.baris || "");
+  return (
+    <ModalShell title={`Edit Rak — ${rak.code}`} onClose={onClose}>
+      <Field label="Kode Rak"><input className={inputClass} value={code} onChange={(e) => setCode(e.target.value)} placeholder="Contoh: M02-B03" /></Field>
+      <Field label="Meja"><input className={inputClass} value={meja} onChange={(e) => setMeja(e.target.value)} /></Field>
+      <Field label="Baris"><input className={inputClass} value={baris} onChange={(e) => setBaris(e.target.value)} /></Field>
+      {code !== rak.code && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Kode rak diganti dari <span className="font-mono">{rak.code}</span> ke{" "}
+            <span className="font-mono">{code}</span>. Semua penempatan SKU dan data barang yang menunjuk ke rak
+            ini akan ikut disesuaikan otomatis.
+          </div>
+        </div>
+      )}
+      <button
+        disabled={!code || saving}
+        onClick={() => onSubmit({ code, meja: meja || null, baris: baris || null })}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Perubahan"}
+      </button>
+    </ModalShell>
+  );
+}

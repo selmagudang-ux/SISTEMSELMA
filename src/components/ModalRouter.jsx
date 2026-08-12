@@ -4,10 +4,11 @@ import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos } from "../lib/api";
 import {
-  BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
+  BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
+import { skuForRak } from "../pages/Rak";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
@@ -762,6 +763,92 @@ export default function ModalRouter({
           }, "Rak ditambahkan")
         }
       />
+    );
+  }
+
+  if (modal.type === "edit-rak") {
+    const r = modal.item;
+    return (
+      <EditRakForm
+        rak={r}
+        onClose={close}
+        saving={saving}
+        onSubmit={(vals) =>
+          run(async () => {
+            await sb(`rak?id=eq.${r.id}`, { method: "PATCH", body: JSON.stringify(vals) });
+            // Kode rak diganti -> samakan rak_code di penempatan & items yang masih
+            // menunjuk ke kode lama, supaya tidak ada data yang jadi "anak hilang".
+            if (vals.code && vals.code !== r.code) {
+              await sb(`penempatan?rak_code=eq.${encodeURIComponent(r.code)}`, {
+                method: "PATCH",
+                body: JSON.stringify({ rak_code: vals.code }),
+              });
+              await sb(`items?rak_code=eq.${encodeURIComponent(r.code)}`, {
+                method: "PATCH",
+                body: JSON.stringify({ rak_code: vals.code }),
+              });
+            }
+          }, "Rak diperbarui")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "hapus-rak") {
+    const r = modal.item;
+    const pemenang = skuForRak(r.code, penempatan);
+    const s = pemenang ? (skuMaster || []).find((x) => x.sku === pemenang) : null;
+    const terisi = !!s && s.stok > 0;
+    return (
+      <ModalShell title={`Hapus Rak — ${r.code}`} onClose={close}>
+        {terisi ? (
+          <>
+            <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+              <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+              <div>
+                Rak ini masih berisi SKU <span className="font-mono">{pemenang}</span> ({s.stok}x). Pindahkan atau
+                kosongkan dulu isinya sebelum rak ini bisa dihapus.
+              </div>
+            </div>
+            <button
+              onClick={close}
+              className="w-full py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700"
+            >
+              Tutup
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-slate-400 mb-4">
+              Rak <span className="font-mono text-slate-200">{r.code}</span> akan dihapus permanen. Tindakan ini
+              tidak bisa dibatalkan.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={close}
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                disabled={saving}
+                onClick={() =>
+                  run(async () => {
+                    // Bersihkan sisa riwayat penempatan (kalau ada, mis. rak pernah
+                    // dipakai lalu dikosongkan) sebelum menghapus master rak-nya.
+                    await sb(`penempatan?rak_code=eq.${encodeURIComponent(r.code)}`, { method: "DELETE" });
+                    await sb(`rak?id=eq.${r.id}`, { method: "DELETE" });
+                  }, "Rak dihapus")
+                }
+                className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+              >
+                {saving ? "Menghapus…" : "Ya, Hapus Rak"}
+              </button>
+            </div>
+          </>
+        )}
+      </ModalShell>
     );
   }
 
