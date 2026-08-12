@@ -371,7 +371,107 @@ export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose
   );
 }
 
-export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
+// Form pindahkan SKU dari rak lama ke rak baru — dipakai dari Peta Rak saat
+// SKU yang sama ketahuan jadi "pemenang" di lebih dari satu rak sekaligus.
+// Beda dengan TempatkanRakForm: ini tidak membuat baris penempatan baru,
+// tapi mengubah rak_code baris penempatan yang sudah ada (lewat onSubmit di
+// ModalRouter) supaya rak lamanya langsung kosong, bukan menambah riwayat baru.
+export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, onSubmit, saving }) {
+  const [rakCode, setRakCode] = useState("");
+  const [confirmingOverride, setConfirmingOverride] = useState(false);
+
+  const occupant = useMemo(() => {
+    if (!rakCode) return null;
+    return (penempatan || []).find((p) => p.rak_code === rakCode) || null;
+  }, [rakCode, penempatan]);
+
+  const bolehGabung = occupant && sameProdukKecualiUkuran(occupant.sku, item.sku, skuMaster);
+  const conflict = occupant && occupant.sku !== item.sku && !bolehGabung;
+  const rakSamaDenganLama = rakCode === item.rakLama;
+
+  const handleClick = () => {
+    if (conflict && !confirmingOverride) {
+      setConfirmingOverride(true);
+      return;
+    }
+    onSubmit(rakCode);
+  };
+
+  if (confirmingOverride && conflict) {
+    return (
+      <ModalShell title={`Pindahkan — ${item.sku}`} onClose={onClose}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Rak <span className="font-mono">{rakCode}</span> saat ini berisi SKU{" "}
+            <span className="font-mono">{occupant.sku}</span>, produk yang berbeda. Memindahkan SKU{" "}
+            <span className="font-mono">{item.sku}</span> ke sini akan menimpanya.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setConfirmingOverride(false)}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() => onSubmit(rakCode)}
+            className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            {saving ? "Menyimpan…" : "Ya, Timpa SKU"}
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  return (
+    <ModalShell title={`Pindahkan — ${item.sku}`} onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">Rak asal</div>
+        <div className="font-mono text-sm text-amber-400">{item.rakLama}</div>
+      </div>
+      <Field label="Rak tujuan">
+        <SearchableSelect
+          value={rakCode}
+          onChange={setRakCode}
+          options={rakList.filter((r) => r.code !== item.rakLama).map((r) => ({ value: r.code, label: r.code }))}
+          placeholder="Ketik atau pilih rak…"
+        />
+      </Field>
+      {bolehGabung && (
+        <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> — produk yang sama, cuma
+            beda ukuran. Boleh digabung, tidak akan menimpa.
+          </div>
+        </div>
+      )}
+      {conflict && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> (produk berbeda). Akan
+            diminta konfirmasi sebelum menimpa.
+          </div>
+        </div>
+      )}
+      <button
+        disabled={!rakCode || rakSamaDenganLama || saving}
+        onClick={handleClick}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Pindahkan SKU"}
+      </button>
+    </ModalShell>
+  );
+}
+
+export function VerifikasiForm({ item, onClose, onSubmit, saving, sudahAdaFoto }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [cocok, setCocok] = useState(false);
@@ -392,27 +492,38 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
         <div className="text-[11px] text-slate-500 mt-1">{item.jumlah}x · {item.rak_code || "belum ada rak"}</div>
       </div>
 
-      <Field label="Ambil / upload foto barang">
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleFile}
-          className={inputClass}
-        />
-      </Field>
-
-      {preview ? (
-        <div className="mb-3">
-          <img
-            src={preview}
-            alt="Preview foto barang"
-            className="w-full max-h-64 object-contain rounded-lg border border-slate-800 bg-slate-950"
-          />
+      {sudahAdaFoto ? (
+        <div className="mb-4 flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2.5 rounded-lg">
+          <span>
+            SKU <span className="font-mono text-red-200">{item.sku}</span> sudah punya foto sebelumnya.
+            Foto yang sudah ada tidak bisa ditimpa lagi.
+          </span>
         </div>
       ) : (
-        <div className="mb-3 h-40 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-slate-600 text-xs">
-          Belum ada foto dipilih
-        </div>
+        <Field label="Ambil / upload foto barang">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFile}
+            className={inputClass}
+          />
+        </Field>
+      )}
+
+      {!sudahAdaFoto && (
+        preview ? (
+          <div className="mb-3">
+            <img
+              src={preview}
+              alt="Preview foto barang"
+              className="w-full max-h-64 object-contain rounded-lg border border-slate-800 bg-slate-950"
+            />
+          </div>
+        ) : (
+          <div className="mb-3 h-40 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-slate-600 text-xs">
+            Belum ada foto dipilih
+          </div>
+        )
       )}
 
       <label className="flex items-start gap-2 mb-4 text-xs text-slate-300">
@@ -421,17 +532,17 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
           checked={cocok}
           onChange={(e) => setCocok(e.target.checked)}
           className="mt-0.5"
-          disabled={!file}
+          disabled={!file || sudahAdaFoto}
         />
         <span>Saya sudah cek, foto di atas sesuai dengan barang ber-SKU <span className="font-mono text-amber-400">{item.sku}</span></span>
       </label>
 
       <button
-        disabled={!file || !cocok || saving}
+        disabled={sudahAdaFoto || !file || !cocok || saving}
         onClick={() => onSubmit(file)}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
-        {saving ? "Mengunggah…" : "Simpan & Lanjut ke Marketplace"}
+        {sudahAdaFoto ? "Foto sudah ada" : saving ? "Mengunggah…" : "Simpan & Lanjut ke Marketplace"}
       </button>
     </ModalShell>
   );
