@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
 import { EmptyState, SearchableSelect } from "../components/ui";
-import { priceCode, labelFor } from "../lib/api";
+import { priceCode } from "../lib/api";
 import { rakForSku, skuForRak } from "./Rak";
 
 // SKU versi singkat untuk label cetak: Bahan+Peruntukan+Kategori - Subkategori - Model
@@ -9,6 +9,15 @@ import { rakForSku, skuForRak } from "./Rak";
 function shortSku(s) {
   if (!s) return "";
   return `${s.bahan || ""}${s.peruntukan || ""}${s.kategori || ""}-${s.subkategori || ""}-${s.model || ""}`;
+}
+
+// Jika "Warna Produk?" dicentang, kode warna (mis. KUN) digabung langsung ke
+// belakang SKU dengan tanda "-", contoh: "TDCC-SIM-1-KUN" — bukan ditampilkan
+// terpisah di baris bawah.
+function skuDenganWarna(s, tampilkanWarna) {
+  const base = shortSku(s);
+  if (!tampilkanWarna || !s?.warna) return base;
+  return `${base}-${s.warna}`;
 }
 
 const WARNA_OPTIONS = [
@@ -36,6 +45,11 @@ const DEFAULT_LAYOUT = {
   gapY: 2,
   spasiBaris: 2,
   border: true,
+  // Ukuran huruf per baris pada label (dalam pt) — bisa diatur masing-masing.
+  fontRak: 13, // baris kode rak, mis. "G2C-1A"
+  fontSku: 13, // baris SKU, mis. "TDCC-SIM-1" (atau "TDCC-SIM-1-KUN" jika warna produk dicentang)
+  fontKode: 17, // baris kode harga, mis. "334488"
+  fontCatatan: 8, // baris catatan (bila diisi)
 };
 function loadLayout() {
   try {
@@ -47,7 +61,7 @@ function loadLayout() {
   }
 }
 
-export default function CetakLabel({ items, skuMaster, penempatan, rak, master }) {
+export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
   const [tab, setTab] = useState("barang"); // "barang" | "sku" | "rak"
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState({}); // { key: { qty, warna, catatan } }
@@ -133,11 +147,10 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
         for (let n = 0; n < row.qty; n++) {
           out.push({
             key: `${i.id}-${n}`,
-            sku: shortSku(s),
+            sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
             rak: rakCode,
             kode,
             warna: row.warna,
-            warnaProduk: row.tampilkanWarnaProduk ? labelFor(master, "warna", s.warna) : null,
             catatan: row.catatan,
           });
         }
@@ -151,11 +164,10 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
         for (let n = 0; n < row.qty; n++) {
           out.push({
             key: `${s.sku}-${n}`,
-            sku: shortSku(s),
+            sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
             rak: rakCode,
             kode,
             warna: row.warna,
-            warnaProduk: row.tampilkanWarnaProduk ? labelFor(master, "warna", s.warna) : null,
             catatan: row.catatan,
           });
         }
@@ -169,18 +181,17 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
         for (let n = 0; n < row.qty; n++) {
           out.push({
             key: `${r.code}-${n}`,
-            sku: shortSku(s),
+            sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
             rak: r.code,
             kode,
             warna: row.warna,
-            warnaProduk: row.tampilkanWarnaProduk ? labelFor(master, "warna", s.warna) : null,
             catatan: row.catatan,
           });
         }
       });
     }
     return out;
-  }, [tab, filteredBarang, filteredSku, filteredRak, selected, skuMap, penempatan, master]);
+  }, [tab, filteredBarang, filteredSku, filteredRak, selected, skuMap, penempatan]);
 
   const totalTerpilih = Object.keys(selected).length;
 
@@ -409,6 +420,30 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
               </label>
             ))}
           </div>
+          <div className="text-[11px] text-slate-500 mb-1.5 mt-1">Ukuran Huruf per Baris (pt)</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            {[
+              ["fontRak", "Kode Rak", "cth: G2C-1A"],
+              ["fontSku", "SKU", "cth: TDCC-SIM-1"],
+              ["fontKode", "Kode Harga", "cth: 334488"],
+              ["fontCatatan", "Catatan", "cth: P.-/+18CM"],
+            ].map(([key, label, contoh]) => (
+              <label key={key} className="block">
+                <div className="text-[11px] text-slate-500 mb-1">{label}</div>
+                <input
+                  type="number"
+                  min="1"
+                  value={layout[key]}
+                  onChange={(e) =>
+                    setLayout((prev) => ({ ...prev, [key]: Math.max(1, Number(e.target.value) || 1) }))
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+                />
+                <div className="text-[10px] text-slate-600 mt-0.5">{contoh}</div>
+              </label>
+            ))}
+          </div>
+
           <label className="flex items-center gap-2 text-xs text-slate-300">
             <input
               type="checkbox"
@@ -469,11 +504,10 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
             ${layout.border ? "border: 1px solid #000;" : ""}
             text-align: center;
           }
-          .ss-print-rak { font-size: 13pt; font-weight: 700; }
-          .ss-print-sku { font-size: 13pt; font-weight: 800; }
-          .ss-print-catatan { font-size: 8pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
-          .ss-print-warna { font-size: 8pt; font-weight: 600; color: #333; margin-top: 0.5mm; }
-          .ss-print-kode { font-size: 17pt; font-weight: 800; letter-spacing: 0.5px; }
+          .ss-print-rak { font-size: ${layout.fontRak}pt; font-weight: 700; }
+          .ss-print-sku { font-size: ${layout.fontSku}pt; font-weight: 800; }
+          .ss-print-catatan { font-size: ${layout.fontCatatan}pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
+          .ss-print-kode { font-size: ${layout.fontKode}pt; font-weight: 800; letter-spacing: 0.5px; }
         `}</style>
         <div className="ss-print-page">
           <div
@@ -485,9 +519,6 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak, master }
                 <div className="ss-print-rak">{l.rak}</div>
                 <div>
                   <div className="ss-print-sku" style={{ color: warnaCss(l.warna) }}>{l.sku}</div>
-                  {l.warnaProduk && l.warnaProduk !== "—" && (
-                    <div className="ss-print-warna">{l.warnaProduk}</div>
-                  )}
                   {l.catatan && <div className="ss-print-catatan">{l.catatan}</div>}
                 </div>
                 <div className="ss-print-kode">{l.kode}</div>
