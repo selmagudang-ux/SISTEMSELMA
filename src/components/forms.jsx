@@ -403,6 +403,14 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
   const [rakCode, setRakCode] = useState("");
   const [confirmingOverride, setConfirmingOverride] = useState(false);
 
+  // Qty maksimum = qty baris penempatan asal saat ini (bukan cuma nilai awal
+  // yang dikirim dari Peta Rak), supaya selalu akurat walau data berubah.
+  const qtyAsal = useMemo(() => {
+    const baris = (penempatan || []).find((p) => p.id === item.penempatanId);
+    return Number(baris?.qty ?? item.qty) || 0;
+  }, [penempatan, item.penempatanId, item.qty]);
+  const [qty, setQty] = useState(qtyAsal || item.qty || 1);
+
   const occupant = useMemo(() => {
     if (!rakCode) return null;
     return (penempatan || []).find((p) => p.rak_code === rakCode) || null;
@@ -412,13 +420,15 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
   const bolehGabung = occupant && sameProdukKecualiUkuran(occupant.sku, item.sku, skuMaster);
   const conflict = occupant && occupant.sku !== item.sku && !bolehGabung;
   const rakSamaDenganLama = rakCode === item.rakLama;
+  const qtyValid = qty >= 1 && qty <= qtyAsal;
+  const sisaDiAsal = qtyAsal - qty;
 
   const handleClick = () => {
     if (conflict && !confirmingOverride) {
       setConfirmingOverride(true);
       return;
     }
-    onSubmit(rakCode);
+    onSubmit(rakCode, qty);
   };
 
   if (confirmingOverride && conflict) {
@@ -442,7 +452,7 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
           </button>
           <button
             disabled={saving}
-            onClick={() => onSubmit(rakCode)}
+            onClick={() => onSubmit(rakCode, qty)}
             className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >
             {saving ? "Menyimpan…" : "Ya, Timpa SKU"}
@@ -456,8 +466,28 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
     <ModalShell title={`Pindahkan — ${item.sku}`} onClose={onClose}>
       <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
         <div className="text-[11px] text-slate-500">Rak asal</div>
-        <div className="font-mono text-sm text-amber-400">{item.rakLama}</div>
+        <div className="font-mono text-sm text-amber-400">
+          {item.rakLama} <span className="text-slate-500 font-sans">· {qtyAsal}x tersedia</span>
+        </div>
       </div>
+      <Field label="Jumlah dipindahkan">
+        <input
+          type="number"
+          min="1"
+          max={qtyAsal}
+          className={inputClass}
+          value={qty}
+          onChange={(e) => setQty(Number(e.target.value))}
+        />
+      </Field>
+      {!qtyValid && (
+        <div className="text-[11px] text-red-400 -mt-2 mb-3">Jumlah harus antara 1 – {qtyAsal}.</div>
+      )}
+      {qtyValid && sisaDiAsal > 0 && (
+        <div className="text-[11px] text-slate-500 -mt-2 mb-3">
+          Sisa <b className="text-slate-300">{sisaDiAsal}x</b> tetap di rak <span className="font-mono">{item.rakLama}</span>.
+        </div>
+      )}
       <Field label="Rak tujuan">
         <SearchableSelect
           value={rakCode}
@@ -494,7 +524,7 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
         </div>
       )}
       <button
-        disabled={!rakCode || rakSamaDenganLama || saving}
+        disabled={!rakCode || rakSamaDenganLama || !qtyValid || saving}
         onClick={handleClick}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >

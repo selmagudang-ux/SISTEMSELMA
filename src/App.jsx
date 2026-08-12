@@ -12,7 +12,7 @@ import BarangMasuk from "./pages/BarangMasuk";
 import DataBarang from "./pages/DataBarang";
 import SkuHarga from "./pages/SkuHarga";
 import Stok from "./pages/Stok";
-import Rak, { cariPerluDitempatkanUlang, rakTerpakai } from "./pages/Rak";
+import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from "./pages/Rak";
 import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
@@ -143,12 +143,16 @@ function MainApp({ session, onLogout }) {
   const rakTerpakaiCount = rakTerpakaiList.length;
   // Rak Kosong (Dashboard) = rak yang terdaftar tapi tidak ada di daftar rak terpakai.
   const rakKosong = rak.filter((r) => !rakTerpakaiList.some((t) => t.id === r.id));
+  // Sisa di Gudang = SKU berstok yang belum sepenuhnya masuk rak (belum pernah
+  // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
+  const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
 
   const sidebarBadges = {
     "sku-harga": stageCounts.sku,
     "sku-harga.buat": stageCounts.sku,
     rak: tanpaRakCount,
     "rak.tempatkan": tanpaRakCount,
+    "rak.gudang": sisaGudangList.length,
     foto: stageCounts.verifikasi,
     "foto.pemotretan": stageCounts.verifikasi,
     marketplace: stageCounts.marketplace,

@@ -620,28 +620,56 @@ export default function ModalRouter({
         skuMaster={skuMaster}
         onClose={close}
         saving={saving}
-        onSubmit={(rakBaru) =>
+        onSubmit={(rakBaru, qtyPindahRaw) =>
           run(async () => {
-            // Kalau rak tujuan sudah punya baris penempatan utk SKU yang SAMA PERSIS,
-            // gabungkan qty-nya ke baris itu (tambahkan) lalu hapus baris lama —
-            // supaya tidak "ketimpa"/hilang dan tidak dobel baris utk sku+rak yang sama.
-            // Kalau rak tujuan belum ada SKU ini, cukup pindahkan (ubah rak_code) seperti biasa.
+            // Boleh pindah SEBAGIAN qty saja (sisanya tetap di rak asal) — dipakai
+            // saat rak asal masih dipakai barang lain atau memang cuma sebagian
+            // yang mau dipindah. Kalau qty yang dipindah = seluruh qty baris asal,
+            // perilakunya sama seperti sebelumnya (rak asal jadi kosong).
             const baris = (penempatan || []).find((p) => p.id === modal.item.penempatanId);
+            const totalQty = Number(baris?.qty) || 0;
+            const qtyPindah = Math.min(Math.max(Number(qtyPindahRaw) || 0, 1), totalQty);
+            const sisaDiAsal = totalQty - qtyPindah;
+
+            // Kalau rak tujuan sudah punya baris penempatan utk SKU yang SAMA PERSIS,
+            // gabungkan qty yang dipindah ke baris itu (tambahkan), bukan bikin baris baru.
             const tujuanSama = (penempatan || []).find(
               (p) => p.rak_code === rakBaru && p.sku === modal.item.sku && p.id !== modal.item.penempatanId
             );
-            if (tujuanSama) {
-              const qtyGabung = (Number(tujuanSama.qty) || 0) + (Number(baris?.qty) || 0);
-              await sb(`penempatan?id=eq.${tujuanSama.id}`, {
-                method: "PATCH",
-                body: JSON.stringify({ qty: qtyGabung }),
-              });
-              await sb(`penempatan?id=eq.${modal.item.penempatanId}`, { method: "DELETE" });
+
+            if (sisaDiAsal <= 0) {
+              // Pindah semua qty — rak asal jadi kosong.
+              if (tujuanSama) {
+                const qtyGabung = (Number(tujuanSama.qty) || 0) + qtyPindah;
+                await sb(`penempatan?id=eq.${tujuanSama.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ qty: qtyGabung }),
+                });
+                await sb(`penempatan?id=eq.${modal.item.penempatanId}`, { method: "DELETE" });
+              } else {
+                await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ rak_code: rakBaru }),
+                });
+              }
             } else {
+              // Pindah sebagian — kurangi qty di rak asal, tambahkan/buat baris di rak tujuan.
               await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
                 method: "PATCH",
-                body: JSON.stringify({ rak_code: rakBaru }),
+                body: JSON.stringify({ qty: sisaDiAsal }),
               });
+              if (tujuanSama) {
+                const qtyGabung = (Number(tujuanSama.qty) || 0) + qtyPindah;
+                await sb(`penempatan?id=eq.${tujuanSama.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ qty: qtyGabung }),
+                });
+              } else {
+                await sb("penempatan", {
+                  method: "POST",
+                  body: JSON.stringify({ sku: modal.item.sku, rak_code: rakBaru, qty: qtyPindah }),
+                });
+              }
             }
           }, "SKU dipindahkan ke rak baru")
         }

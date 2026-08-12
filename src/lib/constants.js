@@ -61,6 +61,7 @@ export const NAV = [
     key: "rak", label: "Rak", icon: MapPin,
     children: [
       { key: "tempatkan", label: "Tempatkan Barang" },
+      { key: "gudang", label: "Sisa di Gudang" },
       { key: "master", label: "Master Rak" },
       { key: "peta", label: "Peta Rak" },
     ],

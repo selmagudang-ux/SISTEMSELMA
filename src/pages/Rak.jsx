@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2 } from "lucide-react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran } from "../lib/api";
 
@@ -66,11 +66,93 @@ export function skuDenganRakGanda(rak, penempatan, skuMaster) {
   return out;
 }
 
+// Total qty SKU tertentu yang BENAR-BENAR aktif tertempatkan di rak (dijumlah
+// dari semua rak, bukan cuma satu). Pakai aturan yang sama dengan skuDiRak di
+// Peta Rak (winner per rak + varian ukuran yang boleh nebeng), supaya angka
+// "sudah di rak" selalu sinkron dengan apa yang ditampilkan di Peta Rak.
+export function totalTertempatkan(sku, rak, penempatan, skuMaster) {
+  let total = 0;
+  (rak || []).forEach((r) => {
+    const pemenang = skuForRak(r.code, penempatan);
+    if (!pemenang) return;
+    const cocok =
+      pemenang === sku ||
+      (rakForSku(sku, penempatan) === r.code && sameProdukKecualiUkuran(pemenang, sku, skuMaster));
+    if (!cocok) return;
+    const baris = (penempatan || []).find((p) => p.sku === sku && p.rak_code === r.code);
+    if (baris) total += Number(baris.qty) || 0;
+  });
+  return total;
+}
+
+// SKU dengan stok > 0 tapi qty yang tertempatkan di rak (across semua rak)
+// lebih kecil dari stoknya — sisanya berarti masih menumpuk di gudang, entah
+// karena belum sempat ditempatkan sama sekali (ditempatkan = 0) atau karena
+// rak yang dipakai sudah penuh sehingga cuma sebagian qty yang muat ditempatkan.
+export function barangSisaDiGudang(skuMaster, rak, penempatan) {
+  const out = [];
+  (skuMaster || []).forEach((s) => {
+    if (!s.stok || s.stok <= 0) return;
+    const ditempatkan = totalTertempatkan(s.sku, rak, penempatan, skuMaster);
+    const sisa = s.stok - ditempatkan;
+    if (sisa > 0) out.push({ sku: s.sku, stok: s.stok, ditempatkan, sisa });
+  });
+  return out;
+}
+
 export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
   if (sub === "peta")
     return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />;
+  if (sub === "gudang")
+    return <SisaGudang rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
   return <TempatkanRak items={items} skuMaster={skuMaster} penempatan={penempatan} setModal={setModal} />;
+}
+
+// Daftar SKU yang stoknya belum sepenuhnya masuk rak: belum ditempatkan sama
+// sekali, atau sisa qty-nya tidak muat lagi karena rak yang biasa dipakai
+// sudah penuh. Tombol "Tempatkan sisa" pakai alur yang sama dengan penempatan
+// ulang (menambah baris penempatan baru), jadi tidak menyentuh data lama.
+function SisaGudang({ rak, penempatan, skuMaster, setModal }) {
+  const daftar = useMemo(
+    () => barangSisaDiGudang(skuMaster, rak, penempatan),
+    [skuMaster, rak, penempatan]
+  );
+
+  return (
+    <div>
+      <PageHeader
+        title="Sisa di Gudang"
+        description="SKU yang stoknya belum sepenuhnya masuk rak — belum pernah ditempatkan, atau rak yang dipakai sudah penuh sehingga sisanya masih menumpuk di gudang."
+      />
+      {daftar.length === 0 ? (
+        <EmptyState label="Semua stok sudah tertempatkan penuh di rak." />
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {daftar.map((d) => (
+            <button
+              key={d.sku}
+              onClick={() =>
+                setModal({
+                  type: "advance-rak-ulang",
+                  item: { sku: d.sku, jumlah: d.sisa },
+                })
+              }
+              className="text-left bg-slate-900 border border-orange-500/40 hover:border-orange-500/70 rounded-lg p-3 transition"
+            >
+              <Warehouse size={16} className="text-orange-400 mb-2" />
+              <div className="text-xs font-mono text-slate-300">{d.sku}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Stok {d.stok}x · di rak {d.ditempatkan}x
+              </div>
+              <div className="text-[11px] font-semibold text-orange-400 mt-0.5">Sisa {d.sisa}x di gudang</div>
+              <div className="mt-2 text-[11px] font-medium text-orange-400">Tempatkan sisa →</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TempatkanRak({ items, skuMaster, penempatan, setModal }) {
@@ -207,8 +289,8 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
     });
   });
 
-  const bukaPindah = (sku, rakLama, penempatanId) =>
-    setModal?.({ type: "pindah-rak", item: { sku, rakLama, penempatanId } });
+  const bukaPindah = (sku, rakLama, penempatanId, qty) =>
+    setModal?.({ type: "pindah-rak", item: { sku, rakLama, penempatanId, qty } });
 
   // SKU yang saat ini benar-benar mengisi rak ini (stok masih > 0), pakai
   // aturan yang sama dengan cariPerluDitempatkanUlang: 1 rak = 1 SKU,
@@ -281,15 +363,18 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {raks.map((r) => (
-                    <button
-                      key={r.rak_code}
-                      onClick={() => bukaPindah(sku, r.rak_code, r.penempatanId)}
-                      className="flex items-center gap-1 text-[11px] font-medium text-amber-300 hover:text-amber-200 border border-amber-500/40 hover:border-amber-500/70 rounded-md px-2 py-1"
-                    >
-                      <ArrowRightLeft size={11} /> Pindahkan dari {r.rak_code}
-                    </button>
-                  ))}
+                  {raks.map((r) => {
+                    const qtyBaris = (penempatan || []).find((p) => p.id === r.penempatanId)?.qty;
+                    return (
+                      <button
+                        key={r.rak_code}
+                        onClick={() => bukaPindah(sku, r.rak_code, r.penempatanId, qtyBaris)}
+                        className="flex items-center gap-1 text-[11px] font-medium text-amber-300 hover:text-amber-200 border border-amber-500/40 hover:border-amber-500/70 rounded-md px-2 py-1"
+                      >
+                        <ArrowRightLeft size={11} /> Pindahkan dari {r.rak_code}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -358,7 +443,7 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
                                       <span className="text-[10px] text-slate-500 font-medium">{stok}x</span>
                                       {idUntukPindah && (
                                         <button
-                                          onClick={() => bukaPindah(sku, r.code, idUntukPindah)}
+                                          onClick={() => bukaPindah(sku, r.code, idUntukPindah, stok)}
                                           title="Pindahkan SKU ini ke rak lain"
                                           className="p-0.5 rounded text-slate-500 hover:text-amber-300 opacity-0 group-hover/item:opacity-100 focus:opacity-100 transition"
                                         >
