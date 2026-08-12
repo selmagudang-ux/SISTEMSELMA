@@ -78,3 +78,23 @@ export async function updateUserPassword(id, newPassword) {
 export async function deleteUser(id) {
   return sb(`app_users?id=eq.${id}`, { method: "DELETE" });
 }
+
+// ---- Ganti password sendiri (dipakai semua role lewat menu di Sidebar) ----
+// Beda dengan updateUserPassword (khusus superadmin ubah password user lain
+// tanpa perlu tahu password lama): fungsi ini WAJIB verifikasi password lama
+// dulu sebelum boleh mengganti, supaya orang lain yang kebetulan lihat sesi
+// masih terbuka tidak bisa asal ganti password akun orang.
+export async function changeOwnPassword(userId, oldPassword, newPassword) {
+  const rows = await sb(`app_users?id=eq.${userId}&select=password_hash`);
+  const user = (rows || [])[0];
+  if (!user) throw new Error("User tidak ditemukan");
+
+  const oldHash = await sha256Hex(oldPassword);
+  if (oldHash !== user.password_hash) throw new Error("Password lama salah");
+
+  const password_hash = await sha256Hex(newPassword);
+  return sb(`app_users?id=eq.${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ password_hash }),
+  });
+}

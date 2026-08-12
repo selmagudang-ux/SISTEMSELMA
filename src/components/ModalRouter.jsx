@@ -5,7 +5,9 @@ import { STAGE_META, COLOR } from "../lib/constants";
 import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
+  GantiPasswordForm,
 } from "./forms";
+import { changeOwnPassword } from "../lib/auth";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
@@ -180,7 +182,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, saving, setSaving, reload, showToast,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, saving, setSaving, reload, showToast, session,
 }) {
   const close = () => setModal(null);
 
@@ -197,6 +199,20 @@ export default function ModalRouter({
       setSaving(false);
     }
   };
+
+  if (modal.type === "ganti-password") {
+    return (
+      <GantiPasswordForm
+        onClose={close}
+        saving={saving}
+        onSubmit={(passwordLama, passwordBaru) =>
+          run(async () => {
+            await changeOwnPassword(session.id, passwordLama, passwordBaru);
+          }, "Password berhasil diganti")
+        }
+      />
+    );
+  }
 
   if (modal.type === "detail-sku") {
     const s = modal.item;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, Warehouse, X, Menu, LogOut } from "lucide-react";
+import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
 import { NAV, roleLabel } from "../lib/constants";
 
 export default function Sidebar({
@@ -11,6 +11,7 @@ export default function Sidebar({
   allowedMenuKeys,
   user,
   onLogout,
+  setModal,
 }) {
   const [expanded, setExpanded] = useState(() => new Set([active.menu]));
 
@@ -146,6 +147,13 @@ export default function Sidebar({
               <div className="text-xs font-medium text-slate-200 truncate">{user.nama || user.username}</div>
               <div className="text-[10px] text-slate-500 truncate">{roleLabel(user.role)}</div>
             </div>
+            <button
+              onClick={() => setModal?.({ type: "ganti-password" })}
+              title="Ganti Password"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-900 flex-shrink-0"
+            >
+              <KeyRound size={15} />
+            </button>
             <button
               onClick={onLogout}
               title="Keluar"

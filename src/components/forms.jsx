@@ -471,6 +471,73 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
   );
 }
 
+// Form ganti password akun sendiri — tersedia untuk SEMUA role lewat Sidebar
+// (beda dengan Kelola User di Pengaturan yang cuma bisa diakses superadmin
+// dan bisa ganti password user lain tanpa tahu password lama).
+export function GantiPasswordForm({ onClose, onSubmit, saving }) {
+  const [passwordLama, setPasswordLama] = useState("");
+  const [passwordBaru, setPasswordBaru] = useState("");
+  const [konfirmasi, setKonfirmasi] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = () => {
+    if (!passwordLama || !passwordBaru || !konfirmasi) {
+      setError("Semua kolom wajib diisi");
+      return;
+    }
+    if (passwordBaru.length < 6) {
+      setError("Password baru minimal 6 karakter");
+      return;
+    }
+    if (passwordBaru !== konfirmasi) {
+      setError("Konfirmasi password baru tidak cocok");
+      return;
+    }
+    setError("");
+    onSubmit(passwordLama, passwordBaru);
+  };
+
+  return (
+    <ModalShell title="Ganti Password" onClose={onClose}>
+      <Field label="Password Lama">
+        <input
+          type="password"
+          autoComplete="current-password"
+          className={inputClass}
+          value={passwordLama}
+          onChange={(e) => setPasswordLama(e.target.value)}
+        />
+      </Field>
+      <Field label="Password Baru">
+        <input
+          type="password"
+          autoComplete="new-password"
+          className={inputClass}
+          value={passwordBaru}
+          onChange={(e) => setPasswordBaru(e.target.value)}
+        />
+      </Field>
+      <Field label="Konfirmasi Password Baru">
+        <input
+          type="password"
+          autoComplete="new-password"
+          className={inputClass}
+          value={konfirmasi}
+          onChange={(e) => setKonfirmasi(e.target.value)}
+        />
+      </Field>
+      {error && <div className="text-xs text-red-400 -mt-1 mb-3">{error}</div>}
+      <button
+        disabled={saving}
+        onClick={submit}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Password Baru"}
+      </button>
+    </ModalShell>
+  );
+}
+
 export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);

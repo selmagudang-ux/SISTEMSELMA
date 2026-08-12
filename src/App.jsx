@@ -199,6 +199,7 @@ function MainApp({ session, onLogout }) {
         allowedMenuKeys={allowed}
         user={session}
         onLogout={onLogout}
+        setModal={setModal}
       />
 
       <div className="flex-1 min-w-0">
@@ -336,6 +337,7 @@ function MainApp({ session, onLogout }) {
           setSaving={setSaving}
           reload={loadAll}
           showToast={showToast}
+          session={session}
         />
       )}
 

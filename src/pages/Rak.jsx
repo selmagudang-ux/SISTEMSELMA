@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle } from "lucide-react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran } from "../lib/api";
 
@@ -44,8 +44,31 @@ export function cariPerluDitempatkanUlang(skuMaster, penempatan) {
   return out;
 }
 
+// SKU (dengan stok > 0) yang saat ini jadi "pemenang" di LEBIH DARI SATU rak
+// sekaligus — seharusnya tidak terjadi (aturan: 1 rak = 1 SKU aktif), tapi bisa
+// muncul kalau SKU sempat ditempatkan ulang ke rak baru sementara penempatan
+// lamanya di rak lain belum sempat dipindahkan/dibersihkan. Dipakai Peta Rak
+// untuk kasih warning + tombol "Pindahkan" supaya bisa langsung dibereskan.
+export function skuDenganRakGanda(rak, penempatan, skuMaster) {
+  const byOwner = new Map(); // sku -> [{ rak_code, penempatanId }]
+  (rak || []).forEach((r) => {
+    const winner = (penempatan || []).find((p) => p.rak_code === r.code);
+    if (!winner) return;
+    const s = (skuMaster || []).find((x) => x.sku === winner.sku);
+    if (!s || !(s.stok > 0)) return;
+    if (!byOwner.has(winner.sku)) byOwner.set(winner.sku, []);
+    byOwner.get(winner.sku).push({ rak_code: r.code, penempatanId: winner.id });
+  });
+  const out = [];
+  byOwner.forEach((raks, sku) => {
+    if (raks.length > 1) out.push({ sku, raks });
+  });
+  return out;
+}
+
 export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
-  if (sub === "peta") return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} />;
+  if (sub === "peta")
+    return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
   return <TempatkanRak items={items} skuMaster={skuMaster} penempatan={penempatan} setModal={setModal} />;
 }
@@ -143,7 +166,7 @@ function MasterRak({ rak, setModal }) {
   );
 }
 
-function PetaRak({ rak, penempatan, skuMaster }) {
+function PetaRak({ rak, penempatan, skuMaster, setModal }) {
   const groups = {};
   rak.forEach((r) => {
     const key = r.meja || "Tanpa Meja";
@@ -151,6 +174,25 @@ function PetaRak({ rak, penempatan, skuMaster }) {
     groups[key].push(r);
   });
   const groupKeys = Object.keys(groups).sort();
+
+  // SKU yang kepasang di lebih dari satu rak sekaligus — perlu diberi tahu
+  // ke user dan dikasih jalan pintas untuk membereskannya (pindahkan salah
+  // satu penempatan ke rak lain, tanpa harus bongkar-pasang manual).
+  const rakGanda = useMemo(
+    () => skuDenganRakGanda(rak, penempatan, skuMaster),
+    [rak, penempatan, skuMaster]
+  );
+  // Lookup cepat: "SKU|kode_rak" -> penempatanId, untuk dipakai kartu rak
+  // menandai baris SKU mana yang lagi bentrok + tombol pindahkan-nya.
+  const gandaLookup = new Map();
+  rakGanda.forEach(({ sku, raks }) => {
+    raks.forEach(({ rak_code, penempatanId }) => {
+      gandaLookup.set(`${sku}|${rak_code}`, penempatanId);
+    });
+  });
+
+  const bukaPindah = (sku, rakLama, penempatanId) =>
+    setModal?.({ type: "pindah-rak", item: { sku, rakLama, penempatanId } });
 
   // SKU yang saat ini benar-benar mengisi rak ini (stok masih > 0), pakai
   // aturan yang sama dengan cariPerluDitempatkanUlang: 1 rak = 1 SKU,
@@ -188,6 +230,45 @@ function PetaRak({ rak, penempatan, skuMaster }) {
         title="Peta Rak"
         description="Tampilan visual rak, dikelompokkan per meja, lengkap dengan SKU yang mengisi tiap rak."
       />
+
+      {rakGanda.length > 0 && (
+        <div className="mb-5 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3.5">
+          <div className="flex items-start gap-2 text-amber-300 text-xs font-medium mb-2.5">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <div>
+              {rakGanda.length} SKU tercatat menempati lebih dari satu rak sekaligus. Pindahkan salah satu
+              penempatannya supaya tiap SKU hanya di satu rak.
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {rakGanda.map(({ sku, raks }) => (
+              <div
+                key={sku}
+                className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/60 rounded-lg px-3 py-2"
+              >
+                <div className="text-xs">
+                  <span className="font-mono text-amber-300">{sku}</span>{" "}
+                  <span className="text-slate-500">
+                    ada di rak {raks.map((r) => r.rak_code).join(", ")}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {raks.map((r) => (
+                    <button
+                      key={r.rak_code}
+                      onClick={() => bukaPindah(sku, r.rak_code, r.penempatanId)}
+                      className="flex items-center gap-1 text-[11px] font-medium text-amber-300 hover:text-amber-200 border border-amber-500/40 hover:border-amber-500/70 rounded-md px-2 py-1"
+                    >
+                      <ArrowRightLeft size={11} /> Pindahkan dari {r.rak_code}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {rak.length === 0 ? (
         <EmptyState label="Belum ada rak untuk dipetakan." />
       ) : (
@@ -201,20 +282,26 @@ function PetaRak({ rak, penempatan, skuMaster }) {
                   .map((r) => {
                     const skus = skuDiRak(r.code);
                     const kosong = skus.length === 0;
+                    const adaBentrok = skus.some(({ sku }) => gandaLookup.has(`${sku}|${r.code}`));
                     return (
                       <div
                         key={r.id}
                         className={`w-44 rounded-lg border p-2.5 flex flex-col gap-1.5 ${
-                          kosong
+                          adaBentrok
+                            ? "border-amber-500/40 bg-amber-500/5"
+                            : kosong
                             ? "border-emerald-500/30 bg-emerald-500/5"
                             : "border-sky-500/30 bg-sky-500/10"
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
-                          <MapPin size={13} className={kosong ? "text-emerald-400" : "text-sky-400"} />
+                          <MapPin
+                            size={13}
+                            className={adaBentrok ? "text-amber-400" : kosong ? "text-emerald-400" : "text-sky-400"}
+                          />
                           <span
                             className={`font-mono text-xs font-semibold ${
-                              kosong ? "text-emerald-300" : "text-sky-300"
+                              adaBentrok ? "text-amber-300" : kosong ? "text-emerald-300" : "text-sky-300"
                             }`}
                           >
                             {r.code}
@@ -224,16 +311,35 @@ function PetaRak({ rak, penempatan, skuMaster }) {
                           <div className="text-[10px] text-emerald-400/70 italic">Kosong</div>
                         ) : (
                           <div className="flex flex-col gap-1">
-                            {skus.map(({ sku, stok }) => (
-                              <div key={sku} className="flex items-start justify-between gap-1.5">
-                                <span className="font-mono text-[10px] text-slate-300 break-all">
-                                  {sku}
-                                </span>
-                                <span className="text-[10px] text-slate-500 font-medium shrink-0">
-                                  {stok}x
-                                </span>
-                              </div>
-                            ))}
+                            {skus.map(({ sku, stok }) => {
+                              const penempatanId = gandaLookup.get(`${sku}|${r.code}`);
+                              const bentrok = !!penempatanId;
+                              return (
+                                <div key={sku} className="flex flex-col gap-0.5">
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <span
+                                      className={`font-mono text-[10px] break-all flex items-center gap-1 ${
+                                        bentrok ? "text-amber-300" : "text-slate-300"
+                                      }`}
+                                    >
+                                      {bentrok && <AlertTriangle size={10} className="flex-shrink-0" />}
+                                      {sku}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-medium shrink-0">
+                                      {stok}x
+                                    </span>
+                                  </div>
+                                  {bentrok && (
+                                    <button
+                                      onClick={() => bukaPindah(sku, r.code, penempatanId)}
+                                      className="self-start flex items-center gap-1 text-[9px] font-medium text-amber-300 hover:text-amber-200 underline underline-offset-2"
+                                    >
+                                      <ArrowRightLeft size={9} /> juga di rak lain — pindahkan
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
