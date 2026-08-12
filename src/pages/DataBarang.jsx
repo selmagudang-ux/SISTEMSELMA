@@ -5,6 +5,12 @@ import { STAGE_META } from "../lib/constants";
 import { downloadCsv } from "../lib/api";
 import { rakForSku } from "./Rak";
 
+// Warna badge untuk jenis barang masuk (field "gudang" di tabel items menyimpan
+// nilai Pembelian/Retur/Lainnya, lihat BarangMasukForm) — dipetakan ke warna
+// yang konsisten dengan dropdown pilihan jenisnya.
+const JENIS_COLOR = { Pembelian: "emerald", Retur: "amber" };
+const jenisColor = (j) => JENIS_COLOR[j] || "slate";
+
 export default function DataBarang({ items, penempatan, setModal }) {
   const [q, setQ] = useState("");
 
@@ -28,7 +34,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
         { key: "tanggal", label: "Tanggal" },
         { key: "sku", label: "SKU" },
         { key: "jumlah", label: "Jumlah" },
-        { key: "gudang", label: "Gudang" },
+        { key: "jenis", label: "Jenis" },
         { key: "rak", label: "Rak" },
         { key: "tahap", label: "Tahap" },
       ],
@@ -36,7 +42,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
         tanggal: i.tanggal,
         sku: i.sku || "",
         jumlah: i.jumlah,
-        gudang: i.gudang || "",
+        jenis: i.gudang || "",
         rak: rakSaatIni(i) || "",
         tahap: STAGE_META[i.stage]?.label || i.stage,
       }))
@@ -64,7 +70,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU, gudang, atau rak…"
+          placeholder="Cari SKU, jenis, atau rak…"
           className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
         />
       </div>
@@ -80,6 +86,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">SKU</th>
                 <th className="px-4 py-2.5">Jumlah</th>
+                <th className="px-4 py-2.5">Jenis</th>
                 <th className="px-4 py-2.5">Rak</th>
                 <th className="px-4 py-2.5">Tahap</th>
               </tr>
@@ -105,6 +112,9 @@ export default function DataBarang({ items, penempatan, setModal }) {
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{i.tanggal}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
                     <td className="px-4 py-2.5">{i.jumlah}x</td>
+                    <td className="px-4 py-2.5">
+                      {i.gudang ? <Badge color={jenisColor(i.gudang)}>{i.gudang}</Badge> : <span className="text-slate-600">—</span>}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-400">{rakSaatIni(i) || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge color={meta.color}>{meta.label}</Badge>

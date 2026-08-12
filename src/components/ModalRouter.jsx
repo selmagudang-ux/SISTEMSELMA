@@ -18,7 +18,7 @@ function DetailItemModal({ item, setModal, saving, run, showToast, close }) {
   const c = COLOR[meta.color];
   const rows = [
     ["Tanggal masuk", item.tanggal],
-    ["Gudang", item.gudang || "—"],
+    ["Jenis", item.gudang || "—"],
     ["Jumlah", `${item.jumlah}x`],
     ["SKU", item.sku || "Belum ada"],
     ["Rak", item.rak_code || "Belum ditempatkan"],
