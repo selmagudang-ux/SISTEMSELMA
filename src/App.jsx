@@ -333,6 +333,7 @@ function MainApp({ session, onLogout }) {
           rakList={rak}
           skuMaster={skuMaster}
           penempatan={penempatan}
+          items={items}
           saving={saving}
           setSaving={setSaving}
           reload={loadAll}

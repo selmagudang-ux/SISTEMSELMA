@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2 } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "../lib/api";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
@@ -278,12 +278,23 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
                                   setModal({ type: "pilih-harga", item: s });
                                 }}
                                 title="Ada perubahan harga asli — klik untuk pilih harga yang dipakai"
-                                className="absolute top-2.5 right-2.5 flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full pl-1.5 pr-2 py-0.5 hover:bg-red-500/25"
+                                className="absolute top-2.5 right-9 flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full pl-1.5 pr-2 py-0.5 hover:bg-red-500/25"
                               >
                                 <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                                 Harga Baru
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setModal({ type: "hapus-sku", item: s });
+                              }}
+                              title="Hapus SKU ini"
+                              className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-red-400 hover:border-red-500/40"
+                            >
+                              <Trash2 size={12} />
+                            </button>
                             <div className="flex items-center gap-3 mb-3 pr-4">
                               <label
                                 onClick={(e) => e.stopPropagation()}

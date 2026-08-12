@@ -183,7 +183,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, saving, setSaving, reload, showToast, session,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
 }) {
   const close = () => setModal(null);
 
@@ -285,6 +285,49 @@ export default function ModalRouter({
         showToast={showToast}
         close={close}
       />
+    );
+  }
+
+  if (modal.type === "hapus-sku") {
+    const s = modal.item;
+    const jumlahBarang = (items || []).filter((i) => i.sku === s.sku).length;
+    return (
+      <ModalShell title="Hapus SKU" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            SKU <span className="font-mono">{s.sku}</span> akan dihapus permanen, beserta{" "}
+            {jumlahBarang > 0 ? `${jumlahBarang} barang yang tercatat, ` : ""}
+            penempatan raknya, dan riwayat stoknya. Tindakan ini tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                // Urutan hapus mengikuti relasi foreign key ke sku_master.sku:
+                // items, stock_history, dan penempatan harus dibersihkan dulu
+                // sebelum baris sku_master-nya sendiri bisa dihapus.
+                await sb(`items?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
+                await sb(`stock_history?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
+                await sb(`penempatan?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
+                await sb(`sku_master?id=eq.${s.id}`, { method: "DELETE" });
+              }, "SKU dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 

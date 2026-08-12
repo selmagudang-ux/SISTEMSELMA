@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Camera, Trash2, Download } from "lucide-react";
+import { Search, Camera, Download } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
 import { downloadCsv } from "../lib/api";
@@ -82,7 +82,6 @@ export default function DataBarang({ items, penempatan, setModal }) {
                 <th className="px-4 py-2.5">Jumlah</th>
                 <th className="px-4 py-2.5">Rak</th>
                 <th className="px-4 py-2.5">Tahap</th>
-                <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -109,18 +108,6 @@ export default function DataBarang({ items, penempatan, setModal }) {
                     <td className="px-4 py-2.5 text-slate-400">{rakSaatIni(i) || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge color={meta.color}>{meta.label}</Badge>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setModal({ type: "hapus-item", item: i });
-                        }}
-                        title="Hapus barang"
-                        className="p-1.5 rounded-md text-slate-600 hover:text-red-400 hover:bg-red-500/10"
-                      >
-                        <Trash2 size={14} />
-                      </button>
                     </td>
                   </tr>
                 );
