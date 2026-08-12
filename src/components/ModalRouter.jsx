@@ -586,7 +586,6 @@ export default function ModalRouter({
   if (modal.type === "grosir-cetak-nota") {
     const p = modal.item;
     const pelanggan = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id);
-    const toko = (tokoGrosir || []).find((x) => x.id === p.toko_id);
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
     const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
     const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
@@ -594,7 +593,6 @@ export default function ModalRouter({
       <NotaPesananModal
         pesanan={p}
         pelanggan={pelanggan}
-        toko={toko}
         detailItems={detailItems}
         totalDibayar={totalDibayar}
         sisaHutang={sisaHutang}

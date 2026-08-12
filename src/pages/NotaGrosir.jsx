@@ -1,152 +1,190 @@
+import { Fragment, useRef, useState } from "react";
 import { X, Printer } from "lucide-react";
 import { fmtRp } from "../lib/api";
 
+// Samakan dengan identitas toko di versi lama (Google Apps Script / Code.gs)
+// supaya nota yang dicetak tetap konsisten dengan yang biasa dipakai.
+const NAMA_TOKO = "SELMA ACC BANDUNG";
+const ALAMAT_TOKO = [
+  "Jl. Leuwipanjang No.138 RT 9 RW 4",
+  "Situsaeur, Bojongloa Kidul",
+  "Kota Bandung, Jawa Barat 40234",
+];
+
 // =========================================================
 // CETAK NOTA PESANAN GROSIR
-// Modal khusus (bukan pakai ModalShell) supaya area cetaknya bisa dikontrol
-// sendiri lewat trik "visibility" — pas print, SEMUA elemen di <body>
-// disembunyikan (visibility:hidden) kecuali .ss-nota-print & isinya, lalu
-// area nota dilepas dari alur modal (position:absolute, top:0) supaya
-// tercetak normal dari atas halaman, tidak kepotong batas tinggi modal.
-// Pendekatan ini lebih aman lintas-browser dibanding cuma andalkan class
-// print:hidden Tailwind, khususnya karena kontennya ada di dalam modal
-// (fixed + overflow-y-auto) yang gampang kepotong saat print biasa.
+// Aturan format nota DISAMAKAN dengan versi lama (Code.gs + Index.html):
+//  - Struk thermal 80mm (POS80), lebar konten dibatasi 72mm.
+//  - Font monospace + garis putus-putus, BUKAN tabel berbingkai.
+//  - Nama produk di baris sendiri; baris berikutnya "qty x harga" (kiri)
+//    dan subtotal (kanan) — supaya nama produk panjang tidak terpotong
+//    di kertas sempit.
+//  - Nota TIDAK menampilkan Toko Pengirim, alamat pelanggan, atau
+//    catatan — itu bagian dari fitur Label Pengiriman (terpisah dari Nota).
+//  - Tinggi kertas @page DIHITUNG dari tinggi konten asli yang sudah
+//    dirender (bukan size:auto). "auto" sering fallback ke ukuran kertas
+//    default (A4/Letter) di printer thermal Android/RawBT, sehingga struk
+//    kepotong jadi 2 halaman. Makanya di sini tinggi diukur eksplisit
+//    lewat getBoundingClientRect, dikonversi px -> mm, + buffer 8mm.
+//  - Area cetak selalu dirender DI LUAR LAYAR (position:absolute,
+//    left:-99999px) — bukan display:none — supaya tetap bisa diukur
+//    tingginya oleh JS, baru "dipindah" ke posisi normal khusus saat print
+//    lewat CSS media print (bukan lewat re-render React).
 // =========================================================
-export function NotaPesananModal({ pesanan, pelanggan, toko, detailItems, totalDibayar, sisaHutang, onClose }) {
+export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, onClose }) {
   const p = pesanan;
-  const cetak = () => window.print();
+  const printRef = useRef(null);
+  const [printing, setPrinting] = useState(false);
+
+  const cetak = () => {
+    setPrinting(true);
+    // Tunggu 2 animation frame supaya layout sudah settle sebelum diukur
+    // (sama seperti versi lama) — memastikan konten sudah ter-render penuh.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = printRef.current;
+        if (el) {
+          const heightPx = el.getBoundingClientRect().height;
+          const heightMm = Math.ceil((heightPx / 96) * 25.4 + 8); // +8mm buffer aman
+          let styleTag = document.getElementById("ss-nota-page-style");
+          if (!styleTag) {
+            styleTag = document.createElement("style");
+            styleTag.id = "ss-nota-page-style";
+            document.head.appendChild(styleTag);
+          }
+          styleTag.textContent = `@media print { @page { size: 80mm ${heightMm}mm; margin: 0; } }`;
+        }
+        window.print();
+        setTimeout(() => setPrinting(false), 500);
+      });
+    });
+  };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 print:hidden">
-      <div className="bg-white text-slate-900 rounded-xl w-full max-w-md max-h-[90vh] overflow-y-auto print:hidden">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white">
-          <h3 className="font-semibold text-sm">Preview Nota</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-900">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="p-5">
-          <NotaIsi pesanan={p} pelanggan={pelanggan} toko={toko} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} />
-        </div>
-        <div className="px-5 pb-5">
-          <button
-            onClick={cetak}
-            className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
-          >
-            <Printer size={15} /> Cetak Nota
-          </button>
+    <Fragment>
+      {/* ====== Modal preview — disembunyikan total saat print ====== */}
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 print:hidden">
+        <div className="bg-white text-slate-900 rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white">
+            <h3 className="font-semibold text-sm">Preview Nota</h3>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-900">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="p-5 flex justify-center bg-slate-100">
+            <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} />
+          </div>
+          <div className="px-5 pb-5 pt-3">
+            <button
+              onClick={cetak}
+              disabled={printing}
+              className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              <Printer size={15} /> {printing ? "Menyiapkan…" : "Cetak Nota"}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ====== Area cetak sesungguhnya — hanya tampil saat print ====== */}
-      <div className="hidden print:block ss-nota-print">
+      {/* ====== Area cetak sesungguhnya (bukan child dari overlay di atas,
+          supaya tidak ikut ke-print:hidden). Selalu ada di DOM (posisi di
+          luar layar) supaya tingginya bisa diukur JS kapan saja. ====== */}
+      <div style={{ position: "absolute", top: 0, left: "-99999px" }}>
         <style>{`
           @media print {
-            @page { size: A5 portrait; margin: 10mm; }
             body * { visibility: hidden; }
             .ss-nota-print, .ss-nota-print * { visibility: visible; }
-            .ss-nota-print {
-              position: absolute;
-              top: 0;
-              left: 0;
-              width: 100%;
-              color: #000;
+            .ss-nota-print { position: fixed; top: 0; left: 0; }
+            .ss-nota-print table, .ss-nota-print tr, .ss-nota-print .ss-nota-line, .ss-nota-print p {
+              page-break-inside: avoid;
+              break-inside: avoid;
             }
           }
         `}</style>
-        <NotaIsi pesanan={p} pelanggan={pelanggan} toko={toko} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} cetak />
+        <div ref={printRef} className="ss-nota-print">
+          <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} />
+        </div>
       </div>
-    </div>
+    </Fragment>
   );
 }
 
-function NotaIsi({ pesanan: p, pelanggan, toko, detailItems, totalDibayar, sisaHutang, cetak }) {
+// Isi nota — dipakai baik untuk preview di layar maupun untuk area cetak
+// sesungguhnya, supaya keduanya selalu identik.
+function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang }) {
   return (
-    <div className={cetak ? "font-sans text-[11px] leading-snug" : "font-sans text-xs leading-snug"}>
-      <div className="text-center mb-3 pb-2 border-b-2 border-slate-800">
-        <div className="font-bold text-base">SISTEM SELMA</div>
-        <div className="text-[10px] text-slate-500">Nota Pesanan Grosir</div>
-      </div>
+    <div className="font-mono text-[12px] leading-snug text-black bg-white" style={{ width: "72mm" }}>
+      <h2 className="text-center text-[15px] font-bold my-1 tracking-wide">{NAMA_TOKO}</h2>
+      <p className="text-center my-0.5">
+        {ALAMAT_TOKO.map((line, i) => (
+          <span key={i}>
+            {line}
+            {i < ALAMAT_TOKO.length - 1 && <br />}
+          </span>
+        ))}
+      </p>
 
-      <div className="flex justify-between mb-1">
-        <span className="text-slate-500">No. Pesanan</span>
-        <span className="font-mono font-semibold">{p.nomor_pesanan}</span>
-      </div>
-      <div className="flex justify-between mb-1">
-        <span className="text-slate-500">Tanggal</span>
-        <span>{p.tanggal}</span>
-      </div>
-      <div className="flex justify-between mb-1">
-        <span className="text-slate-500">Pelanggan</span>
-        <span className="text-right">{pelanggan ? `${pelanggan.nama} (${pelanggan.kode})` : "—"}</span>
-      </div>
-      {pelanggan?.alamat || pelanggan?.kota ? (
-        <div className="flex justify-between mb-1">
-          <span className="text-slate-500">Alamat</span>
-          <span className="text-right">{[pelanggan.alamat, pelanggan.kota].filter(Boolean).join(", ")}</span>
-        </div>
-      ) : null}
-      {pelanggan?.wa && (
-        <div className="flex justify-between mb-1">
-          <span className="text-slate-500">WA</span>
-          <span>{pelanggan.wa}</span>
-        </div>
-      )}
-      {toko && (
-        <div className="flex justify-between mb-1">
-          <span className="text-slate-500">Toko Pengirim</span>
-          <span className="text-right">{toko.nama_toko}</span>
-        </div>
-      )}
-      <div className="flex justify-between mb-2">
-        <span className="text-slate-500">Metode Bayar</span>
-        <span>{p.metode_bayar || "—"}</span>
-      </div>
+      <div className="ss-nota-line border-t border-dashed border-black my-1.5" />
 
-      <table className="w-full border-collapse mb-2">
-        <thead>
-          <tr className="border-y border-slate-800">
-            <th className="text-left py-1 font-semibold">Item</th>
-            <th className="text-center py-1 font-semibold w-10">Qty</th>
-            <th className="text-right py-1 font-semibold w-16">Harga</th>
-            <th className="text-right py-1 font-semibold w-16">Subtotal</th>
-          </tr>
-        </thead>
+      <p className="my-0.5">
+        Tanggal: {p.tanggal}
+        <br />
+        No. Pesanan: {p.nomor_pesanan}
+        <br />
+        Pelanggan: {pelanggan ? pelanggan.nama : "—"}
+        <br />
+        WA: {pelanggan?.wa || "—"}
+      </p>
+
+      <div className="ss-nota-line border-t border-dashed border-black my-1.5" />
+
+      <table className="w-full border-collapse">
         <tbody>
           {(detailItems || []).map((d) => (
-            <tr key={d.id} className="border-b border-dashed border-slate-300">
-              <td className="py-1 pr-1">{d.nama_produk}</td>
-              <td className="py-1 text-center">{d.qty}</td>
-              <td className="py-1 text-right">{fmtRp(d.harga)}</td>
-              <td className="py-1 text-right">{fmtRp(d.subtotal)}</td>
-            </tr>
+            <Fragment key={d.id}>
+              <tr>
+                <td colSpan={2} className="p-0">
+                  {d.nama_produk}
+                </td>
+              </tr>
+              <tr>
+                <td className="p-0">
+                  {d.qty} x {fmtRp(d.harga)}
+                </td>
+                <td className="p-0 text-right">{fmtRp(d.subtotal)}</td>
+              </tr>
+            </Fragment>
           ))}
         </tbody>
       </table>
 
-      <div className="flex justify-between font-bold text-sm border-t-2 border-slate-800 pt-1.5 mb-0.5">
-        <span>Total</span>
-        <span>{fmtRp(p.total)}</span>
-      </div>
-      <div className="flex justify-between mb-0.5">
-        <span className="text-slate-500">Sudah Dibayar</span>
-        <span>{fmtRp(totalDibayar)}</span>
-      </div>
-      <div className="flex justify-between font-semibold mb-2">
-        <span>{sisaHutang > 0 ? "Sisa Hutang" : "Status"}</span>
-        <span>{sisaHutang > 0 ? fmtRp(sisaHutang) : "LUNAS"}</span>
-      </div>
+      <div className="ss-nota-line border-t border-dashed border-black my-1.5" />
 
-      {p.catatan && (
-        <div className="mb-2 pt-2 border-t border-dashed border-slate-300">
-          <span className="text-slate-500">Catatan: </span>
-          {p.catatan}
-        </div>
+      <table className="w-full border-collapse">
+        <tbody>
+          <tr>
+            <td className="p-0 font-bold">TOTAL</td>
+            <td className="p-0 text-right font-bold">{fmtRp(p.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div className="ss-nota-line border-t border-dashed border-black my-1.5" />
+
+      <p className="my-0.5">
+        Status: {p.status_bayar} | Metode: {p.metode_bayar || "—"}
+      </p>
+      {sisaHutang > 0 && (
+        <p className="my-0.5">
+          Sudah Dibayar: {fmtRp(totalDibayar)}
+          <br />
+          Sisa Hutang: {fmtRp(sisaHutang)}
+        </p>
       )}
 
-      <div className="text-center text-[10px] text-slate-500 pt-3 mt-2 border-t border-slate-800">
-        Terima kasih atas pesanan Anda
-      </div>
+      <div className="ss-nota-line border-t border-dashed border-black my-1.5" />
+
+      <p className="text-center my-0.5">Terima kasih atas pesanan Anda!</p>
     </div>
   );
 }
