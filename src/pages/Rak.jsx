@@ -218,10 +218,21 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
           sameProdukKecualiUkuran(pemenang, sku, skuMaster)
         );
       })
-      .map((sku) => ({
-        sku,
-        stok: (skuMaster || []).find((x) => x.sku === sku)?.stok ?? 0,
-      }));
+      .map((sku) => {
+        // Qty yang ditampilkan HARUS qty milik rak ini saja (dari baris penempatan
+        // sku+rak ini), BUKAN total stok SKU di sku_master. Kalau SKU yang sama
+        // dipecah ke beberapa rak (mis. rak 1 qty 1, rak 2 qty 3), masing² rak
+        // wajib tetap tampil angka qty-nya sendiri², tidak boleh digabung/diduplikasi
+        // jadi angka total yang sama di semua rak.
+        const penempatanRak = (penempatan || []).find(
+          (p) => p.sku === sku && p.rak_code === kodeRak
+        );
+        const qtyRak = penempatanRak?.qty;
+        return {
+          sku,
+          stok: qtyRak != null ? qtyRak : (skuMaster || []).find((x) => x.sku === sku)?.stok ?? 0,
+        };
+      });
   };
 
   return (
