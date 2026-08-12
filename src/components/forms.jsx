@@ -471,7 +471,7 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
   );
 }
 
-export function VerifikasiForm({ item, onClose, onSubmit, saving, sudahAdaFoto }) {
+export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [cocok, setCocok] = useState(false);
@@ -492,38 +492,33 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving, sudahAdaFoto }
         <div className="text-[11px] text-slate-500 mt-1">{item.jumlah}x · {item.rak_code || "belum ada rak"}</div>
       </div>
 
-      {sudahAdaFoto ? (
-        <div className="mb-4 flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2.5 rounded-lg">
-          <span>
-            SKU <span className="font-mono text-red-200">{item.sku}</span> sudah punya foto sebelumnya.
-            Foto yang sudah ada tidak bisa ditimpa lagi.
-          </span>
+      {item.foto_url && (
+        <div className="mb-3 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2.5 rounded-lg">
+          <span>SKU ini sudah punya foto. Upload baru akan menimpa foto lama.</span>
         </div>
-      ) : (
-        <Field label="Ambil / upload foto barang">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFile}
-            className={inputClass}
-          />
-        </Field>
       )}
 
-      {!sudahAdaFoto && (
-        preview ? (
-          <div className="mb-3">
-            <img
-              src={preview}
-              alt="Preview foto barang"
-              className="w-full max-h-64 object-contain rounded-lg border border-slate-800 bg-slate-950"
-            />
-          </div>
-        ) : (
-          <div className="mb-3 h-40 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-slate-600 text-xs">
-            Belum ada foto dipilih
-          </div>
-        )
+      <Field label="Ambil / upload foto barang">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFile}
+          className={inputClass}
+        />
+      </Field>
+
+      {preview ? (
+        <div className="mb-3">
+          <img
+            src={preview}
+            alt="Preview foto barang"
+            className="w-full max-h-64 object-contain rounded-lg border border-slate-800 bg-slate-950"
+          />
+        </div>
+      ) : (
+        <div className="mb-3 h-40 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-slate-600 text-xs">
+          Belum ada foto dipilih
+        </div>
       )}
 
       <label className="flex items-start gap-2 mb-4 text-xs text-slate-300">
@@ -532,17 +527,17 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving, sudahAdaFoto }
           checked={cocok}
           onChange={(e) => setCocok(e.target.checked)}
           className="mt-0.5"
-          disabled={!file || sudahAdaFoto}
+          disabled={!file}
         />
         <span>Saya sudah cek, foto di atas sesuai dengan barang ber-SKU <span className="font-mono text-amber-400">{item.sku}</span></span>
       </label>
 
       <button
-        disabled={sudahAdaFoto || !file || !cocok || saving}
+        disabled={!file || !cocok || saving}
         onClick={() => onSubmit(file)}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
-        {sudahAdaFoto ? "Foto sudah ada" : saving ? "Mengunggah…" : "Simpan & Lanjut ke Marketplace"}
+        {saving ? "Mengunggah…" : "Simpan & Lanjut ke Marketplace"}
       </button>
     </ModalShell>
   );

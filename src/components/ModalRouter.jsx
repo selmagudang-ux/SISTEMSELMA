@@ -180,7 +180,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, saving, setSaving, reload, showToast,
 }) {
   const close = () => setModal(null);
 
@@ -575,27 +575,18 @@ export default function ModalRouter({
   }
 
   if (modal.type === "advance-verifikasi") {
-    // SKU yang sudah punya foto (dari barang lain dengan SKU sama, foto sudah
-    // pernah diupload) tidak boleh ditimpa lagi — dicek di sini juga (bukan cuma
-    // di tombol UI) supaya tidak bisa dibobol lewat modal yang sudah terbuka.
-    const sudahAdaFoto = (items || []).some(
-      (i) => i.sku === modal.item.sku && i.id !== modal.item.id && i.foto_url
-    );
     return (
       <VerifikasiForm
         item={modal.item}
-        sudahAdaFoto={sudahAdaFoto}
         onClose={close}
         saving={saving}
         onSubmit={(file) =>
           run(async () => {
-            if (sudahAdaFoto) {
-              throw new Error("SKU ini sudah punya foto, tidak bisa ditimpa.");
-            }
             const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
             // Nama file foto dibuat dari SKU barang (bukan id internal) supaya langsung
-            // gampang dikenali di Storage. Upload hanya terjadi kalau SKU ini belum
-            // pernah punya foto (dicek di atas) — jadi foto lama tidak akan ketimpa.
+            // gampang dikenali di Storage. Kalau SKU-nya sama diupload ulang, filenya
+            // akan menimpa foto lama (x-upsert sudah aktif di sbUploadFoto) — sengaja
+            // dibolehkan supaya user bisa memperbaiki sendiri kalau salah upload foto.
             const skuSafe = (modal.item.sku || modal.item.id).replace(/[^a-zA-Z0-9-_]/g, "-");
             const path = `${skuSafe}.${ext}`;
             const url = await sbUploadFoto(file, path);
