@@ -1,11 +1,94 @@
 import { useState } from "react";
-import { Trash2, AlertTriangle } from "lucide-react";
+import { Trash2, AlertTriangle, Download, RotateCcw } from "lucide-react";
 import { ModalShell } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
-import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor } from "../lib/api";
+import { sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, VerifikasiForm, TambahRakForm, BarangKeluarForm,
 } from "./forms";
+
+// Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
+// (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
+function DetailItemModal({ item, setModal, saving, run, showToast, close }) {
+  const [unduh, setUnduh] = useState(false);
+  const meta = STAGE_META[item.stage];
+  const c = COLOR[meta.color];
+  const rows = [
+    ["Tanggal masuk", item.tanggal],
+    ["Gudang", item.gudang || "—"],
+    ["Jumlah", `${item.jumlah}x`],
+    ["SKU", item.sku || "Belum ada"],
+    ["Rak", item.rak_code || "Belum ditempatkan"],
+  ];
+  return (
+    <ModalShell title={`Detail Barang — ${item.sku || `#${item.id.slice(0, 8)}`}`} onClose={close}>
+      {item.foto_url && (
+        <img
+          src={item.foto_url}
+          alt={item.sku || "foto barang"}
+          onClick={() => setModal({ type: "lihat-foto", item })}
+          className="w-full max-h-56 object-contain rounded-lg border border-slate-800 bg-slate-950 mb-3 cursor-zoom-in hover:opacity-90"
+        />
+      )}
+      <div className="mb-3">
+        <span className={`text-[11px] px-2 py-0.5 rounded-full ${c.bg} ${c.text}`}>{meta.label}</span>
+      </div>
+      <div className="rounded-lg border border-slate-800 overflow-hidden">
+        {rows.map(([label, val], i) => (
+          <div
+            key={label}
+            className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+          >
+            <span className="text-slate-500 text-xs">{label}</span>
+            <span className="text-slate-200 font-mono text-xs">{val}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 space-y-2">
+        {item.foto_url && (
+          <button
+            disabled={unduh}
+            onClick={async () => {
+              setUnduh(true);
+              try {
+                await downloadFotos([{ sku: item.sku || item.id, url: item.foto_url }]);
+              } catch (e) {
+                showToast(e.message || "Gagal mengunduh foto", "err");
+              } finally {
+                setUnduh(false);
+              }
+            }}
+            className="w-full flex items-center justify-center gap-1.5 border border-slate-700 text-slate-300 hover:border-slate-600 disabled:opacity-50 text-xs font-semibold py-2.5 rounded-lg"
+          >
+            <Download size={14} /> {unduh ? "Mengunduh…" : "Download Foto"}
+          </button>
+        )}
+        {item.stage === "marketplace" && (
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`items?id=eq.${item.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ stage: "verifikasi" }),
+                });
+              }, "Barang dikembalikan ke Pemotretan")
+            }
+            className="w-full flex items-center justify-center gap-1.5 border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-50 text-xs font-semibold py-2.5 rounded-lg"
+          >
+            <RotateCcw size={14} /> Kembalikan ke Pemotretan
+          </button>
+        )}
+        <button
+          onClick={() => setModal({ type: "hapus-item", item })}
+          className="w-full flex items-center justify-center gap-1.5 border border-red-500/30 text-red-300 hover:bg-red-500/10 text-xs font-semibold py-2.5 rounded-lg"
+        >
+          <Trash2 size={14} /> Hapus Barang
+        </button>
+      </div>
+    </ModalShell>
+  );
+} 
 
 // Modal pilih Harga Lama / Harga Baru. Dibuka dari kartu Master Barang lewat
 // tanda merah "Harga Baru" — pemilihan lama/baru dilakukan DI DALAM modal ini
@@ -176,46 +259,15 @@ export default function ModalRouter({
   }
 
   if (modal.type === "detail-item") {
-    const item = modal.item;
-    const meta = STAGE_META[item.stage];
-    const c = COLOR[meta.color];
-    const rows = [
-      ["Tanggal masuk", item.tanggal],
-      ["Gudang", item.gudang || "—"],
-      ["Jumlah", `${item.jumlah}x`],
-      ["SKU", item.sku || "Belum ada"],
-      ["Rak", item.rak_code || "Belum ditempatkan"],
-    ];
     return (
-      <ModalShell title={`Detail Barang — ${item.sku || `#${item.id.slice(0, 8)}`}`} onClose={close}>
-        {item.foto_url && (
-          <img
-            src={item.foto_url}
-            alt={item.sku || "foto barang"}
-            className="w-full max-h-56 object-contain rounded-lg border border-slate-800 bg-slate-950 mb-3"
-          />
-        )}
-        <div className="mb-3">
-          <span className={`text-[11px] px-2 py-0.5 rounded-full ${c.bg} ${c.text}`}>{meta.label}</span>
-        </div>
-        <div className="rounded-lg border border-slate-800 overflow-hidden">
-          {rows.map(([label, val], i) => (
-            <div
-              key={label}
-              className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-            >
-              <span className="text-slate-500 text-xs">{label}</span>
-              <span className="text-slate-200 font-mono text-xs">{val}</span>
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={() => setModal({ type: "hapus-item", item })}
-          className="w-full mt-3 flex items-center justify-center gap-1.5 border border-red-500/30 text-red-300 hover:bg-red-500/10 text-xs font-semibold py-2.5 rounded-lg"
-        >
-          <Trash2 size={14} /> Hapus Barang
-        </button>
-      </ModalShell>
+      <DetailItemModal
+        item={modal.item}
+        setModal={setModal}
+        saving={saving}
+        run={run}
+        showToast={showToast}
+        close={close}
+      />
     );
   }
 
@@ -583,6 +635,79 @@ export default function ModalRouter({
           }, "Harga SKU diperbarui")
         }
       />
+    );
+  }
+
+  if (modal.type === "stok-opname") {
+    const s = modal.item;
+    const qtyFisik = modal.qtyFisik;
+    const stokSistem = s.stok || 0;
+    const selisih = qtyFisik - stokSistem;
+    return (
+      <ModalShell title="Sesuaikan Stok — Stok Opname" onClose={close}>
+        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+          <div className="text-[11px] text-slate-500">SKU</div>
+          <div className="font-mono text-sm text-amber-400">{s.sku}</div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-xs mb-4">
+          <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+            <div className="text-slate-500">Stok Sistem</div>
+            <div className="text-slate-200 font-semibold mt-0.5">{stokSistem}</div>
+          </div>
+          <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+            <div className="text-slate-500">Qty Fisik</div>
+            <div className="text-slate-200 font-semibold mt-0.5">{qtyFisik}</div>
+          </div>
+          <div
+            className={`rounded-lg border px-3 py-2 ${
+              selisih === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"
+            }`}
+          >
+            <div className="text-slate-500">Selisih</div>
+            <div className={`font-semibold mt-0.5 ${selisih === 0 ? "text-emerald-400" : "text-amber-400"}`}>
+              {selisih > 0 ? `+${selisih}` : selisih}
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          Stok sistem SKU ini akan diubah jadi <span className="text-amber-400 font-medium">{qtyFisik}</span> sesuai
+          hasil hitung fisik (stok opname), dan perubahannya dicatat otomatis di Riwayat Stok.
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb("stock_history", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    sku: s.sku,
+                    type: "penyesuaian",
+                    qty_before: stokSistem,
+                    qty_change: selisih,
+                    qty_after: qtyFisik,
+                    note: "Stok opname",
+                  }),
+                });
+                await sb(`sku_master?id=eq.${s.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ stok: qtyFisik }),
+                });
+              }, "Stok disesuaikan sesuai hasil opname")
+            }
+            className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
+          >
+            {saving ? "Menyimpan…" : "Sesuaikan Stok"}
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 

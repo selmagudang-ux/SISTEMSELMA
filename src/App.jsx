@@ -312,7 +312,7 @@ function MainApp({ session, onLogout }) {
                 <FotoProduk items={items} setModal={setModal} />
               )}
               {nav.menu === "marketplace" && (
-                <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} />
+                <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
               )}
               {nav.menu === "laporan" && <Laporan items={items} skuMaster={skuMaster} rak={rak} />}
               {nav.menu === "pengaturan" && (

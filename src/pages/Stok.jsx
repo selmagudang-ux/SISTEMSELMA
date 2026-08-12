@@ -5,7 +5,7 @@ import { fmtTgl, downloadCsv } from "../lib/api";
 
 export default function Stok({ sub, skuMaster, penempatan, stockHistory, setModal }) {
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
-  if (sub === "hitung") return <HitungQty skuMaster={skuMaster} penempatan={penempatan} />;
+  if (sub === "hitung") return <HitungQty skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "riwayat") return <RiwayatStok stockHistory={stockHistory} />;
   return <StokBarang skuMaster={skuMaster} />;
 }
@@ -127,35 +127,53 @@ function BarangKeluar({ skuMaster, setModal }) {
   );
 }
 
-function HitungQty({ skuMaster, penempatan }) {
-  const placedBySku = {};
-  penempatan.forEach((p) => {
-    placedBySku[p.sku] = (placedBySku[p.sku] || 0) + Number(p.qty || 0);
-  });
+function HitungQty({ skuMaster, setModal }) {
+  const [q, setQ] = useState("");
+  // Qty hasil hitung fisik (stok opname) yang baru saja diketik user — { [sku_master.id]: string }.
+  // Belum tersimpan ke sistem sampai user klik "Sesuaikan Stok" (lewat modal konfirmasi).
+  const [fisik, setFisik] = useState({});
 
-  const rows = skuMaster.map((s) => {
-    const placed = placedBySku[s.sku] || 0;
-    const selisih = (s.stok || 0) - placed;
-    return { ...s, placed, selisih };
-  });
+  const setQtyFisik = (id, val) => {
+    setFisik((prev) => ({ ...prev, [id]: val }));
+  };
+
+  const rows = skuMaster
+    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
+    .map((s) => {
+      const raw = fisik[s.id];
+      const ada = raw !== undefined && raw !== "";
+      const qtyFisik = ada ? Number(raw) : null;
+      const selisih = ada ? qtyFisik - (s.stok || 0) : null;
+      return { ...s, raw: raw ?? "", ada, qtyFisik, selisih };
+    });
 
   return (
     <div>
       <PageHeader
         title="Hitung Qty"
-        description="Bandingkan jumlah stok di Master Barang dengan total yang sudah ditempatkan di rak — untuk mengecek selisih."
+        description="Hitung fisik stok di gudang (stok opname), lalu bandingkan dengan Stok Sistem untuk mengecek selisih."
       />
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
       {rows.length === 0 ? (
         <EmptyState label="Belum ada data untuk dihitung." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5">SKU</th>
                 <th className="px-4 py-2.5">Stok Sistem</th>
-                <th className="px-4 py-2.5">Ditempatkan di Rak</th>
+                <th className="px-4 py-2.5">Qty Fisik (Stok Opname)</th>
                 <th className="px-4 py-2.5">Selisih</th>
+                <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -163,9 +181,19 @@ function HitungQty({ skuMaster, penempatan }) {
                 <tr key={r.id} className="border-b border-slate-800/60 last:border-0">
                   <td className="px-4 py-2.5 font-mono text-xs">{r.sku}</td>
                   <td className="px-4 py-2.5">{r.stok}</td>
-                  <td className="px-4 py-2.5 text-slate-400">{r.placed}</td>
                   <td className="px-4 py-2.5">
-                    {r.selisih === 0 ? (
+                    <input
+                      type="number"
+                      value={r.raw}
+                      onChange={(e) => setQtyFisik(r.id, e.target.value)}
+                      placeholder="Hasil hitung…"
+                      className="w-28 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-amber-500"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {!r.ada ? (
+                      <span className="text-slate-600 text-xs">—</span>
+                    ) : r.selisih === 0 ? (
                       <span className="flex items-center gap-1 text-emerald-400 text-xs">
                         <CheckCircle2 size={13} /> Cocok
                       </span>
@@ -174,6 +202,15 @@ function HitungQty({ skuMaster, penempatan }) {
                         <AlertTriangle size={13} /> {r.selisih > 0 ? `+${r.selisih}` : r.selisih}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      disabled={!r.ada || r.selisih === 0}
+                      onClick={() => setModal({ type: "stok-opname", item: r, qtyFisik: r.qtyFisik })}
+                      className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
+                    >
+                      Sesuaikan Stok
+                    </button>
                   </td>
                 </tr>
               ))}
