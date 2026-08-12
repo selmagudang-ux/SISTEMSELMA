@@ -247,6 +247,7 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
         return {
           sku,
           stok: qtyRak != null ? qtyRak : (skuMaster || []).find((x) => x.sku === sku)?.stok ?? 0,
+          penempatanId: penempatanRak?.id ?? null,
         };
       });
   };
@@ -338,11 +339,12 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
                           <div className="text-[10px] text-emerald-400/70 italic">Kosong</div>
                         ) : (
                           <div className="flex flex-col gap-1">
-                            {skus.map(({ sku, stok }) => {
-                              const penempatanId = gandaLookup.get(`${sku}|${r.code}`);
-                              const bentrok = !!penempatanId;
+                            {skus.map(({ sku, stok, penempatanId }) => {
+                              const bentrokId = gandaLookup.get(`${sku}|${r.code}`);
+                              const bentrok = !!bentrokId;
+                              const idUntukPindah = bentrokId || penempatanId;
                               return (
-                                <div key={sku} className="flex flex-col gap-0.5">
+                                <div key={sku} className="group/item flex flex-col gap-0.5">
                                   <div className="flex items-start justify-between gap-1.5">
                                     <span
                                       className={`font-mono text-[10px] break-all flex items-center gap-1 ${
@@ -352,17 +354,23 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
                                       {bentrok && <AlertTriangle size={10} className="flex-shrink-0" />}
                                       {sku}
                                     </span>
-                                    <span className="text-[10px] text-slate-500 font-medium shrink-0">
-                                      {stok}x
-                                    </span>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className="text-[10px] text-slate-500 font-medium">{stok}x</span>
+                                      {idUntukPindah && (
+                                        <button
+                                          onClick={() => bukaPindah(sku, r.code, idUntukPindah)}
+                                          title="Pindahkan SKU ini ke rak lain"
+                                          className="p-0.5 rounded text-slate-500 hover:text-amber-300 opacity-0 group-hover/item:opacity-100 focus:opacity-100 transition"
+                                        >
+                                          <ArrowRightLeft size={10} />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                   {bentrok && (
-                                    <button
-                                      onClick={() => bukaPindah(sku, r.code, penempatanId)}
-                                      className="self-start flex items-center gap-1 text-[9px] font-medium text-amber-300 hover:text-amber-200 underline underline-offset-2"
-                                    >
-                                      <ArrowRightLeft size={9} /> juga di rak lain — pindahkan
-                                    </button>
+                                    <div className="text-[9px] text-amber-400/80">
+                                      juga tercatat di rak lain — pindahkan salah satu
+                                    </div>
                                   )}
                                 </div>
                               );
