@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, AlertTriangle, Download, RotateCcw } from "lucide-react";
+import { Trash2, AlertTriangle, Download, RotateCcw, Printer } from "lucide-react";
 import { ModalShell, Badge } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import {
@@ -13,6 +13,7 @@ import {
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak } from "../pages/Rak";
 import { EditPesananForm } from "../pages/Grosir";
+import { NotaPesananModal } from "../pages/NotaGrosir";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
@@ -548,6 +549,12 @@ export default function ModalRouter({
           </>
         )}
 
+        <button
+          onClick={() => setModal({ type: "grosir-cetak-nota", item: p })}
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-slate-700 text-slate-200 hover:bg-slate-800 mb-2"
+        >
+          <Printer size={14} /> Cetak Nota
+        </button>
         {!dibatalkan && sisaHutang > 0 && (
           <button
             onClick={() => setModal({ type: "grosir-bayar-hutang", item: p })}
@@ -573,6 +580,26 @@ export default function ModalRouter({
           </button>
         )}
       </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-cetak-nota") {
+    const p = modal.item;
+    const pelanggan = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id);
+    const toko = (tokoGrosir || []).find((x) => x.id === p.toko_id);
+    const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
+    const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
+    return (
+      <NotaPesananModal
+        pesanan={p}
+        pelanggan={pelanggan}
+        toko={toko}
+        detailItems={detailItems}
+        totalDibayar={totalDibayar}
+        sisaHutang={sisaHutang}
+        onClose={close}
+      />
     );
   }
 
