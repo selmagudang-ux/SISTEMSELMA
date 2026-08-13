@@ -310,6 +310,7 @@ export const newItemRow = (sumberProduk) => ({
 
 function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, reload, showToast }) {
   const [pelangganId, setPelangganId] = useState("");
+  const [pelangganNamaBaru, setPelangganNamaBaru] = useState(""); // dipakai kalau pelanggan belum ada di daftar
   const [tokoId, setTokoId] = useState("");
   const [statusBayar, setStatusBayar] = useState("Belum Bayar"); // 'Belum Bayar' | 'Lunas'
   const [metodeBayar, setMetodeBayar] = useState("Cash");
@@ -350,10 +351,11 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
 
   const errors = rows.map(rowError);
   const canSubmit =
-    pelangganId && rows.length > 0 && errors.every((e) => !e) && !saving;
+    (pelangganId || pelangganNamaBaru.trim()) && rows.length > 0 && errors.every((e) => !e) && !saving;
 
   const resetForm = () => {
     setPelangganId("");
+    setPelangganNamaBaru("");
     setTokoId("");
     setStatusBayar("Belum Bayar");
     setMetodeBayar("Cash");
@@ -364,6 +366,19 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   const submit = async () => {
     setSaving(true);
     try {
+      // 0. Kalau pelanggan dipilih dari daftar, pakai id-nya. Kalau tidak (user
+      //    ketik nama baru), buat dulu pelanggan baru di grosir_pelanggan —
+      //    sekali dibuat, langsung bisa dipilih dari daftar juga di pesanan berikutnya.
+      let pelangganIdFinal = pelangganId;
+      if (!pelangganIdFinal && pelangganNamaBaru.trim()) {
+        const kodeBaru = nextKode(pelangganGrosir, "kode", "PLG-");
+        const [pelangganBaru] = await sb("grosir_pelanggan", {
+          method: "POST",
+          body: JSON.stringify({ kode: kodeBaru, nama: pelangganNamaBaru.trim() }),
+        });
+        pelangganIdFinal = pelangganBaru.id;
+      }
+
       // 1. Nomor pesanan harian: GSR + ddMMyyyy + urut 3 digit, reset tiap hari.
       const prefix = `GSR${todayDDMMYYYY()}`;
       const existing = await sb(
@@ -381,7 +396,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
         method: "POST",
         body: JSON.stringify({
           nomor_pesanan: nomorPesanan,
-          pelanggan_id: pelangganId,
+          pelanggan_id: pelangganIdFinal,
           toko_id: tokoId || null,
           status_bayar: statusBayar,
           metode_bayar: metodeBayar,
@@ -464,16 +479,28 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
     <div>
       <PageHeader
         title="Buat Pesanan Grosir"
-        description="Pilih pelanggan, tambahkan barang dari Data Barang atau input manual, lalu simpan. Stok Data Barang otomatis berkurang saat pesanan disimpan."
+        description="Pilih pelanggan yang sudah ada atau ketik nama baru langsung, tambahkan barang dari Data Barang atau input manual, lalu simpan. Stok Data Barang otomatis berkurang saat pesanan disimpan."
       />
 
       <div className="grid sm:grid-cols-2 gap-3 mb-4 max-w-2xl">
         <Field label="Pelanggan *">
           <SearchableSelect
             value={pelangganId}
-            onChange={setPelangganId}
+            onChange={(id) => {
+              setPelangganId(id);
+              setPelangganNamaBaru("");
+            }}
             options={pelangganOptions}
             placeholder="Cari pelanggan…"
+          />
+          <input
+            className={`${inputClass} mt-1.5`}
+            value={pelangganNamaBaru}
+            onChange={(e) => {
+              setPelangganNamaBaru(e.target.value);
+              setPelangganId("");
+            }}
+            placeholder="Atau ketik nama pelanggan baru"
           />
         </Field>
         <Field label="Toko Pengirim (opsional)">
@@ -485,12 +512,6 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
           />
         </Field>
       </div>
-
-      {pelangganGrosir.length === 0 && (
-        <div className="text-xs text-amber-400 mb-4">
-          Belum ada data pelanggan — tambahkan dulu lewat menu Grosir → Pelanggan.
-        </div>
-      )}
 
       <div className="mb-3 flex items-center gap-2">
         <button
