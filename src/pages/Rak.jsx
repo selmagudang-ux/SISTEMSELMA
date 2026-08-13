@@ -271,7 +271,9 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
     groups[key] = groups[key] || [];
     groups[key].push(r);
   });
-  const groupKeys = Object.keys(groups).sort();
+  const groupKeys = Object.keys(groups).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
 
   // SKU yang kepasang di lebih dari satu rak sekaligus — perlu diberi tahu
   // ke user dan dikasih jalan pintas untuk membereskannya (pindahkan salah
@@ -391,7 +393,12 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
               <div className="text-xs font-semibold text-slate-400 mb-2">Meja {meja}</div>
               <div className="flex flex-wrap gap-2">
                 {groups[meja]
-                  .sort((a, b) => (a.baris || "").localeCompare(b.baris || ""))
+                  .sort((a, b) =>
+                    (a.baris || "").localeCompare(b.baris || "", undefined, {
+                      numeric: true,
+                      sensitivity: "base",
+                    })
+                  )
                   .map((r) => {
                     const skus = skuDiRak(r.code);
                     const kosong = skus.length === 0;
