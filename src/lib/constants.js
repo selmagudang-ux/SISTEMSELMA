@@ -105,6 +105,7 @@ export const ROLES = [
   { key: "gudang", label: "Gudang" },
   { key: "pemotretan", label: "Pemotretan" },
   { key: "marketplace", label: "Admin Marketplace" },
+  { key: "grosir", label: "Admin Grosir" },
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
@@ -116,6 +117,7 @@ export const ROLE_MENUS = {
   gudang: ["dashboard", "barang-masuk", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
   pemotretan: ["dashboard", "foto"],
   marketplace: ["dashboard", "marketplace"],
+  grosir: ["dashboard", "grosir"],
 };
 
 export function allowedMenus(role) {
