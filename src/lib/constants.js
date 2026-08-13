@@ -227,9 +227,9 @@ export function allowedMenus(role) {
 // didaftarkan satu-satu, perilakunya tetap default penuh.
 export const ROLE_SUBMENUS = {
   grosir: {
-    // Admin Grosir cuma urus transaksi & pelanggan — "Toko Pengirim" (master
-    // data toko) sengaja tidak diberikan, biar tetap dikelola superadmin.
-    grosir: ["pesanan", "semua-pesanan", "pelanggan"],
+    // Admin Grosir sekarang juga diberi akses ke "Toko Pengirim" (master
+    // data toko), selain transaksi & pelanggan.
+    grosir: ["pesanan", "semua-pesanan", "pelanggan", "toko"],
   },
 };
 
