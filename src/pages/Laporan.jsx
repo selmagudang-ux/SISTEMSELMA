@@ -68,7 +68,7 @@ export default function Laporan({
 
 function LaporanGudang({ items, skuMaster, rak }) {
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
-  const totalNilaiEcer = skuMaster.reduce((a, s) => a + (s.stok || 0) * (s.ecer || 0), 0);
+  const totalNilaiAsli = skuMaster.reduce((a, s) => a + (s.stok || 0) * (s.harga_asli || 0), 0);
   const belumUpload = items.filter((i) => i.stage === "marketplace").length;
   const sudahUpload = items.filter((i) => i.marketplace_status === "sudah").length;
 
@@ -79,7 +79,7 @@ function LaporanGudang({ items, skuMaster, rak }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label="Total SKU" value={skuMaster.length} icon={Tag} />
         <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} icon={Boxes} />
-        <StatCard label="Estimasi Nilai Stok (Ecer)" value={fmtRp(totalNilaiEcer)} accent="text-amber-400" icon={Wallet} iconColor="text-amber-500" />
+        <StatCard label="Estimasi Nilai Stok (Harga Asli)" value={fmtRp(totalNilaiAsli)} accent="text-amber-400" icon={Wallet} iconColor="text-amber-500" />
         <StatCard label="Total Rak Terpakai" value={rak.length} icon={MapPin} />
       </div>
 
