@@ -49,13 +49,7 @@ export const MASTER_TIPE = [
 // marketplace, grosir, dst) tidak berubah sama sekali.
 // =========================================================
 export const NAV = [
-  {
-    key: "dashboard", label: "DASHBOARD", icon: LayoutDashboard,
-    children: [
-      { key: "gudang", label: "Dashboard Gudang" },
-      { key: "grosir", label: "Dashboard Grosir" },
-    ],
-  },
+  { key: "dashboard", label: "DASHBOARD", icon: LayoutDashboard },
   {
     key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
     children: [

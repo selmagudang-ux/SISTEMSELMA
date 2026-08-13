@@ -7,8 +7,7 @@ import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
 import Login from "./pages/Login";
 
-import DashboardGudang from "./pages/DashboardGudang";
-import DashboardGrosir from "./pages/DashboardGrosir";
+import Dashboard from "./pages/Dashboard";
 import BarangMasuk from "./pages/BarangMasuk";
 import DataBarang from "./pages/DataBarang";
 import SkuHarga from "./pages/SkuHarga";
@@ -310,8 +309,8 @@ function MainApp({ session, onLogout }) {
             </div>
           ) : (
             <>
-              {nav.menu === "dashboard" && (nav.sub || "gudang") === "gudang" && (
-                <DashboardGudang
+              {nav.menu === "dashboard" && (
+                <Dashboard
                   stageCounts={stageCounts}
                   skuCount={skuMaster.length}
                   totalStok={totalStok}
@@ -320,15 +319,10 @@ function MainApp({ session, onLogout }) {
                   items={items}
                   onNavigate={navigate}
                   setModal={setModal}
-                />
-              )}
-              {nav.menu === "dashboard" && nav.sub === "grosir" && (
-                <DashboardGrosir
                   pesananGrosir={pesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
                   pelangganGrosir={pelangganGrosir}
-                  onNavigate={navigate}
                 />
               )}
               {nav.menu === "barang-masuk" && (
