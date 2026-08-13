@@ -70,6 +70,7 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
           isOpen={isOpen}
           hasChildren
           onClick={() => toggle(node.key)}
+          badgeValue={badges[node.key]}
         />
         {isOpen && (
           <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">

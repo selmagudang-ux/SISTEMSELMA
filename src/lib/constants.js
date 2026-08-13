@@ -188,18 +188,23 @@ export function findNavLabel(menuKey, subKey) {
   return { menuLabel: menu.label, subLabel: sub ? sub.label : "" };
 }
 
-// Supaya badge notif di menu INDUK (mis. "Rak") selalu mencerminkan total dari
-// SEMUA sub-nya (mis. "Tempatkan Barang" + "Sisa di Gudang"), bukan cuma satu
-// sub yang kebetulan didaftarkan manual — badge induk dihitung otomatis di sini
-// dengan menjumlahkan badge tiap sub (key "induk.sub") dari NAV, jadi kalau ada
-// sub baru yang dikasih badge, induknya otomatis ikut update tanpa perlu ubah
-// kode di App.jsx satu-satu.
+// Supaya badge notif di menu INDUK (mis. "Rak") DAN di GROUP paling atas (mis.
+// "ADMIN PEMOTRETAN") selalu mencerminkan total dari semua anaknya — bukan cuma
+// satu sub yang kebetulan didaftarkan manual — badge dihitung otomatis di sini:
+// dulu ke bawah (bottom-up) supaya badge grup bisa menjumlahkan badge menu yang
+// sudah dihitung duluan. Kalau ada sub/menu baru yang dikasih badge, induk dan
+// grupnya otomatis ikut update tanpa perlu ubah kode di App.jsx satu-satu.
 export function withParentBadges(nav, rawBadges) {
   const result = { ...rawBadges };
   const walk = (nodes) => {
     nodes.forEach((node) => {
       if (node.group) {
         walk(node.children || []);
+        const total = (node.children || []).reduce(
+          (sum, c) => sum + (Number(result[c.key]) || 0),
+          0
+        );
+        if (total > 0) result[node.key] = total;
         return;
       }
       if (node.children && node.children.length) {
