@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Plus, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
@@ -68,9 +68,12 @@ function MainApp({ session, onLogout }) {
     setTimeout(() => setToast(null), duration);
   };
 
-  // Cegah akses ke menu yang tidak diizinkan untuk role ini (mis. lewat state lama).
+  // Cegah akses ke menu (atau sub-menu) yang tidak diizinkan untuk role ini
+  // (mis. lewat state lama, atau URL/badge yang mengarah ke sub tertentu).
   const navigate = (menu, sub) => {
     if (!allowed.includes(menu)) return;
+    const subs = allowedSubMenus(session.role, menu);
+    if (subs && sub && !subs.includes(sub)) return;
     setNav({ menu, sub });
   };
 
@@ -213,6 +216,11 @@ function MainApp({ session, onLogout }) {
 
   const { menuLabel, subLabel } = findNavLabel(nav.menu, nav.sub);
   const canSee = (menuKey) => allowed.includes(menuKey);
+  const canSeeSub = (menuKey, subKey) => {
+    if (!subKey) return true;
+    const subs = allowedSubMenus(session.role, menuKey);
+    return !subs || subs.includes(subKey);
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
@@ -299,7 +307,7 @@ function MainApp({ session, onLogout }) {
             <div className="flex items-center justify-center py-24 text-slate-500 gap-2 text-sm">
               <Loader2 size={18} className="animate-spin" /> Memuat data…
             </div>
-          ) : !canSee(nav.menu) ? (
+          ) : !canSee(nav.menu) || !canSeeSub(nav.menu, nav.sub) ? (
             <div className="flex items-center justify-center py-24 text-slate-500 text-sm">
               Anda tidak punya akses ke halaman ini.
             </div>

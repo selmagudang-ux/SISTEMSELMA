@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
-import { NAV, roleLabel } from "../lib/constants";
+import { NAV, roleLabel, allowedSubMenus } from "../lib/constants";
 
 export default function Sidebar({
   active,
@@ -73,7 +73,13 @@ export default function Sidebar({
         <nav className="flex-1 overflow-y-auto py-2 px-2">
           {visibleNav.map((item) => {
             const Icon = item.icon;
-            const hasChildren = !!item.children?.length;
+            const subAllowed = allowedSubMenus(user?.role, item.key);
+            const visibleChildren = item.children
+              ? subAllowed
+                ? item.children.filter((c) => subAllowed.includes(c.key))
+                : item.children
+              : [];
+            const hasChildren = visibleChildren.length > 0;
             const isActiveGroup = active.menu === item.key;
             const isOpen = expanded.has(item.key);
 
@@ -108,7 +114,7 @@ export default function Sidebar({
 
                 {hasChildren && isOpen && (
                   <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">
-                    {item.children.map((child) => {
+                    {visibleChildren.map((child) => {
                       const isActiveChild =
                         isActiveGroup && active.sub === child.key;
                       const childBadge = badges[`${item.key}.${child.key}`];

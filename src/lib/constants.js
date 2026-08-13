@@ -124,6 +124,26 @@ export function allowedMenus(role) {
   return ROLE_MENUS[role] || ["dashboard"];
 }
 
+// Daftar SUB-menu (anak menu) yang boleh diakses tiap role, untuk menu yang
+// punya beberapa anak (mis. Grosir, Stok, Rak, SKU & Harga, Marketplace).
+// Kalau kombinasi role+menu TIDAK didaftarkan di sini, role tsb otomatis boleh
+// akses SEMUA anak menu itu (default penuh) — jadi role lama (gudang,
+// pemotretan, marketplace, superadmin) tidak perlu didaftarkan satu-satu,
+// perilakunya tetap sama seperti sebelum ini ada.
+export const ROLE_SUBMENUS = {
+  grosir: {
+    // Admin Grosir cuma urus transaksi & pelanggan — "Toko Pengirim" (master
+    // data toko) sengaja tidak diberikan, biar tetap dikelola superadmin.
+    grosir: ["pesanan", "semua-pesanan", "pelanggan"],
+  },
+};
+
+// Sub-menu apa saja yang boleh dilihat role ini untuk satu menu tertentu.
+// Return null = boleh akses semua anak menu (tidak dibatasi).
+export function allowedSubMenus(role, menuKey) {
+  return ROLE_SUBMENUS[role]?.[menuKey] || null;
+}
+
 export function roleLabel(role) {
   return ROLES.find((r) => r.key === role)?.label || role;
 }
