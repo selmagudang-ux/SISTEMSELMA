@@ -582,6 +582,69 @@ export default function ModalRouter({
             <Trash2 size={14} /> Batalkan Pesanan
           </button>
         )}
+        {dibatalkan && (
+          <button
+            onClick={() => setModal({ type: "grosir-hapus-pesanan", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white mt-2"
+          >
+            <Trash2 size={14} /> Hapus Permanen
+          </button>
+        )}
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "grosir-hapus-pesanan") {
+    const p = modal.item;
+    const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    const skuTerpakai = Array.from(
+      new Set(detailItems.filter((d) => d.sumber_produk === "sku" && d.sku).map((d) => d.sku))
+    );
+    return (
+      <ModalShell title={`Hapus Pesanan ${p.nomor_pesanan}`} onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Pesanan ini akan dihapus <span className="font-semibold">permanen</span> beserta seluruh riwayat
+            pembayarannya. Tindakan ini tidak bisa dibatalkan.
+            {skuTerpakai.length > 0 && (
+              <div className="mt-1.5 text-red-200/90">
+                SKU yang dipakai di pesanan ini ({skuTerpakai.join(", ")}) akan lepas dari riwayat pesanan, jadi
+                nanti bisa dihapus permanen juga kalau memang mau (kalau tidak dipakai di pesanan lain lagi).
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                // Urutan hapus mengikuti relasi foreign key ke grosir_pesanan.id:
+                // deposit yang tercatat lewat pesanan ini cuma dilepas referensinya
+                // (bukan dihapus) supaya saldo deposit pelanggan tetap utuh — itu
+                // uang beneran, bukan sekadar catatan pesanan.
+                await sb(`grosir_deposit?pesanan_id_terkait=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ pesanan_id_terkait: null }),
+                });
+                await sb(`grosir_pembayaran?pesanan_id=eq.${p.id}`, { method: "DELETE" });
+                await sb(`grosir_detail_pesanan?pesanan_id=eq.${p.id}`, { method: "DELETE" });
+                await sb(`grosir_pesanan?id=eq.${p.id}`, { method: "DELETE" });
+              }, "Pesanan dihapus permanen")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus Permanen
+          </button>
+        </div>
       </ModalShell>
     );
   }
