@@ -83,12 +83,12 @@ export default function Sidebar({
                   onClick={() =>
                     hasChildren ? toggle(item.key) : go(item.key, null)
                   }
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition ${
+                  className={`w-full flex items-center gap-2.5 py-2 rounded-lg text-sm transition border-l-2 ${
                     isActiveGroup && !hasChildren
-                      ? "bg-amber-500 text-slate-950 font-semibold"
+                      ? "border-amber-500 bg-slate-900 pl-[10px] pr-3 text-amber-400 font-semibold"
                       : isActiveGroup
-                      ? "text-slate-100 font-medium"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                      ? "border-transparent pl-[10px] pr-3 text-slate-100 font-medium"
+                      : "border-transparent pl-[10px] pr-3 text-slate-400 hover:text-slate-200 hover:bg-slate-900"
                   }`}
                 >
                   <Icon size={16} className="flex-shrink-0" />

@@ -1,4 +1,4 @@
-import { Camera, MapPin } from "lucide-react";
+import { Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import { StatCard, PageHeader, EmptyState } from "../components/ui";
 
@@ -13,11 +13,11 @@ export default function Dashboard({ stageCounts, skuCount, totalStok, rakCount, 
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total SKU" value={skuCount} />
-        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} />
-        <StatCard label="Rak Terpakai" value={rakCount} />
-        <StatCard label="Rak Kosong" value={daftarRakKosong.length} accent="text-emerald-400" />
-        <StatCard label="Barang Aktif" value={items.filter((i) => i.stage !== "selesai").length} />
+        <StatCard label="Total SKU" value={skuCount} icon={Tag} />
+        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} icon={Boxes} />
+        <StatCard label="Rak Terpakai" value={rakCount} icon={MapPin} />
+        <StatCard label="Rak Kosong" value={daftarRakKosong.length} accent="text-emerald-400" icon={PackageCheck} iconColor="text-emerald-500" />
+        <StatCard label="Barang Aktif" value={items.filter((i) => i.stage !== "selesai").length} icon={ClipboardList} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">

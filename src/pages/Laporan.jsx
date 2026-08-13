@@ -1,6 +1,7 @@
 import { PageHeader, StatCard, EmptyState } from "../components/ui";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import { fmtRp } from "../lib/api";
+import { Tag, Boxes, Wallet, MapPin, Upload, UploadCloud } from "lucide-react";
 
 export default function Laporan({ items, skuMaster, rak }) {
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
@@ -15,10 +16,10 @@ export default function Laporan({ items, skuMaster, rak }) {
       <PageHeader title="Laporan" description="Ringkasan performa gudang berdasarkan data terkini." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total SKU" value={skuMaster.length} />
-        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} />
-        <StatCard label="Estimasi Nilai Stok (Ecer)" value={fmtRp(totalNilaiEcer)} accent="text-amber-400" />
-        <StatCard label="Total Rak Terpakai" value={rak.length} />
+        <StatCard label="Total SKU" value={skuMaster.length} icon={Tag} />
+        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} icon={Boxes} />
+        <StatCard label="Estimasi Nilai Stok (Ecer)" value={fmtRp(totalNilaiEcer)} accent="text-amber-400" icon={Wallet} iconColor="text-amber-500" />
+        <StatCard label="Total Rak Terpakai" value={rak.length} icon={MapPin} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -48,8 +49,8 @@ export default function Laporan({ items, skuMaster, rak }) {
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Ringkasan Marketplace</div>
           <div className="p-4 grid grid-cols-2 gap-3">
-            <StatCard label="Belum Upload" value={belumUpload} />
-            <StatCard label="Sudah Upload" value={sudahUpload} accent="text-emerald-400" />
+            <StatCard label="Belum Upload" value={belumUpload} icon={Upload} />
+            <StatCard label="Sudah Upload" value={sudahUpload} accent="text-emerald-400" icon={UploadCloud} iconColor="text-emerald-500" />
           </div>
         </div>
       </div>

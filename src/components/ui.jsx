@@ -202,9 +202,10 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
   );
 }
 
-export function StatCard({ label, value, accent }) {
+export function StatCard({ label, value, accent, icon: Icon, iconColor }) {
   return (
     <div className="rounded-xl border border-slate-800 p-4 bg-slate-900/50">
+      {Icon && <Icon size={16} className={`mb-2 ${iconColor || "text-slate-500"}`} />}
       <div className={`text-2xl font-bold ${accent || ""}`}>{value}</div>
       <div className="text-xs text-slate-400 mt-1">{label}</div>
     </div>
