@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran } from "../lib/api";
 
@@ -271,6 +271,7 @@ function MasterRak({ rak, setModal }) {
 }
 
 function PetaRak({ rak, penempatan, skuMaster, setModal }) {
+  const [q, setQ] = useState("");
   const groups = {};
   rak.forEach((r) => {
     const key = r.meja || "Tanpa Meja";
@@ -342,12 +343,32 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
       });
   };
 
+  // Cocokkan pencarian ke kode rak itu sendiri ATAU ke SKU yang lagi mengisi
+  // rak tersebut — jadi user bisa cari "G1A-10A" ataupun cari SKU langsung
+  // buat tahu dia disimpan di rak mana.
+  const qLower = q.trim().toLowerCase();
+  const rakCocok = (r) => {
+    if (!qLower) return true;
+    if ((r.code || "").toLowerCase().includes(qLower)) return true;
+    return skuDiRak(r.code).some(({ sku }) => (sku || "").toLowerCase().includes(qLower));
+  };
+
   return (
     <div>
       <PageHeader
         title="Peta Rak"
         description="Tampilan visual rak, dikelompokkan per meja, lengkap dengan SKU yang mengisi tiap rak."
       />
+
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari kode rak atau SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
 
       {rakGanda.length > 0 && (
         <div className="mb-5 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3.5">
@@ -392,13 +413,18 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
 
       {rak.length === 0 ? (
         <EmptyState label="Belum ada rak untuk dipetakan." />
+      ) : groupKeys.every((meja) => !groups[meja].some(rakCocok)) ? (
+        <EmptyState label="Tidak ada rak atau SKU yang cocok dengan pencarian." />
       ) : (
         <div className="space-y-6">
-          {groupKeys.map((meja) => (
+          {groupKeys
+            .filter((meja) => groups[meja].some(rakCocok))
+            .map((meja) => (
             <div key={meja}>
               <div className="text-xs font-semibold text-slate-400 mb-2">Meja {meja}</div>
               <div className="flex flex-wrap gap-2">
                 {groups[meja]
+                  .filter(rakCocok)
                   .sort((a, b) =>
                     (a.code || "").localeCompare(b.code || "", undefined, {
                       numeric: true,
