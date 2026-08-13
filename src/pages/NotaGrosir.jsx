@@ -207,18 +207,15 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, on
     setPrinting(true);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const el = printRef.current;
-        if (el) {
-          const heightPx = el.getBoundingClientRect().height;
-          const heightMm = Math.ceil((heightPx / 96) * 25.4 + 8);
-          let styleTag = document.getElementById("ss-label-page-style");
-          if (!styleTag) {
-            styleTag = document.createElement("style");
-            styleTag.id = "ss-label-page-style";
-            document.head.appendChild(styleTag);
-          }
-          styleTag.textContent = `@media print { @page { size: 80mm ${heightMm}mm; margin: 0; } }`;
+        // Label pengiriman pakai ukuran kertas TETAP 100mm x 150mm
+        // (bukan dihitung dari tinggi konten seperti nota thermal).
+        let styleTag = document.getElementById("ss-label-page-style");
+        if (!styleTag) {
+          styleTag = document.createElement("style");
+          styleTag.id = "ss-label-page-style";
+          document.head.appendChild(styleTag);
         }
+        styleTag.textContent = `@media print { @page { size: 100mm 150mm; margin: 0; } }`;
         window.print();
         setTimeout(() => setPrinting(false), 500);
       });
@@ -271,6 +268,7 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, on
 }
 
 // Isi label — dipakai baik untuk preview di layar maupun area cetak sesungguhnya.
+// Format ringkas: cuma PENGIRIM, PENERIMA, dan ISI BARANG — muat di kertas 100x150mm.
 function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
   // Kalau pesanan tidak punya Toko Pengirim (opsional saat buat pesanan),
   // pakai identitas toko utama sebagai pengirim default.
@@ -280,18 +278,16 @@ function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
     : [...ALAMAT_TOKO];
 
   return (
-    <div className="font-mono text-[12px] leading-snug text-black bg-white" style={{ width: "72mm" }}>
-      <h2 className="text-center text-[14px] font-bold my-1 tracking-wide">LABEL PENGIRIMAN</h2>
-      <p className="text-center my-0.5">
-        No. Pesanan: {p.nomor_pesanan}
-        <br />
-        Tanggal: {p.tanggal}
-      </p>
+    <div
+      className="font-mono leading-snug text-black bg-white"
+      style={{ width: "100mm", height: "150mm", padding: "6mm", boxSizing: "border-box", fontSize: "13px" }}
+    >
+      <h2 className="text-center text-[18px] font-bold mb-2 tracking-wide">LABEL PENGIRIMAN</h2>
 
-      <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+      <div className="ss-label-line border-t-2 border-dashed border-black my-2" />
 
-      <p className="my-0.5 font-bold">PENGIRIM</p>
-      <p className="my-0.5">
+      <p className="mb-0.5 font-bold text-[13px]">PENGIRIM</p>
+      <p className="mb-2">
         {namaPengirim}
         {alamatPengirim.length > 0 && (
           <>
@@ -306,11 +302,11 @@ function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
         )}
       </p>
 
-      <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+      <div className="ss-label-line border-t-2 border-dashed border-black my-2" />
 
-      <p className="my-0.5 font-bold">PENERIMA</p>
-      <p className="my-0.5">
-        {pelanggan ? pelanggan.nama : "—"}
+      <p className="mb-0.5 font-bold text-[14px]">PENERIMA</p>
+      <p className="mb-2 text-[15px]">
+        <span className="font-bold">{pelanggan ? pelanggan.nama : "—"}</span>
         {pelanggan?.alamat && (
           <>
             <br />
@@ -331,28 +327,19 @@ function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
         )}
       </p>
 
-      <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+      <div className="ss-label-line border-t-2 border-dashed border-black my-2" />
 
-      <p className="my-0.5 font-bold">ISI PAKET</p>
+      <p className="mb-1 font-bold text-[13px]">ISI BARANG</p>
       <table className="w-full border-collapse">
         <tbody>
           {(detailItems || []).map((d) => (
             <tr key={d.id}>
-              <td className="p-0">{d.nama_produk}</td>
-              <td className="p-0 text-right">{d.qty}x</td>
+              <td className="p-0 align-top">{d.nama_produk}</td>
+              <td className="p-0 align-top text-right whitespace-nowrap">{d.qty}x</td>
             </tr>
           ))}
         </tbody>
       </table>
-
-      {p.catatan && (
-        <>
-          <div className="ss-label-line border-t border-dashed border-black my-1.5" />
-          <p className="my-0.5">
-            Catatan: {p.catatan}
-          </p>
-        </>
-      )}
     </div>
   );
 }
