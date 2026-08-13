@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Plus, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
-import { sb } from "./lib/api";
+import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
@@ -107,20 +107,20 @@ function MainApp({ session, onLogout }) {
     setError(null);
     try {
       const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes] = await Promise.all([
-        sb("items?select=*&order=created_at.desc"),
-        sb("sku_master?select=*&order=created_at.desc"),
-        sb("rak?select=*&order=code"),
-        sb("master_data?select=*&order=label"),
+        sbAll("items?select=*&order=created_at.desc"),
+        sbAll("sku_master?select=*&order=created_at.desc"),
+        sbAll("rak?select=*&order=code"),
+        sbAll("master_data?select=*&order=label"),
         sb("settings?select=*"),
-        sb("penempatan?select=*&order=created_at.desc"),
-        sb("stock_history?select=*&order=created_at.desc"),
-        sb("grosir_pelanggan?select=*&order=nama"),
-        sb("grosir_toko?select=*&order=nama_toko"),
-        sb("grosir_produk_manual?select=*&order=nama_produk"),
-        sb("grosir_pesanan?select=*&order=created_at.desc"),
-        sb("grosir_detail_pesanan?select=*"),
-        sb("grosir_pembayaran?select=*&order=created_at.desc"),
-        sb("grosir_deposit?select=*&order=created_at.desc"),
+        sbAll("penempatan?select=*&order=created_at.desc"),
+        sbAll("stock_history?select=*&order=created_at.desc"),
+        sbAll("grosir_pelanggan?select=*&order=nama"),
+        sbAll("grosir_toko?select=*&order=nama_toko"),
+        sbAll("grosir_produk_manual?select=*&order=nama_produk"),
+        sbAll("grosir_pesanan?select=*&order=created_at.desc"),
+        sbAll("grosir_detail_pesanan?select=*"),
+        sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
+        sbAll("grosir_deposit?select=*&order=created_at.desc"),
       ]);
       setItems(itemsRes || []);
       setSkuMaster(skuRes || []);

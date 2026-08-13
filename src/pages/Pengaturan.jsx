@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
-import { sb } from "../lib/api";
+import { sb, sbAll } from "../lib/api";
 import { ROLES, roleLabel } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
@@ -196,8 +196,8 @@ function SkuYatimCleaner({ reload, showToast }) {
     setOrphans(null);
     try {
       const [itemsRes, skuRes] = await Promise.all([
-        sb("items?select=sku"),
-        sb("sku_master?select=id,sku,stok&order=sku"),
+        sbAll("items?select=sku"),
+        sbAll("sku_master?select=id,sku,stok&order=sku"),
       ]);
       const dipakai = new Set((itemsRes || []).filter((i) => i.sku).map((i) => i.sku));
       const yatim = (skuRes || []).filter((s) => !dipakai.has(s.sku));

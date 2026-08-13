@@ -63,6 +63,34 @@ export async function sb(path, opts = {}) {
   return res.json();
 }
 
+// PostgREST (API Supabase) cuma balikin maksimal 1000 baris per request
+// secara default. sbAll() otomatis "nyicil" pakai header Range sampai semua
+// baris kebawa, jadi aman dipakai untuk tabel yang datanya bisa > 1000 baris
+// (mis. items, sku_master, stock_history, dst). Query builder (select=,
+// order=, filter=, dst) tetap ditulis sama seperti biasa lewat sb().
+const SB_PAGE_SIZE = 1000;
+
+export async function sbAll(path, opts = {}) {
+  let all = [];
+  let offset = 0;
+  while (true) {
+    const from = offset;
+    const to = offset + SB_PAGE_SIZE - 1;
+    const rows = await sb(path, {
+      ...opts,
+      headers: {
+        Range: `${from}-${to}`,
+        ...(opts.headers || {}),
+      },
+    });
+    const batch = rows || [];
+    all = all.concat(batch);
+    if (batch.length < SB_PAGE_SIZE) break; // baris didapat < page size -> udah abis
+    offset += SB_PAGE_SIZE;
+  }
+  return all;
+}
+
 // Nama bucket Storage di Supabase untuk menyimpan foto verifikasi.
 // Pastikan bucket ini sudah dibuat (public, dengan policy insert untuk anon).
 export const STORAGE_BUCKET = "verifikasi-foto";
