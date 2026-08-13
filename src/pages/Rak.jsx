@@ -400,7 +400,7 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
               <div className="flex flex-wrap gap-2">
                 {groups[meja]
                   .sort((a, b) =>
-                    (a.baris || "").localeCompare(b.baris || "", undefined, {
+                    (a.code || "").localeCompare(b.code || "", undefined, {
                       numeric: true,
                       sensitivity: "base",
                     })
