@@ -426,8 +426,43 @@ export default function ModalRouter({
     );
   }
 
-  if (modal.type === "hapus-grosir-toko") {
-    const t = modal.item;
+  if (modal.type === "hapus-grosir-produk-manual") {
+    const p = modal.item;
+    return (
+      <ModalShell title="Hapus Produk Manual" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Produk <span className="font-mono">{p.kode}</span> ({p.nama_produk}) akan dihapus permanen. Kalau
+            produk ini sudah pernah dipakai di pesanan sebelumnya, penghapusan akan ditolak — pesanan lama tetap
+            harus punya datanya.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`grosir_produk_manual?id=eq.${p.id}`, { method: "DELETE" });
+              }, "Produk manual dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "hapus-grosir-toko") {    const t = modal.item;
     return (
       <ModalShell title="Hapus Toko" onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">

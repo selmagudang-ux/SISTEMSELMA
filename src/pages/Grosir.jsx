@@ -7,6 +7,8 @@ export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
 }) {
   if (sub === "toko") return <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />;
+  if (sub === "produk-manual")
+    return <ProdukManualList produkManualGrosir={produkManualGrosir} setModal={setModal} />;
   if (sub === "pelanggan")
     return (
       <PelangganList
@@ -294,8 +296,68 @@ function TokoList({ tokoGrosir, setModal }) {
 }
 
 // =========================================================
-// BUAT PESANAN GROSIR
+// PRODUK MANUAL GROSIR (nama+harga yang diketik langsung saat Buat Pesanan,
+// tersimpan di grosir_produk_manual biar bisa dipakai lagi tanpa ketik ulang)
 // =========================================================
+function ProdukManualList({ produkManualGrosir, setModal }) {
+  const [q, setQ] = useState("");
+  const filtered = (produkManualGrosir || []).filter((p) => {
+    const s = q.trim().toLowerCase();
+    if (!s) return true;
+    return p.nama_produk?.toLowerCase().includes(s) || p.kode?.toLowerCase().includes(s);
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Produk Manual"
+        description="Produk yang diketik langsung (bukan dari Data Barang) saat Buat Pesanan Grosir. Hapus di sini kalau sudah tidak dipakai."
+      />
+
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari nama produk atau kode…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState label={q ? "Tidak ada produk yang cocok." : "Belum ada produk manual."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {filtered.map((p, i) => (
+            <div
+              key={p.id}
+              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-amber-400">{p.kode}</span>
+                  <span className="text-sm text-slate-200 truncate">{p.nama_produk}</span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">{fmtRp(p.harga)}</div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={() => setModal({ type: "hapus-grosir-produk-manual", item: p })}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800"
+                  title="Hapus"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 let _itemRowSeq = 0;
 export const newItemRow = (sumberProduk) => ({
   _key: `row-${++_itemRowSeq}`,
