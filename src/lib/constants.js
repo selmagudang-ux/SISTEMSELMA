@@ -233,17 +233,27 @@ export const ROLES = [
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
-// "dashboard" sengaja HANYA dibuka untuk superadmin & owner — role operasional
-// (gudang/pemotretan/marketplace/grosir) langsung ke halaman kerja masing-masing.
+// "dashboard" tetap terbuka untuk superadmin & owner (role operasional lain
+// langsung ke halaman kerja masing-masing). Owner sekarang dapat SEMUA menu
+// kecuali "pengaturan" (khusus superadmin). Role operasional (gudang/
+// pemotretan/marketplace) masing-masing dibatasi HANYA ke grup menunya sendiri
+// beserta semua sub-nya — grosir tidak disinggung ulang di sini, tetap seperti
+// sebelumnya (hanya menu "grosir").
 // "barang-masuk" sengaja tetap disertakan walau sudah tidak ada di sidebar NAV —
 // dipakai untuk izin tombol tambah cepat "+ Barang Masuk" di header. Diletakkan
 // PALING TERAKHIR di daftar gudang supaya bukan yang jadi halaman awal (fallback
 // landing page dari MainApp pakai allowed[0] kalau "dashboard" tidak diizinkan).
 export const ROLE_MENUS = {
   superadmin: [...ALL_MENU_KEYS, "barang-masuk"],
-  owner: ["dashboard"],
+  owner: [...ALL_MENU_KEYS.filter((k) => k !== "pengaturan"), "barang-masuk"],
+  // Gudang: hanya menu di dalam grup "ADMIN GUDANG" (Alur Barang, SKU & Harga,
+  // Stok, Rak, Cetak Label) beserta semua sub-nya — default penuh karena tidak
+  // didaftarkan di ROLE_SUBMENUS.
   gudang: ["data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"],
+  // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],
+  // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma
+  // "Marketplace", dengan semua sub-nya — Belum/Sudah/Riwayat Upload).
   marketplace: ["marketplace"],
   grosir: ["grosir"],
 };
