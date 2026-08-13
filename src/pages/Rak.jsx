@@ -270,6 +270,30 @@ function MasterRak({ rak, setModal }) {
   );
 }
 
+// Urutkan nama meja sesuai pola gudang: nomor 1-8 dulu di dalam huruf yang
+// sama (G1A, G2A, ..., G8A), baru pindah ke huruf berikutnya (G1B, G2B, ...).
+// Format nama meja yang dikenali: <prefix huruf><nomor><huruf akhir>, mis.
+// "G1A" -> prefix "G", nomor 1, huruf akhir "A". Meja yang tidak cocok pola
+// ini (mis. "Tanpa Meja") selalu ditaruh paling belakang.
+function parseMejaKey(mejaKey) {
+  const m = /^([A-Za-z]+?)(\d+)([A-Za-z]+)$/.exec(mejaKey || "");
+  if (!m) return null;
+  return { prefix: m[1], number: parseInt(m[2], 10), suffix: m[3] };
+}
+
+function compareMeja(a, b) {
+  const ka = parseMejaKey(a);
+  const kb = parseMejaKey(b);
+  if (ka && kb) {
+    if (ka.suffix !== kb.suffix) return ka.suffix.localeCompare(kb.suffix, undefined, { sensitivity: "base" });
+    if (ka.prefix !== kb.prefix) return ka.prefix.localeCompare(kb.prefix, undefined, { sensitivity: "base" });
+    return ka.number - kb.number;
+  }
+  if (ka && !kb) return -1;
+  if (!ka && kb) return 1;
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 function PetaRak({ rak, penempatan, skuMaster, setModal }) {
   const [q, setQ] = useState("");
   const groups = {};
@@ -278,9 +302,7 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
     groups[key] = groups[key] || [];
     groups[key].push(r);
   });
-  const groupKeys = Object.keys(groups).sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
-  );
+  const groupKeys = Object.keys(groups).sort(compareMeja);
 
   // SKU yang kepasang di lebih dari satu rak sekaligus — perlu diberi tahu
   // ke user dan dikasih jalan pintas untuk membereskannya (pindahkan salah
