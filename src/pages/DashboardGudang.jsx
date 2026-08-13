@@ -39,34 +39,6 @@ export default function DashboardGudang({ stageCounts, skuCount, totalStok, rakC
         })}
       </div>
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Rak Kosong</div>
-          <button
-            onClick={() => onNavigate && onNavigate("rak", "peta")}
-            className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
-          >
-            Lihat Peta Rak →
-          </button>
-        </div>
-        {daftarRakKosong.length === 0 ? (
-          <div className="p-6">
-            <EmptyState label="Tidak ada rak kosong — semua rak sedang terisi." />
-          </div>
-        ) : (
-          <div className="p-4 flex flex-wrap gap-2">
-            {daftarRakKosong.map((r) => (
-              <span
-                key={r.id}
-                className="flex items-center gap-1.5 text-xs font-mono font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5"
-              >
-                <MapPin size={12} /> {r.code}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="rounded-xl border border-slate-800 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Barang terbaru</div>
         {recent.length === 0 ? (
