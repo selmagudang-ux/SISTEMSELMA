@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, inputClass } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -400,6 +400,11 @@ export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose
 // tapi mengubah rak_code baris penempatan yang sudah ada (lewat onSubmit di
 // ModalRouter) supaya rak lamanya langsung kosong, bukan menambah riwayat baru.
 export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, onSubmit, saving }) {
+  // "pindah" = ke rak lain (perlu rak tujuan). "keluar" = dikeluarkan dari rak
+  // ini sepenuhnya (bukan dipindah ke rak lain) — barangnya tetap tercatat
+  // sebagai stok, tapi tidak lagi menempati rak manapun, jadi otomatis muncul
+  // lagi di "Sisa di Gudang" untuk ditempatkan ulang kapan-kapan.
+  const [aksi, setAksi] = useState("pindah");
   const [rakCode, setRakCode] = useState("");
   const [confirmingOverride, setConfirmingOverride] = useState(false);
 
@@ -424,11 +429,18 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
   const sisaDiAsal = qtyAsal - qty;
 
   const handleClick = () => {
+    if (aksi === "keluar") {
+      // Tidak butuh rak tujuan — cukup kirim rakCode kosong, ModalRouter akan
+      // mengosongkan/mengurangi baris penempatan asal saja tanpa bikin
+      // penempatan baru di rak manapun (barangnya jadi "sisa di gudang").
+      onSubmit("", qty, "keluar");
+      return;
+    }
     if (conflict && !confirmingOverride) {
       setConfirmingOverride(true);
       return;
     }
-    onSubmit(rakCode, qty);
+    onSubmit(rakCode, qty, "pindah");
   };
 
   if (confirmingOverride && conflict) {
@@ -452,7 +464,7 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
           </button>
           <button
             disabled={saving}
-            onClick={() => onSubmit(rakCode, qty)}
+            onClick={() => onSubmit(rakCode, qty, "pindah")}
             className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >
             {saving ? "Menyimpan…" : "Ya, Timpa SKU"}
@@ -463,14 +475,45 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
   }
 
   return (
-    <ModalShell title={`Pindahkan — ${item.sku}`} onClose={onClose}>
+    <ModalShell
+      title={`${aksi === "keluar" ? "Keluarkan" : "Pindahkan"} — ${item.sku}`}
+      onClose={onClose}
+    >
       <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
         <div className="text-[11px] text-slate-500">Rak asal</div>
         <div className="font-mono text-sm text-amber-400">
           {item.rakLama} <span className="text-slate-500 font-sans">· {qtyAsal}x tersedia</span>
         </div>
       </div>
-      <Field label="Jumlah dipindahkan">
+
+      {/* Pilihan aksi: pindah ke rak lain, atau keluarkan sepenuhnya dari rak
+          (barang kembali jadi "sisa di gudang", belum ditempatkan lagi). */}
+      <div className="flex gap-2 mb-3">
+        <button
+          type="button"
+          onClick={() => setAksi("pindah")}
+          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg border transition ${
+            aksi === "pindah"
+              ? "border-amber-500/60 bg-amber-500/10 text-amber-300"
+              : "border-slate-800 text-slate-400 hover:border-slate-700"
+          }`}
+        >
+          <ArrowRightLeft size={13} /> Pindah Rak
+        </button>
+        <button
+          type="button"
+          onClick={() => setAksi("keluar")}
+          className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg border transition ${
+            aksi === "keluar"
+              ? "border-orange-500/60 bg-orange-500/10 text-orange-300"
+              : "border-slate-800 text-slate-400 hover:border-slate-700"
+          }`}
+        >
+          <Warehouse size={13} /> Keluarkan
+        </button>
+      </div>
+
+      <Field label={aksi === "keluar" ? "Jumlah dikeluarkan" : "Jumlah dipindahkan"}>
         <input
           type="number"
           min="1"
@@ -488,47 +531,66 @@ export function PindahRakForm({ item, rakList, penempatan, skuMaster, onClose, o
           Sisa <b className="text-slate-300">{sisaDiAsal}x</b> tetap di rak <span className="font-mono">{item.rakLama}</span>.
         </div>
       )}
-      <Field label="Rak tujuan">
-        <SearchableSelect
-          value={rakCode}
-          onChange={setRakCode}
-          options={rakList.filter((r) => r.code !== item.rakLama).map((r) => ({ value: r.code, label: r.code }))}
-          placeholder="Ketik atau pilih rak…"
-        />
-      </Field>
-      {bolehGabung && (
-        <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
-          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+
+      {aksi === "keluar" ? (
+        <div className="flex items-start gap-2 bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <Warehouse size={13} className="flex-shrink-0 mt-0.5" />
           <div>
-            {skuSamaPersis ? (
-              <>
-                Rak ini sudah berisi SKU yang sama persis. Qty akan <b>ditambahkan</b> ke qty yang sudah ada di
-                rak ini, tidak akan menimpa.
-              </>
-            ) : (
-              <>
-                Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> — produk yang sama, cuma
-                beda ukuran. Boleh digabung, tidak akan menimpa.
-              </>
-            )}
+            <b>{qty}x</b> SKU <span className="font-mono">{item.sku}</span> akan dikeluarkan dari rak{" "}
+            <span className="font-mono">{item.rakLama}</span> — tidak dipindah ke rak manapun, tapi stoknya
+            tetap tercatat sebagai <b>sisa di gudang</b> dan bisa ditempatkan ulang kapan-kapan.
           </div>
         </div>
+      ) : (
+        <>
+          <Field label="Rak tujuan">
+            <SearchableSelect
+              value={rakCode}
+              onChange={setRakCode}
+              options={rakList.filter((r) => r.code !== item.rakLama).map((r) => ({ value: r.code, label: r.code }))}
+              placeholder="Ketik atau pilih rak…"
+            />
+          </Field>
+          {bolehGabung && (
+            <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg mb-3">
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <div>
+                {skuSamaPersis ? (
+                  <>
+                    Rak ini sudah berisi SKU yang sama persis. Qty akan <b>ditambahkan</b> ke qty yang sudah ada di
+                    rak ini, tidak akan menimpa.
+                  </>
+                ) : (
+                  <>
+                    Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> — produk yang sama, cuma
+                    beda ukuran. Boleh digabung, tidak akan menimpa.
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+          {conflict && (
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
+              <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+              <div>
+                Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> (produk berbeda). Akan
+                diminta konfirmasi sebelum menimpa.
+              </div>
+            </div>
+          )}
+        </>
       )}
-      {conflict && (
-        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
-          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-          <div>
-            Rak ini sudah berisi SKU <span className="font-mono">{occupant.sku}</span> (produk berbeda). Akan
-            diminta konfirmasi sebelum menimpa.
-          </div>
-        </div>
-      )}
+
       <button
-        disabled={!rakCode || rakSamaDenganLama || !qtyValid || saving}
+        disabled={aksi === "keluar" ? !qtyValid || saving : !rakCode || rakSamaDenganLama || !qtyValid || saving}
         onClick={handleClick}
-        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        className={`w-full disabled:opacity-40 font-semibold text-sm py-2.5 rounded-lg ${
+          aksi === "keluar"
+            ? "bg-orange-500 hover:bg-orange-400 text-slate-950"
+            : "bg-amber-500 hover:bg-amber-400 text-slate-950"
+        }`}
       >
-        {saving ? "Menyimpan…" : "Pindahkan SKU"}
+        {saving ? "Menyimpan…" : aksi === "keluar" ? "Keluarkan dari Rak" : "Pindahkan SKU"}
       </button>
     </ModalShell>
   );

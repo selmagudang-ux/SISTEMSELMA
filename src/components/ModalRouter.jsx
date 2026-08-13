@@ -1460,16 +1460,32 @@ export default function ModalRouter({
         skuMaster={skuMaster}
         onClose={close}
         saving={saving}
-        onSubmit={(rakBaru, qtyPindahRaw) =>
+        onSubmit={(rakBaru, qtyPindahRaw, aksi) =>
           run(async () => {
-            // Boleh pindah SEBAGIAN qty saja (sisanya tetap di rak asal) — dipakai
-            // saat rak asal masih dipakai barang lain atau memang cuma sebagian
-            // yang mau dipindah. Kalau qty yang dipindah = seluruh qty baris asal,
-            // perilakunya sama seperti sebelumnya (rak asal jadi kosong).
+            // Boleh pindah/keluarkan SEBAGIAN qty saja (sisanya tetap di rak asal) —
+            // dipakai saat rak asal masih dipakai barang lain atau memang cuma
+            // sebagian yang mau diproses. Kalau qty yang diproses = seluruh qty
+            // baris asal, perilakunya sama seperti sebelumnya (rak asal jadi kosong).
             const baris = (penempatan || []).find((p) => p.id === modal.item.penempatanId);
             const totalQty = Number(baris?.qty) || 0;
             const qtyPindah = Math.min(Math.max(Number(qtyPindahRaw) || 0, 1), totalQty);
             const sisaDiAsal = totalQty - qtyPindah;
+
+            if (aksi === "keluar") {
+              // Dikeluarkan dari rak — TIDAK dipindah ke rak lain manapun. Cukup
+              // kurangi/hapus baris penempatan asal; tidak ada baris baru dibuat.
+              // Stok SKU di sku_master tidak berubah, jadi selisihnya otomatis
+              // muncul lagi sebagai "sisa di gudang" (lihat barangSisaDiGudang).
+              if (sisaDiAsal <= 0) {
+                await sb(`penempatan?id=eq.${modal.item.penempatanId}`, { method: "DELETE" });
+              } else {
+                await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ qty: sisaDiAsal }),
+                });
+              }
+              return;
+            }
 
             // Kalau rak tujuan sudah punya baris penempatan utk SKU yang SAMA PERSIS,
             // gabungkan qty yang dipindah ke baris itu (tambahkan), bukan bikin baris baru.
@@ -1511,7 +1527,7 @@ export default function ModalRouter({
                 });
               }
             }
-          }, "SKU dipindahkan ke rak baru")
+          }, aksi === "keluar" ? "SKU dikeluarkan dari rak, tercatat sebagai sisa di gudang" : "SKU dipindahkan ke rak baru")
         }
       />
     );
