@@ -213,6 +213,12 @@ function TempatkanRak({ items, skuMaster, penempatan, setModal }) {
 }
 
 function MasterRak({ rak, setModal }) {
+  // Urutkan kode rak secara alami (1, 2, ..., 9, 10, 11, ...), bukan urutan
+  // teks apa adanya dari database (yang bikin "10" nongol sebelum "2").
+  const sortedRak = [...rak].sort((a, b) =>
+    (a.code || "").localeCompare(b.code || "", undefined, { numeric: true, sensitivity: "base" })
+  );
+
   return (
     <div>
       <PageHeader
@@ -231,7 +237,7 @@ function MasterRak({ rak, setModal }) {
         <EmptyState label="Belum ada rak." />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {rak.map((r) => (
+          {sortedRak.map((r) => (
             <div key={r.id} className="group relative rounded-xl border border-slate-800 bg-slate-900/50 p-3">
               <div className="flex items-center gap-1.5 text-sky-400">
                 <MapPin size={14} />
