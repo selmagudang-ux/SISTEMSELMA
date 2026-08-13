@@ -419,6 +419,13 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
       });
 
       // 3. Simpan tiap item + potong stok.
+      // Salinan lokal daftar produk manual, di-update tiap kali ada produk
+      // manual BARU dibuat di bawah — supaya kalau dalam satu pesanan ada
+      // lebih dari satu produk manual baru, kode barunya (PRM-xxxx) tidak
+      // dobel/tabrakan (sebelumnya nextKode() selalu ngitung dari daftar awal
+      // yang sama, jadi baris ke-2 dst dapat kode yang sama persis dengan
+      // baris pertama -> ditolak database karena kode harus unik).
+      let produkManualList = [...produkManualGrosir];
       for (const r of rows) {
         let produkManualId = r.produk_manual_id || null;
 
@@ -426,7 +433,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
           // Produk manual baru — dibuat sekali di grosir_produk_manual (TIDAK
           // pernah masuk ke sku_master/Data Barang), supaya bisa dipakai lagi
           // di pesanan berikutnya tanpa ketik ulang.
-          const kodeBaru = nextKode(produkManualGrosir, "kode", "PRM-");
+          const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
           const [produkBaru] = await sb("grosir_produk_manual", {
             method: "POST",
             body: JSON.stringify({
@@ -437,9 +444,11 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
             }),
           });
           produkManualId = produkBaru.id;
+          produkManualList = [...produkManualList, produkBaru];
         }
 
         await sb("grosir_detail_pesanan", {
+
           method: "POST",
           body: JSON.stringify({
             pesanan_id: pesanan.id,
