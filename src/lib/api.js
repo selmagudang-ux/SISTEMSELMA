@@ -5,6 +5,33 @@ const SUPABASE_URL = "https://mctzwsfnidxvckadqlhq.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jdHp3c2ZuaWR4dmNrYWRxbGhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTAwNDQsImV4cCI6MjEwMTcyNjA0NH0.0RN1_Kbk4MS_FBR2b9ahZtKIzEaDNR0IzgoeSSdp8eQ";
 
+// Terjemahan kode error Postgres (lewat PostgREST) jadi pesan yang bisa dibaca
+// orang biasa, bukan JSON mentah. code 23503 = foreign key violation (data
+// masih dipakai/direferensikan di tabel lain), 23505 = unique violation (data
+// sudah ada), 23502 = not-null violation (kolom wajib kosong), dst.
+function friendlyDbError(parsed, status) {
+  const code = parsed?.code;
+  if (code === "23503") {
+    return "Data ini masih dipakai di bagian lain sistem (mis. sudah ada di transaksi/pesanan), jadi tidak bisa dihapus. Nonaktifkan saja kalau memang tidak mau dipakai lagi.";
+  }
+  if (code === "23505") {
+    return "Data dengan kode/SKU yang sama sudah ada sebelumnya.";
+  }
+  if (code === "23502") {
+    return "Ada isian wajib yang belum diisi. Cek lagi formnya ya.";
+  }
+  if (code === "22P02") {
+    return "Ada isian yang formatnya tidak sesuai (mis. angka diisi huruf).";
+  }
+  if (status === 401 || status === 403) {
+    return "Tidak punya akses untuk melakukan ini. Coba login ulang.";
+  }
+  if (status >= 500) {
+    return "Server sedang bermasalah. Coba lagi sebentar lagi.";
+  }
+  return null;
+}
+
 export async function sb(path, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...opts,
@@ -19,7 +46,18 @@ export async function sb(path, opts = {}) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `${res.status} ${res.statusText}`);
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    const friendly = friendlyDbError(parsed, res.status);
+    const err = new Error(friendly || parsed?.message || text || `${res.status} ${res.statusText}`);
+    // pgCode dipakai di beberapa tempat (mis. hapus SKU) untuk tahu kapan harus
+    // fallback ke "nonaktifkan" alih-alih gagal total waktu kena foreign key.
+    if (parsed?.code) err.pgCode = parsed.code;
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();

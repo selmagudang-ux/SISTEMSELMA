@@ -50,6 +50,7 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
   const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
   const [unduhFoto, setUnduhFoto] = useState(null); // { done, total } selagi foto diunduh
   const [selected, setSelected] = useState(() => new Set()); // sku yang dipilih untuk download foto
+  const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
   // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
@@ -82,6 +83,7 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
   ).sort();
 
   const filtered = skuMaster.filter((s) => {
+    if (!tampilkanNonaktif && s.nonaktif) return false;
     if (!s.sku.toLowerCase().includes(q.toLowerCase())) return false;
     if (kategori && s.kategori !== kategori) return false;
     if (subkategori && s.subkategori !== subkategori) return false;
@@ -237,6 +239,15 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
             <option key={sk} value={sk}>{subkategoriLabel(sk)}</option>
           ))}
         </select>
+        <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={tampilkanNonaktif}
+            onChange={(e) => setTampilkanNonaktif(e.target.checked)}
+            className="accent-amber-500"
+          />
+          Tampilkan yang nonaktif
+        </label>
       </div>
       {filtered.length === 0 ? (
         <EmptyState label="Belum ada barang." />
@@ -267,9 +278,16 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
                             key={s.id}
                             onClick={() => setModal({ type: "detail-sku", item: s })}
                             className={`relative rounded-xl border bg-slate-900/50 p-4 cursor-pointer transition ${
+                              s.nonaktif ? "opacity-60" : ""
+                            } ${
                               dipilih ? "border-amber-500/60 ring-1 ring-amber-500/30" : "border-slate-800 hover:border-amber-500/40"
                             }`}
                           >
+                            {s.nonaktif && (
+                              <span className="absolute top-2.5 left-2.5 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full px-2 py-0.5 z-10">
+                                Nonaktif
+                              </span>
+                            )}
                             {adaHargaBaru && (
                               <button
                                 type="button"

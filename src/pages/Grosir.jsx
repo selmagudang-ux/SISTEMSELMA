@@ -572,10 +572,14 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
 }
 
 export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
-  const skuOptions = skuMaster.map((s) => ({
-    value: s.sku,
-    label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}`,
-  }));
+  // SKU nonaktif (bekas "dihapus") tidak boleh dipilih buat pesanan baru,
+  // tapi baris pesanan lama yang sudah pakai SKU itu tetap tampil apa adanya.
+  const skuOptions = skuMaster
+    .filter((s) => !s.nonaktif || s.sku === row.sku)
+    .map((s) => ({
+      value: s.sku,
+      label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}${s.nonaktif ? " · (nonaktif)" : ""}`,
+    }));
   const manualOptions = produkManualGrosir.map((p) => ({
     value: p.id,
     label: `${p.nama_produk} · ${fmtRp(p.harga || 0)}`,

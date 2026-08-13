@@ -196,9 +196,12 @@ export default function ModalRouter({
   const run = async (fn, successMsg) => {
     setSaving(true);
     try {
-      await fn();
+      // Kalau fn() mengembalikan string, dipakai sebagai pesan sukses
+      // (buat kasus pesan yang beda-beda tergantung apa yang sebenarnya
+      // terjadi, mis. dihapus vs dinonaktifkan). Kalau tidak, pakai successMsg.
+      const result = await fn();
       await reload();
-      showToast(successMsg);
+      showToast(typeof result === "string" ? result : successMsg);
       close();
     } catch (e) {
       showToast(e.message || "Gagal menyimpan", "err");
@@ -882,10 +885,25 @@ export default function ModalRouter({
     ];
     return (
       <ModalShell title={`Detail SKU — ${s.sku}`} onClose={close}>
-        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-          <div className="text-[11px] text-slate-500">SKU</div>
-          <div className="font-mono text-sm text-amber-400">{s.sku}</div>
+        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex items-center justify-between">
+          <div>
+            <div className="text-[11px] text-slate-500">SKU</div>
+            <div className="font-mono text-sm text-amber-400">{s.sku}</div>
+          </div>
+          {s.nonaktif && (
+            <span className="text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full px-2 py-0.5">
+              Nonaktif
+            </span>
+          )}
         </div>
+        {s.nonaktif && (
+          <div className="flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs px-3 py-2.5 rounded-lg mb-3">
+            <div className="flex-1">
+              SKU ini nonaktif dan tidak muncul di katalog / tidak bisa dipilih di pesanan grosir baru. Nanti
+              otomatis aktif lagi kalau stoknya ditambah, atau aktifkan manual sekarang.
+            </div>
+          </div>
+        )}
         <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
           {rows.map(([label, val], i) => (
             <div
@@ -897,7 +915,7 @@ export default function ModalRouter({
             </div>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="grid grid-cols-2 gap-2 text-xs mb-3">
           <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
             <div className="text-slate-500">Stok</div>
             <div className="text-slate-200 font-semibold mt-0.5">{s.stok}</div>
@@ -907,6 +925,22 @@ export default function ModalRouter({
             <div className="text-amber-400 font-semibold mt-0.5">{fmtRp(s.ecer)}</div>
           </div>
         </div>
+        {s.nonaktif && (
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`sku_master?id=eq.${s.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ nonaktif: false }),
+                });
+              }, "SKU diaktifkan kembali")
+            }
+            className="w-full py-2.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50"
+          >
+            {saving ? "Menyimpan…" : "Aktifkan Kembali"}
+          </button>
+        )}
       </ModalShell>
     );
   }
@@ -973,7 +1007,22 @@ export default function ModalRouter({
                 await sb(`items?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
                 await sb(`stock_history?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
                 await sb(`penempatan?sku=eq.${encodeURIComponent(s.sku)}`, { method: "DELETE" });
-                await sb(`sku_master?id=eq.${s.id}`, { method: "DELETE" });
+                try {
+                  await sb(`sku_master?id=eq.${s.id}`, { method: "DELETE" });
+                } catch (e) {
+                  // SKU-nya masih dipakai di tempat lain (mis. sudah pernah masuk
+                  // pesanan grosir) — tidak bisa dihapus permanen tanpa merusak
+                  // riwayat transaksi itu. Nonaktifkan saja supaya tidak muncul
+                  // lagi di katalog, tapi datanya tetap ada buat riwayat.
+                  if (e.pgCode === "23503") {
+                    await sb(`sku_master?id=eq.${s.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ nonaktif: true }),
+                    });
+                    return "SKU masih dipakai di riwayat transaksi, jadi dinonaktifkan (bukan dihapus permanen)";
+                  }
+                  throw e;
+                }
               }, "SKU dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
@@ -1065,7 +1114,21 @@ export default function ModalRouter({
                         await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
                         await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
                       } catch (e) {
-                        console.error("Gagal membersihkan SKU/penempatan yatim:", e);
+                        // Kalau gagalnya karena SKU masih dipakai di tempat lain (mis.
+                        // riwayat pesanan grosir), nonaktifkan saja SKU-nya supaya tidak
+                        // nyangkut sebagai SKU aktif tanpa barang.
+                        if (e.pgCode === "23503") {
+                          try {
+                            await sb(`sku_master?id=eq.${existing.id}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ nonaktif: true }),
+                            });
+                          } catch (e2) {
+                            console.error("Gagal menonaktifkan SKU yatim:", e2);
+                          }
+                        } else {
+                          console.error("Gagal membersihkan SKU/penempatan yatim:", e);
+                        }
                       }
                     }
                   } else {
@@ -1115,7 +1178,9 @@ export default function ModalRouter({
           run(async () => {
             const jumlah = modal.item.jumlah || 1;
             const stokBaru = selectedSku.stok + jumlah;
-            const patchBody = { stok: stokBaru };
+            // Stok ditambah = SKU dianggap dipakai lagi, jadi otomatis aktifkan
+            // kembali kalau sebelumnya sempat dinonaktifkan (mis. bekas dihapus).
+            const patchBody = { stok: stokBaru, nonaktif: false };
             // Kalau barang lama ini masuk dengan harga asli yang beda dari harga
             // yang tercatat sekarang, jangan langsung timpa harga_asli — simpan dulu
             // sebagai "harga baru" yang menunggu keputusan di Master Barang (pilih
@@ -1168,9 +1233,10 @@ export default function ModalRouter({
             let stokBaru;
             if (existing) {
               stokBaru = existing.stok + jumlah;
+              // Sama seperti di atas — stok masuk lagi berarti SKU aktif lagi.
               await sb(`sku_master?id=eq.${existing.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ stok: stokBaru }),
+                body: JSON.stringify({ stok: stokBaru, nonaktif: false }),
               });
             } else {
               stokBaru = jumlah;
@@ -1479,7 +1545,9 @@ export default function ModalRouter({
                 });
                 await sb(`sku_master?id=eq.${s.id}`, {
                   method: "PATCH",
-                  body: JSON.stringify({ stok: qtyFisik }),
+                  // Kalau hasil hitung fisik ternyata masih ada stoknya, aktifkan
+                  // lagi SKU-nya (jaga-jaga kalau sebelumnya sempat dinonaktifkan).
+                  body: JSON.stringify({ stok: qtyFisik, ...(qtyFisik > 0 ? { nonaktif: false } : {}) }),
                 });
               }, "Stok disesuaikan sesuai hasil opname")
             }
