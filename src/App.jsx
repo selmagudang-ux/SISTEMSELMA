@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, Plus, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
@@ -173,17 +173,13 @@ function MainApp({ session, onLogout }) {
   // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
   const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
 
-  const sidebarBadges = {
-    "sku-harga": stageCounts.sku,
+  const sidebarBadges = withParentBadges(NAV, {
     "sku-harga.buat": stageCounts.sku,
-    rak: tanpaRakCount,
     "rak.tempatkan": tanpaRakCount,
     "rak.gudang": sisaGudangList.length,
     foto: stageCounts.verifikasi,
-    "foto.pemotretan": stageCounts.verifikasi,
-    marketplace: stageCounts.marketplace,
     "marketplace.belum": stageCounts.marketplace,
-  };
+  });
   const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
     .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
     .filter((s) => s.count > 0);
@@ -374,7 +370,17 @@ function MainApp({ session, onLogout }) {
                   setModal={setModal}
                 />
               )}
-              {nav.menu === "laporan" && <Laporan items={items} skuMaster={skuMaster} rak={rak} />}
+              {nav.menu === "laporan" && (
+                <Laporan
+                  items={items}
+                  skuMaster={skuMaster}
+                  rak={rak}
+                  pesananGrosir={pesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  pelangganGrosir={pelangganGrosir}
+                />
+              )}
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
               )}

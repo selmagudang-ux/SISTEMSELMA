@@ -50,14 +50,14 @@ export const MASTER_TIPE = [
 // =========================================================
 export const NAV = [
   {
-    key: "dashboard", label: "Dashboard", icon: LayoutDashboard,
+    key: "dashboard", label: "DASHBOARD", icon: LayoutDashboard,
     children: [
       { key: "gudang", label: "Dashboard Gudang" },
       { key: "grosir", label: "Dashboard Grosir" },
     ],
   },
   {
-    key: "gudang-group", label: "Gudang", icon: Warehouse, group: true,
+    key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
     children: [
       { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
       {
@@ -89,7 +89,7 @@ export const NAV = [
     ],
   },
   {
-    key: "pemotretan-group", label: "Pemotretan", icon: Camera, group: true,
+    key: "pemotretan-group", label: "ADMIN PEMOTRETAN", icon: Camera, group: true,
     children: [
       { key: "foto", label: "Foto Produk", icon: Camera },
     ],
@@ -186,6 +186,33 @@ export function findNavLabel(menuKey, subKey) {
   if (!menu) return { menuLabel: "", subLabel: "" };
   const sub = menu.children?.find((c) => c.key === subKey);
   return { menuLabel: menu.label, subLabel: sub ? sub.label : "" };
+}
+
+// Supaya badge notif di menu INDUK (mis. "Rak") selalu mencerminkan total dari
+// SEMUA sub-nya (mis. "Tempatkan Barang" + "Sisa di Gudang"), bukan cuma satu
+// sub yang kebetulan didaftarkan manual — badge induk dihitung otomatis di sini
+// dengan menjumlahkan badge tiap sub (key "induk.sub") dari NAV, jadi kalau ada
+// sub baru yang dikasih badge, induknya otomatis ikut update tanpa perlu ubah
+// kode di App.jsx satu-satu.
+export function withParentBadges(nav, rawBadges) {
+  const result = { ...rawBadges };
+  const walk = (nodes) => {
+    nodes.forEach((node) => {
+      if (node.group) {
+        walk(node.children || []);
+        return;
+      }
+      if (node.children && node.children.length) {
+        const total = node.children.reduce(
+          (sum, c) => sum + (Number(rawBadges[`${node.key}.${c.key}`]) || 0),
+          0
+        );
+        if (total > 0) result[node.key] = total;
+      }
+    });
+  };
+  walk(nav);
+  return result;
 }
 
 // =========================================================
