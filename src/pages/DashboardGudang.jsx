@@ -2,13 +2,13 @@ import { Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList } from "lucide-
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import { StatCard, PageHeader, EmptyState } from "../components/ui";
 
-export default function Dashboard({ stageCounts, skuCount, totalStok, rakCount, rakKosong, items, onNavigate, setModal }) {
+export default function DashboardGudang({ stageCounts, skuCount, totalStok, rakCount, rakKosong, items, onNavigate, setModal }) {
   const recent = items.slice(0, 6);
   const daftarRakKosong = rakKosong || [];
   return (
     <div>
       <PageHeader
-        title="Dashboard"
+        title="Dashboard Gudang"
         description="Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
       />
 

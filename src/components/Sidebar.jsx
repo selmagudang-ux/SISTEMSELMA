@@ -1,6 +1,130 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
-import { NAV, roleLabel, allowedSubMenus } from "../lib/constants";
+import { NAV, roleLabel, allowedSubMenus, navAncestorKeys, filterNavByAllowed } from "../lib/constants";
+
+// Tombol untuk node "menu" (punya key yang dipakai sebagai nav.menu) — dipakai
+// baik untuk item top-level (Dashboard, Laporan, Pengaturan) MAUPUN untuk menu
+// yang berada di dalam sebuah group (mis. SKU & Harga di dalam Gudang). Kalau
+// hasChildren true, klik hanya toggle expand/collapse (bukan navigasi).
+function MenuButton({ node, isActive, isOpen, hasChildren, onClick, badgeValue }) {
+  const Icon = node.icon;
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2.5 py-2 rounded-lg text-sm transition border-l-2 ${
+        isActive && !hasChildren
+          ? "border-amber-500 bg-slate-900 pl-[10px] pr-3 text-amber-400 font-semibold"
+          : isActive
+          ? "border-transparent pl-[10px] pr-3 text-slate-100 font-medium"
+          : "border-transparent pl-[10px] pr-3 text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+      }`}
+    >
+      {Icon && <Icon size={16} className="flex-shrink-0" />}
+      <span className="flex-1 text-left">{node.label}</span>
+      {typeof badgeValue === "number" && badgeValue > 0 && (
+        <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+          {badgeValue}
+        </span>
+      )}
+      {hasChildren && (
+        <ChevronDown size={14} className={`transition-transform ${isOpen ? "rotate-180" : ""}`} />
+      )}
+    </button>
+  );
+}
+
+// Tombol untuk node "sub" (anak paling dalam, leaf — key-nya dipakai sebagai nav.sub).
+function SubButton({ label, isActive, onClick, badgeValue }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[13px] transition ${
+        isActive
+          ? "bg-amber-500/15 text-amber-400 font-medium"
+          : "text-slate-500 hover:text-slate-200 hover:bg-slate-900"
+      }`}
+    >
+      <span className="flex-1">{label}</span>
+      {typeof badgeValue === "number" && badgeValue > 0 && (
+        <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+          {badgeValue}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Render satu node NAV secara rekursif — bisa jadi wadah group (murni visual,
+// tidak bisa dinavigasi sendiri), menu dengan sub, atau menu leaf langsung.
+function NavNode({ node, active, expanded, toggle, go, badges }) {
+  const hasChildren = !!(node.children && node.children.length);
+  const isOpen = expanded.has(node.key);
+
+  if (node.group) {
+    const groupActive = node.children.some((c) => c.key === active.menu);
+    return (
+      <div className="mb-0.5">
+        <MenuButton
+          node={node}
+          isActive={groupActive}
+          isOpen={isOpen}
+          hasChildren
+          onClick={() => toggle(node.key)}
+        />
+        {isOpen && (
+          <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">
+            {node.children.map((child) => (
+              <NavNode key={child.key} node={child} active={active} expanded={expanded} toggle={toggle} go={go} badges={badges} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const isActiveMenu = active.menu === node.key;
+
+  if (hasChildren) {
+    return (
+      <div className="mb-0.5">
+        <MenuButton
+          node={node}
+          isActive={isActiveMenu}
+          isOpen={isOpen}
+          hasChildren
+          onClick={() => toggle(node.key)}
+          badgeValue={badges[node.key]}
+        />
+        {isOpen && (
+          <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">
+            {node.children.map((sub) => (
+              <SubButton
+                key={sub.key}
+                label={sub.label}
+                isActive={isActiveMenu && active.sub === sub.key}
+                onClick={() => go(node.key, sub.key)}
+                badgeValue={badges[`${node.key}.${sub.key}`]}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-0.5">
+      <MenuButton
+        node={node}
+        isActive={isActiveMenu}
+        isOpen={false}
+        hasChildren={false}
+        onClick={() => go(node.key, null)}
+        badgeValue={badges[node.key]}
+      />
+    </div>
+  );
+}
 
 export default function Sidebar({
   active,
@@ -13,11 +137,16 @@ export default function Sidebar({
   onLogout,
   setModal,
 }) {
-  const [expanded, setExpanded] = useState(() => new Set([active.menu]));
+  const [expanded, setExpanded] = useState(() => new Set(navAncestorKeys(active.menu)));
 
-  // Pastikan grup dari menu aktif selalu terbuka.
+  // Pastikan grup/menu dari menu aktif selalu terbuka (termasuk wadah group-nya
+  // kalau menu itu ada di dalam sebuah group).
   useEffect(() => {
-    setExpanded((prev) => new Set(prev).add(active.menu));
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      navAncestorKeys(active.menu).forEach((k) => next.add(k));
+      return next;
+    });
   }, [active.menu]);
 
   const toggle = (key) => {
@@ -34,10 +163,9 @@ export default function Sidebar({
     setMobileOpen(false);
   };
 
-  // Hanya tampilkan menu yang diizinkan untuk role user yang sedang login.
-  const visibleNav = allowedMenuKeys
-    ? NAV.filter((item) => allowedMenuKeys.includes(item.key))
-    : NAV;
+  // Hanya tampilkan menu (dan group yang masih punya isi) yang diizinkan
+  // untuk role user yang sedang login.
+  const visibleNav = filterNavByAllowed(NAV, allowedMenuKeys);
 
   return (
     <>
@@ -71,77 +199,9 @@ export default function Sidebar({
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2 px-2">
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
-            const subAllowed = allowedSubMenus(user?.role, item.key);
-            const visibleChildren = item.children
-              ? subAllowed
-                ? item.children.filter((c) => subAllowed.includes(c.key))
-                : item.children
-              : [];
-            const hasChildren = visibleChildren.length > 0;
-            const isActiveGroup = active.menu === item.key;
-            const isOpen = expanded.has(item.key);
-
-            return (
-              <div key={item.key} className="mb-0.5">
-                <button
-                  onClick={() =>
-                    hasChildren ? toggle(item.key) : go(item.key, null)
-                  }
-                  className={`w-full flex items-center gap-2.5 py-2 rounded-lg text-sm transition border-l-2 ${
-                    isActiveGroup && !hasChildren
-                      ? "border-amber-500 bg-slate-900 pl-[10px] pr-3 text-amber-400 font-semibold"
-                      : isActiveGroup
-                      ? "border-transparent pl-[10px] pr-3 text-slate-100 font-medium"
-                      : "border-transparent pl-[10px] pr-3 text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-                  }`}
-                >
-                  <Icon size={16} className="flex-shrink-0" />
-                  <span className="flex-1 text-left">{item.label}</span>
-                  {typeof badges[item.key] === "number" && badges[item.key] > 0 && (
-                    <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
-                      {badges[item.key]}
-                    </span>
-                  )}
-                  {hasChildren && (
-                    <ChevronDown
-                      size={14}
-                      className={`transition-transform ${isOpen ? "rotate-180" : ""}`}
-                    />
-                  )}
-                </button>
-
-                {hasChildren && isOpen && (
-                  <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">
-                    {visibleChildren.map((child) => {
-                      const isActiveChild =
-                        isActiveGroup && active.sub === child.key;
-                      const childBadge = badges[`${item.key}.${child.key}`];
-                      return (
-                        <button
-                          key={child.key}
-                          onClick={() => go(item.key, child.key)}
-                          className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[13px] transition ${
-                            isActiveChild
-                              ? "bg-amber-500/15 text-amber-400 font-medium"
-                              : "text-slate-500 hover:text-slate-200 hover:bg-slate-900"
-                          }`}
-                        >
-                          <span className="flex-1">{child.label}</span>
-                          {typeof childBadge === "number" && childBadge > 0 && (
-                            <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
-                              {childBadge}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {visibleNav.map((item) => (
+            <NavNode key={item.key} node={item} active={active} expanded={expanded} toggle={toggle} go={go} badges={badges} />
+          ))}
         </nav>
 
         {user && (
