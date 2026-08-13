@@ -95,7 +95,7 @@ export const NAV = [
     ],
   },
   {
-    key: "marketplace-group", label: "Admin Marketplace", icon: ShoppingBag, group: true,
+    key: "marketplace-group", label: "ADMIN MARKETPLACE", icon: ShoppingBag, group: true,
     children: [
       {
         key: "marketplace", label: "Marketplace", icon: ShoppingBag,
@@ -108,7 +108,7 @@ export const NAV = [
     ],
   },
   {
-    key: "grosir-group", label: "Admin Grosir", icon: Store, group: true,
+    key: "grosir-group", label: "ADMIN GROSIR", icon: Store, group: true,
     children: [
       {
         key: "grosir", label: "Grosir", icon: Store,
@@ -122,8 +122,8 @@ export const NAV = [
       },
     ],
   },
-  { key: "laporan", label: "Laporan", icon: TrendingUp },
-  { key: "pengaturan", label: "Pengaturan", icon: Settings },
+  { key: "laporan", label: "LAPORAN", icon: TrendingUp },
+  { key: "pengaturan", label: "PENGATURAN", icon: Settings },
 ];
 
 // Kumpulkan semua key "menu" nyata (yang dipakai sebagai nav.menu) dari NAV,
