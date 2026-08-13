@@ -311,6 +311,9 @@ export const newItemRow = (sumberProduk) => ({
 function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, reload, showToast }) {
   const [pelangganId, setPelangganId] = useState("");
   const [pelangganNamaBaru, setPelangganNamaBaru] = useState(""); // dipakai kalau pelanggan belum ada di daftar
+  const [pelangganWaBaru, setPelangganWaBaru] = useState("");
+  const [pelangganAlamatBaru, setPelangganAlamatBaru] = useState("");
+  const [pelangganKotaBaru, setPelangganKotaBaru] = useState("");
   const [tokoId, setTokoId] = useState("");
   const [statusBayar, setStatusBayar] = useState("Belum Bayar"); // 'Belum Bayar' | 'Lunas'
   const [metodeBayar, setMetodeBayar] = useState("Cash");
@@ -356,6 +359,9 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   const resetForm = () => {
     setPelangganId("");
     setPelangganNamaBaru("");
+    setPelangganWaBaru("");
+    setPelangganAlamatBaru("");
+    setPelangganKotaBaru("");
     setTokoId("");
     setStatusBayar("Belum Bayar");
     setMetodeBayar("Cash");
@@ -374,7 +380,13 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
         const kodeBaru = nextKode(pelangganGrosir, "kode", "PLG-");
         const [pelangganBaru] = await sb("grosir_pelanggan", {
           method: "POST",
-          body: JSON.stringify({ kode: kodeBaru, nama: pelangganNamaBaru.trim() }),
+          body: JSON.stringify({
+            kode: kodeBaru,
+            nama: pelangganNamaBaru.trim(),
+            wa: pelangganWaBaru.trim() || null,
+            alamat: pelangganAlamatBaru.trim() || null,
+            kota: pelangganKotaBaru.trim() || null,
+          }),
         });
         pelangganIdFinal = pelangganBaru.id;
       }
@@ -502,6 +514,28 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
             }}
             placeholder="Atau ketik nama pelanggan baru"
           />
+          {pelangganNamaBaru.trim() && (
+            <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+              <input
+                className={inputClass}
+                value={pelangganWaBaru}
+                onChange={(e) => setPelangganWaBaru(e.target.value)}
+                placeholder="No. WA (opsional)"
+              />
+              <input
+                className={inputClass}
+                value={pelangganKotaBaru}
+                onChange={(e) => setPelangganKotaBaru(e.target.value)}
+                placeholder="Kota (opsional)"
+              />
+              <input
+                className={`${inputClass} col-span-2`}
+                value={pelangganAlamatBaru}
+                onChange={(e) => setPelangganAlamatBaru(e.target.value)}
+                placeholder="Alamat (opsional)"
+              />
+            </div>
+          )}
         </Field>
         <Field label="Toko Pengirim (opsional)">
           <SearchableSelect

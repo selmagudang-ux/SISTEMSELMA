@@ -13,7 +13,7 @@ import {
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak } from "../pages/Rak";
 import { EditPesananForm } from "../pages/Grosir";
-import { NotaPesananModal } from "../pages/NotaGrosir";
+import { NotaPesananModal, LabelPengirimanModal } from "../pages/NotaGrosir";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
@@ -558,6 +558,12 @@ export default function ModalRouter({
         >
           <Printer size={14} /> Cetak Nota
         </button>
+        <button
+          onClick={() => setModal({ type: "grosir-cetak-label", item: p })}
+          className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-slate-700 text-slate-200 hover:bg-slate-800 mb-2"
+        >
+          <Printer size={14} /> Cetak Label Pengiriman
+        </button>
         {!dibatalkan && sisaHutang > 0 && (
           <button
             onClick={() => setModal({ type: "grosir-bayar-hutang", item: p })}
@@ -662,6 +668,22 @@ export default function ModalRouter({
         detailItems={detailItems}
         totalDibayar={totalDibayar}
         sisaHutang={sisaHutang}
+        onClose={close}
+      />
+    );
+  }
+
+  if (modal.type === "grosir-cetak-label") {
+    const p = modal.item;
+    const pelanggan = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id);
+    const toko = (tokoGrosir || []).find((x) => x.id === p.toko_id);
+    const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    return (
+      <LabelPengirimanModal
+        pesanan={p}
+        pelanggan={pelanggan}
+        toko={toko}
+        detailItems={detailItems}
         onClose={close}
       />
     );

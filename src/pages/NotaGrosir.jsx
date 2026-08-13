@@ -188,3 +188,171 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
     </div>
   );
 }
+
+// =========================================================
+// CETAK LABEL PENGIRIMAN (PENGIRIM -> PENERIMA)
+// Beda dari Nota: label ini fokus buat kurir/ekspedisi, bukan bukti transaksi.
+// Yang ditampilkan cuma identitas pengirim (Toko Pengirim yang dipilih di
+// pesanan, atau alamat toko utama kalau tidak ada toko dipilih), identitas
+// penerima (data Pelanggan: nama, alamat, kota, WA), nomor pesanan, dan
+// ringkasan isi paket (nama barang + qty saja, TANPA harga — supaya kalau
+// labelnya kelihatan kurir, harga barang tidak ikut terekspos).
+// =========================================================
+export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, onClose }) {
+  const p = pesanan;
+  const printRef = useRef(null);
+  const [printing, setPrinting] = useState(false);
+
+  const cetak = () => {
+    setPrinting(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = printRef.current;
+        if (el) {
+          const heightPx = el.getBoundingClientRect().height;
+          const heightMm = Math.ceil((heightPx / 96) * 25.4 + 8);
+          let styleTag = document.getElementById("ss-label-page-style");
+          if (!styleTag) {
+            styleTag = document.createElement("style");
+            styleTag.id = "ss-label-page-style";
+            document.head.appendChild(styleTag);
+          }
+          styleTag.textContent = `@media print { @page { size: 80mm ${heightMm}mm; margin: 0; } }`;
+        }
+        window.print();
+        setTimeout(() => setPrinting(false), 500);
+      });
+    });
+  };
+
+  return (
+    <Fragment>
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 print:hidden">
+        <div className="bg-white text-slate-900 rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white">
+            <h3 className="font-semibold text-sm">Preview Label Pengiriman</h3>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-900">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="p-5 flex justify-center bg-slate-100">
+            <LabelIsi pesanan={p} pelanggan={pelanggan} toko={toko} detailItems={detailItems} />
+          </div>
+          <div className="px-5 pb-5 pt-3">
+            <button
+              onClick={cetak}
+              disabled={printing}
+              className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              <Printer size={15} /> {printing ? "Menyiapkan…" : "Cetak Label"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ position: "absolute", top: 0, left: "-99999px" }}>
+        <style>{`
+          @media print {
+            body * { visibility: hidden; }
+            .ss-label-print, .ss-label-print * { visibility: visible; }
+            .ss-label-print { position: fixed; top: 0; left: 0; }
+            .ss-label-print table, .ss-label-print tr, .ss-label-print .ss-label-line, .ss-label-print p {
+              page-break-inside: avoid;
+              break-inside: avoid;
+            }
+          }
+        `}</style>
+        <div ref={printRef} className="ss-label-print">
+          <LabelIsi pesanan={p} pelanggan={pelanggan} toko={toko} detailItems={detailItems} />
+        </div>
+      </div>
+    </Fragment>
+  );
+}
+
+// Isi label — dipakai baik untuk preview di layar maupun area cetak sesungguhnya.
+function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
+  // Kalau pesanan tidak punya Toko Pengirim (opsional saat buat pesanan),
+  // pakai identitas toko utama sebagai pengirim default.
+  const namaPengirim = toko ? toko.nama_toko : NAMA_TOKO;
+  const alamatPengirim = toko
+    ? [toko.alamat, toko.telepon ? `Telp: ${toko.telepon}` : null].filter(Boolean)
+    : [...ALAMAT_TOKO];
+
+  return (
+    <div className="font-mono text-[12px] leading-snug text-black bg-white" style={{ width: "72mm" }}>
+      <h2 className="text-center text-[14px] font-bold my-1 tracking-wide">LABEL PENGIRIMAN</h2>
+      <p className="text-center my-0.5">
+        No. Pesanan: {p.nomor_pesanan}
+        <br />
+        Tanggal: {p.tanggal}
+      </p>
+
+      <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+
+      <p className="my-0.5 font-bold">PENGIRIM</p>
+      <p className="my-0.5">
+        {namaPengirim}
+        {alamatPengirim.length > 0 && (
+          <>
+            <br />
+            {alamatPengirim.map((line, i) => (
+              <span key={i}>
+                {line}
+                {i < alamatPengirim.length - 1 && <br />}
+              </span>
+            ))}
+          </>
+        )}
+      </p>
+
+      <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+
+      <p className="my-0.5 font-bold">PENERIMA</p>
+      <p className="my-0.5">
+        {pelanggan ? pelanggan.nama : "—"}
+        {pelanggan?.alamat && (
+          <>
+            <br />
+            {pelanggan.alamat}
+          </>
+        )}
+        {pelanggan?.kota && (
+          <>
+            <br />
+            {pelanggan.kota}
+          </>
+        )}
+        {pelanggan?.wa && (
+          <>
+            <br />
+            WA: {pelanggan.wa}
+          </>
+        )}
+      </p>
+
+      <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+
+      <p className="my-0.5 font-bold">ISI PAKET</p>
+      <table className="w-full border-collapse">
+        <tbody>
+          {(detailItems || []).map((d) => (
+            <tr key={d.id}>
+              <td className="p-0">{d.nama_produk}</td>
+              <td className="p-0 text-right">{d.qty}x</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {p.catatan && (
+        <>
+          <div className="ss-label-line border-t border-dashed border-black my-1.5" />
+          <p className="my-0.5">
+            Catatan: {p.catatan}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
