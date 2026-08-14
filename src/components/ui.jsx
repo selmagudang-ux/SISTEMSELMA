@@ -36,43 +36,26 @@ export function formatTanggalID(value) {
 // Input tanggal dengan tampilan format Indonesia ("14 Agustus 2026"), tapi tetap
 // pakai date picker bawaan browser (value tersimpan tetap "YYYY-MM-DD" seperti biasa,
 // jadi tidak perlu ubah logika lain yang bergantung pada format ini).
+// Input asli (type="date") langsung jadi target klik — tanpa perantara JS —
+// supaya kalender terbuka secepat input date biasa.
 export function InputTanggal({ value, onChange, className }) {
-  const inputRef = useRef(null);
   const display = formatTanggalID(value);
-
-  const bukaPicker = () => {
-    const el = inputRef.current;
-    if (!el) return;
-    if (typeof el.showPicker === "function") {
-      try {
-        el.showPicker();
-        return;
-      } catch {
-        // fallback di bawah kalau showPicker() ditolak browser
-      }
-    }
-    el.focus();
-  };
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        onClick={bukaPicker}
-        className={`${className || inputClass} flex items-center justify-between text-left`}
-      >
-        <span className={display ? "" : "text-slate-500"}>{display || "Pilih tanggal"}</span>
-        <CalendarDays size={14} className="text-slate-500 shrink-0 ml-2" />
-      </button>
       <input
-        ref={inputRef}
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        tabIndex={-1}
+        className={`${className || inputClass} relative z-10 opacity-0 cursor-pointer`}
         aria-label="Pilih tanggal"
       />
+      <div
+        className={`${className || inputClass} absolute inset-0 flex items-center justify-between pointer-events-none`}
+      >
+        <span className={display ? "" : "text-slate-500"}>{display || "Pilih tanggal"}</span>
+        <CalendarDays size={14} className="text-slate-500 shrink-0 ml-2" />
+      </div>
     </div>
   );
 }
