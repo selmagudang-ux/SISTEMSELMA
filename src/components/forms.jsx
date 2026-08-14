@@ -987,6 +987,182 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
   );
 }
 
+// Form tambah/edit satu baris transaksi keuangan.
+// Jenis transaksi ada 3: Pemasukan, Pengeluaran, Transfer Antar Rekening.
+//   - Pemasukan/Pengeluaran: wajib isi Sumber Dana (rekening) + Kategori.
+//     Kategori mengikuti jenisnya (daftar beda untuk pemasukan vs pengeluaran)
+//     — kalau jenis diganti dan kategori lama tidak ada di daftar baru, direset.
+//   - Transfer: wajib isi Sumber Dana (rekening asal) + Rekening Tujuan, TANPA
+//     kategori (bukan pemasukan/pengeluaran riil, cuma mutasi saldo sendiri).
+// Rekening & kategori berasal dari master data yang didaftarkan user sendiri
+// di halaman Keuangan > Rekening & Kategori (prop `master`, dengan shape
+// { rekening: [], kategori_masuk: [], kategori_keluar: [] } — masing-masing
+// array berisi { kode, label } dari tabel master_data).
+export function KeuanganTransaksiForm({ transaksi, master, onClose, onSubmit, saving }) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
+  const [tipe, setTipe] = useState(transaksi?.tipe || "masuk");
+  const [rekening, setRekening] = useState(transaksi?.rekening || "");
+  const [rekeningTujuan, setRekeningTujuan] = useState(transaksi?.rekening_tujuan || "");
+  const [kategori, setKategori] = useState(transaksi?.kategori || "");
+  const [jumlah, setJumlah] = useState(transaksi?.jumlah ?? "");
+  const [keterangan, setKeterangan] = useState(transaksi?.keterangan || "");
+
+  const daftarRekening = master?.rekening || [];
+  const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
+  const isTransfer = tipe === "transfer";
+
+  const gantiTipe = (t) => {
+    setTipe(t);
+    if (t === "transfer") {
+      setKategori("");
+    } else {
+      const list = t === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
+      if (!list.some((k) => k.kode === kategori)) setKategori("");
+    }
+  };
+
+  const jumlahNum = Number(jumlah) || 0;
+  const canSubmit =
+    tanggal &&
+    rekening &&
+    jumlahNum > 0 &&
+    !saving &&
+    (isTransfer ? rekeningTujuan && rekeningTujuan !== rekening : !!kategori);
+
+  return (
+    <ModalShell title={transaksi ? "Edit Transaksi" : "Tambah Transaksi"} onClose={onClose}>
+      <Field label="Jenis Transaksi">
+        <div className="grid grid-cols-3 gap-1.5">
+          <button
+            type="button"
+            onClick={() => gantiTipe("masuk")}
+            className={`py-2 rounded-lg text-[11px] font-semibold border ${
+              tipe === "masuk"
+                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
+                : "border-slate-800 text-slate-400 hover:border-slate-700"
+            }`}
+          >
+            Pemasukan
+          </button>
+          <button
+            type="button"
+            onClick={() => gantiTipe("keluar")}
+            className={`py-2 rounded-lg text-[11px] font-semibold border ${
+              tipe === "keluar"
+                ? "bg-red-500/15 border-red-500/40 text-red-400"
+                : "border-slate-800 text-slate-400 hover:border-slate-700"
+            }`}
+          >
+            Pengeluaran
+          </button>
+          <button
+            type="button"
+            onClick={() => gantiTipe("transfer")}
+            className={`py-2 rounded-lg text-[11px] font-semibold border ${
+              tipe === "transfer"
+                ? "bg-sky-500/15 border-sky-500/40 text-sky-400"
+                : "border-slate-800 text-slate-400 hover:border-slate-700"
+            }`}
+          >
+            Transfer
+          </button>
+        </div>
+      </Field>
+
+      <Field label="Tanggal">
+        <input type="date" className={inputClass} value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
+      </Field>
+
+      <Field label={isTransfer ? "Rekening Asal" : "Sumber Dana"}>
+        <select value={rekening} onChange={(e) => setRekening(e.target.value)} className={inputClass}>
+          <option value="">Pilih rekening…</option>
+          {daftarRekening.map((r) => (
+            <option key={r.kode} value={r.kode}>{r.label}</option>
+          ))}
+        </select>
+        {daftarRekening.length === 0 && (
+          <div className="text-[11px] text-amber-400 mt-1">
+            Belum ada rekening terdaftar — tambah dulu di menu Keuangan &gt; Rekening &amp; Kategori.
+          </div>
+        )}
+      </Field>
+
+      {isTransfer && (
+        <Field label="Rekening Tujuan">
+          <select value={rekeningTujuan} onChange={(e) => setRekeningTujuan(e.target.value)} className={inputClass}>
+            <option value="">Pilih rekening tujuan…</option>
+            {daftarRekening
+              .filter((r) => r.kode !== rekening)
+              .map((r) => (
+                <option key={r.kode} value={r.kode}>{r.label}</option>
+              ))}
+          </select>
+        </Field>
+      )}
+
+      {!isTransfer && (
+        <Field label="Kategori">
+          <select value={kategori} onChange={(e) => setKategori(e.target.value)} className={inputClass}>
+            <option value="">Pilih kategori…</option>
+            {daftarKategori.map((k) => (
+              <option key={k.kode} value={k.kode}>{k.label}</option>
+            ))}
+          </select>
+          {daftarKategori.length === 0 && (
+            <div className="text-[11px] text-amber-400 mt-1">
+              Belum ada kategori {tipe === "masuk" ? "pemasukan" : "pengeluaran"} — tambah dulu di menu Keuangan &gt;
+              Rekening &amp; Kategori.
+            </div>
+          )}
+        </Field>
+      )}
+
+      <Field label="Keterangan (opsional)">
+        <input
+          className={inputClass}
+          value={keterangan}
+          onChange={(e) => setKeterangan(e.target.value)}
+          placeholder={isTransfer ? "Contoh: setor tunai ke bank" : "Penjelasan tambahan dari kategori di atas"}
+        />
+      </Field>
+
+      <Field label="Jumlah (Rp)">
+        <input
+          type="number"
+          min="1"
+          className={inputClass}
+          value={jumlah}
+          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
+        />
+        <div className="text-[11px] text-slate-500 mt-1">
+          {isTransfer
+            ? "Dicatat sebagai saldo keluar dari rekening asal dan masuk ke rekening tujuan."
+            : `Dicatat otomatis sebagai ${tipe === "masuk" ? "kas masuk (+)" : "kas keluar (-)"}.`}
+        </div>
+      </Field>
+
+      <button
+        disabled={!canSubmit}
+        onClick={() =>
+          onSubmit({
+            tanggal,
+            tipe,
+            rekening,
+            rekening_tujuan: isTransfer ? rekeningTujuan : null,
+            kategori: isTransfer ? null : kategori,
+            jumlah: jumlahNum,
+            keterangan: keterangan.trim() || null,
+          })
+        }
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
 export function EditRakForm({ rak, onClose, onSubmit, saving }) {
   const [code, setCode] = useState(rak.code || "");
   const [meja, setMeja] = useState(rak.meja || "");

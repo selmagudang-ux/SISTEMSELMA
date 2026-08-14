@@ -8,7 +8,7 @@ import {
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
-  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm,
+  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, KeuanganTransaksiForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak } from "../pages/Rak";
@@ -486,6 +486,69 @@ export default function ModalRouter({
               run(async () => {
                 await sb(`grosir_toko?id=eq.${t.id}`, { method: "DELETE" });
               }, "Toko dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  if (modal.type === "keuangan-transaksi-form") {
+    const t = modal.item; // null = tambah baru, ada isinya = edit
+    return (
+      <KeuanganTransaksiForm
+        transaksi={t}
+        master={master}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            if (t) {
+              await sb(`keuangan_transaksi?id=eq.${t.id}`, {
+                method: "PATCH",
+                body: JSON.stringify(data),
+              });
+            } else {
+              await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(data) });
+            }
+          }, t ? "Transaksi diperbarui" : "Transaksi ditambahkan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "hapus-keuangan-transaksi") {
+    const t = modal.item;
+    return (
+      <ModalShell title="Hapus Transaksi" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Transaksi{" "}
+            <span className="font-semibold">
+              {t.tipe === "transfer" ? "Transfer Antar Rekening" : t.kategori}
+            </span>{" "}
+            sebesar <span className="font-semibold">{fmtRp(t.jumlah)}</span> ({t.tanggal}) akan dihapus permanen.
+            Tindakan ini tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "DELETE" });
+              }, "Transaksi dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >

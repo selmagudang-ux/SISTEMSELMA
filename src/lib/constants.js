@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, PackagePlus, ClipboardList, Tag, BarChart3, MapPin,
-  Camera, ShoppingBag, TrendingUp, Settings, Boxes, Printer, Store, Warehouse,
+  Camera, ShoppingBag, TrendingUp, Settings, Boxes, Printer, Store, Warehouse, Wallet,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
@@ -112,6 +112,18 @@ export const NAV = [
           { key: "pelanggan", label: "Pelanggan" },
           { key: "toko", label: "Toko Pengirim" },
           { key: "produk-manual", label: "Produk Manual" },
+        ],
+      },
+    ],
+  },
+  {
+    key: "keuangan-group", label: "ADMIN KEUANGAN", icon: Wallet, group: true,
+    children: [
+      {
+        key: "keuangan", label: "Keuangan", icon: Wallet,
+        children: [
+          { key: "transaksi", label: "Transaksi" },
+          { key: "rekening", label: "Rekening & Kategori" },
         ],
       },
     ],

@@ -258,6 +258,76 @@ export function totalHutangPerPelanggan(pesananList, pembayaranList) {
 }
 
 // =========================================================
+// KEUANGAN — pencatatan kas masuk/keluar/transfer antar rekening
+// =========================================================
+// Kategori pemasukan & pengeluaran TIDAK lagi hardcode di sini — sekarang
+// didaftarkan sendiri oleh user lewat halaman Keuangan > Rekening & Kategori,
+// disimpan di tabel master_data dengan tipe "kategori_masuk" / "kategori_keluar"
+// (pola yang sama seperti master_data tipe "bahan"/"warna"/dst untuk SKU).
+// Begitu juga daftar rekening, disimpan dengan tipe "rekening".
+// Lihat src/pages/Keuangan.jsx (RekeningKategori) untuk halaman kelolanya.
+
+// Ringkasan total masuk/keluar/saldo dari daftar transaksi keuangan, opsional
+// difilter ke rentang tanggal [dari, sampai] (format "YYYY-MM-DD", inklusif
+// di kedua ujung). dari/sampai kosong ("" atau null/undefined) = tidak
+// dibatasi ke arah itu. Dipakai bareng oleh halaman Keuangan & Laporan supaya
+// angkanya selalu konsisten.
+//
+// Transaksi tipe "transfer" (pindah dana antar rekening milik sendiri)
+// SENGAJA tidak dihitung ke masuk/keluar/saldo di sini — itu bukan
+// pemasukan/pengeluaran riil, cuma mutasi antar rekening. Dampaknya ke saldo
+// per rekening dihitung terpisah lewat saldoPerRekening() di bawah.
+export function ringkasanKeuangan(transaksi, dari, sampai) {
+  const list = (transaksi || []).filter((t) => {
+    if (dari && t.tanggal < dari) return false;
+    if (sampai && t.tanggal > sampai) return false;
+    return true;
+  });
+  const masuk = list
+    .filter((t) => t.tipe === "masuk")
+    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+  const keluar = list
+    .filter((t) => t.tipe === "keluar")
+    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+  return { masuk, keluar, saldo: masuk - keluar, list };
+}
+
+// Saldo per rekening, dihitung dari SELURUH transaksi (tidak dibatasi rentang
+// tanggal — saldo itu akumulasi dari awal, bukan angka per periode):
+//   - masuk   -> saldo rekening (sumber dana) bertambah
+//   - keluar  -> saldo rekening (sumber dana) berkurang
+//   - transfer -> saldo rekening asal berkurang, saldo rekening tujuan bertambah
+// rekeningList = daftar master_data tipe "rekening" ({ kode, label }[]), dipakai
+// supaya rekening yang belum pernah ada transaksinya tetap muncul dengan saldo 0.
+export function saldoPerRekening(transaksi, rekeningList) {
+  const map = {};
+  (rekeningList || []).forEach((r) => {
+    map[r.kode] = { kode: r.kode, label: r.label, saldo: 0 };
+  });
+  const ensure = (kode) => {
+    if (!kode) return null;
+    if (!map[kode]) map[kode] = { kode, label: kode, saldo: 0 };
+    return map[kode];
+  };
+  (transaksi || []).forEach((t) => {
+    const jumlah = Number(t.jumlah) || 0;
+    if (t.tipe === "masuk") {
+      const r = ensure(t.rekening);
+      if (r) r.saldo += jumlah;
+    } else if (t.tipe === "keluar") {
+      const r = ensure(t.rekening);
+      if (r) r.saldo -= jumlah;
+    } else if (t.tipe === "transfer") {
+      const asal = ensure(t.rekening);
+      const tujuan = ensure(t.rekening_tujuan);
+      if (asal) asal.saldo -= jumlah;
+      if (tujuan) tujuan.saldo += jumlah;
+    }
+  });
+  return Object.values(map);
+}
+
+// =========================================================
 // EXPORT / DOWNLOAD DATA (CSV)
 // =========================================================
 // columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),

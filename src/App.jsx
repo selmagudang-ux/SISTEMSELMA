@@ -17,6 +17,7 @@ import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
 import Grosir from "./pages/Grosir";
+import Keuangan from "./pages/Keuangan";
 import Laporan from "./pages/Laporan";
 import Pengaturan from "./pages/Pengaturan";
 
@@ -57,6 +58,7 @@ function MainApp({ session, onLogout }) {
   const [detailPesananGrosir, setDetailPesananGrosir] = useState([]);
   const [pembayaranGrosir, setPembayaranGrosir] = useState([]);
   const [depositGrosir, setDepositGrosir] = useState([]);
+  const [keuanganTransaksi, setKeuanganTransaksi] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
@@ -105,7 +107,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
         sbAll("rak?select=*&order=code"),
@@ -120,6 +122,7 @@ function MainApp({ session, onLogout }) {
         sbAll("grosir_detail_pesanan?select=*"),
         sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
         sbAll("grosir_deposit?select=*&order=created_at.desc"),
+        sbAll("keuangan_transaksi?select=*&order=tanggal.desc"),
       ]);
       setItems(itemsRes || []);
       setSkuMaster(skuRes || []);
@@ -140,6 +143,7 @@ function MainApp({ session, onLogout }) {
       setDetailPesananGrosir(detailPesananRes || []);
       setPembayaranGrosir(pembayaranRes || []);
       setDepositGrosir(depositRes || []);
+      setKeuanganTransaksi(keuanganRes || []);
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -359,6 +363,16 @@ function MainApp({ session, onLogout }) {
                   pesananGrosir={pesananGrosir}
                   detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
+                  reload={loadAll}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "keuangan" && (
+                <Keuangan
+                  sub={nav.sub || "transaksi"}
+                  keuanganTransaksi={keuanganTransaksi}
+                  master={master}
                   reload={loadAll}
                   showToast={showToast}
                   setModal={setModal}
