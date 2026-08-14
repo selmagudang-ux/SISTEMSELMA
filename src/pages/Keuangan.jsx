@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download } from "lucide-react";
-import { PageHeader, StatCard, EmptyState, inputClass, Badge } from "../components/ui";
+import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
 import { fmtRp, ringkasanKeuangan, saldoPerRekening, sb } from "../lib/api";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
@@ -184,9 +184,9 @@ function Transaksi({ keuanganTransaksi, master, setModal }) {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2">
-          <input type="date" className={`${inputClass} w-auto`} value={dari} onChange={(e) => setDari(e.target.value)} />
+          <InputTanggal className={`${inputClass} w-auto`} value={dari} onChange={setDari} />
           <span className="text-slate-500 text-xs">s/d</span>
-          <input type="date" className={`${inputClass} w-auto`} value={sampai} onChange={(e) => setSampai(e.target.value)} />
+          <InputTanggal className={`${inputClass} w-auto`} value={sampai} onChange={setSampai} />
         </div>
         <select value={tipeFilter} onChange={(e) => setTipeFilter(e.target.value)} className={`${inputClass} w-auto`}>
           <option value="">Semua Jenis</option>
@@ -240,7 +240,7 @@ function Transaksi({ keuanganTransaksi, master, setModal }) {
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5 truncate">
-                    {t.tanggal}{t.keterangan ? ` · ${t.keterangan}` : ""}
+                    {formatTanggalID(t.tanggal)}{t.keterangan ? ` · ${t.keterangan}` : ""}
                   </div>
                 </button>
                 <div className="flex items-center gap-2 flex-shrink-0">
