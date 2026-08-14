@@ -1,8 +1,18 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell } from "../components/ui";
-import { fmtRp, ringkasanKeuangan, saldoPerRekening, arusKasPerPeriode, breakdownPengeluaranKategori, sb } from "../lib/api";
+import {
+  fmtRp,
+  ringkasanKeuangan,
+  saldoPerRekening,
+  arusKasPerPeriode,
+  breakdownPengeluaranKategori,
+  laporanBulananData,
+  rekapTahunanData,
+  sb,
+} from "../lib/api";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
+import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
 // atau baris baru, dibungkus tanda kutip dan tanda kutip di dalamnya di-escape.
@@ -601,6 +611,8 @@ function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
 
       <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
 
+      <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} />
+
       {showLaporanNarasi && (
         <LaporanNarasiModal
           teks={teksLaporanNarasi}
@@ -611,6 +623,205 @@ function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
     </div>
   );
 }
+
+// Tahun-tahun yang ada transaksinya (dari data), dipakai untuk isi pilihan
+// tahun di dropdown Laporan Bulanan/Tahunan. Tahun berjalan selalu disertakan
+// walau belum ada transaksinya, supaya dropdown tidak pernah kosong.
+function daftarTahunTersedia(keuanganTransaksi) {
+  const set = new Set((keuanganTransaksi || []).map((t) => Number((t.tanggal || "").slice(0, 4))).filter(Boolean));
+  set.add(new Date().getFullYear());
+  return Array.from(set).sort((a, b) => b - a);
+}
+
+// Satu baris angka pada tabel pratinjau Laporan Bulanan/Tahunan — dibuat
+// jadi komponen kecil supaya tidak berulang-ulang menulis className yang sama.
+function BarisAngka({ label, nilai, bold, tinted, tint = "text-slate-100", labelWidth = "min-w-[160px]" }) {
+  const f = (v) => (Math.round(v) === 0 ? "-" : fmtRp(v));
+  return (
+    <tr className={tinted ? "bg-slate-900/60" : ""}>
+      <td className={`px-3 py-1.5 ${labelWidth} sticky left-0 ${tinted ? "bg-slate-900/60" : "bg-slate-950"} ${bold ? "font-semibold text-slate-100" : "text-slate-400"}`}>
+        {label}
+      </td>
+      {nilai.map((v, i) => (
+        <td
+          key={i}
+          className={`px-3 py-1.5 text-right whitespace-nowrap ${bold ? `font-semibold ${tint}` : v < 0 ? "text-red-400" : "text-slate-300"}`}
+        >
+          {v < 0 ? `(${fmtRp(Math.abs(v)).replace("Rp ", "")})` : f(v)}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+// Halaman "Laporan Bulanan" & "Rekap Tahunan" — pratinjau tabel di layar
+// (dikelompokkan per kategori pemasukan/pengeluaran, gaya sama seperti
+// workbook Excel SELMA_FINANCE.xlsx), lengkap dengan tombol unduh PDF siap
+// cetak untuk masing-masing.
+function LaporanBulananTahunan({ keuanganTransaksi, master }) {
+  const [mode, setMode] = useState("bulanan"); // "bulanan" | "tahunan"
+  const tahunTersedia = daftarTahunTersedia(keuanganTransaksi);
+  const [tahun, setTahun] = useState(tahunTersedia[0]);
+  const [tahunMulai, setTahunMulai] = useState(tahunTersedia[tahunTersedia.length - 1]);
+
+  const kategoriMasukList = master.kategori_masuk || [];
+  const kategoriKeluarList = master.kategori_keluar || [];
+
+  const dataBulanan = laporanBulananData(keuanganTransaksi, kategoriMasukList, kategoriKeluarList, tahun);
+  const dataTahunan = rekapTahunanData(keuanganTransaksi, tahunMulai, 6);
+
+  const unduhBulanan = () => generateLaporanBulananPdf({ tahun, data: dataBulanan });
+  const unduhTahunan = () =>
+    generateLaporanTahunanPdf({ tahunList: dataTahunan.tahunList, perTahun: dataTahunan.perTahun });
+
+  return (
+    <div className="rounded-xl border border-slate-800 mb-5 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/30">
+        <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1">
+          <button
+            onClick={() => setMode("bulanan")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              mode === "bulanan" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <CalendarRange size={13} /> Laporan Bulanan
+          </button>
+          <button
+            onClick={() => setMode("tahunan")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              mode === "tahunan" ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <BarChart3 size={13} /> Rekap Tahunan
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {mode === "bulanan" ? (
+            <select value={tahun} onChange={(e) => setTahun(Number(e.target.value))} className={`${inputClass} w-auto`}>
+              {tahunTersedia.map((th) => (
+                <option key={th} value={th}>
+                  Tahun {th}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select value={tahunMulai} onChange={(e) => setTahunMulai(Number(e.target.value))} className={`${inputClass} w-auto`}>
+              {tahunTersedia.map((th) => (
+                <option key={th} value={th}>
+                  Mulai {th}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={mode === "bulanan" ? unduhBulanan : unduhTahunan}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Unduh PDF
+          </button>
+        </div>
+      </div>
+
+      <div className="p-3 text-[11px] text-slate-500">
+        {mode === "bulanan"
+          ? "Rekap tiap kategori pemasukan & pengeluaran per bulan untuk satu tahun, lengkap dengan total & laba/rugi bersih — bisa diunduh sebagai PDF siap cetak."
+          : "Perbandingan total pendapatan, pengeluaran, laba/rugi bersih, dan margin selama 6 tahun berurutan — bisa diunduh sebagai PDF siap cetak."}
+      </div>
+
+      {mode === "bulanan" ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-800/70 text-slate-300">
+                <th className="px-3 py-2 text-left min-w-[160px] sticky left-0 bg-slate-800/70">Kategori</th>
+                {BULAN_LABEL_ID.map((b) => (
+                  <th key={b} className="px-3 py-2 text-right whitespace-nowrap">{b}</th>
+                ))}
+                <th className="px-3 py-2 text-right whitespace-nowrap">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              <tr>
+                <td colSpan={14} className="px-3 py-1.5 font-semibold text-emerald-400 bg-emerald-500/5 sticky left-0">
+                  PENDAPATAN
+                </td>
+              </tr>
+              {dataBulanan.pendapatan.length === 0 ? (
+                <tr>
+                  <td colSpan={14} className="px-3 py-3 text-center text-slate-600">Belum ada kategori pemasukan.</td>
+                </tr>
+              ) : (
+                dataBulanan.pendapatan.map((r) => (
+                  <BarisAngka key={r.kode || r.label} label={r.label} nilai={[...r.bulan, r.total]} />
+                ))
+              )}
+              <BarisAngka label="Total Pendapatan" nilai={[...dataBulanan.totalPendapatan.bulan, dataBulanan.totalPendapatan.total]} bold tinted tint="text-emerald-400" />
+
+              <tr>
+                <td colSpan={14} className="px-3 py-1.5 font-semibold text-red-400 bg-red-500/5 sticky left-0">
+                  PENGELUARAN
+                </td>
+              </tr>
+              {dataBulanan.pengeluaran.length === 0 ? (
+                <tr>
+                  <td colSpan={14} className="px-3 py-3 text-center text-slate-600">Belum ada kategori pengeluaran.</td>
+                </tr>
+              ) : (
+                dataBulanan.pengeluaran.map((r) => (
+                  <BarisAngka key={r.kode || r.label} label={r.label} nilai={[...r.bulan, r.total]} />
+                ))
+              )}
+              <BarisAngka label="Total Pengeluaran" nilai={[...dataBulanan.totalPengeluaran.bulan, dataBulanan.totalPengeluaran.total]} bold tinted tint="text-red-400" />
+
+              <BarisAngka
+                label="LABA (RUGI) BERSIH"
+                nilai={[...dataBulanan.labaRugi.bulan, dataBulanan.labaRugi.total]}
+                bold
+                tinted
+                tint={dataBulanan.labaRugi.total >= 0 ? "text-emerald-400" : "text-red-400"}
+              />
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-800/70 text-slate-300">
+                <th className="px-3 py-2 text-left min-w-[160px] sticky left-0 bg-slate-800/70">Kategori</th>
+                {dataTahunan.tahunList.map((th) => (
+                  <th key={th} className="px-3 py-2 text-right whitespace-nowrap">{th}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60">
+              <BarisAngka label="Total Pendapatan" nilai={dataTahunan.perTahun.map((t) => t.pendapatan)} />
+              <BarisAngka label="Total Pengeluaran" nilai={dataTahunan.perTahun.map((t) => t.pengeluaran)} />
+              <BarisAngka
+                label="LABA (RUGI) BERSIH"
+                nilai={dataTahunan.perTahun.map((t) => t.laba)}
+                bold
+                tinted
+                tint={dataTahunan.perTahun[0]?.laba >= 0 ? "text-emerald-400" : "text-red-400"}
+              />
+              <tr className="bg-slate-900/60">
+                <td className="px-3 py-1.5 sticky left-0 bg-slate-900/60 font-semibold text-slate-100">Margin Laba Bersih</td>
+                {dataTahunan.perTahun.map((t, i) => (
+                  <td key={i} className="px-3 py-1.5 text-right whitespace-nowrap font-semibold text-slate-200">
+                    {(Math.round(t.marginPersen * 10) / 10).toLocaleString("id-ID")}%
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const BULAN_LABEL_ID = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 
 // Halaman kelola daftar Rekening & Kategori yang didaftarkan user sendiri.
 // Disimpan di tabel master_data yang sama dipakai untuk kode SKU (bahan,

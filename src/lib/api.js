@@ -416,6 +416,66 @@ export function breakdownPengeluaranKategori(transaksi, kategoriList) {
   return { total, data };
 }
 
+// Susun data "Laporan Bulanan" untuk satu tahun: tiap kategori pemasukan &
+// pengeluaran jadi satu baris dengan 12 kolom bulan + Total, mirip format
+// Laporan Bulanan di Excel (SELMA_FINANCE.xlsx). Kategori yang tidak pernah
+// dipakai tahun itu tetap muncul (nilai 0) supaya strukturnya konsisten;
+// kategori yang dipakai tapi belum terdaftar di master ikut ditambahkan di
+// akhir daftar (fallback label = kode transaksinya).
+// Dipakai bareng oleh preview di halaman Laporan Keuangan & PDF-nya.
+export function laporanBulananData(transaksi, kategoriMasukList, kategoriKeluarList, tahun) {
+  const tahunStr = String(tahun);
+  const list = (transaksi || []).filter((t) => (t.tanggal || "").slice(0, 4) === tahunStr);
+
+  const susunBaris = (tipe, kategoriList) => {
+    const map = new Map();
+    (kategoriList || []).forEach((k) => map.set(k.kode, { kode: k.kode, label: k.label, bulan: Array(12).fill(0) }));
+    list
+      .filter((t) => t.tipe === tipe)
+      .forEach((t) => {
+        const kode = t.kategori || "";
+        if (!map.has(kode)) {
+          const found = (kategoriList || []).find((k) => k.kode === kode);
+          map.set(kode, { kode, label: found ? found.label : kode || "Tanpa Kategori", bulan: Array(12).fill(0) });
+        }
+        const bulanIdx = Number((t.tanggal || "").slice(5, 7)) - 1;
+        if (bulanIdx >= 0 && bulanIdx < 12) {
+          map.get(kode).bulan[bulanIdx] += Number(t.jumlah) || 0;
+        }
+      });
+    return Array.from(map.values()).map((r) => ({ ...r, total: r.bulan.reduce((a, v) => a + v, 0) }));
+  };
+
+  const jumlahPerBulan = (baris) => {
+    const bulan = Array(12).fill(0);
+    baris.forEach((r) => r.bulan.forEach((v, i) => (bulan[i] += v)));
+    return { bulan, total: bulan.reduce((a, v) => a + v, 0) };
+  };
+
+  const pendapatan = susunBaris("masuk", kategoriMasukList);
+  const pengeluaran = susunBaris("keluar", kategoriKeluarList);
+  const totalPendapatan = jumlahPerBulan(pendapatan);
+  const totalPengeluaran = jumlahPerBulan(pengeluaran);
+  const labaRugi = {
+    bulan: totalPendapatan.bulan.map((v, i) => v - totalPengeluaran.bulan[i]),
+    total: totalPendapatan.total - totalPengeluaran.total,
+  };
+
+  return { tahun: Number(tahun), pendapatan, pengeluaran, totalPendapatan, totalPengeluaran, labaRugi };
+}
+
+// Susun data "Rekap Tahunan": total pendapatan/pengeluaran/laba-rugi per
+// tahun, untuk `jumlahTahun` tahun berurutan mulai dari tahunMulai. Mirip
+// sheet REKAP TAHUNAN di Excel (SELMA_FINANCE.xlsx).
+export function rekapTahunanData(transaksi, tahunMulai, jumlahTahun = 6) {
+  const tahunList = Array.from({ length: jumlahTahun }, (_, i) => Number(tahunMulai) + i);
+  const perTahun = tahunList.map((tahun) => {
+    const { masuk, keluar } = ringkasanKeuangan(transaksi, `${tahun}-01-01`, `${tahun}-12-31`);
+    const laba = masuk - keluar;
+    return { tahun, pendapatan: masuk, pengeluaran: keluar, laba, marginPersen: masuk > 0 ? (laba / masuk) * 100 : 0 };
+  });
+  return { tahunList, perTahun };
+}
 
 // =========================================================
 // columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),
