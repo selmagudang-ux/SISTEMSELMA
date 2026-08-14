@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
-import { ModalShell, Field, Combobox, SearchableSelect, inputClass } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, inputClass, InputTanggal } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
@@ -21,7 +21,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving }) {
   return (
     <ModalShell title="Barang Masuk" onClose={onClose}>
       <Field label="Tanggal">
-        <input type="date" className={inputClass} value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
+        <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
       <Field label="Jenis Barang Masuk">
         <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
@@ -1082,7 +1082,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, on
       </Field>
 
       <Field label="Tanggal">
-        <input type="date" className={inputClass} value={tanggal} onChange={(e) => setTanggal(e.target.value)} />
+        <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
 
       <Field label={isTransfer ? "Rekening Asal" : "Sumber Dana"}>

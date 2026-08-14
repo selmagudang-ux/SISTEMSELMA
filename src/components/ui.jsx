@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Inbox, Sparkles } from "lucide-react";
+import { X, Inbox, Sparkles, CalendarDays } from "lucide-react";
 
 export const inputClass =
   "w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500";
@@ -16,6 +16,63 @@ export function ModalShell({ title, onClose, children }) {
         </div>
         <div className="p-5">{children}</div>
       </div>
+    </div>
+  );
+}
+
+const BULAN_ID = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+// Ubah "YYYY-MM-DD" jadi "14 Agustus 2026". Mengembalikan "" kalau kosong/invalid.
+export function formatTanggalID(value) {
+  if (!value) return "";
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return `${d} ${BULAN_ID[m - 1]} ${y}`;
+}
+
+// Input tanggal dengan tampilan format Indonesia ("14 Agustus 2026"), tapi tetap
+// pakai date picker bawaan browser (value tersimpan tetap "YYYY-MM-DD" seperti biasa,
+// jadi tidak perlu ubah logika lain yang bergantung pada format ini).
+export function InputTanggal({ value, onChange, className }) {
+  const inputRef = useRef(null);
+  const display = formatTanggalID(value);
+
+  const bukaPicker = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (typeof el.showPicker === "function") {
+      try {
+        el.showPicker();
+        return;
+      } catch {
+        // fallback di bawah kalau showPicker() ditolak browser
+      }
+    }
+    el.focus();
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={bukaPicker}
+        className={`${className || inputClass} flex items-center justify-between text-left`}
+      >
+        <span className={display ? "" : "text-slate-500"}>{display || "Pilih tanggal"}</span>
+        <CalendarDays size={14} className="text-slate-500 shrink-0 ml-2" />
+      </button>
+      <input
+        ref={inputRef}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        tabIndex={-1}
+        aria-label="Pilih tanggal"
+      />
     </div>
   );
 }
