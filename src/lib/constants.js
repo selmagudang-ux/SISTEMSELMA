@@ -236,6 +236,7 @@ export const ROLES = [
   { key: "pemotretan", label: "Pemotretan" },
   { key: "marketplace", label: "Admin Marketplace" },
   { key: "grosir", label: "Admin Grosir" },
+  { key: "keuangan", label: "Admin Keuangan" },
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
@@ -262,6 +263,11 @@ export const ROLE_MENUS = {
   // "Marketplace", dengan semua sub-nya — Belum/Sudah/Riwayat Upload).
   marketplace: ["marketplace"],
   grosir: ["grosir"],
+  // Admin Keuangan: hanya menu "Keuangan" (Transaksi + Rekening & Kategori),
+  // sama seperti pola role operasional lain — tidak dapat "dashboard" (langsung
+  // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
+  // karena tidak didaftarkan di ROLE_SUBMENUS.
+  keuangan: ["keuangan"],
 };
 
 export function allowedMenus(role) {
