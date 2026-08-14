@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell } from "../components/ui";
 import { fmtRp, ringkasanKeuangan, saldoPerRekening, sb } from "../lib/api";
-import { buatLaporanNarasi } from "../lib/lllllllllllllllllaporanNarasi";
+import { buatLaporanNarasi } from "../lib/laporanNarasi";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
 // atau baris baru, dibungkus tanda kutip dan tanda kutip di dalamnya di-escape.
