@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell } from "../components/ui";
-import { fmtRp, ringkasanKeuangan, saldoPerRekening, sb } from "../lib/api";
+import { fmtRp, ringkasanKeuangan, saldoPerRekening, arusKasPerPeriode, sb } from "../lib/api";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
@@ -124,6 +124,110 @@ function LaporanNarasiModal({ teks, onClose, showToast }) {
   );
 }
 
+// Grafik batang arus kas: dua batang (masuk & keluar) per kelompok tanggal.
+// Skala sumbu-Y otomatis dibulatkan (1/2/5 × 10^n) supaya garis bantu rapi.
+// Lebar SVG pakai viewBox tetap (responsif lewat CSS), dengan scroll horizontal
+// kalau kelompoknya banyak supaya label tanggal tidak berdesakan.
+function GrafikArusKas({ mode, data }) {
+  const [hover, setHover] = useState(null);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-800 p-6 text-center text-slate-500 text-sm mb-5">
+        Belum ada transaksi pada rentang ini untuk ditampilkan sebagai grafik.
+      </div>
+    );
+  }
+
+  const H = 220;
+  const marginLeft = 46;
+  const marginBottom = 30;
+  const marginTop = 16;
+  const marginRight = 12;
+  const minGroupW = 46;
+  const chartW = Math.max(560, data.length * minGroupW) - marginLeft - marginRight;
+  const W = chartW + marginLeft + marginRight;
+  const chartH = H - marginTop - marginBottom;
+
+  const nilaiMax = Math.max(1, ...data.flatMap((d) => [d.masuk, d.keluar]));
+  const niceMax = (() => {
+    const pow = Math.pow(10, Math.floor(Math.log10(nilaiMax)));
+    const norm = nilaiMax / pow;
+    const niceNorm = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+    return niceNorm * pow;
+  })();
+
+  const groupW = chartW / data.length;
+  const barW = Math.min(18, groupW * 0.3);
+  const gap = 4;
+  const y = (v) => marginTop + chartH - (v / niceMax) * chartH;
+  const skalaLabel = (v) =>
+    v >= 1000000 ? `${v / 1000000}jt` : v >= 1000 ? `${Math.round(v / 1000)}rb` : `${Math.round(v)}`;
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map((f) => niceMax * f);
+  const labelStep = Math.max(1, Math.ceil(data.length / 14));
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 mb-5 bg-slate-900/30">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="text-xs text-slate-400">
+          Arus Kas {mode === "harian" ? "per Hari" : "per Minggu"} — Masuk vs Keluar
+        </div>
+        <div className="flex items-center gap-3 text-[11px]">
+          <span className="flex items-center gap-1.5 text-emerald-400">
+            <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> Masuk
+          </span>
+          <span className="flex items-center gap-1.5 text-red-400">
+            <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" /> Keluar
+          </span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: W, minWidth: "100%" }}>
+          {gridLines.map((g, i) => (
+            <g key={i}>
+              <line x1={marginLeft} x2={W - marginRight} y1={y(g)} y2={y(g)} stroke="#1e293b" strokeWidth="1" />
+              <text x={marginLeft - 6} y={y(g) + 3} textAnchor="end" fontSize="9" fill="#64748b">
+                {skalaLabel(g)}
+              </text>
+            </g>
+          ))}
+          {data.map((d, i) => {
+            const cx = marginLeft + i * groupW + groupW / 2;
+            const xMasuk = cx - gap / 2 - barW;
+            const xKeluar = cx + gap / 2;
+            const isHover = hover === i;
+            return (
+              <g
+                key={d.key}
+                onMouseEnter={() => setHover(i)}
+                onMouseLeave={() => setHover(null)}
+                style={{ cursor: "pointer" }}
+              >
+                <rect x={xMasuk} width={barW} y={y(d.masuk)} height={Math.max(0, y(0) - y(d.masuk))} rx="2" fill="#10b981" opacity={hover === null || isHover ? 1 : 0.35} />
+                <rect x={xKeluar} width={barW} y={y(d.keluar)} height={Math.max(0, y(0) - y(d.keluar))} rx="2" fill="#ef4444" opacity={hover === null || isHover ? 1 : 0.35} />
+                <text x={cx} y={H - marginBottom + 14} textAnchor="middle" fontSize="9" fill="#64748b">
+                  {i % labelStep === 0 ? d.label : ""}
+                </text>
+                {isHover && (
+                  <g>
+                    <rect x={Math.min(Math.max(cx - 58, marginLeft), W - marginRight - 116)} y={marginTop} width="116" height="34" rx="4" fill="#0f172a" stroke="#334155" />
+                    <text x={Math.min(Math.max(cx, marginLeft + 58), W - marginRight - 58)} y={marginTop + 13} textAnchor="middle" fontSize="9" fill="#34d399">
+                      Masuk: {fmtRp(d.masuk)}
+                    </text>
+                    <text x={Math.min(Math.max(cx, marginLeft + 58), W - marginRight - 58)} y={marginTop + 25} textAnchor="middle" fontSize="9" fill="#f87171">
+                      Keluar: {fmtRp(d.keluar)}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
@@ -137,6 +241,7 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
 
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
+  const arusKas = arusKasPerPeriode(list);
 
   const filtered = list
     .filter((t) => !tipeFilter || t.tipe === tipeFilter)
@@ -240,6 +345,8 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
           </div>
         </div>
       )}
+
+      <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2">

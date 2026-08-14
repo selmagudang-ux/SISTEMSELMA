@@ -327,6 +327,68 @@ export function saldoPerRekening(transaksi, rekeningList) {
   return Object.values(map);
 }
 
+const BULAN_PENDEK = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+// Awal minggu (Senin) dari sebuah tanggal ISO "YYYY-MM-DD", dikembalikan sebagai
+// string ISO juga — dipakai sebagai kunci pengelompokan mode mingguan.
+function awalMingguIso(tanggalIso) {
+  const d = new Date(`${tanggalIso}T00:00:00`);
+  const offsetKeSenin = (d.getDay() + 6) % 7; // Minggu(0) -> 6, Senin(1) -> 0, dst.
+  d.setDate(d.getDate() - offsetKeSenin);
+  return d.toISOString().slice(0, 10);
+}
+
+function labelHarianIso(tanggalIso) {
+  const d = new Date(`${tanggalIso}T00:00:00`);
+  return `${d.getDate()} ${BULAN_PENDEK[d.getMonth()]}`;
+}
+
+function labelMingguanIso(seninIso) {
+  const senin = new Date(`${seninIso}T00:00:00`);
+  const minggu = new Date(senin);
+  minggu.setDate(senin.getDate() + 6);
+  const fmt = (x) => `${x.getDate()} ${BULAN_PENDEK[x.getMonth()]}`;
+  return `${fmt(senin)}–${fmt(minggu)}`;
+}
+
+// Kelompokkan transaksi (kas masuk vs kas keluar) per hari, atau per minggu kalau
+// rentang tanggalnya cukup panjang (>31 hari) supaya grafiknya tidak terlalu padat.
+// Transfer antar rekening tidak dihitung (sama seperti ringkasanKeuangan()).
+// Mengembalikan { mode: "harian"|"mingguan", data: [{ key, label, masuk, keluar }] }
+// terurut dari tanggal paling lama ke paling baru.
+export function arusKasPerPeriode(transaksi) {
+  const list = (transaksi || []).filter((t) => t.tipe === "masuk" || t.tipe === "keluar");
+  if (list.length === 0) return { mode: "harian", data: [] };
+
+  const tanggalUrut = list.map((t) => t.tanggal).sort();
+  const rentangHari =
+    Math.round(
+      (new Date(`${tanggalUrut[tanggalUrut.length - 1]}T00:00:00`) - new Date(`${tanggalUrut[0]}T00:00:00`)) /
+        86400000
+    ) + 1;
+  const mode = rentangHari > 31 ? "mingguan" : "harian";
+
+  const map = new Map();
+  list.forEach((t) => {
+    const key = mode === "harian" ? t.tanggal : awalMingguIso(t.tanggal);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        label: mode === "harian" ? labelHarianIso(key) : labelMingguanIso(key),
+        masuk: 0,
+        keluar: 0,
+      });
+    }
+    const g = map.get(key);
+    const jumlah = Number(t.jumlah) || 0;
+    if (t.tipe === "masuk") g.masuk += jumlah;
+    else g.keluar += jumlah;
+  });
+
+  const data = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  return { mode, data };
+}
+
 // =========================================================
 // EXPORT / DOWNLOAD DATA (CSV)
 // =========================================================
