@@ -389,8 +389,34 @@ export function arusKasPerPeriode(transaksi) {
   return { mode, data };
 }
 
-// =========================================================
-// EXPORT / DOWNLOAD DATA (CSV)
+// Breakdown pengeluaran per kategori dari daftar transaksi (biasanya hasil
+// ringkasanKeuangan(), sudah difilter rentang tanggal): total tiap kategori
+// beserta persentasenya terhadap total pengeluaran, terurut dari yang terbesar.
+// kategoriList = master_data tipe "kategori_keluar" ({ kode, label }[]), dipakai
+// untuk menerjemahkan kode kategori ke nama yang enak dibaca.
+export function breakdownPengeluaranKategori(transaksi, kategoriList) {
+  const pengeluaran = (transaksi || []).filter((t) => t.tipe === "keluar");
+  const total = pengeluaran.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+
+  const map = new Map();
+  pengeluaran.forEach((t) => {
+    const kode = t.kategori || "";
+    const found = (kategoriList || []).find((k) => k.kode === kode);
+    const label = found ? found.label : kode || "Tanpa Kategori";
+    if (!map.has(kode || "__tanpa__")) {
+      map.set(kode || "__tanpa__", { kode, label, jumlah: 0 });
+    }
+    map.get(kode || "__tanpa__").jumlah += Number(t.jumlah) || 0;
+  });
+
+  const data = Array.from(map.values())
+    .map((d) => ({ ...d, persen: total > 0 ? (d.jumlah / total) * 100 : 0 }))
+    .sort((a, b) => b.jumlah - a.jumlah);
+
+  return { total, data };
+}
+
+
 // =========================================================
 // columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),
 // label dipakai sebagai judul kolom. rows: array of object (mis. items, sku_master, dll).

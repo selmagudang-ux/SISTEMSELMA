@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell } from "../components/ui";
-import { fmtRp, ringkasanKeuangan, saldoPerRekening, arusKasPerPeriode, sb } from "../lib/api";
+import { fmtRp, ringkasanKeuangan, saldoPerRekening, arusKasPerPeriode, breakdownPengeluaranKategori, sb } from "../lib/api";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
@@ -228,6 +228,127 @@ function GrafikArusKas({ mode, data }) {
   );
 }
 
+const WARNA_KATEGORI = ["#10b981", "#0ea5e9", "#f59e0b", "#8b5cf6", "#f43f5e", "#06b6d4", "#84cc16", "#f97316"];
+const WARNA_LAINNYA = "#64748b";
+
+function titikLingkaran(cx, cy, r, sudutDerajat) {
+  const rad = ((sudutDerajat - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+// Path SVG untuk satu potongan donat, dari sudutAwal ke sudutAkhir (derajat, 0 = jam 12).
+function potonganDonat(cx, cy, rLuar, rDalam, sudutAwal, sudutAkhir) {
+  const besar = sudutAkhir - sudutAwal <= 180 ? 0 : 1;
+  const aLuar = titikLingkaran(cx, cy, rLuar, sudutAkhir);
+  const bLuar = titikLingkaran(cx, cy, rLuar, sudutAwal);
+  const aDalam = titikLingkaran(cx, cy, rDalam, sudutAwal);
+  const bDalam = titikLingkaran(cx, cy, rDalam, sudutAkhir);
+  return [
+    `M ${aLuar.x} ${aLuar.y}`,
+    `A ${rLuar} ${rLuar} 0 ${besar} 0 ${bLuar.x} ${bLuar.y}`,
+    `L ${aDalam.x} ${aDalam.y}`,
+    `A ${rDalam} ${rDalam} 0 ${besar} 1 ${bDalam.x} ${bDalam.y}`,
+    "Z",
+  ].join(" ");
+}
+
+// Breakdown pengeluaran per kategori: donat + daftar persentase. Kategori di
+// luar 6 besar digabung jadi "Lainnya" di donat (biar potongannya tidak terlalu
+// tipis/rapat), tapi daftar di sisi kanan tetap menampilkan semua kategori.
+function BreakdownPengeluaran({ total, data }) {
+  const [hover, setHover] = useState(null);
+
+  if (total === 0 || data.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-800 p-6 text-center text-slate-500 text-sm mb-5">
+        Belum ada pengeluaran pada rentang ini untuk ditampilkan.
+      </div>
+    );
+  }
+
+  const TOP_N = 6;
+  const utama = data.slice(0, TOP_N);
+  const sisa = data.slice(TOP_N);
+  const jumlahLainnya = sisa.reduce((a, d) => a + d.jumlah, 0);
+  const slices = jumlahLainnya > 0
+    ? [...utama, { kode: "__lainnya__", label: `Lainnya (${sisa.length} kategori)`, jumlah: jumlahLainnya, persen: (jumlahLainnya / total) * 100 }]
+    : utama;
+
+  const cx = 60, cy = 60, rLuar = 58, rDalam = 34;
+  let kumulatif = 0;
+  const arcs = slices.map((s, i) => {
+    const awal = (kumulatif / 100) * 360;
+    kumulatif += s.persen;
+    const akhir = (kumulatif / 100) * 360;
+    const warna = s.kode === "__lainnya__" ? WARNA_LAINNYA : WARNA_KATEGORI[i % WARNA_KATEGORI.length];
+    return { ...s, path: potonganDonat(cx, cy, rLuar, rDalam, awal, akhir), warna, idx: i };
+  });
+
+  const aktif = hover !== null ? arcs[hover] : null;
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 mb-5 bg-slate-900/30">
+      <div className="text-xs text-slate-400 mb-3">Pengeluaran per Kategori — mana yang paling boros</div>
+      <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+        <div className="relative shrink-0">
+          <svg viewBox="0 0 120 120" width="150" height="150">
+            {arcs.map((a) => (
+              <path
+                key={a.kode || a.label}
+                d={a.path}
+                fill={a.warna}
+                opacity={hover === null || hover === a.idx ? 1 : 0.35}
+                onMouseEnter={() => setHover(a.idx)}
+                onMouseLeave={() => setHover(null)}
+                style={{ cursor: "pointer" }}
+              />
+            ))}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 text-center">
+            {aktif ? (
+              <>
+                <div className="text-[10px] text-slate-400 leading-tight truncate max-w-[70px]">{aktif.label}</div>
+                <div className="text-xs font-semibold text-slate-100">{Math.round(aktif.persen)}%</div>
+              </>
+            ) : (
+              <>
+                <div className="text-[10px] text-slate-500">Total</div>
+                <div className="text-xs font-semibold text-slate-100">{fmtRp(total)}</div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="w-full flex-1 space-y-2 max-h-52 overflow-y-auto pr-1">
+          {data.map((d, i) => {
+            const warna = i < TOP_N ? WARNA_KATEGORI[i % WARNA_KATEGORI.length] : WARNA_LAINNYA;
+            const idxSlice = i < TOP_N ? i : arcs.length - 1;
+            return (
+              <div
+                key={d.kode || d.label}
+                className="cursor-pointer"
+                onMouseEnter={() => setHover(idxSlice)}
+                onMouseLeave={() => setHover(null)}
+              >
+                <div className="flex items-center justify-between text-xs mb-0.5">
+                  <span className="flex items-center gap-1.5 text-slate-300 truncate">
+                    <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: warna }} />
+                    <span className="truncate">{d.label}</span>
+                  </span>
+                  <span className="text-slate-400 shrink-0 ml-2">{fmtRp(d.jumlah)} · {Math.round(d.persen)}%</span>
+                </div>
+                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${d.persen}%`, backgroundColor: warna }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
@@ -242,6 +363,7 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
   const arusKas = arusKasPerPeriode(list);
+  const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
 
   const filtered = list
     .filter((t) => !tipeFilter || t.tipe === tipeFilter)
@@ -347,6 +469,8 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
       )}
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+
+      <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2">
