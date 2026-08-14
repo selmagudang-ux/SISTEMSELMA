@@ -123,6 +123,7 @@ export const NAV = [
         key: "keuangan", label: "Keuangan", icon: Wallet,
         children: [
           { key: "transaksi", label: "Transaksi" },
+          { key: "laporan", label: "Laporan Keuangan" },
           { key: "rekening", label: "Rekening & Kategori" },
         ],
       },

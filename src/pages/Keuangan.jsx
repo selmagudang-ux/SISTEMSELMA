@@ -76,6 +76,9 @@ export default function Keuangan({ sub, keuanganTransaksi = [], master = {}, rel
   if (sub === "rekening") {
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
   }
+  if (sub === "laporan") {
+    return <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} showToast={showToast} />;
+  }
   return (
     <Transaksi keuanganTransaksi={keuanganTransaksi} master={master} setModal={setModal} showToast={showToast} />
   );
@@ -354,16 +357,12 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
   const [sampai, setSampai] = useState(hariIniIso());
   const [tipeFilter, setTipeFilter] = useState("");
   const [q, setQ] = useState("");
-  const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
 
   const rekeningList = master.rekening || [];
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
-  const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
-  const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
-  const arusKas = arusKasPerPeriode(list);
-  const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
+  const { list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
 
   const filtered = list
     .filter((t) => !tipeFilter || t.tipe === tipeFilter)
@@ -380,97 +379,20 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
     })
     .sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
 
-  const teksLaporanNarasi = buatLaporanNarasi({
-    dari,
-    sampai,
-    list,
-    saldoRekening,
-    kategoriKeluarList,
-  });
-
   return (
     <div>
       <PageHeader
-        title="Keuangan"
-        description="Pencatatan kas masuk, kas keluar, dan transfer antar rekening. Ringkasan mengikuti rentang tanggal yang dipilih di bawah."
+        title="Transaksi Keuangan"
+        description="Pencatatan kas masuk, kas keluar, dan transfer antar rekening. Untuk ringkasan, grafik, dan unduh laporan, buka menu Laporan Keuangan."
         action={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() =>
-                downloadLaporanCsv({
-                  rows: filtered.map((t) => ({
-                    tanggal: t.tanggal,
-                    jenisLabel: t.tipe === "masuk" ? "Pemasukan" : t.tipe === "keluar" ? "Pengeluaran" : "Transfer",
-                    rekeningLabel: labelDari(rekeningList, t.rekening),
-                    rekeningTujuanLabel: t.tipe === "transfer" ? labelDari(rekeningList, t.rekening_tujuan) : "",
-                    kategoriLabel:
-                      t.tipe === "masuk"
-                        ? labelDari(kategoriMasukList, t.kategori)
-                        : t.tipe === "keluar"
-                        ? labelDari(kategoriKeluarList, t.kategori)
-                        : "",
-                    keterangan: t.keterangan,
-                    jumlah: t.jumlah,
-                  })),
-                  dari,
-                  sampai,
-                  ringkasan: { masuk, keluar, saldo },
-                })
-              }
-              disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
-            >
-              <Download size={14} /> Laporan
-            </button>
-            <button
-              onClick={() => setShowLaporanNarasi(true)}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
-            >
-              <FileText size={14} /> Laporan Sederhana
-            </button>
-            <button
-              onClick={() => setModal({ type: "keuangan-transaksi-form" })}
-              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-            >
-              <Plus size={14} /> Transaksi
-            </button>
-          </div>
+          <button
+            onClick={() => setModal({ type: "keuangan-transaksi-form" })}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+          >
+            <Plus size={14} /> Transaksi
+          </button>
         }
       />
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <StatCard label="Kas Masuk" value={fmtRp(masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label="Kas Keluar" value={fmtRp(keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
-        <StatCard
-          label="Saldo (Masuk - Keluar)"
-          value={fmtRp(saldo)}
-          accent={saldo >= 0 ? "text-emerald-400" : "text-red-400"}
-          icon={Wallet}
-          iconColor={saldo >= 0 ? "text-emerald-500" : "text-red-500"}
-        />
-      </div>
-
-      {rekeningList.length > 0 && (
-        <div className="mb-5">
-          <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {saldoRekening.map((r) => (
-              <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-                  <Landmark size={12} /> {r.label}
-                </div>
-                <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>
-                  {fmtRp(r.saldo)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
-
-      <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2">
@@ -561,6 +483,123 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// Halaman "Laporan Keuangan" — ringkasan, grafik arus kas, breakdown
+// pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
+// narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
+// ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
+function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
+  const [dari, setDari] = useState(awalBulanIni());
+  const [sampai, setSampai] = useState(hariIniIso());
+  const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
+
+  const rekeningList = master.rekening || [];
+  const kategoriMasukList = master.kategori_masuk || [];
+  const kategoriKeluarList = master.kategori_keluar || [];
+
+  const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
+  const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
+  const arusKas = arusKasPerPeriode(list);
+  const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
+
+  const sorted = [...list].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
+
+  const teksLaporanNarasi = buatLaporanNarasi({
+    dari,
+    sampai,
+    list,
+    saldoRekening,
+    kategoriKeluarList,
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Laporan Keuangan"
+        description="Ringkasan, grafik arus kas, dan breakdown pengeluaran mengikuti rentang tanggal yang dipilih di bawah. Untuk mencatat transaksi, buka menu Transaksi."
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                downloadLaporanCsv({
+                  rows: sorted.map((t) => ({
+                    tanggal: t.tanggal,
+                    jenisLabel: t.tipe === "masuk" ? "Pemasukan" : t.tipe === "keluar" ? "Pengeluaran" : "Transfer",
+                    rekeningLabel: labelDari(rekeningList, t.rekening),
+                    rekeningTujuanLabel: t.tipe === "transfer" ? labelDari(rekeningList, t.rekening_tujuan) : "",
+                    kategoriLabel:
+                      t.tipe === "masuk"
+                        ? labelDari(kategoriMasukList, t.kategori)
+                        : t.tipe === "keluar"
+                        ? labelDari(kategoriKeluarList, t.kategori)
+                        : "",
+                    keterangan: t.keterangan,
+                    jumlah: t.jumlah,
+                  })),
+                  dari,
+                  sampai,
+                  ringkasan: { masuk, keluar, saldo },
+                })
+              }
+              disabled={sorted.length === 0}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Download size={14} /> Unduh CSV
+            </button>
+            <button
+              onClick={() => setShowLaporanNarasi(true)}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <FileText size={14} /> Laporan Sederhana
+            </button>
+          </div>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-2">
+          <InputTanggal className={`${inputClass} w-auto`} value={dari} onChange={setDari} />
+          <span className="text-slate-500 text-xs">s/d</span>
+          <InputTanggal className={`${inputClass} w-auto`} value={sampai} onChange={setSampai} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        <StatCard label="Kas Masuk" value={fmtRp(masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label="Kas Keluar" value={fmtRp(keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+        <StatCard
+          label="Saldo (Masuk - Keluar)"
+          value={fmtRp(saldo)}
+          accent={saldo >= 0 ? "text-emerald-400" : "text-red-400"}
+          icon={Wallet}
+          iconColor={saldo >= 0 ? "text-emerald-500" : "text-red-500"}
+        />
+      </div>
+
+      {rekeningList.length > 0 && (
+        <div className="mb-5">
+          <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {saldoRekening.map((r) => (
+              <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+                  <Landmark size={12} /> {r.label}
+                </div>
+                <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>
+                  {fmtRp(r.saldo)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+
+      <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
 
       {showLaporanNarasi && (
         <LaporanNarasiModal
