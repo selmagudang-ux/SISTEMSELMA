@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download } from "lucide-react";
-import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
+import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText } from "lucide-react";
+import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell } from "../components/ui";
 import { fmtRp, ringkasanKeuangan, saldoPerRekening, sb } from "../lib/api";
+import { buatLaporanNarasi } from "../lib/laporanNarasi";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
 // atau baris baru, dibungkus tanda kutip dan tanda kutip di dalamnya di-escape.
@@ -76,15 +77,59 @@ export default function Keuangan({ sub, keuanganTransaksi = [], master = {}, rel
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
   }
   return (
-    <Transaksi keuanganTransaksi={keuanganTransaksi} master={master} setModal={setModal} />
+    <Transaksi keuanganTransaksi={keuanganTransaksi} master={master} setModal={setModal} showToast={showToast} />
   );
 }
 
-function Transaksi({ keuanganTransaksi, master, setModal }) {
+// Modal "Laporan Sederhana" — menampilkan ringkasan keuangan sebagai narasi
+// bahasa awam (bukan tabel angka), lengkap dengan tombol salin & kirim WhatsApp.
+function LaporanNarasiModal({ teks, onClose, showToast }) {
+  const [disalin, setDisalin] = useState(false);
+
+  const salinTeks = async () => {
+    try {
+      await navigator.clipboard.writeText(teks);
+      setDisalin(true);
+      showToast?.("Teks laporan disalin");
+      setTimeout(() => setDisalin(false), 2000);
+    } catch {
+      showToast?.("Gagal menyalin, coba salin manual", "err");
+    }
+  };
+
+  const kirimWhatsapp = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(teks)}`, "_blank");
+  };
+
+  return (
+    <ModalShell title="Laporan Keuangan — Ringkasan Sederhana" onClose={onClose}>
+      <div className="rounded-lg border border-slate-800 bg-slate-950 p-3.5 mb-3 max-h-[50vh] overflow-y-auto">
+        <pre className="text-xs text-slate-300 whitespace-pre-wrap font-sans leading-relaxed">{teks}</pre>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={salinTeks}
+          className="flex items-center justify-center gap-1.5 border border-slate-700 hover:border-slate-600 text-slate-200 text-xs font-semibold py-2.5 rounded-lg"
+        >
+          <Copy size={14} /> {disalin ? "Tersalin!" : "Salin Teks"}
+        </button>
+        <button
+          onClick={kirimWhatsapp}
+          className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg"
+        >
+          <MessageCircleMore size={14} /> Kirim via WhatsApp
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [tipeFilter, setTipeFilter] = useState("");
   const [q, setQ] = useState("");
+  const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
 
   const rekeningList = master.rekening || [];
   const kategoriMasukList = master.kategori_masuk || [];
@@ -107,6 +152,14 @@ function Transaksi({ keuanganTransaksi, master, setModal }) {
       );
     })
     .sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
+
+  const teksLaporanNarasi = buatLaporanNarasi({
+    dari,
+    sampai,
+    list,
+    saldoRekening,
+    kategoriKeluarList,
+  });
 
   return (
     <div>
@@ -141,6 +194,12 @@ function Transaksi({ keuanganTransaksi, master, setModal }) {
               className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
             >
               <Download size={14} /> Laporan
+            </button>
+            <button
+              onClick={() => setShowLaporanNarasi(true)}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <FileText size={14} /> Laporan Sederhana
             </button>
             <button
               onClick={() => setModal({ type: "keuangan-transaksi-form" })}
@@ -270,6 +329,14 @@ function Transaksi({ keuanganTransaksi, master, setModal }) {
             );
           })}
         </div>
+      )}
+
+      {showLaporanNarasi && (
+        <LaporanNarasiModal
+          teks={teksLaporanNarasi}
+          onClose={() => setShowLaporanNarasi(false)}
+          showToast={showToast}
+        />
       )}
     </div>
   );
