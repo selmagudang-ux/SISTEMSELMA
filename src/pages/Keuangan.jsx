@@ -1,7 +1,56 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge } from "../components/ui";
 import { fmtRp, ringkasanKeuangan, saldoPerRekening, sb } from "../lib/api";
+
+// Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
+// atau baris baru, dibungkus tanda kutip dan tanda kutip di dalamnya di-escape.
+function csvCell(val) {
+  const s = String(val ?? "");
+  if (/[;"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+// Susun & unduh laporan transaksi (yang sedang tampil di layar, sesuai
+// filter aktif) sebagai file CSV — bisa langsung dibuka di Excel/Sheets.
+// Dipisah pakai titik-koma (bukan koma) karena itu default Excel versi
+// Indonesia, supaya kolomnya kebaca rapi tanpa perlu diatur manual dulu.
+function downloadLaporanCsv({ rows, dari, sampai, ringkasan }) {
+  const header = ["Tanggal", "Jenis", "Rekening", "Rekening Tujuan", "Kategori", "Keterangan", "Jumlah"];
+  const lines = [header.map(csvCell).join(";")];
+
+  rows.forEach((r) => {
+    lines.push(
+      [
+        r.tanggal,
+        r.jenisLabel,
+        r.rekeningLabel,
+        r.rekeningTujuanLabel || "",
+        r.kategoriLabel || "",
+        r.keterangan || "",
+        r.jumlah,
+      ]
+        .map(csvCell)
+        .join(";")
+    );
+  });
+
+  lines.push("");
+  lines.push([csvCell("Total Kas Masuk"), csvCell(ringkasan.masuk)].join(";"));
+  lines.push([csvCell("Total Kas Keluar"), csvCell(ringkasan.keluar)].join(";"));
+  lines.push([csvCell("Saldo (Masuk - Keluar)"), csvCell(ringkasan.saldo)].join(";"));
+
+  // Prefix BOM supaya karakter (mis. "→") kebaca benar saat dibuka di Excel Windows.
+  const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `laporan-keuangan_${dari || "awal"}_sd_${sampai || "sekarang"}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // Bulan berjalan (YYYY-MM-01 s/d hari ini) sebagai rentang default saat
 // halaman pertama dibuka — cukup relevan buat cek arus kas "bulan ini"
@@ -65,12 +114,41 @@ function Transaksi({ keuanganTransaksi, master, setModal }) {
         title="Keuangan"
         description="Pencatatan kas masuk, kas keluar, dan transfer antar rekening. Ringkasan mengikuti rentang tanggal yang dipilih di bawah."
         action={
-          <button
-            onClick={() => setModal({ type: "keuangan-transaksi-form" })}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-          >
-            <Plus size={14} /> Transaksi
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() =>
+                downloadLaporanCsv({
+                  rows: filtered.map((t) => ({
+                    tanggal: t.tanggal,
+                    jenisLabel: t.tipe === "masuk" ? "Pemasukan" : t.tipe === "keluar" ? "Pengeluaran" : "Transfer",
+                    rekeningLabel: labelDari(rekeningList, t.rekening),
+                    rekeningTujuanLabel: t.tipe === "transfer" ? labelDari(rekeningList, t.rekening_tujuan) : "",
+                    kategoriLabel:
+                      t.tipe === "masuk"
+                        ? labelDari(kategoriMasukList, t.kategori)
+                        : t.tipe === "keluar"
+                        ? labelDari(kategoriKeluarList, t.kategori)
+                        : "",
+                    keterangan: t.keterangan,
+                    jumlah: t.jumlah,
+                  })),
+                  dari,
+                  sampai,
+                  ringkasan: { masuk, keluar, saldo },
+                })
+              }
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Download size={14} /> Laporan
+            </button>
+            <button
+              onClick={() => setModal({ type: "keuangan-transaksi-form" })}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Plus size={14} /> Transaksi
+            </button>
+          </div>
         }
       />
 
