@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, inputClass } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
@@ -998,7 +998,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
 // di halaman Keuangan > Rekening & Kategori (prop `master`, dengan shape
 // { rekening: [], kategori_masuk: [], kategori_keluar: [] } — masing-masing
 // array berisi { kode, label } dari tabel master_data).
-export function KeuanganTransaksiForm({ transaksi, master, onClose, onSubmit, saving }) {
+export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
   const [tipe, setTipe] = useState(transaksi?.tipe || "masuk");
@@ -1011,6 +1011,7 @@ export function KeuanganTransaksiForm({ transaksi, master, onClose, onSubmit, sa
   const daftarRekening = master?.rekening || [];
   const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
   const isTransfer = tipe === "transfer";
+  const isKeluarSaldo = tipe === "keluar" || isTransfer; // dua-duanya narik dari saldo rekening asal
 
   const gantiTipe = (t) => {
     setTipe(t);
@@ -1022,12 +1023,22 @@ export function KeuanganTransaksiForm({ transaksi, master, onClose, onSubmit, sa
     }
   };
 
+  // Saldo rekening asal SAAT INI, dihitung dari semua transaksi lain (kalau
+  // sedang edit transaksi ini, transaksi lama ini sendiri dikeluarkan dulu
+  // dari perhitungan supaya tidak dobel-hitung dampaknya ke saldo).
+  const riwayatUntukSaldo = (keuanganTransaksi || []).filter((t) => t.id !== transaksi?.id);
+  const saldoSaatIni = saldoPerRekening(riwayatUntukSaldo, daftarRekening);
+  const saldoRekeningAsal = rekening ? (saldoSaatIni.find((r) => r.kode === rekening)?.saldo ?? 0) : null;
+
   const jumlahNum = Number(jumlah) || 0;
+  const saldoTidakCukup = isKeluarSaldo && rekening && jumlahNum > 0 && jumlahNum > saldoRekeningAsal;
+
   const canSubmit =
     tanggal &&
     rekening &&
     jumlahNum > 0 &&
     !saving &&
+    !saldoTidakCukup &&
     (isTransfer ? rekeningTujuan && rekeningTujuan !== rekening : !!kategori);
 
   return (
@@ -1086,6 +1097,11 @@ export function KeuanganTransaksiForm({ transaksi, master, onClose, onSubmit, sa
             Belum ada rekening terdaftar — tambah dulu di menu Keuangan &gt; Rekening &amp; Kategori.
           </div>
         )}
+        {rekening && saldoRekeningAsal !== null && (
+          <div className={`text-[11px] mt-1 ${saldoTidakCukup ? "text-red-400" : "text-slate-500"}`}>
+            Saldo saat ini: {fmtRp(saldoRekeningAsal)}
+          </div>
+        )}
       </Field>
 
       {isTransfer && (
@@ -1141,6 +1157,16 @@ export function KeuanganTransaksiForm({ transaksi, master, onClose, onSubmit, sa
             : `Dicatat otomatis sebagai ${tipe === "masuk" ? "kas masuk (+)" : "kas keluar (-)"}.`}
         </div>
       </Field>
+
+      {saldoTidakCukup && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Saldo {daftarRekening.find((r) => r.kode === rekening)?.label || rekening} tidak cukup — saldo saat ini
+            hanya {fmtRp(saldoRekeningAsal)}, tapi jumlah transaksi {fmtRp(jumlahNum)}.
+          </div>
+        </div>
+      )}
 
       <button
         disabled={!canSubmit}

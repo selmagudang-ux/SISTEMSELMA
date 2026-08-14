@@ -188,7 +188,7 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, saving, setSaving, reload, showToast, session,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, keuanganTransaksi, saving, setSaving, reload, showToast, session,
   pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
   const close = () => setModal(null);
@@ -502,6 +502,7 @@ export default function ModalRouter({
       <KeuanganTransaksiForm
         transaksi={t}
         master={master}
+        keuanganTransaksi={keuanganTransaksi}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>

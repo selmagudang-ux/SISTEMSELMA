@@ -407,6 +407,7 @@ function MainApp({ session, onLogout }) {
           skuMaster={skuMaster}
           penempatan={penempatan}
           items={items}
+          keuanganTransaksi={keuanganTransaksi}
           saving={saving}
           setSaving={setSaving}
           reload={loadAll}
