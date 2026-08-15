@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Search, Plus, Minus, Pencil, Trash2, X, ShoppingCart } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell } from "../components/ui";
-import { sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan } from "../lib/api";
+import { sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, pelangganDenganWa } from "../lib/api";
 
 export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
@@ -386,6 +386,13 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   const pelangganOptions = pelangganGrosir.map((p) => ({ value: p.id, label: `${p.nama} (${p.kode})` }));
   const tokoOptions = tokoGrosir.map((t) => ({ value: t.id, label: `${t.nama_toko} (${t.kode})` }));
 
+  // Kalau user ketik nama pelanggan baru + WA yang ternyata sudah dipakai
+  // pelanggan lain, tampilkan peringatan dan cegah simpan pesanan supaya
+  // tidak kebentuk data pelanggan dobel untuk WA yang sama.
+  const pelangganBaruBentrok = pelangganNamaBaru.trim() && pelangganWaBaru.trim()
+    ? pelangganDenganWa(pelangganWaBaru, pelangganGrosir)
+    : null;
+
   const addRow = (sumberProduk) => setRows((prev) => [...prev, newItemRow(sumberProduk)]);
   const removeRow = (key) => setRows((prev) => prev.filter((r) => r._key !== key));
   const updateRow = (key, patch) =>
@@ -440,7 +447,11 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
 
   const errors = rows.map(rowError);
   const canSubmit =
-    (pelangganId || pelangganNamaBaru.trim()) && rows.length > 0 && errors.every((e) => !e) && !saving;
+    (pelangganId || pelangganNamaBaru.trim()) &&
+    !pelangganBaruBentrok &&
+    rows.length > 0 &&
+    errors.every((e) => !e) &&
+    !saving;
 
   const resetForm = () => {
     setPelangganId("");
@@ -456,6 +467,10 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   };
 
   const submit = async () => {
+    if (pelangganBaruBentrok) {
+      showToast(`No. WA ini sudah terdaftar atas nama ${pelangganBaruBentrok.nama}`, "err");
+      return;
+    }
     setSaving(true);
     try {
       // 0. Kalau pelanggan dipilih dari daftar, pakai id-nya. Kalau tidak (user
@@ -612,7 +627,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
           {pelangganNamaBaru.trim() && (
             <div className="grid grid-cols-2 gap-1.5 mt-1.5">
               <input
-                className={inputClass}
+                className={`${inputClass} ${pelangganBaruBentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
                 value={pelangganWaBaru}
                 onChange={(e) => setPelangganWaBaru(e.target.value)}
                 placeholder="No. WA (opsional)"
@@ -629,6 +644,12 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
                 onChange={(e) => setPelangganAlamatBaru(e.target.value)}
                 placeholder="Alamat (opsional)"
               />
+              {pelangganBaruBentrok && (
+                <div className="col-span-2 text-[11px] text-red-400">
+                  No. WA ini sudah terdaftar atas nama {pelangganBaruBentrok.nama} ({pelangganBaruBentrok.kode}).
+                  Pilih pelanggan itu dari daftar di atas, bukan buat yang baru.
+                </div>
+              )}
             </div>
           )}
         </Field>

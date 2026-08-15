@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, inputClass, InputTanggal } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
@@ -838,13 +838,17 @@ export function TambahRakForm({ onClose, onSubmit, saving }) {
 // edit (kode tidak bisa diubah, sudah dipakai sebagai referensi di pesanan
 // nanti); kalau kosong berarti tambah baru (kode dibuat otomatis oleh
 // pemanggil / ModalRouter sebelum form ini tampil, lihat prop `kodeBaru`).
-export function PelangganForm({ pelanggan, kodeBaru, onClose, onSubmit, saving }) {
+export function PelangganForm({ pelanggan, pelangganList, kodeBaru, onClose, onSubmit, saving }) {
   const [nama, setNama] = useState(pelanggan?.nama || "");
   const [wa, setWa] = useState(pelanggan?.wa || "");
   const [alamat, setAlamat] = useState(pelanggan?.alamat || "");
   const [kota, setKota] = useState(pelanggan?.kota || "");
   const [catatan, setCatatan] = useState(pelanggan?.catatan || "");
   const kode = pelanggan?.kode || kodeBaru;
+
+  // Cek apakah no. WA yang lagi diketik sudah dipakai pelanggan lain —
+  // dibandingkan dalam bentuk yang sudah dinormalisasi (0812.../+62812... dianggap sama).
+  const bentrok = wa.trim() ? pelangganDenganWa(wa, pelangganList, pelanggan?.id) : null;
 
   return (
     <ModalShell title={pelanggan ? `Edit Pelanggan — ${kode}` : "Tambah Pelanggan"} onClose={onClose}>
@@ -853,12 +857,24 @@ export function PelangganForm({ pelanggan, kodeBaru, onClose, onSubmit, saving }
         <div className="font-mono text-sm text-amber-400">{kode}</div>
       </div>
       <Field label="Nama"><input className={inputClass} value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama pelanggan / toko" /></Field>
-      <Field label="No. WA"><input className={inputClass} value={wa} onChange={(e) => setWa(e.target.value)} placeholder="08xxxxxxxxxx" /></Field>
+      <Field label="No. WA">
+        <input
+          className={`${inputClass} ${bentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
+          value={wa}
+          onChange={(e) => setWa(e.target.value)}
+          placeholder="08xxxxxxxxxx"
+        />
+        {bentrok && (
+          <div className="text-[11px] text-red-400 mt-1">
+            No. WA ini sudah terdaftar atas nama {bentrok.nama} ({bentrok.kode}).
+          </div>
+        )}
+      </Field>
       <Field label="Alamat"><input className={inputClass} value={alamat} onChange={(e) => setAlamat(e.target.value)} /></Field>
       <Field label="Kota"><input className={inputClass} value={kota} onChange={(e) => setKota(e.target.value)} /></Field>
       <Field label="Catatan"><input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Opsional" /></Field>
       <button
-        disabled={!nama.trim() || saving}
+        disabled={!nama.trim() || !!bentrok || saving}
         onClick={() =>
           onSubmit({
             kode,

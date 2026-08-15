@@ -229,6 +229,7 @@ export default function ModalRouter({
     return (
       <PelangganForm
         pelanggan={p}
+        pelangganList={pelangganGrosir}
         kodeBaru={p ? null : nextKode(pelangganGrosir, "kode", "PLG-")}
         onClose={close}
         saving={saving}

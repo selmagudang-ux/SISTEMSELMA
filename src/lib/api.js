@@ -207,6 +207,27 @@ export function todayDDMMYYYY() {
   return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
 }
 
+// Samakan format no. WA supaya "0812...", "62812...", "+62812...", atau yang
+// pakai spasi/strip/kurung semuanya dianggap nomor yang sama saat dibandingkan.
+// Contoh: "0812-3456-7890" dan "+62 812 3456 7890" -> sama-sama "8123456789...".
+export function normalisasiWa(wa) {
+  const digit = (wa || "").replace(/\D/g, "");
+  if (digit.startsWith("62")) return digit.slice(2);
+  if (digit.startsWith("0")) return digit.slice(1);
+  return digit;
+}
+
+// Cari pelanggan grosir lain yang sudah pakai no. WA yang sama (dibandingkan
+// dalam bentuk yang sudah dinormalisasi). exceptId dipakai saat edit supaya
+// pelanggan itu sendiri tidak dianggap "bentrok" dengan WA-nya sendiri.
+export function pelangganDenganWa(wa, pelangganList, exceptId) {
+  const target = normalisasiWa(wa);
+  if (!target) return null;
+  return (pelangganList || []).find(
+    (p) => p.id !== exceptId && p.wa && normalisasiWa(p.wa) === target
+  ) || null;
+}
+
 // =========================================================
 // GROSIR — CICILAN HUTANG & DEPOSIT PELANGGAN
 // (helper hitung dinamis, sama pola dengan sistem grosir lama:
