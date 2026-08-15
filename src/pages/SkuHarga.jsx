@@ -3,10 +3,11 @@ import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2 } 
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "../lib/api";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
+import { rakForSku } from "./Rak";
 
-export default function SkuHarga({ sub, items, skuMaster, master, setModal }) {
+export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
-  return <MasterBarang skuMaster={skuMaster} items={items} master={master} setModal={setModal} />;
+  return <MasterBarang skuMaster={skuMaster} items={items} master={master} penempatan={penempatan} setModal={setModal} />;
 }
 
 function BuatSkuList({ items, setModal }) {
@@ -43,7 +44,7 @@ function BuatSkuList({ items, setModal }) {
   );
 }
 
-function MasterBarang({ skuMaster, items, master, setModal }) {
+function MasterBarang({ skuMaster, items, master, penempatan, setModal }) {
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");
@@ -104,13 +105,14 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
       [
         { key: "sku", label: "SKU" },
         { key: "stok", label: "Stok" },
+        { key: "rak", label: "Rak" },
         { key: "harga_asli", label: "Harga Asli" },
         { key: "hpp", label: "HPP" },
         { key: "grosir", label: "Grosir" },
         { key: "tengah", label: "Tengah" },
         { key: "ecer", label: "Ecer" },
       ],
-      filtered
+      filtered.map((s) => ({ ...s, rak: rakForSku(s.sku, penempatan) || "" }))
     );
   };
 
@@ -273,6 +275,7 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
                           s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
                         const foto = fotoUntukSku(s.sku, items);
                         const dipilih = selected.has(s.sku);
+                        const kodeRak = rakForSku(s.sku, penempatan);
                         return (
                           <div
                             key={s.id}
@@ -338,9 +341,14 @@ function MasterBarang({ skuMaster, items, master, setModal }) {
                               )}
                               <div className="min-w-0">
                                 <div className="font-mono text-xs text-slate-300 truncate">{s.sku}</div>
-                                <div className="mt-0.5">
+                                <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                                   {s.stok <= 0 ? <Badge color="red">Habis</Badge> : (
                                     <span className="text-[11px] text-slate-500">Stok {s.stok}</span>
+                                  )}
+                                  {kodeRak && (
+                                    <span className="text-[11px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded px-1.5 py-0.5">
+                                      {kodeRak}
+                                    </span>
                                   )}
                                 </div>
                               </div>

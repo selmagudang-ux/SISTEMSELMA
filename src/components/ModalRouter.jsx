@@ -11,7 +11,7 @@ import {
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, KeuanganTransaksiForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
-import { skuForRak } from "../pages/Rak";
+import { skuForRak, rakForSku } from "../pages/Rak";
 import { EditPesananForm } from "../pages/Grosir";
 import { NotaPesananModal, LabelPengirimanModal } from "../pages/NotaGrosir";
 
@@ -1058,6 +1058,7 @@ export default function ModalRouter({
 
   if (modal.type === "detail-sku") {
     const s = modal.item;
+    const kodeRak = rakForSku(s.sku, penempatan);
     const rows = [
       ["Bahan", labelFor(master, "bahan", s.bahan)],
       ["Peruntukan", labelFor(master, "peruntukan", s.peruntukan)],
@@ -1066,6 +1067,7 @@ export default function ModalRouter({
       ["Model", s.model || "—"],
       ["Warna", labelFor(master, "warna", s.warna)],
       ["Ukuran", labelFor(master, "ukuran", s.ukuran)],
+      ...(kodeRak ? [["Rak", kodeRak]] : []),
     ];
     return (
       <ModalShell title={`Detail SKU — ${s.sku}`} onClose={close}>
