@@ -295,6 +295,7 @@ export function Badge({ children, color = "slate" }) {
     pink: "bg-pink-500/10 text-pink-400",
     teal: "bg-teal-500/10 text-teal-400",
     red: "bg-red-500/10 text-red-300",
+    orange: "bg-orange-500/10 text-orange-400",
   };
   return (
     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${map[color] || map.slate}`}>

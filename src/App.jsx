@@ -16,6 +16,7 @@ import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from 
 import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
+import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs } from "./lib/marketplaceNotif";
 import Grosir from "./pages/Grosir";
 import Keuangan from "./pages/Keuangan";
 import Laporan from "./pages/Laporan";
@@ -51,6 +52,7 @@ function MainApp({ session, onLogout }) {
   const [settings, setSettings] = useState(null);
   const [penempatan, setPenempatan] = useState([]);
   const [stockHistory, setStockHistory] = useState([]);
+  const [marketplaceNotifAck, setMarketplaceNotifAck] = useState([]);
   const [pelangganGrosir, setPelangganGrosir] = useState([]);
   const [tokoGrosir, setTokoGrosir] = useState([]);
   const [produkManualGrosir, setProdukManualGrosir] = useState([]);
@@ -103,11 +105,31 @@ function MainApp({ session, onLogout }) {
     }
   };
 
+  // Konfirmasi notifikasi "Cek Marketplace" (stok tipis / stok bertambah /
+  // rak berubah) — simpan key-nya sebagai "sudah dikonfirmasi". Kalau kena
+  // duplikat (mis. sudah diklik dari sesi lain persis di saat yang sama),
+  // anggap sukses, cukup refresh datanya.
+  const ackNotif = async (key) => {
+    try {
+      await sb("marketplace_notif_ack", {
+        method: "POST",
+        body: JSON.stringify({ notif_key: key }),
+      });
+      await loadAll();
+    } catch (e) {
+      if (e.pgCode === "23505") {
+        await loadAll();
+        return;
+      }
+      showToast(e.message || "Gagal menyimpan konfirmasi", "err");
+    }
+  };
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
         sbAll("rak?select=*&order=code"),
@@ -115,6 +137,7 @@ function MainApp({ session, onLogout }) {
         sb("settings?select=*"),
         sbAll("penempatan?select=*&order=created_at.desc"),
         sbAll("stock_history?select=*&order=created_at.desc"),
+        sbAll("marketplace_notif_ack?select=*"),
         sbAll("grosir_pelanggan?select=*&order=nama"),
         sbAll("grosir_toko?select=*&order=nama_toko"),
         sbAll("grosir_produk_manual?select=*&order=nama_produk"),
@@ -136,6 +159,7 @@ function MainApp({ session, onLogout }) {
       setSettings((settingsRes || [])[0] || null);
       setPenempatan(penempatanRes || []);
       setStockHistory(historyRes || []);
+      setMarketplaceNotifAck(notifAckRes || []);
       setPelangganGrosir(pelangganRes || []);
       setTokoGrosir(tokoRes || []);
       setProdukManualGrosir(produkManualRes || []);
@@ -175,6 +199,14 @@ function MainApp({ session, onLogout }) {
   // Sisa di Gudang = SKU berstok yang belum sepenuhnya masuk rak (belum pernah
   // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
   const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
+  // Cek Marketplace — notifikasi stok tipis/habis, stok bertambah, dan rak
+  // berubah, dikurangi yang sudah dikonfirmasi (marketplace_notif_ack).
+  const ackedKeys = new Set((marketplaceNotifAck || []).map((a) => a.notif_key));
+  const historyMap = latestHistoryBySku(stockHistory);
+  const notifTipis = computeStokTipisNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+  const notifTambah = computeStokTambahNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+  const notifRak = computeRakBerubahNotifs(skuMaster, rak, penempatan).filter((n) => !ackedKeys.has(n.key));
+  const cekMarketplaceCount = notifTipis.length + notifTambah.length + notifRak.length;
 
   const sidebarBadges = withParentBadges(NAV, {
     "sku-harga.buat": stageCounts.sku,
@@ -182,6 +214,7 @@ function MainApp({ session, onLogout }) {
     "rak.gudang": sisaGudangList.length,
     foto: stageCounts.verifikasi,
     "marketplace.belum": stageCounts.marketplace,
+    "marketplace.cek": cekMarketplaceCount,
   });
   const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
     .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
@@ -353,7 +386,21 @@ function MainApp({ session, onLogout }) {
                 <FotoProduk items={items} setModal={setModal} />
               )}
               {nav.menu === "marketplace" && (
-                <Marketplace sub={nav.sub || "belum"} items={items} quickAdvance={quickAdvance} setModal={setModal} />
+                <Marketplace
+                  sub={nav.sub || "belum"}
+                  items={items}
+                  quickAdvance={quickAdvance}
+                  setModal={setModal}
+                  skuMaster={skuMaster}
+                  rak={rak}
+                  penempatan={penempatan}
+                  stockHistory={stockHistory}
+                  navigate={navigate}
+                  notifTipis={notifTipis}
+                  notifTambah={notifTambah}
+                  notifRak={notifRak}
+                  ackNotif={ackNotif}
+                />
               )}
               {nav.menu === "grosir" && (
                 <Grosir
