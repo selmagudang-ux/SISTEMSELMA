@@ -344,7 +344,7 @@ function MainApp({ session, onLogout }) {
                 <Stok sub={nav.sub || "barang"} skuMaster={skuMaster} penempatan={penempatan} stockHistory={stockHistory} setModal={setModal} />
               )}
               {nav.menu === "rak" && (
-                <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />
+                <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} skuMaster={skuMaster} master={master} setModal={setModal} />
               )}
               {nav.menu === "cetak-label" && (
                 <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} master={master} />

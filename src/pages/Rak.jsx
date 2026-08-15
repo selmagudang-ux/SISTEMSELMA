@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
-import { sameProdukKecualiUkuran } from "../lib/api";
+import { sameProdukKecualiUkuran, labelFor } from "../lib/api";
 
 // Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
 // Diekspor supaya halaman lain (Data Barang, Cetak Label) bisa pakai sumber yang sama
@@ -100,9 +100,9 @@ export function barangSisaDiGudang(skuMaster, rak, penempatan) {
   return out;
 }
 
-export default function Rak({ sub, items, rak, penempatan, skuMaster, setModal }) {
+export default function Rak({ sub, items, rak, penempatan, skuMaster, master, setModal }) {
   if (sub === "peta")
-    return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />;
+    return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} master={master} setModal={setModal} />;
   if (sub === "gudang")
     return <SisaGudang rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
@@ -294,8 +294,9 @@ function compareMeja(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-function PetaRak({ rak, penempatan, skuMaster, setModal }) {
+function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
   const [q, setQ] = useState("");
+  const [kategori, setKategori] = useState("");
   const groups = {};
   rak.forEach((r) => {
     const key = r.meja || "Tanpa Meja";
@@ -375,6 +376,23 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
     return skuDiRak(r.code).some(({ sku }) => (sku || "").toLowerCase().includes(qLower));
   };
 
+  // Filter kategori (opsional) — mempersempit ke rak yang memuat minimal
+  // satu SKU dari kategori terpilih. Dropdown-nya independen dari kolom cari
+  // di atas: kalau tidak dipilih ("Semua Kategori"), tidak mempengaruhi apa-apa.
+  const kategoriOptions = Array.from(
+    new Set((skuMaster || []).map((s) => s.kategori).filter(Boolean))
+  ).sort();
+  const kategoriLabel = (kode) => labelFor(master || {}, "kategori", kode);
+  const rakSesuaiKategori = (r) => {
+    if (!kategori) return true;
+    return skuDiRak(r.code).some(({ sku }) => {
+      const s = (skuMaster || []).find((x) => x.sku === sku);
+      return s && s.kategori === kategori;
+    });
+  };
+
+  const tampilRak = (r) => rakCocok(r) && rakSesuaiKategori(r);
+
   return (
     <div>
       <PageHeader
@@ -383,14 +401,27 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
       />
 
       <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-          <Search size={14} className="text-slate-500" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari kode rak atau SKU…"
-            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[200px]">
+            <Search size={14} className="text-slate-500" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Cari kode rak atau SKU…"
+              className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+            />
+          </div>
+          <select
+            value={kategori}
+            onChange={(e) => setKategori(e.target.value)}
+            disabled={kategoriOptions.length === 0}
+            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none disabled:opacity-40"
+          >
+            <option value="">Semua Kategori</option>
+            {kategoriOptions.map((k) => (
+              <option key={k} value={k}>{kategoriLabel(k)}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -437,18 +468,24 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
 
       {rak.length === 0 ? (
         <EmptyState label="Belum ada rak untuk dipetakan." />
-      ) : groupKeys.every((meja) => !groups[meja].some(rakCocok)) ? (
-        <EmptyState label="Tidak ada rak atau SKU yang cocok dengan pencarian." />
+      ) : groupKeys.every((meja) => !groups[meja].some(tampilRak)) ? (
+        <EmptyState
+          label={
+            kategori
+              ? "Tidak ada rak yang berisi SKU dari kategori ini (atau tidak cocok dengan pencarian)."
+              : "Tidak ada rak atau SKU yang cocok dengan pencarian."
+          }
+        />
       ) : (
         <div className="space-y-6">
           {groupKeys
-            .filter((meja) => groups[meja].some(rakCocok))
+            .filter((meja) => groups[meja].some(tampilRak))
             .map((meja) => (
             <div key={meja}>
               <div className="text-xs font-semibold text-slate-400 mb-2">Meja {meja}</div>
               <div className="flex flex-wrap gap-2">
                 {groups[meja]
-                  .filter(rakCocok)
+                  .filter(tampilRak)
                   .sort((a, b) =>
                     (a.code || "").localeCompare(b.code || "", undefined, {
                       numeric: true,
