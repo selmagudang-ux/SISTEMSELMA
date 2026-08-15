@@ -382,14 +382,16 @@ function PetaRak({ rak, penempatan, skuMaster, setModal }) {
         description="Tampilan visual rak, dikelompokkan per meja, lengkap dengan SKU yang mengisi tiap rak."
       />
 
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari kode rak atau SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari kode rak atau SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
       </div>
 
       {rakGanda.length > 0 && (
