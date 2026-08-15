@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Plus, Pencil, Trash2, X, ShoppingCart } from "lucide-react";
+import { Search, Plus, Minus, Pencil, Trash2, X, ShoppingCart } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell } from "../components/ui";
 import { sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan } from "../lib/api";
 
@@ -391,6 +391,30 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   const updateRow = (key, patch) =>
     setRows((prev) => prev.map((r) => (r._key === key ? { ...r, ...patch } : r)));
 
+  // Tambah cepat: cari SKU sekali, langsung masuk daftar dengan qty 1 (harga
+  // grosir otomatis terisi dari Master Barang) — kalau SKU itu sudah ada di
+  // daftar, qty-nya tinggal ditambah 1, tidak bikin baris baru dobel. Jauh
+  // lebih cepat daripada klik "+ Dari Data Barang" lalu cari SKU tiap kali.
+  const quickAddSku = (sku) => {
+    if (!sku) return;
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.sumber_produk === "sku" && r.sku === sku);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], qty: (Number(next[idx].qty) || 0) + 1 };
+        return next;
+      }
+      const s = skuMaster.find((x) => x.sku === sku);
+      return [
+        ...prev,
+        { ...newItemRow("sku"), sku, nama_produk: sku, harga: s?.grosir || 0, stokTersedia: s?.stok || 0, qty: 1 },
+      ];
+    });
+  };
+  const quickAddSkuOptions = skuMaster
+    .filter((s) => !s.nonaktif)
+    .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
+
   // Total qty per SKU yang sudah dipakai di baris lain — supaya validasi stok
   // benar walau SKU yang sama dipilih di lebih dari satu baris.
   const qtyTerpakaiPerSku = (skuKey, kecualiKey) =>
@@ -618,12 +642,23 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
         </Field>
       </div>
 
+      <div className="mb-3 max-w-md">
+        <Field label="Tambah Cepat dari Data Barang">
+          <SearchableSelect
+            value=""
+            onChange={quickAddSku}
+            options={quickAddSkuOptions}
+            placeholder="Ketik SKU, langsung masuk ke daftar…"
+          />
+        </Field>
+      </div>
+
       <div className="mb-3 flex items-center gap-2">
         <button
           onClick={() => addRow("sku")}
           className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
         >
-          <Plus size={14} /> Dari Data Barang
+          <Plus size={14} /> Baris Kosong dari Data Barang
         </button>
         <button
           onClick={() => addRow("manual")}
@@ -754,14 +789,32 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
               />
             </div>
           )}
-          <input
-            type="number"
-            min="1"
-            className={inputClass}
-            value={row.qty}
-            onChange={(e) => onChange({ qty: e.target.value === "" ? "" : Number(e.target.value) })}
-            placeholder="Qty"
-          />
+          <div className="flex items-center border border-slate-800 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => onChange({ qty: Math.max(1, (Number(row.qty) || 0) - 1) })}
+              className="px-2.5 py-2 text-slate-400 hover:text-white hover:bg-slate-800 flex-shrink-0"
+              tabIndex={-1}
+            >
+              <Minus size={12} />
+            </button>
+            <input
+              type="number"
+              min="1"
+              className="w-full bg-slate-950 text-center text-sm outline-none py-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              value={row.qty}
+              onChange={(e) => onChange({ qty: e.target.value === "" ? "" : Number(e.target.value) })}
+              placeholder="Qty"
+            />
+            <button
+              type="button"
+              onClick={() => onChange({ qty: (Number(row.qty) || 0) + 1 })}
+              className="px-2.5 py-2 text-slate-400 hover:text-white hover:bg-slate-800 flex-shrink-0"
+              tabIndex={-1}
+            >
+              <Plus size={12} />
+            </button>
+          </div>
           <input
             type="number"
             min="0"
@@ -830,6 +883,28 @@ export function EditPesananForm({
 
   const tokoOptions = (tokoGrosir || []).map((t) => ({ value: t.id, label: `${t.nama_toko} (${t.kode})` }));
 
+  // Tambah cepat: sama seperti di Buat Pesanan — cari SKU sekali langsung
+  // masuk daftar, kalau sudah ada tinggal qty-nya ditambah.
+  const quickAddSku = (sku) => {
+    if (!sku) return;
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.sumber_produk === "sku" && r.sku === sku);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = { ...next[idx], qty: (Number(next[idx].qty) || 0) + 1 };
+        return next;
+      }
+      const s = editableSkuMaster.find((x) => x.sku === sku);
+      return [
+        ...prev,
+        { ...newItemRow("sku"), sku, nama_produk: sku, harga: s?.grosir || 0, stokTersedia: s?.stok || 0, qty: 1 },
+      ];
+    });
+  };
+  const quickAddSkuOptions = editableSkuMaster
+    .filter((s) => !s.nonaktif)
+    .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
+
   const addRow = (sumberProduk) => setRows((prev) => [...prev, newItemRow(sumberProduk)]);
   const removeRow = (key) => setRows((prev) => prev.filter((r) => r._key !== key));
   const updateRow = (key, patch) =>
@@ -896,12 +971,23 @@ export function EditPesananForm({
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>
 
-      <div className="my-3 flex items-center gap-2">
+      <div className="my-3">
+        <Field label="Tambah Cepat dari Data Barang">
+          <SearchableSelect
+            value=""
+            onChange={quickAddSku}
+            options={quickAddSkuOptions}
+            placeholder="Ketik SKU, langsung masuk ke daftar…"
+          />
+        </Field>
+      </div>
+
+      <div className="mb-3 flex items-center gap-2">
         <button
           onClick={() => addRow("sku")}
           className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
         >
-          <Plus size={14} /> Dari Data Barang
+          <Plus size={14} /> Baris Kosong dari Data Barang
         </button>
         <button
           onClick={() => addRow("manual")}
