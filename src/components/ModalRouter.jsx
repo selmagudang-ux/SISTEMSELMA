@@ -11,7 +11,7 @@ import {
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, KeuanganTransaksiForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
-import { skuForRak, rakForSku } from "../pages/Rak";
+import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 import { EditPesananForm } from "../pages/Grosir";
 import { NotaPesananModal, LabelPengirimanModal } from "../pages/NotaGrosir";
 
@@ -1652,6 +1652,19 @@ export default function ModalRouter({
                 note,
               }),
             });
+            // Samakan qty di rak (FIFO: rak paling lama ditempatkan duluan
+            // yang dikurangi) supaya Peta Rak tetap sinkron dengan stok baru.
+            const rencana = rencanaKurangiRak(modal.item.sku, qty, penempatan);
+            for (const r of rencana) {
+              if (r.qtyBaru <= 0) {
+                await sb(`penempatan?id=eq.${r.id}`, { method: "DELETE" });
+              } else {
+                await sb(`penempatan?id=eq.${r.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ qty: r.qtyBaru }),
+                });
+              }
+            }
           }, "Barang keluar dicatat, stok diperbarui")
         }
       />
@@ -1752,6 +1765,24 @@ export default function ModalRouter({
                   // lagi SKU-nya (jaga-jaga kalau sebelumnya sempat dinonaktifkan).
                   body: JSON.stringify({ stok: qtyFisik, ...(qtyFisik > 0 ? { nonaktif: false } : {}) }),
                 });
+                // Kalau hasil opname LEBIH KECIL dari stok sistem, samakan juga
+                // qty di rak (FIFO) supaya Peta Rak tidak nunjukkin lebih banyak
+                // dari stok yang sebenarnya. Kalau lebih besar (stok nambah),
+                // kita TIDAK menebak-nebak taruh selisihnya di rak mana — biarkan
+                // muncul di "Sisa di Gudang" supaya ditempatkan manual.
+                if (selisih < 0) {
+                  const rencana = rencanaKurangiRak(s.sku, -selisih, penempatan);
+                  for (const r of rencana) {
+                    if (r.qtyBaru <= 0) {
+                      await sb(`penempatan?id=eq.${r.id}`, { method: "DELETE" });
+                    } else {
+                      await sb(`penempatan?id=eq.${r.id}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ qty: r.qtyBaru }),
+                      });
+                    }
+                  }
+                }
               }, "Stok disesuaikan sesuai hasil opname")
             }
             className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"

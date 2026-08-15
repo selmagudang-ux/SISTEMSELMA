@@ -100,6 +100,34 @@ export function barangSisaDiGudang(skuMaster, rak, penempatan) {
   return out;
 }
 
+// Susun daftar perubahan ke baris-baris `penempatan` sebuah SKU supaya total
+// qty yang tertempatkan di rak ikut berkurang saat stoknya berkurang (lewat
+// Barang Keluar atau Stok Opname turun) — supaya Peta Rak tetap sinkron
+// dengan Stok Barang. Aturan FIFO: rak yang PALING LAMA ditempatkan
+// dikurangi/dihabiskan duluan, baru lanjut ke rak berikutnya kalau masih
+// kurang. Tidak menyentuh baris SKU lain atau rak yang tidak diisi SKU ini.
+// Return: array of { id, qtyBaru } (qtyBaru <= 0 berarti baris itu harus
+// DIHAPUS, bukan di-PATCH ke 0) — pemanggil yang eksekusi ke Supabase.
+export function rencanaKurangiRak(sku, jumlahKurang, penempatan) {
+  let sisaKurang = Math.max(Number(jumlahKurang) || 0, 0);
+  if (sisaKurang <= 0) return [];
+
+  const baris = (penempatan || [])
+    .filter((p) => p.sku === sku)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); // oldest first (FIFO)
+
+  const out = [];
+  for (const b of baris) {
+    if (sisaKurang <= 0) break;
+    const qtyLama = Number(b.qty) || 0;
+    if (qtyLama <= 0) continue;
+    const potong = Math.min(qtyLama, sisaKurang);
+    out.push({ id: b.id, qtyBaru: qtyLama - potong });
+    sisaKurang -= potong;
+  }
+  return out;
+}
+
 export default function Rak({ sub, items, rak, penempatan, skuMaster, master, setModal }) {
   if (sub === "peta")
     return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} master={master} setModal={setModal} />;
