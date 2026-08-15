@@ -27,7 +27,6 @@ export default function Marketplace({
         notifRakPindah={notifRakPindah}
         notifRakKosong={notifRakKosong}
         ackNotif={ackNotif}
-        navigate={navigate}
       />
     );
   return <BelumUpload items={items} quickAdvance={quickAdvance} setModal={setModal} />;
@@ -42,7 +41,7 @@ export default function Marketplace({
 // setelah diklik "Sudah" / "Sudah diperbarui" — dan otomatis muncul lagi
 // kalau kondisinya berubah lagi setelah itu (mis. stok berubah lagi, atau
 // rak dipindah/dikosongkan lagi).
-function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, notifRakKosong, ackNotif, navigate }) {
+function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, notifRakKosong, ackNotif }) {
   const [q, setQ] = useState("");
   const lower = q.toLowerCase();
 
@@ -214,15 +213,6 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
               </div>
             ))}
           </CekSection>
-
-          {navigate && (
-            <button
-              onClick={() => navigate("rak", "peta")}
-              className="text-[11px] font-medium text-slate-400 hover:text-slate-200"
-            >
-              Buka Peta Rak →
-            </button>
-          )}
         </div>
       )}
     </div>
