@@ -653,25 +653,10 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
         </Field>
       </div>
 
-      <div className="mb-3 flex items-center gap-2">
-        <button
-          onClick={() => addRow("sku")}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
-        >
-          <Plus size={14} /> Baris Kosong dari Data Barang
-        </button>
-        <button
-          onClick={() => addRow("manual")}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
-        >
-          <Plus size={14} /> Item Manual
-        </button>
-      </div>
-
       {rows.length === 0 ? (
         <EmptyState label="Belum ada item. Tambahkan dari Data Barang atau input manual." />
       ) : (
-        <div className="space-y-2 mb-4">
+        <div className="space-y-2 mb-3">
           {rows.map((r, i) => (
             <ItemRow
               key={r._key}
@@ -685,6 +670,24 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
           ))}
         </div>
       )}
+
+      {/* Tombol tambah baris ditaruh di bawah daftar (bukan cuma di atas) supaya
+          kalau lagi ngisi item paling bawah, tidak perlu scroll ke atas lagi
+          buat nambah baris berikutnya. */}
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => addRow("sku")}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
+        >
+          <Plus size={14} /> Baris Kosong dari Data Barang
+        </button>
+        <button
+          onClick={() => addRow("manual")}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
+        >
+          <Plus size={14} /> Item Manual
+        </button>
+      </div>
 
       {rows.length > 0 && (
         <div className="max-w-2xl">
@@ -804,6 +807,7 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
               className="w-full bg-slate-950 text-center text-sm outline-none py-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               value={row.qty}
               onChange={(e) => onChange({ qty: e.target.value === "" ? "" : Number(e.target.value) })}
+              onWheel={(e) => e.target.blur()}
               placeholder="Qty"
             />
             <button
@@ -821,6 +825,7 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
             className={inputClass}
             value={row.harga}
             onChange={(e) => onChange({ harga: e.target.value === "" ? "" : Number(e.target.value) })}
+            onWheel={(e) => e.target.blur()}
             placeholder="Harga"
           />
         </div>
@@ -982,25 +987,10 @@ export function EditPesananForm({
         </Field>
       </div>
 
-      <div className="mb-3 flex items-center gap-2">
-        <button
-          onClick={() => addRow("sku")}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
-        >
-          <Plus size={14} /> Baris Kosong dari Data Barang
-        </button>
-        <button
-          onClick={() => addRow("manual")}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
-        >
-          <Plus size={14} /> Item Manual
-        </button>
-      </div>
-
       {rows.length === 0 ? (
         <EmptyState label="Belum ada item. Tambahkan dari Data Barang atau input manual." />
       ) : (
-        <div className="space-y-2 mb-4">
+        <div className="space-y-2 mb-3">
           {rows.map((r, i) => (
             <ItemRow
               key={r._key}
@@ -1014,6 +1004,23 @@ export function EditPesananForm({
           ))}
         </div>
       )}
+
+      {/* Tombol tambah baris ditaruh di bawah daftar supaya tidak perlu
+          scroll ke atas lagi saat lagi ngisi item paling bawah. */}
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => addRow("sku")}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
+        >
+          <Plus size={14} /> Baris Kosong dari Data Barang
+        </button>
+        <button
+          onClick={() => addRow("manual")}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-amber-400"
+        >
+          <Plus size={14} /> Item Manual
+        </button>
+      </div>
 
       <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 mb-4">
         <span className="text-sm text-slate-400">Total Pesanan</span>
