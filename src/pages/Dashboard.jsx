@@ -1,20 +1,38 @@
 import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
-  ShoppingCart, Wallet, TrendingUp, Package, Warehouse, Store,
+  ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
+  Landmark, ArrowRight,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
-import { fmtRp, sisaHutangPesanan } from "../lib/api";
+import {
+  fmtRp,
+  sisaHutangPesanan,
+  ringkasanKeuangan,
+  saldoPerRekening,
+  arusKasPerPeriode,
+  breakdownPengeluaranKategori,
+} from "../lib/api";
 import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
+import { GrafikArusKas, BreakdownPengeluaran, labelDari } from "./Keuangan";
 
-// Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir supaya
-// masing-masing tetap fokus (angka gudang tidak nyampur sama angka grosir),
-// tapi tetap satu halaman "Dashboard" (pola sama seperti halaman Laporan),
-// bukan dua menu terpisah di sidebar.
+// Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
+// supaya masing-masing tetap fokus (angka gudang tidak nyampur sama angka
+// grosir/keuangan), tapi tetap satu halaman "Dashboard" (pola sama seperti
+// halaman Laporan), bukan menu terpisah di sidebar.
 const TABS = [
   { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
   { key: "grosir", label: "Dashboard Grosir", icon: Store },
+  { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
 ];
+
+function awalBulanIni() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+function hariIniIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function isToday(dateStr) {
   if (!dateStr) return false;
@@ -41,6 +59,8 @@ export default function Dashboard({
   pembayaranGrosir = [],
   depositGrosir = [],
   pelangganGrosir = [],
+  keuanganTransaksi = [],
+  master = {},
 }) {
   const [tab, setTab] = useState("gudang");
 
@@ -51,11 +71,13 @@ export default function Dashboard({
         description={
           tab === "grosir"
             ? "Ringkasan penjualan, piutang, dan deposit pelanggan grosir."
+            : tab === "keuangan"
+            ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
         }
       />
 
-      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-xs">
+      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-md">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
@@ -84,7 +106,7 @@ export default function Dashboard({
           onNavigate={onNavigate}
           setModal={setModal}
         />
-      ) : (
+      ) : tab === "grosir" ? (
         <DashboardGrosir
           pesananGrosir={pesananGrosir}
           pembayaranGrosir={pembayaranGrosir}
@@ -92,7 +114,113 @@ export default function Dashboard({
           pelangganGrosir={pelangganGrosir}
           onNavigate={onNavigate}
         />
+      ) : (
+        <DashboardKeuangan
+          keuanganTransaksi={keuanganTransaksi}
+          master={master}
+          onNavigate={onNavigate}
+        />
       )}
+    </div>
+  );
+}
+
+function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
+  const dari = awalBulanIni();
+  const sampai = hariIniIso();
+  const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
+  const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
+  const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
+
+  // Arus kas 60 hari terakhir supaya grafik dashboard fokus ke tren terkini,
+  // bukan sejak awal berdirinya usaha (itu ranahnya Laporan Keuangan).
+  const batasAwal = new Date();
+  batasAwal.setDate(batasAwal.getDate() - 60);
+  const batasAwalIso = batasAwal.toISOString().slice(0, 10);
+  const transaksi60Hari = keuanganTransaksi.filter((t) => t.tanggal >= batasAwalIso);
+  const { mode, data: dataArusKas } = arusKasPerPeriode(transaksi60Hari);
+
+  const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
+
+  const transaksiTerbaru = keuanganTransaksi.slice(0, 6);
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Saldo Kas Saat Ini" value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
+        <StatCard label="Kas Masuk (Bulan Ini)" value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label="Kas Keluar (Bulan Ini)" value={fmtRp(ringkasanBulanIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+        <StatCard
+          label="Laba (Rugi) Bulan Ini"
+          value={fmtRp(ringkasanBulanIni.saldo)}
+          accent={ringkasanBulanIni.saldo >= 0 ? "text-emerald-400" : "text-red-400"}
+          icon={Wallet}
+          iconColor={ringkasanBulanIni.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
+        />
+      </div>
+
+      <GrafikArusKas mode={mode} data={dataArusKas} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <BreakdownPengeluaran total={breakdown.total} data={breakdown.data} />
+
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo per Rekening</div>
+          {saldoRekening.length === 0 ? (
+            <div className="p-6"><EmptyState label="Belum ada rekening terdaftar." /></div>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody>
+                {saldoRekening.map((r) => (
+                  <tr key={r.kode} className="border-b border-slate-800/60 last:border-0">
+                    <td className="px-4 py-2.5 text-slate-300">{r.label}</td>
+                    <td className={`px-4 py-2.5 text-right font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>
+                      {fmtRp(r.saldo)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold">Transaksi Terbaru</div>
+          <button
+            onClick={() => onNavigate && onNavigate("keuangan", "transaksi")}
+            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+          >
+            Kelola Keuangan <ArrowRight size={12} />
+          </button>
+        </div>
+        {transaksiTerbaru.length === 0 ? (
+          <div className="p-6"><EmptyState label="Belum ada transaksi keuangan." /></div>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {transaksiTerbaru.map((t) => (
+                <tr key={t.id} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{t.tanggal}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge color={t.tipe === "masuk" ? "emerald" : t.tipe === "keluar" ? "red" : "sky"}>
+                      {t.tipe === "masuk" ? "Masuk" : t.tipe === "keluar" ? "Keluar" : "Transfer"}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-300">
+                    {t.keterangan || labelDari(master[t.tipe === "keluar" ? "kategori_keluar" : "kategori_masuk"], t.kategori) || "—"}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{labelDari(master.rekening, t.rekening)}</td>
+                  <td className={`px-4 py-2.5 text-right font-semibold ${t.tipe === "masuk" ? "text-emerald-400" : t.tipe === "keluar" ? "text-red-400" : "text-slate-300"}`}>
+                    {fmtRp(t.jumlah)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

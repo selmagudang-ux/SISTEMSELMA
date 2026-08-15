@@ -327,6 +327,8 @@ function MainApp({ session, onLogout }) {
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
                   pelangganGrosir={pelangganGrosir}
+                  keuanganTransaksi={keuanganTransaksi}
+                  master={master}
                 />
               )}
               {nav.menu === "barang-masuk" && (
@@ -387,6 +389,9 @@ function MainApp({ session, onLogout }) {
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
                   pelangganGrosir={pelangganGrosir}
+                  keuanganTransaksi={keuanganTransaksi}
+                  master={master}
+                  onNavigate={navigate}
                 />
               )}
               {nav.menu === "pengaturan" && (

@@ -76,7 +76,7 @@ function hariIniIso() {
 
 // Cari label rekening/kategori dari kode-nya di master data. Kalau kode tidak
 // ketemu di daftar (mis. sudah dihapus), tampilkan kode-nya saja sebagai fallback.
-function labelDari(list, kode) {
+export function labelDari(list, kode) {
   if (!kode) return "";
   const found = (list || []).find((m) => m.kode === kode);
   return found ? found.label : kode;
@@ -141,7 +141,7 @@ function LaporanNarasiModal({ teks, onClose, showToast }) {
 // Skala sumbu-Y otomatis dibulatkan (1/2/5 × 10^n) supaya garis bantu rapi.
 // Lebar SVG pakai viewBox tetap (responsif lewat CSS), dengan scroll horizontal
 // kalau kelompoknya banyak supaya label tanggal tidak berdesakan.
-function GrafikArusKas({ mode, data }) {
+export function GrafikArusKas({ mode, data }) {
   const [hover, setHover] = useState(null);
 
   if (!data || data.length === 0) {
@@ -268,7 +268,7 @@ function potonganDonat(cx, cy, rLuar, rDalam, sudutAwal, sudutAkhir) {
 // Breakdown pengeluaran per kategori: donat + daftar persentase. Kategori di
 // luar 6 besar digabung jadi "Lainnya" di donat (biar potongannya tidak terlalu
 // tipis/rapat), tapi daftar di sisi kanan tetap menampilkan semua kategori.
-function BreakdownPengeluaran({ total, data }) {
+export function BreakdownPengeluaran({ total, data }) {
   const [hover, setHover] = useState(null);
 
   if (total === 0 || data.length === 0) {

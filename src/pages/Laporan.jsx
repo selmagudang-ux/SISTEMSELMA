@@ -1,15 +1,28 @@
 import { useState } from "react";
 import { PageHeader, StatCard, EmptyState } from "../components/ui";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
-import { fmtRp, sisaHutangPesanan, saldoDepositPelanggan } from "../lib/api";
-import { Tag, Boxes, Wallet, MapPin, Upload, UploadCloud, Warehouse, ShoppingCart, TrendingUp, Users } from "lucide-react";
+import {
+  fmtRp,
+  sisaHutangPesanan,
+  saldoDepositPelanggan,
+  ringkasanKeuangan,
+  saldoPerRekening,
+  breakdownPengeluaranKategori,
+} from "../lib/api";
+import { BreakdownPengeluaran } from "./Keuangan";
+import {
+  Tag, Boxes, Wallet, MapPin, Upload, UploadCloud, Warehouse, ShoppingCart,
+  TrendingUp, TrendingDown, Users, Landmark, ArrowRight,
+} from "lucide-react";
 
-// Tab kecil di atas Laporan — pisahkan ringkasan Gudang vs Grosir supaya
-// masing-masing tetap fokus (angka gudang tidak nyampur sama angka grosir),
-// tapi tetap satu halaman "Laporan" seperti sebelumnya, bukan menu terpisah.
+// Tab kecil di atas Laporan — pisahkan ringkasan Gudang vs Grosir vs Keuangan
+// supaya masing-masing tetap fokus (angka gudang tidak nyampur sama angka
+// grosir/keuangan), tapi tetap satu halaman "Laporan" seperti sebelumnya,
+// bukan menu terpisah.
 const TABS = [
   { key: "gudang", label: "Laporan Gudang", icon: Warehouse },
   { key: "grosir", label: "Laporan Grosir", icon: ShoppingCart },
+  { key: "keuangan", label: "Laporan Keuangan", icon: Wallet },
 ];
 
 export default function Laporan({
@@ -20,6 +33,9 @@ export default function Laporan({
   pembayaranGrosir = [],
   depositGrosir = [],
   pelangganGrosir = [],
+  keuanganTransaksi = [],
+  master = {},
+  onNavigate,
 }) {
   const [tab, setTab] = useState("gudang");
 
@@ -30,11 +46,13 @@ export default function Laporan({
         description={
           tab === "grosir"
             ? "Ringkasan penjualan, piutang, dan deposit grosir berdasarkan data terkini."
+            : tab === "keuangan"
+            ? "Ringkasan kas masuk, kas keluar, dan laba/rugi tahun berjalan."
             : "Ringkasan performa gudang berdasarkan data terkini."
         }
       />
 
-      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-xs">
+      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-md">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
@@ -54,14 +72,80 @@ export default function Laporan({
 
       {tab === "gudang" ? (
         <LaporanGudang items={items} skuMaster={skuMaster} rak={rak} />
-      ) : (
+      ) : tab === "grosir" ? (
         <LaporanGrosir
           pesananGrosir={pesananGrosir}
           pembayaranGrosir={pembayaranGrosir}
           depositGrosir={depositGrosir}
           pelangganGrosir={pelangganGrosir}
         />
+      ) : (
+        <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} onNavigate={onNavigate} />
       )}
+    </div>
+  );
+}
+
+function LaporanKeuangan({ keuanganTransaksi, master, onNavigate }) {
+  const tahunIni = new Date().getFullYear();
+  const ringkasanTahunIni = ringkasanKeuangan(keuanganTransaksi, `${tahunIni}-01-01`, `${tahunIni}-12-31`);
+  const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
+  const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
+  const breakdown = breakdownPengeluaranKategori(ringkasanTahunIni.list, master.kategori_keluar || []);
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Saldo Kas Saat Ini" value={fmtRp(totalSaldoKas)} accent="text-amber-400" icon={Landmark} iconColor="text-amber-500" />
+        <StatCard label={`Kas Masuk ${tahunIni}`} value={fmtRp(ringkasanTahunIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label={`Kas Keluar ${tahunIni}`} value={fmtRp(ringkasanTahunIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+        <StatCard
+          label={`Laba (Rugi) ${tahunIni}`}
+          value={fmtRp(ringkasanTahunIni.saldo)}
+          accent={ringkasanTahunIni.saldo >= 0 ? "text-emerald-400" : "text-red-400"}
+          icon={Wallet}
+          iconColor={ringkasanTahunIni.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <BreakdownPengeluaran total={breakdown.total} data={breakdown.data} />
+
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo per Rekening</div>
+          {saldoRekening.length === 0 ? (
+            <div className="p-6"><EmptyState label="Belum ada rekening terdaftar." /></div>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody>
+                {saldoRekening.map((r) => (
+                  <tr key={r.kode} className="border-b border-slate-800/60 last:border-0">
+                    <td className="px-4 py-2.5 text-slate-300">{r.label}</td>
+                    <td className={`px-4 py-2.5 text-right font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>
+                      {fmtRp(r.saldo)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-sm font-semibold text-slate-200">Butuh rincian Laba Rugi per bulan/tahun?</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            Laporan Laba Rugi lengkap (per kategori, per bulan, siap cetak PDF/CSV) ada di menu Keuangan.
+          </div>
+        </div>
+        <button
+          onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
+          className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs px-3.5 py-2 rounded-lg whitespace-nowrap"
+        >
+          Lihat Laporan Laba Rugi <ArrowRight size={13} />
+        </button>
+      </div>
     </div>
   );
 }
