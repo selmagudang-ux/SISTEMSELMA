@@ -23,6 +23,73 @@ export function latestHistoryBySku(stockHistory) {
   return map;
 }
 
+// Event rak TERBARU untuk tiap SKU (tabel `rak_events`, diisi dari
+// ModalRouter setiap kali ada perpindahan/pengeluaran SKU dari rak — lihat
+// komentar di ModalRouter.jsx bagian pindah-rak, barang-keluar, stok-opname).
+// rakEvents dari App.jsx sudah diurutkan created_at.desc, jadi kemunculan
+// pertama per SKU otomatis yang paling baru.
+export function latestRakEventBySku(rakEvents) {
+  const map = new Map();
+  (rakEvents || []).forEach((e) => {
+    if (!map.has(e.sku)) map.set(e.sku, e);
+  });
+  return map;
+}
+
+// Event rak TERBARU per kode rak ASAL (rak_dari) — dipakai untuk notifikasi
+// "Rak Kosong": rak yang pernah tercatat kena aktivitas pindah/keluar dari
+// situ, lalu dicek lagi apakah SEKARANG beneran sudah kosong.
+export function latestRakEventByRakDari(rakEvents) {
+  const map = new Map();
+  (rakEvents || []).forEach((e) => {
+    if (!e.rak_dari) return;
+    if (!map.has(e.rak_dari)) map.set(e.rak_dari, e);
+  });
+  return map;
+}
+
+// SKU yang baru saja DIPINDAH ke rak lain (jenis "pindah", punya rak_baru) —
+// admin marketplace perlu tahu kalau listingnya menyebutkan lokasi/rak barang.
+// Key diikat ke id event rak terbaru SKU itu, jadi begitu SKU dipindah lagi
+// setelah notifnya dikonfirmasi, notifikasi baru otomatis muncul lagi.
+export function computeRakPindahNotifs(rakEvents) {
+  const out = [];
+  latestRakEventBySku(rakEvents).forEach((e, sku) => {
+    if (e.jenis !== "pindah") return;
+    out.push({
+      key: `pindah:${sku}:${e.id}`,
+      sku,
+      rakDari: e.rak_dari,
+      rakBaru: e.rak_baru,
+      detail: `Dipindah dari rak ${e.rak_dari} ke rak ${e.rak_baru}`,
+    });
+  });
+  return out;
+}
+
+// Rak yang pernah tercatat kena aktivitas pindah/keluar DAN saat ini beneran
+// sudah kosong (tidak ada SKU apapun menempatinya lagi) — dipakai supaya
+// admin marketplace tahu rak/lokasi itu sudah tidak berisi barang, kalau-
+// kalau disebut di listing. Key diikat ke id event terbarunya, jadi kalau
+// rak itu terisi lagi lalu kosong lagi nanti, notifikasi baru muncul lagi.
+export function computeRakKosongNotifs(rak, penempatan, rakEvents) {
+  const out = [];
+  const byRakDari = latestRakEventByRakDari(rakEvents);
+  (rak || []).forEach((r) => {
+    const event = byRakDari.get(r.code);
+    if (!event) return;
+    const masihTerisi = (penempatan || []).some((p) => p.rak_code === r.code);
+    if (masihTerisi) return;
+    out.push({
+      key: `kosong:${r.code}:${event.id}`,
+      rakCode: r.code,
+      sku: event.sku,
+      detail: `Terakhir: ${event.sku} ${event.jenis === "pindah" ? "dipindah ke rak lain" : "dikeluarkan dari rak ini"}`,
+    });
+  });
+  return out;
+}
+
 // SKU dengan stok tipis (<5, termasuk 0/habis). Key diikat ke histori stok
 // terbaru SKU itu (kalau ada) supaya begitu stoknya berubah lagi (naik lalu
 // turun lagi, misalnya), notifikasi baru muncul lagi walau yang lama sudah

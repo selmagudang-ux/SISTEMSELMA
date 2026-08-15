@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShoppingBag, CheckCircle2, AlertTriangle, PackagePlus, ArrowRightLeft, Search } from "lucide-react";
+import { ShoppingBag, CheckCircle2, AlertTriangle, PackagePlus, ArrowRightLeft, Search, MapPin, PackageX } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtTgl } from "../lib/api";
 
@@ -12,6 +12,8 @@ export default function Marketplace({
   notifTipis,
   notifTambah,
   notifRak,
+  notifRakPindah,
+  notifRakKosong,
   ackNotif,
 }) {
   if (sub === "sudah") return <SudahUpload items={items} />;
@@ -22,6 +24,8 @@ export default function Marketplace({
         notifTipis={notifTipis}
         notifTambah={notifTambah}
         notifRak={notifRak}
+        notifRakPindah={notifRakPindah}
+        notifRakKosong={notifRakKosong}
         ackNotif={ackNotif}
         navigate={navigate}
       />
@@ -29,22 +33,28 @@ export default function Marketplace({
   return <BelumUpload items={items} quickAdvance={quickAdvance} setModal={setModal} />;
 }
 
-// Tiga notifikasi yang perlu dikonfirmasi admin marketplace: (1) stok tipis/
+// Lima notifikasi yang perlu dikonfirmasi admin marketplace: (1) stok tipis/
 // habis — konfirmasi kalau listing sudah disesuaikan, (2) stok baru saja
 // bertambah (restock) — konfirmasi kalau listing sudah diperbarui, (3) SKU
-// keluar dari rak lamanya atau tercatat di rak ganda — konfirmasi kalau
-// sudah ditindaklanjuti. Setiap notifikasi cuma hilang dari daftar ini
+// keluar dari rak lamanya atau tercatat di rak ganda, (4) SKU baru saja
+// dipindah ke rak lain, (5) rak yang sekarang sudah kosong — konfirmasi
+// kalau sudah ditindaklanjuti. Setiap notifikasi cuma hilang dari daftar ini
 // setelah diklik "Sudah" / "Sudah diperbarui" — dan otomatis muncul lagi
-// kalau kondisinya berubah lagi setelah itu (mis. stok berubah lagi).
-function CekMarketplace({ notifTipis, notifTambah, notifRak, ackNotif, navigate }) {
+// kalau kondisinya berubah lagi setelah itu (mis. stok berubah lagi, atau
+// rak dipindah/dikosongkan lagi).
+function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, notifRakKosong, ackNotif, navigate }) {
   const [q, setQ] = useState("");
   const lower = q.toLowerCase();
 
   const tipis = (notifTipis || []).filter((n) => n.sku.toLowerCase().includes(lower));
   const tambah = (notifTambah || []).filter((n) => n.sku.toLowerCase().includes(lower));
   const rakList = (notifRak || []).filter((n) => n.sku.toLowerCase().includes(lower));
+  const rakPindah = (notifRakPindah || []).filter((n) => n.sku.toLowerCase().includes(lower));
+  const rakKosong = (notifRakKosong || []).filter(
+    (n) => n.rakCode.toLowerCase().includes(lower) || (n.sku || "").toLowerCase().includes(lower)
+  );
 
-  const totalNotif = tipis.length + tambah.length + rakList.length;
+  const totalNotif = tipis.length + tambah.length + rakList.length + rakPindah.length + rakKosong.length;
 
   return (
     <div>
@@ -139,6 +149,60 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, ackNotif, navigate 
               >
                 <div className="min-w-0">
                   <div className="font-mono text-xs text-slate-300">{n.sku}</div>
+                  <div className="text-[11px] text-orange-400/80 mt-0.5">{n.detail}</div>
+                </div>
+                <button
+                  onClick={() => ackNotif(n.key)}
+                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                >
+                  <CheckCircle2 size={12} /> Sudah
+                </button>
+              </div>
+            ))}
+          </CekSection>
+
+          <CekSection
+            title="SKU Pindah Rak"
+            description="SKU yang baru saja dipindah ke rak lain — perbarui info lokasi di listing kalau disebutkan, lalu konfirmasi."
+            icon={MapPin}
+            color="sky"
+            count={rakPindah.length}
+          >
+            {rakPindah.map((n) => (
+              <div
+                key={n.key}
+                className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-sky-500/30 rounded-lg"
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-xs text-slate-300">{n.sku}</div>
+                  <div className="text-[11px] text-sky-400/80 mt-0.5">
+                    Rak {n.rakDari} → Rak {n.rakBaru}
+                  </div>
+                </div>
+                <button
+                  onClick={() => ackNotif(n.key)}
+                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                >
+                  <CheckCircle2 size={12} /> Sudah
+                </button>
+              </div>
+            ))}
+          </CekSection>
+
+          <CekSection
+            title="Rak Jadi Kosong"
+            description="Rak yang baru saja kosong (SKU-nya dipindah/dikeluarkan) — cek kalau lokasinya masih disebut di listing, lalu konfirmasi."
+            icon={PackageX}
+            color="orange"
+            count={rakKosong.length}
+          >
+            {rakKosong.map((n) => (
+              <div
+                key={n.key}
+                className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-orange-500/30 rounded-lg"
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-xs text-slate-300">Rak {n.rakCode}</div>
                   <div className="text-[11px] text-orange-400/80 mt-0.5">{n.detail}</div>
                 </div>
                 <button

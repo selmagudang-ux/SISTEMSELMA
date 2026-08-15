@@ -16,7 +16,7 @@ import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from 
 import CetakLabel from "./pages/CetakLabel";
 import FotoProduk from "./pages/FotoProduk";
 import Marketplace from "./pages/Marketplace";
-import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs } from "./lib/marketplaceNotif";
+import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs, computeRakPindahNotifs, computeRakKosongNotifs } from "./lib/marketplaceNotif";
 import Grosir from "./pages/Grosir";
 import Keuangan from "./pages/Keuangan";
 import Laporan from "./pages/Laporan";
@@ -52,6 +52,7 @@ function MainApp({ session, onLogout }) {
   const [settings, setSettings] = useState(null);
   const [penempatan, setPenempatan] = useState([]);
   const [stockHistory, setStockHistory] = useState([]);
+  const [rakEvents, setRakEvents] = useState([]);
   const [marketplaceNotifAck, setMarketplaceNotifAck] = useState([]);
   const [pelangganGrosir, setPelangganGrosir] = useState([]);
   const [tokoGrosir, setTokoGrosir] = useState([]);
@@ -129,7 +130,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
         sbAll("rak?select=*&order=code"),
@@ -137,6 +138,7 @@ function MainApp({ session, onLogout }) {
         sb("settings?select=*"),
         sbAll("penempatan?select=*&order=created_at.desc"),
         sbAll("stock_history?select=*&order=created_at.desc"),
+        sbAll("rak_events?select=*&order=created_at.desc"),
         sbAll("marketplace_notif_ack?select=*"),
         sbAll("grosir_pelanggan?select=*&order=nama"),
         sbAll("grosir_toko?select=*&order=nama_toko"),
@@ -159,6 +161,7 @@ function MainApp({ session, onLogout }) {
       setSettings((settingsRes || [])[0] || null);
       setPenempatan(penempatanRes || []);
       setStockHistory(historyRes || []);
+      setRakEvents(rakEventsRes || []);
       setMarketplaceNotifAck(notifAckRes || []);
       setPelangganGrosir(pelangganRes || []);
       setTokoGrosir(tokoRes || []);
@@ -206,7 +209,10 @@ function MainApp({ session, onLogout }) {
   const notifTipis = computeStokTipisNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
   const notifTambah = computeStokTambahNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
   const notifRak = computeRakBerubahNotifs(skuMaster, rak, penempatan).filter((n) => !ackedKeys.has(n.key));
-  const cekMarketplaceCount = notifTipis.length + notifTambah.length + notifRak.length;
+  const notifRakPindah = computeRakPindahNotifs(rakEvents).filter((n) => !ackedKeys.has(n.key));
+  const notifRakKosong = computeRakKosongNotifs(rak, penempatan, rakEvents).filter((n) => !ackedKeys.has(n.key));
+  const cekMarketplaceCount =
+    notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
 
   const sidebarBadges = withParentBadges(NAV, {
     "sku-harga.buat": stageCounts.sku,
@@ -399,6 +405,8 @@ function MainApp({ session, onLogout }) {
                   notifTipis={notifTipis}
                   notifTambah={notifTambah}
                   notifRak={notifRak}
+                  notifRakPindah={notifRakPindah}
+                  notifRakKosong={notifRakKosong}
                   ackNotif={ackNotif}
                 />
               )}

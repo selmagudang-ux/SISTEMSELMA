@@ -1545,6 +1545,12 @@ export default function ModalRouter({
               // muncul lagi sebagai "sisa di gudang" (lihat barangSisaDiGudang).
               if (sisaDiAsal <= 0) {
                 await sb(`penempatan?id=eq.${modal.item.penempatanId}`, { method: "DELETE" });
+                // Rak asalnya beneran kosong sekarang (bukan cuma dikurangi) —
+                // catat biar Cek Marketplace bisa notif "Rak Jadi Kosong".
+                await sb("rak_events", {
+                  method: "POST",
+                  body: JSON.stringify({ sku: modal.item.sku, jenis: "keluar", rak_dari: modal.item.rakLama, rak_baru: null }),
+                });
               } else {
                 await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
                   method: "PATCH",
@@ -1575,6 +1581,12 @@ export default function ModalRouter({
                   body: JSON.stringify({ rak_code: rakBaru }),
                 });
               }
+              // Catat perpindahan (rak asal beneran kosong sekarang) biar Cek
+              // Marketplace bisa notif "SKU Pindah Rak" & "Rak Jadi Kosong".
+              await sb("rak_events", {
+                method: "POST",
+                body: JSON.stringify({ sku: modal.item.sku, jenis: "pindah", rak_dari: modal.item.rakLama, rak_baru: rakBaru }),
+              });
             } else {
               // Pindah sebagian — kurangi qty di rak asal, tambahkan/buat baris di rak tujuan.
               await sb(`penempatan?id=eq.${modal.item.penempatanId}`, {
@@ -1657,7 +1669,16 @@ export default function ModalRouter({
             const rencana = rencanaKurangiRak(modal.item.sku, qty, penempatan);
             for (const r of rencana) {
               if (r.qtyBaru <= 0) {
+                const baris = (penempatan || []).find((p) => p.id === r.id);
                 await sb(`penempatan?id=eq.${r.id}`, { method: "DELETE" });
+                // Habis terjual/keluar sampai rak itu kosong — catat biar Cek
+                // Marketplace bisa notif "Rak Jadi Kosong".
+                if (baris) {
+                  await sb("rak_events", {
+                    method: "POST",
+                    body: JSON.stringify({ sku: modal.item.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
+                  });
+                }
               } else {
                 await sb(`penempatan?id=eq.${r.id}`, {
                   method: "PATCH",
@@ -1774,7 +1795,16 @@ export default function ModalRouter({
                   const rencana = rencanaKurangiRak(s.sku, -selisih, penempatan);
                   for (const r of rencana) {
                     if (r.qtyBaru <= 0) {
+                      const baris = (penempatan || []).find((p) => p.id === r.id);
                       await sb(`penempatan?id=eq.${r.id}`, { method: "DELETE" });
+                      // Rak itu jadi kosong akibat penyesuaian stok opname —
+                      // catat biar Cek Marketplace bisa notif "Rak Jadi Kosong".
+                      if (baris) {
+                        await sb("rak_events", {
+                          method: "POST",
+                          body: JSON.stringify({ sku: s.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
+                        });
+                      }
                     } else {
                       await sb(`penempatan?id=eq.${r.id}`, {
                         method: "PATCH",
