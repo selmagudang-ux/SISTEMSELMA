@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Inbox, Sparkles, CalendarDays } from "lucide-react";
+import { X, Inbox, Sparkles, CalendarDays, Plus, Loader2 } from "lucide-react";
+import { sb } from "../lib/api";
 
 export const inputClass =
   "w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500";
@@ -82,22 +83,37 @@ export function Select({ value, onChange, options, placeholder }) {
   );
 }
 
-// Kolom pilih yang bisa diketik manual (combobox).
-// - Mengetik akan memfilter daftar opsi (kode/label yang cocok saja yang muncul).
-// - Kalau kode yang diketik belum ada di opsi, tetap bisa dipakai — nanti
-//   dianggap "kode baru" oleh pemanggilnya (mis. dibuat otomatis ke Master Data saat disimpan).
-export function Combobox({ value, onChange, options, placeholder }) {
-  const [query, setQuery] = useState(value || "");
+// Kolom pilih yang bisa diketik manual (combobox) untuk referensi master_data
+// bertipe {kode, label} (bahan/peruntukan/kategori/subkategori/warna/ukuran
+// untuk SKU, atau rekening/kategori_masuk/kategori_keluar untuk Keuangan).
+// - Mengetik memfilter daftar opsi yang sudah ada (kode ATAU nama yang cocok).
+// - Kalau yang dicari belum ada, muncul mini-form "Kode" + "Nama" di bawah
+//   daftar — begitu diisi dan klik "Tambah", entri baru langsung disimpan ke
+//   master_data (tipe sesuai prop `tipe`) lalu otomatis kepilih. Entri ini
+//   juga langsung muncul di halaman Master Data / Rekening & Kategori karena
+//   sama-sama baca dari tabel yang sama.
+// Props wajib: tipe (string tipe master_data) dan reload (refresh state
+// `master` di App.jsx supaya opsi baru langsung kepakai di form ini juga).
+export function Combobox({ value, onChange, options, placeholder, tipe, reload }) {
+  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [newKode, setNewKode] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
   const wrapRef = useRef(null);
 
-  useEffect(() => {
-    setQuery(value || "");
-  }, [value]);
+  const selected = options.find((o) => o.kode === value);
 
   useEffect(() => {
     const onClickOutside = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+        setNewKode("");
+        setNewLabel("");
+        setError("");
+      }
     };
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -107,32 +123,65 @@ export function Combobox({ value, onChange, options, placeholder }) {
   const filtered = q
     ? options.filter((o) => o.kode.toLowerCase().includes(q) || o.label.toLowerCase().includes(q))
     : options;
-  const exactMatch = options.some((o) => o.kode.toLowerCase() === q);
+  const exactMatch = options.some((o) => o.kode.toLowerCase() === q || o.label.toLowerCase() === q);
 
   const commit = (kode) => {
-    setQuery(kode);
     onChange(kode);
+    setQuery("");
     setOpen(false);
   };
 
-  const handleChange = (raw) => {
-    setQuery(raw);
-    onChange(raw.trim().toUpperCase());
-    setOpen(true);
+  const startAdd = () => {
+    setNewKode(query.trim().toUpperCase());
+    setNewLabel(query.trim());
+    setError("");
   };
+
+  const submitNew = async () => {
+    const kode = newKode.trim().toUpperCase();
+    const label = newLabel.trim();
+    if (!kode || !label || creating) return;
+    if (options.some((o) => o.kode === kode)) {
+      setError(`Kode "${kode}" sudah dipakai — pilih dari daftar atau ganti kode.`);
+      return;
+    }
+    setCreating(true);
+    setError("");
+    try {
+      await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label }) });
+      await reload?.();
+      onChange(kode);
+      setQuery("");
+      setNewKode("");
+      setNewLabel("");
+      setOpen(false);
+    } catch (e) {
+      setError(e.message || "Gagal menambah");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const showAddForm = !!tipe && q && !exactMatch;
 
   return (
     <div className="relative" ref={wrapRef}>
       <input
         className={inputClass}
-        value={query}
+        value={open ? query : selected ? `${selected.label} (${selected.kode})` : ""}
         placeholder={placeholder || "Ketik atau pilih…"}
-        onChange={(e) => handleChange(e.target.value)}
-        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setQuery("");
+          setOpen(true);
+        }}
         autoComplete="off"
       />
       {open && (
-        <div className="absolute z-10 mt-1 w-full max-h-44 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+        <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
           {filtered.length > 0 ? (
             filtered.map((o) => (
               <button
@@ -140,24 +189,64 @@ export function Combobox({ value, onChange, options, placeholder }) {
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => commit(o.kode)}
-                className="w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900"
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900 ${
+                  o.kode === value ? "bg-amber-500/15 text-amber-400" : "text-slate-200"
+                }`}
               >
-                <span className="text-slate-200">{o.label}</span>
-                <span className="font-mono text-[11px] text-amber-400">{o.kode}</span>
+                <span>{o.label}</span>
+                <span className="font-mono text-[11px] text-slate-500">{o.kode}</span>
               </button>
             ))
-          ) : q ? (
+          ) : !showAddForm ? (
             <div className="px-3 py-2 text-xs text-slate-500">
-              Tidak ada yang cocok — kode baru{" "}
-              <span className="font-mono text-amber-400">"{query.trim().toUpperCase()}"</span> akan dibuat otomatis.
+              {q ? "Tidak ada yang cocok." : "Ketik untuk mencari…"}
             </div>
-          ) : (
-            <div className="px-3 py-2 text-xs text-slate-500">Ketik untuk mencari atau membuat kode baru…</div>
+          ) : null}
+
+          {showAddForm && (
+            <div className="border-t border-slate-800 p-2.5">
+              {newKode === "" && newLabel === "" ? (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={startAdd}
+                  className="w-full flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 px-1 py-1"
+                >
+                  <Plus size={13} /> Tambah baru "{query.trim()}"
+                </button>
+              ) : (
+                <div onMouseDown={(e) => e.preventDefault()}>
+                  <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
+                  <div className="flex gap-1.5">
+                    <input
+                      value={newKode}
+                      onChange={(e) => setNewKode(e.target.value)}
+                      placeholder="Kode"
+                      className="w-20 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase"
+                    />
+                    <input
+                      value={newLabel}
+                      onChange={(e) => setNewLabel(e.target.value)}
+                      placeholder="Nama"
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
+                      onKeyDown={(e) => e.key === "Enter" && submitNew()}
+                    />
+                    <button
+                      type="button"
+                      disabled={!newKode.trim() || !newLabel.trim() || creating}
+                      onClick={submitNew}
+                      className="flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-2.5 py-1.5 rounded-md flex-shrink-0"
+                    >
+                      {creating ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                      Tambah
+                    </button>
+                  </div>
+                  {error && <div className="text-[11px] text-red-400 mt-1">{error}</div>}
+                </div>
+              )}
+            </div>
           )}
         </div>
-      )}
-      {q && !exactMatch && (
-        <div className="text-[10px] text-amber-500/80 mt-1">Kode baru, akan dibuat otomatis saat disimpan.</div>
       )}
     </div>
   );

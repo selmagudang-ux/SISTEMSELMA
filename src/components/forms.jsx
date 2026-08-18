@@ -60,7 +60,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving }) {
 // 3) Kalau tidak ketemu → lanjut ke form pembuatan SKU baru (bahan/kategori/dst).
 // Ini menggantikan pemisahan lama "Barang Baru" vs "Barang Lama" yang dulu
 // ditentukan di form Barang Masuk — sekarang keputusannya murni dari hasil pencarian.
-export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSubmitExisting, onSubmitNew, saving }) {
+export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, saving }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState(null);
   const [mode, setMode] = useState("cari"); // "cari" | "buat"
@@ -120,12 +120,12 @@ export function SkuEntryForm({ item, master, settings, skuMaster, onClose, onSub
           ← Kembali ke pencarian SKU
         </button>
         <div className="grid grid-cols-2 gap-x-3">
-          <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} /></Field>
-          <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} /></Field>
-          <Field label="Kategori"><Combobox value={kategori} onChange={setKategori} options={master.kategori || []} /></Field>
-          <Field label="Subkategori"><Combobox value={subkategori} onChange={setSubkategori} options={master.subkategori || []} /></Field>
-          <Field label="Warna"><Combobox value={warna} onChange={setWarna} options={master.warna || []} /></Field>
-          <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} /></Field>
+          <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} tipe="bahan" reload={reload} /></Field>
+          <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} tipe="peruntukan" reload={reload} /></Field>
+          <Field label="Kategori"><Combobox value={kategori} onChange={setKategori} options={master.kategori || []} tipe="kategori" reload={reload} /></Field>
+          <Field label="Subkategori"><Combobox value={subkategori} onChange={setSubkategori} options={master.subkategori || []} tipe="subkategori" reload={reload} /></Field>
+          <Field label="Warna"><Combobox value={warna} onChange={setWarna} options={master.warna || []} tipe="warna" reload={reload} /></Field>
+          <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} tipe="ukuran" reload={reload} /></Field>
         </div>
         <Field label="Model (kode bebas)">
           <input
@@ -1019,7 +1019,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
 // bisa dipilih apa adanya sebagai kode baru: otomatis dibuat ke master_data
 // (tabel yang sama dipakai halaman Rekening & Kategori) saat transaksi
 // disimpan, lihat ModalRouter.jsx.
-export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, onClose, onSubmit, saving }) {
+export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, reload, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
   const [tipe, setTipe] = useState(transaksi?.tipe || "masuk");
@@ -1112,6 +1112,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, on
           onChange={setRekening}
           options={daftarRekening}
           placeholder="Ketik atau pilih rekening…"
+          tipe="rekening"
+          reload={reload}
         />
         {rekening && saldoRekeningAsal !== null && (
           <div className={`text-[11px] mt-1 ${saldoTidakCukup ? "text-red-400" : "text-slate-500"}`}>
@@ -1127,6 +1129,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, on
             onChange={setRekeningTujuan}
             options={daftarRekening.filter((r) => r.kode !== rekening)}
             placeholder="Ketik atau pilih rekening tujuan…"
+            tipe="rekening"
+            reload={reload}
           />
         </Field>
       )}
@@ -1138,6 +1142,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, on
             onChange={setKategori}
             options={daftarKategori}
             placeholder={`Ketik atau pilih kategori ${tipe === "masuk" ? "pemasukan" : "pengeluaran"}…`}
+            tipe={tipe === "masuk" ? "kategori_masuk" : "kategori_keluar"}
+            reload={reload}
           />
         </Field>
       )}

@@ -504,15 +504,16 @@ export default function ModalRouter({
         transaksi={t}
         master={master}
         keuanganTransaksi={keuanganTransaksi}
+        reload={reload}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
           run(async () => {
-            // Rekening/kategori yang diketik lewat Combobox tapi belum ada di
-            // Master Data (kode baru) dibuat dulu di sini, sebelum transaksinya
-            // disimpan — sama seperti pola di "buat-sku". Kalau labelnya sama
-            // dengan kode (belum pernah didaftarkan), otomatis tersimpan juga
-            // ke halaman Keuangan > Rekening & Kategori.
+            // Jaring pengaman: rekening/kategori seharusnya sudah dibuat langsung
+            // lewat mini-form "Kode + Nama" di Combobox (lihat components/ui.jsx)
+            // begitu diisi, jadi biasanya sudah ada di Master Data di titik ini.
+            // Loop ini cuma jaga-jaga (idempotent — dicek dulu sebelum POST)
+            // supaya transaksi tidak pernah nunjuk ke kode yang belum terdaftar.
             const kodeBaru = [
               { tipe: "rekening", kode: data.rekening },
               { tipe: "rekening", kode: data.rekening_tujuan },
@@ -1380,6 +1381,7 @@ export default function ModalRouter({
         master={master}
         settings={settings}
         skuMaster={skuMaster}
+        reload={reload}
         onClose={close}
         saving={saving}
         onSubmitExisting={(selectedSku, hargaAsliBaru) =>
