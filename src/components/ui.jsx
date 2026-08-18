@@ -94,6 +94,17 @@ export function Select({ value, onChange, options, placeholder }) {
 //   sama-sama baca dari tabel yang sama.
 // Props wajib: tipe (string tipe master_data) dan reload (refresh state
 // `master` di App.jsx supaya opsi baru langsung kepakai di form ini juga).
+// Sarankan kode singkat dari nama yang diketik, supaya user jarang perlu
+// ngetik kode manual sendiri — tetap bisa diubah bebas sebelum "Tambah".
+// - 1 kata: 3 huruf pertama ("Beludru" -> "BEL").
+// - 2+ kata: huruf pertama tiap kata, maks 4 huruf ("Anting Jurai" -> "AJ").
+export function suggestKode(label) {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.map((w) => w[0]).join("").slice(0, 4).toUpperCase();
+}
+
 export function Combobox({ value, onChange, options, placeholder, tipe, reload }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -132,7 +143,7 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
   };
 
   const startAdd = () => {
-    setNewKode(query.trim().toUpperCase());
+    setNewKode(suggestKode(query.trim()));
     setNewLabel(query.trim());
     setError("");
   };

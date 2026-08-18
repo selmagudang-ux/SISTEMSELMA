@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
-import { PageHeader, inputClass } from "../components/ui";
+import { PageHeader, inputClass, suggestKode } from "../components/ui";
 import { MASTER_TIPE } from "../lib/constants";
 import { sb } from "../lib/api";
 
@@ -8,6 +8,7 @@ export default function MasterData({ master, reload, showToast }) {
   const [activeTipe, setActiveTipe] = useState("bahan");
   const [kode, setKode] = useState("");
   const [label, setLabel] = useState("");
+  const [kodeTouched, setKodeTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Edit inline: id baris yang sedang diedit + nilai kode/nama sementara.
@@ -29,6 +30,7 @@ export default function MasterData({ master, reload, showToast }) {
       });
       setKode("");
       setLabel("");
+      setKodeTouched(false);
       await reload();
       showToast("Kode ditambahkan");
     } catch (e) {
@@ -119,7 +121,10 @@ export default function MasterData({ master, reload, showToast }) {
           <div className="text-xs text-slate-400 mb-1">Kode</div>
           <input
             value={kode}
-            onChange={(e) => setKode(e.target.value)}
+            onChange={(e) => {
+              setKode(e.target.value);
+              setKodeTouched(true);
+            }}
             placeholder="Cth: ANJ"
             className={inputClass}
           />
@@ -128,7 +133,10 @@ export default function MasterData({ master, reload, showToast }) {
           <div className="text-xs text-slate-400 mb-1">Nama / Label</div>
           <input
             value={label}
-            onChange={(e) => setLabel(e.target.value)}
+            onChange={(e) => {
+              setLabel(e.target.value);
+              if (!kodeTouched) setKode(suggestKode(e.target.value));
+            }}
             placeholder="Cth: Anting Jurai"
             className={inputClass}
             onKeyDown={(e) => e.key === "Enter" && addEntry()}

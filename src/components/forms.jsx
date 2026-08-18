@@ -844,34 +844,18 @@ export function PelangganForm({ pelanggan, pelangganList, kodeBaru, onClose, onS
   const [alamat, setAlamat] = useState(pelanggan?.alamat || "");
   const [kota, setKota] = useState(pelanggan?.kota || "");
   const [catatan, setCatatan] = useState(pelanggan?.catatan || "");
-  const [kode, setKode] = useState(pelanggan?.kode || kodeBaru);
-  const isNew = !pelanggan;
+  const kode = pelanggan?.kode || kodeBaru;
 
+  // Kode dibuat otomatis di belakang layar (lihat prop `kodeBaru`, dibuat oleh
+  // ModalRouter sebelum form ini tampil) — TIDAK ditampilkan/diminta ke user,
+  // sama seperti alur tambah pelanggan baru langsung dari Buat Pesanan Grosir.
   // Cek apakah no. WA yang lagi diketik sudah dipakai pelanggan lain —
   // dibandingkan dalam bentuk yang sudah dinormalisasi (0812.../+62812... dianggap sama).
   const bentrok = wa.trim() ? pelangganDenganWa(wa, pelangganList, pelanggan?.id) : null;
-  const kodeBentrok = isNew && kode.trim() && kode.trim() !== kodeBaru
-    ? (pelangganList || []).some((p) => p.kode.toLowerCase() === kode.trim().toLowerCase())
-    : false;
 
   return (
     <ModalShell title={pelanggan ? `Edit Pelanggan — ${kode}` : "Tambah Pelanggan"} onClose={onClose}>
-      {isNew ? (
-        <Field label="Kode Pelanggan">
-          <input
-            className={`${inputClass} font-mono ${kodeBentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
-            value={kode}
-            onChange={(e) => setKode(e.target.value.toUpperCase())}
-          />
-          {kodeBentrok && <div className="text-[11px] text-red-400 mt-1">Kode ini sudah dipakai pelanggan lain.</div>}
-        </Field>
-      ) : (
-        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-          <div className="text-[11px] text-slate-500">Kode Pelanggan</div>
-          <div className="font-mono text-sm text-amber-400">{kode}</div>
-        </div>
-      )}
-      <Field label="Nama"><input className={inputClass} value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama pelanggan / toko" /></Field>
+      <Field label="Nama"><input className={inputClass} value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama pelanggan / toko" autoFocus /></Field>
       <Field label="No. WA">
         <input
           className={`${inputClass} ${bentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
@@ -889,10 +873,10 @@ export function PelangganForm({ pelanggan, pelangganList, kodeBaru, onClose, onS
       <Field label="Kota"><input className={inputClass} value={kota} onChange={(e) => setKota(e.target.value)} /></Field>
       <Field label="Catatan"><input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Opsional" /></Field>
       <button
-        disabled={!nama.trim() || !kode.trim() || !!bentrok || kodeBentrok || saving}
+        disabled={!nama.trim() || !!bentrok || saving}
         onClick={() =>
           onSubmit({
-            kode: kode.trim(),
+            kode,
             nama: nama.trim(),
             wa: wa.trim() || null,
             alamat: alamat.trim() || null,
@@ -914,38 +898,21 @@ export function TokoForm({ toko, tokoList, kodeBaru, onClose, onSubmit, saving }
   const [alamat, setAlamat] = useState(toko?.alamat || "");
   const [telepon, setTelepon] = useState(toko?.telepon || "");
   const [jenisToko, setJenisToko] = useState(toko?.jenis_toko || "");
-  const [kode, setKode] = useState(toko?.kode || kodeBaru);
-  const isNew = !toko;
-  const kodeBentrok = isNew && kode.trim() && kode.trim() !== kodeBaru
-    ? (tokoList || []).some((t) => t.kode.toLowerCase() === kode.trim().toLowerCase())
-    : false;
+  const kode = toko?.kode || kodeBaru;
 
+  // Kode dibuat otomatis di belakang layar juga (sama seperti Pelanggan) —
+  // tidak ditampilkan/diminta ke user.
   return (
     <ModalShell title={toko ? `Edit Toko — ${kode}` : "Tambah Toko Pengirim"} onClose={onClose}>
-      {isNew ? (
-        <Field label="Kode Toko">
-          <input
-            className={`${inputClass} font-mono ${kodeBentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
-            value={kode}
-            onChange={(e) => setKode(e.target.value.toUpperCase())}
-          />
-          {kodeBentrok && <div className="text-[11px] text-red-400 mt-1">Kode ini sudah dipakai toko lain.</div>}
-        </Field>
-      ) : (
-        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-          <div className="text-[11px] text-slate-500">Kode Toko</div>
-          <div className="font-mono text-sm text-amber-400">{kode}</div>
-        </div>
-      )}
-      <Field label="Nama Toko"><input className={inputClass} value={namaToko} onChange={(e) => setNamaToko(e.target.value)} /></Field>
+      <Field label="Nama Toko"><input className={inputClass} value={namaToko} onChange={(e) => setNamaToko(e.target.value)} autoFocus /></Field>
       <Field label="Alamat"><input className={inputClass} value={alamat} onChange={(e) => setAlamat(e.target.value)} /></Field>
       <Field label="Telepon"><input className={inputClass} value={telepon} onChange={(e) => setTelepon(e.target.value)} /></Field>
       <Field label="Jenis Toko"><input className={inputClass} value={jenisToko} onChange={(e) => setJenisToko(e.target.value)} placeholder="Opsional" /></Field>
       <button
-        disabled={!namaToko.trim() || !kode.trim() || kodeBentrok || saving}
+        disabled={!namaToko.trim() || saving}
         onClick={() =>
           onSubmit({
-            kode: kode.trim(),
+            kode,
             nama_toko: namaToko.trim(),
             alamat: alamat.trim() || null,
             telepon: telepon.trim() || null,
