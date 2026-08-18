@@ -187,6 +187,16 @@ function MainApp({ session, onLogout }) {
     return acc;
   }, {});
   const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
+
+  // SKU yang sudah tuntas alur barangnya (stage "selesai" — sama dengan sudah
+  // diupload ke marketplace, lihat quickAdvance) — inilah barang yang boleh
+  // dipilih untuk transaksi Grosir. Ditandai lewat flag "siapGrosir" di
+  // skuMaster (bukan filter array) supaya skuMaster tetap utuh dipakai
+  // halaman lain (SKU & Harga, Stok, Rak, Marketplace, Laporan, dll).
+  const skuSelesaiSet = new Set(
+    items.filter((i) => i.stage === "selesai" && i.sku).map((i) => i.sku)
+  );
+  const skuMasterGrosir = skuMaster.map((s) => ({ ...s, siapGrosir: skuSelesaiSet.has(s.sku) }));
   const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
 
   // SKU tanpa rak = barang yang belum pernah ditempatkan + SKU yang rak lamanya
@@ -416,7 +426,7 @@ function MainApp({ session, onLogout }) {
                   pelangganGrosir={pelangganGrosir}
                   tokoGrosir={tokoGrosir}
                   produkManualGrosir={produkManualGrosir}
-                  skuMaster={skuMaster}
+                  skuMaster={skuMasterGrosir}
                   pesananGrosir={pesananGrosir}
                   detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
@@ -464,7 +474,7 @@ function MainApp({ session, onLogout }) {
           master={master}
           settings={settings}
           rakList={rak}
-          skuMaster={skuMaster}
+          skuMaster={skuMasterGrosir}
           penempatan={penempatan}
           items={items}
           keuanganTransaksi={keuanganTransaksi}

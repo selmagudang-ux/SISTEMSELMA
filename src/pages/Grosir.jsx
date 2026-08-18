@@ -418,8 +418,10 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
       ];
     });
   };
+  // Hanya SKU yang alur barangnya sudah tahap "Selesai" (= sudah diupload ke
+  // marketplace) yang boleh dipilih untuk pesanan grosir baru.
   const quickAddSkuOptions = skuMaster
-    .filter((s) => !s.nonaktif)
+    .filter((s) => !s.nonaktif && s.siapGrosir)
     .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
 
   // Total qty per SKU yang sudah dipakai di baris lain — supaya validasi stok
@@ -757,10 +759,11 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
 }
 
 export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
-  // SKU nonaktif (bekas "dihapus") tidak boleh dipilih buat pesanan baru,
+  // SKU nonaktif (bekas "dihapus") atau yang alur barangnya belum "Selesai"
+  // (belum diupload ke marketplace) tidak boleh dipilih buat pesanan baru,
   // tapi baris pesanan lama yang sudah pakai SKU itu tetap tampil apa adanya.
   const skuOptions = skuMaster
-    .filter((s) => !s.nonaktif || s.sku === row.sku)
+    .filter((s) => s.sku === row.sku || (!s.nonaktif && s.siapGrosir))
     .map((s) => ({
       value: s.sku,
       label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}${s.nonaktif ? " · (nonaktif)" : ""}`,
@@ -928,7 +931,7 @@ export function EditPesananForm({
     });
   };
   const quickAddSkuOptions = editableSkuMaster
-    .filter((s) => !s.nonaktif)
+    .filter((s) => !s.nonaktif && s.siapGrosir)
     .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
 
   const addRow = (sumberProduk) => setRows((prev) => [...prev, newItemRow(sumberProduk)]);
