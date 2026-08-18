@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Inbox, Sparkles, CalendarDays, Plus, Loader2 } from "lucide-react";
+import { X, Inbox, Sparkles, CalendarDays, Plus, Loader2, Check } from "lucide-react";
 import { sb } from "../lib/api";
 
 export const inputClass =
@@ -349,15 +349,13 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
   );
 }
 
-// Pola "pilih dari daftar ATAU tambah baru langsung di bawahnya" — bagian
-// pilihnya sama seperti field Pelanggan di Grosir > Buat Pesanan Baru
-// (SearchableSelect di atas, input di bawahnya selalu terlihat, tidak perlu
-// buka popup). Beda dari versi pelanggan: entri baru di sini butuh Kode +
-// Nama terpisah (bukan cuma satu nama), konsisten dengan field master_data
-// lain seperti Bahan/Peruntukan/Kategori di form SKU (lihat Combobox).
-// Kode disarankan otomatis dari Nama yang diketik (lihat suggestKode), tapi
-// tetap bisa diubah manual — begitu diubah manual, saran otomatis berhenti
-// menimpa. Memilih salah satu (existing vs baru) otomatis mengosongkan yang lain.
+// Pola "pilih dari daftar ATAU tambah baru" — mirip Combobox (field Bahan/
+// Kategori/dll di form SKU): ketik untuk cari opsi yang sudah ada, dan kalau
+// yang diketik belum ada di daftar, baru muncul prompt "+ Tambah baru" —
+// diklik dulu baru kolom Kode + Nama terbuka (prefilled dari yang diketik).
+// Jadi kolom Kode/Nama TIDAK selalu tampil, hanya muncul saat memang
+// dibutuhkan (user mengetik nama yang belum ada). Memilih salah satu
+// (existing vs baru) otomatis mengosongkan yang lain.
 export function SearchableSelectOrNew({
   value,
   onChange,
@@ -369,58 +367,163 @@ export function SearchableSelectOrNew({
   placeholder,
   newPlaceholder,
 }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false); // true = kolom Kode/Nama sedang terbuka
   const [kodeTouched, setKodeTouched] = useState(false);
+  const wrapRef = useRef(null);
+
+  const selectedOption = options.find((o) => String(o.value) === String(value));
+  const hasPendingNew = !value && newLabel && newLabel.trim();
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+        setAdding(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter((o) => o.label.toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q))
+    : options;
+  const exactMatch = options.some((o) => o.label.toLowerCase() === q || String(o.value).toLowerCase() === q);
+  const showAddPrompt = q && !exactMatch;
+
+  const commitExisting = (opt) => {
+    onChange(opt.value);
+    onNewKodeChange("");
+    onNewLabelChange("");
+    setKodeTouched(false);
+    setQuery("");
+    setOpen(false);
+    setAdding(false);
+  };
+
+  const startAdd = () => {
+    onChange("");
+    onNewLabelChange(query.trim());
+    onNewKodeChange(suggestKode(query.trim()));
+    setKodeTouched(false);
+    setAdding(true);
+  };
+
+  const confirmAdd = () => {
+    if (!newKode.trim() || !newLabel.trim()) return;
+    setQuery("");
+    setOpen(false);
+    setAdding(false);
+  };
+
+  const displayValue = open
+    ? query
+    : selectedOption
+    ? selectedOption.label
+    : hasPendingNew
+    ? `${newLabel.trim()} (baru: ${(newKode || "").trim() || "?"})`
+    : "";
 
   return (
-    <div>
-      <SearchableSelect
-        value={value}
-        onChange={(kode) => {
-          onChange(kode);
-          onNewKodeChange("");
-          onNewLabelChange("");
-          setKodeTouched(false);
+    <div className="relative" ref={wrapRef}>
+      <input
+        className={inputClass}
+        value={displayValue}
+        placeholder={placeholder || "Cari atau ketik nama baru…"}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          setAdding(false);
         }}
-        options={options}
-        placeholder={placeholder || "Cari…"}
+        onFocus={() => {
+          setQuery("");
+          setOpen(true);
+        }}
+        autoComplete="off"
       />
+      {open && (
+        <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+          {filtered.length > 0 ? (
+            filtered.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commitExisting(o)}
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900 ${
+                  String(o.value) === String(value) ? "bg-amber-500/15 text-amber-400" : "text-slate-200"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))
+          ) : !showAddPrompt ? (
+            <div className="px-3 py-2 text-xs text-slate-500">
+              {q ? "Tidak ada yang cocok." : "Ketik untuk mencari…"}
+            </div>
+          ) : null}
 
-      <div className="flex items-center gap-2 my-2">
-        <div className="h-px flex-1 bg-slate-800" />
-        <span className="text-[10px] text-slate-500 uppercase tracking-wide">atau tambah baru</span>
-        <div className="h-px flex-1 bg-slate-800" />
-      </div>
-
-      <div className="flex gap-2 p-2 rounded-lg border border-dashed border-slate-800 bg-slate-950/40">
-        <div className="w-20 flex-shrink-0">
-          <div className="text-[10px] text-slate-500 mb-1">Kode</div>
-          <input
-            className={`${inputClass} px-2 uppercase text-center`}
-            value={newKode}
-            onChange={(e) => {
-              onNewKodeChange(e.target.value);
-              setKodeTouched(true);
-              onChange("");
-            }}
-            placeholder="KODE"
-            maxLength={8}
-          />
+          {showAddPrompt && (
+            <div className="border-t border-slate-800 p-2.5">
+              {!adding ? (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={startAdd}
+                  className="w-full flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 px-1 py-1"
+                >
+                  <Plus size={13} /> Tambah baru "{query.trim()}"
+                </button>
+              ) : (
+                <div onMouseDown={(e) => e.preventDefault()}>
+                  <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
+                  <div className="flex gap-1.5 items-end">
+                    <div className="w-16 flex-shrink-0">
+                      <div className="text-[10px] text-slate-500 mb-1">Kode</div>
+                      <input
+                        value={newKode}
+                        onChange={(e) => {
+                          onNewKodeChange(e.target.value);
+                          setKodeTouched(true);
+                        }}
+                        placeholder="KODE"
+                        maxLength={8}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase text-center"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] text-slate-500 mb-1">Nama</div>
+                      <input
+                        value={newLabel}
+                        onChange={(e) => {
+                          const nama = e.target.value;
+                          onNewLabelChange(nama);
+                          if (!kodeTouched) onNewKodeChange(suggestKode(nama));
+                        }}
+                        placeholder={newPlaceholder || "Nama baru"}
+                        className="w-full min-w-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
+                        onKeyDown={(e) => e.key === "Enter" && confirmAdd()}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!newKode.trim() || !newLabel.trim()}
+                      onClick={confirmAdd}
+                      className="flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-2.5 py-1.5 rounded-md flex-shrink-0"
+                    >
+                      <Check size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] text-slate-500 mb-1">Nama</div>
-          <input
-            className={`${inputClass} min-w-0`}
-            value={newLabel}
-            onChange={(e) => {
-              const nama = e.target.value;
-              onNewLabelChange(nama);
-              onChange("");
-              if (!kodeTouched) onNewKodeChange(suggestKode(nama));
-            }}
-            placeholder={newPlaceholder || "Atau ketik nama baru"}
-          />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
