@@ -233,13 +233,13 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
                       value={newKode}
                       onChange={(e) => setNewKode(e.target.value)}
                       placeholder="Kode"
-                      className="w-20 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase"
+                      className="w-14 flex-shrink-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase"
                     />
                     <input
                       value={newLabel}
                       onChange={(e) => setNewLabel(e.target.value)}
                       placeholder="Nama"
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
+                      className="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
                       onKeyDown={(e) => e.key === "Enter" && submitNew()}
                     />
                     <button
@@ -379,7 +379,7 @@ export function SearchableSelectOrNew({
       />
       <div className="flex gap-1.5 mt-1.5">
         <input
-          className={`${inputClass} w-24 uppercase`}
+          className={`${inputClass} w-16 flex-shrink-0 uppercase`}
           value={newKode}
           onChange={(e) => {
             onNewKodeChange(e.target.value);
@@ -389,7 +389,7 @@ export function SearchableSelectOrNew({
           placeholder="Kode"
         />
         <input
-          className={`${inputClass} flex-1`}
+          className={`${inputClass} flex-1 min-w-0`}
           value={newLabel}
           onChange={(e) => {
             const nama = e.target.value;
