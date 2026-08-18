@@ -479,7 +479,7 @@ export function SearchableSelectOrNew({
                   <Plus size={13} /> Tambah baru "{query.trim()}"
                 </button>
               ) : (
-                <div onMouseDown={(e) => e.preventDefault()}>
+                <div>
                   <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
                   <div className="flex gap-1.5 items-end">
                     <div className="w-16 flex-shrink-0">
@@ -511,6 +511,7 @@ export function SearchableSelectOrNew({
                     </div>
                     <button
                       type="button"
+                      onMouseDown={(e) => e.preventDefault()}
                       disabled={!newKode.trim() || !newLabel.trim()}
                       onClick={confirmAdd}
                       className="flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-2.5 py-1.5 rounded-md flex-shrink-0"
