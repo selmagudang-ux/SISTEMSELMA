@@ -32,7 +32,7 @@ const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "", tampilkanWarnaProduk:
 // Pengaturan kertas stiker terakhir disimpan di HP/komputer supaya tidak perlu diatur ulang.
 const LAYOUT_STORAGE_KEY = "ss-cetak-label-layout";
 const DEFAULT_LAYOUT = {
-  ukuranKertas: "A4", // A4 | Letter | F4
+  ukuranKertas: "A4", // A4 | Letter | F4 | Termal
   orientasi: "portrait", // portrait | landscape
   posisi: "kiri", // kiri | tengah
   kolom: 3,
@@ -51,6 +51,17 @@ const DEFAULT_LAYOUT = {
   fontKode: 17, // baris kode harga, mis. "334488"
   fontCatatan: 8, // baris catatan (bila diisi)
 };
+// Preset khusus saat memilih kertas termal 100x150mm: satu label per lembar, tanpa margin/jarak.
+const TERMAL_PRESET = {
+  kolom: 1,
+  baris: 1,
+  lebarLabel: 100,
+  tinggiLabel: 150,
+  marginAtas: 0,
+  marginKiri: 0,
+  gapX: 0,
+  gapY: 0,
+};
 function loadLayout() {
   try {
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -61,10 +72,16 @@ function loadLayout() {
   }
 }
 
-export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
-  const [tab, setTab] = useState("barang"); // "barang" | "sku" | "rak"
+// Ukuran halaman CSS (@page) berdasarkan ukuran kertas yang dipilih.
+function pageSizeCss(ukuranKertas) {
+  if (ukuranKertas === "F4") return "215mm 330mm";
+  if (ukuranKertas === "Termal") return "100mm 150mm";
+  return ukuranKertas; // A4 | Letter
+}
+
+export default function CetakLabel({ penempatan, rak, skuMaster }) {
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState({}); // { key: { qty, warna, catatan } }
+  const [selected, setSelected] = useState({}); // { rakCode: { qty, warna, catatan } }
 
   // Ukuran & posisi lembar stiker — bisa disesuaikan dengan kertas stiker yang dipakai.
   const [layout, setLayout] = useState(loadLayout);
@@ -83,13 +100,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
     return m;
   }, [skuMaster]);
 
-  // ---- Data sumber per tab ----
-  const barangList = useMemo(
-    () => (items || []).filter((i) => i.sku && skuMap[i.sku]),
-    [items, skuMap]
-  );
-  const skuList = skuMaster || [];
-  // Rak yang sedang berisi SKU aktif (aturan 1 rak = 1 SKU).
+  // Rak yang sedang berisi SKU aktif (aturan 1 rak = 1 SKU). Cetak label selalu per rak.
   const rakList = useMemo(
     () =>
       (rak || [])
@@ -98,8 +109,6 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
     [rak, penempatan, skuMap]
   );
 
-  const filteredBarang = barangList.filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
-  const filteredSku = skuList.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
   const filteredRak = rakList.filter(
     (r) => r.code.toLowerCase().includes(q.toLowerCase()) || r.occupantSku.toLowerCase().includes(q.toLowerCase())
   );
@@ -118,80 +127,33 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
   };
 
   const pilihSemua = () => {
-    if (tab === "barang") {
-      const next = {};
-      filteredBarang.forEach((i) => (next[i.id] = { ...DEFAULT_ROW, qty: i.jumlah || 1 }));
-      setSelected(next);
-    } else if (tab === "sku") {
-      const next = {};
-      filteredSku.forEach((s) => (next[s.sku] = { ...DEFAULT_ROW }));
-      setSelected(next);
-    } else {
-      const next = {};
-      filteredRak.forEach((r) => (next[r.code] = { ...DEFAULT_ROW }));
-      setSelected(next);
-    }
+    const next = {};
+    filteredRak.forEach((r) => (next[r.code] = { ...DEFAULT_ROW }));
+    setSelected(next);
   };
   const batalSemua = () => setSelected({});
 
   // ---- Bangun daftar label final (flat, sesuai qty) untuk dicetak ----
   const labels = useMemo(() => {
     const out = [];
-    if (tab === "barang") {
-      filteredBarang.forEach((i) => {
-        const row = selected[i.id];
-        if (!row || !row.qty) return;
-        const s = skuMap[i.sku];
-        const kode = priceCode(s.grosir, s.tengah, s.ecer);
-        const rakCode = rakForSku(i.sku, penempatan);
-        for (let n = 0; n < row.qty; n++) {
-          out.push({
-            key: `${i.id}-${n}`,
-            sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
-            rak: rakCode,
-            kode,
-            warna: row.warna,
-            catatan: row.catatan,
-          });
-        }
-      });
-    } else if (tab === "sku") {
-      filteredSku.forEach((s) => {
-        const row = selected[s.sku];
-        if (!row || !row.qty) return;
-        const kode = priceCode(s.grosir, s.tengah, s.ecer);
-        const rakCode = rakForSku(s.sku, penempatan);
-        for (let n = 0; n < row.qty; n++) {
-          out.push({
-            key: `${s.sku}-${n}`,
-            sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
-            rak: rakCode,
-            kode,
-            warna: row.warna,
-            catatan: row.catatan,
-          });
-        }
-      });
-    } else {
-      filteredRak.forEach((r) => {
-        const row = selected[r.code];
-        if (!row || !row.qty) return;
-        const s = skuMap[r.occupantSku];
-        const kode = priceCode(s.grosir, s.tengah, s.ecer);
-        for (let n = 0; n < row.qty; n++) {
-          out.push({
-            key: `${r.code}-${n}`,
-            sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
-            rak: r.code,
-            kode,
-            warna: row.warna,
-            catatan: row.catatan,
-          });
-        }
-      });
-    }
+    filteredRak.forEach((r) => {
+      const row = selected[r.code];
+      if (!row || !row.qty) return;
+      const s = skuMap[r.occupantSku];
+      const kode = priceCode(s.grosir, s.tengah, s.ecer);
+      for (let n = 0; n < row.qty; n++) {
+        out.push({
+          key: `${r.code}-${n}`,
+          sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
+          rak: r.code,
+          kode,
+          warna: row.warna,
+          catatan: row.catatan,
+        });
+      }
+    });
     return out;
-  }, [tab, filteredBarang, filteredSku, filteredRak, selected, skuMap, penempatan]);
+  }, [filteredRak, selected, skuMap]);
 
   const totalTerpilih = Object.keys(selected).length;
 
@@ -200,7 +162,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
     window.print();
   };
 
-  // Baris tabel pemilihan — sama bentuknya untuk ketiga tab, beda sumber datanya saja.
+  // Baris tabel pemilihan rak.
   const renderRow = (key, kodeRak, skuLabel, kode, defaultQty) => {
     const row = selected[key];
     const checked = row != null;
@@ -209,8 +171,8 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
         <td className="px-3 py-2">
           <input type="checkbox" checked={checked} onChange={() => toggle(key, defaultQty)} className="accent-amber-500" />
         </td>
-        <td className="px-3 py-2 font-mono text-xs">{skuLabel}</td>
-        <td className="px-3 py-2 text-slate-400 font-mono text-xs">{kodeRak || "—"}</td>
+        <td className="px-3 py-2 font-mono text-xs">{kodeRak}</td>
+        <td className="px-3 py-2 text-slate-400 font-mono text-xs">{skuLabel}</td>
         <td className="px-3 py-2 font-mono text-amber-400 text-xs">{kode}</td>
         <td className="px-3 py-2">
           <input
@@ -255,34 +217,15 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
     );
   };
 
-  const listForTab =
-    tab === "barang" ? filteredBarang : tab === "sku" ? filteredSku : filteredRak;
-
   return (
     <div>
       {/* ====== Area layar (tidak ikut tercetak) ====== */}
       <div className="print:hidden">
-        <div className="flex gap-2 mb-4">
-          {[
-            { key: "barang", label: "Per Barang" },
-            { key: "sku", label: "Per SKU" },
-            { key: "rak", label: "Per Rak" },
-          ].map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                setTab(t.key);
-                setSelected({});
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                tab === t.key
-                  ? "bg-amber-500 border-amber-500 text-slate-950"
-                  : "border-slate-800 text-slate-400"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="mb-4">
+          <div className="text-sm font-semibold text-slate-200">Cetak Label per Rak</div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Label dicetak berdasarkan rak yang sedang berisi SKU (aturan 1 rak = 1 SKU).
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -291,7 +234,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Cari SKU atau kode rak…"
+              placeholder="Cari kode rak atau SKU…"
               className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
             />
           </div>
@@ -310,18 +253,16 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
         </div>
 
         {/* ---- Daftar pilihan ---- */}
-        {listForTab.length === 0 ? (
-          <EmptyState
-            label={tab === "rak" ? "Tidak ada rak yang sedang berisi SKU." : "Tidak ada data yang cocok."}
-          />
+        {filteredRak.length === 0 ? (
+          <EmptyState label="Tidak ada rak yang sedang berisi SKU." />
         ) : (
           <div className="rounded-xl border border-slate-800 overflow-x-auto mb-5">
             <table className="w-full text-sm min-w-[860px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                   <th className="px-3 py-2.5 w-8"></th>
-                  <th className="px-3 py-2.5">{tab === "rak" ? "Kode Rak" : "SKU"}</th>
-                  <th className="px-3 py-2.5">{tab === "rak" ? "SKU" : "Kode Rak"}</th>
+                  <th className="px-3 py-2.5">Kode Rak</th>
+                  <th className="px-3 py-2.5">SKU</th>
                   <th className="px-3 py-2.5">Kode Harga</th>
                   <th className="px-3 py-2.5">Jumlah</th>
                   <th className="px-3 py-2.5">Warna</th>
@@ -330,24 +271,11 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
                 </tr>
               </thead>
               <tbody>
-                {tab === "barang"
-                  ? filteredBarang.map((i) => {
-                      const s = skuMap[i.sku];
-                      const kode = priceCode(s.grosir, s.tengah, s.ecer);
-                      const rakCode = rakForSku(i.sku, penempatan);
-                      return renderRow(i.id, rakCode, i.sku, kode, i.jumlah || 1);
-                    })
-                  : tab === "sku"
-                  ? filteredSku.map((s) => {
-                      const kode = priceCode(s.grosir, s.tengah, s.ecer);
-                      const rakCode = rakForSku(s.sku, penempatan);
-                      return renderRow(s.sku, rakCode, s.sku, kode, 1);
-                    })
-                  : filteredRak.map((r) => {
-                      const s = skuMap[r.occupantSku];
-                      const kode = priceCode(s.grosir, s.tengah, s.ecer);
-                      return renderRow(r.code, r.code, r.occupantSku, kode, 1);
-                    })}
+                {filteredRak.map((r) => {
+                  const s = skuMap[r.occupantSku];
+                  const kode = priceCode(s.grosir, s.tengah, s.ecer);
+                  return renderRow(r.code, r.code, r.occupantSku, kode, 1);
+                })}
               </tbody>
             </table>
           </div>
@@ -362,12 +290,21 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
               <div className="text-[11px] text-slate-500 mb-1">Ukuran Kertas</div>
               <select
                 value={layout.ukuranKertas}
-                onChange={(e) => setLayout((prev) => ({ ...prev, ukuranKertas: e.target.value }))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setLayout((prev) => ({
+                    ...prev,
+                    ukuranKertas: val,
+                    // Kertas termal 100x150mm: langsung terapkan preset 1 label per lembar, tanpa margin.
+                    ...(val === "Termal" ? TERMAL_PRESET : {}),
+                  }));
+                }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
               >
                 <option value="A4">A4</option>
                 <option value="Letter">Letter</option>
                 <option value="F4">F4 (Folio)</option>
+                <option value="Termal">Termal 100×150mm</option>
               </select>
             </label>
             <label className="block">
@@ -474,7 +411,7 @@ export default function CetakLabel({ items, skuMaster, penempatan, rak }) {
       {/* ====== Area cetak (hanya tampil saat print) ====== */}
       <div className="hidden print:block">
         <style>{`
-          @page { size: ${layout.ukuranKertas === "F4" ? "215mm 330mm" : layout.ukuranKertas} ${layout.orientasi}; margin: 0; }
+          @page { size: ${pageSizeCss(layout.ukuranKertas)} ${layout.orientasi}; margin: 0; }
           .ss-print-page {
             padding-top: ${layout.marginAtas}mm;
             display: flex;
