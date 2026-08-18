@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { PageHeader, inputClass } from "../components/ui";
 import { MASTER_TIPE } from "../lib/constants";
 import { sb } from "../lib/api";
@@ -9,6 +9,13 @@ export default function MasterData({ master, reload, showToast }) {
   const [kode, setKode] = useState("");
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Edit inline: id baris yang sedang diedit + nilai kode/nama sementara.
+  // null = tidak ada baris yang sedang diedit.
+  const [editingId, setEditingId] = useState(null);
+  const [editKode, setEditKode] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const list = master[activeTipe] || [];
 
@@ -41,6 +48,46 @@ export default function MasterData({ master, reload, showToast }) {
     }
   };
 
+  const startEdit = (m) => {
+    setEditingId(m.id);
+    setEditKode(m.kode);
+    setEditLabel(m.label);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditKode("");
+    setEditLabel("");
+  };
+
+  const saveEdit = async (m) => {
+    const kodeBaru = editKode.trim().toUpperCase();
+    const labelBaru = editLabel.trim();
+    if (!kodeBaru || !labelBaru) return;
+    if (kodeBaru === m.kode && labelBaru === m.label) {
+      cancelEdit();
+      return;
+    }
+    if (kodeBaru !== m.kode && list.some((x) => x.id !== m.id && x.kode === kodeBaru)) {
+      showToast(`Kode "${kodeBaru}" sudah dipakai`, "err");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await sb(`master_data?id=eq.${m.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ kode: kodeBaru, label: labelBaru }),
+      });
+      await reload();
+      cancelEdit();
+      showToast("Perubahan disimpan");
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan", "err");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -54,7 +101,10 @@ export default function MasterData({ master, reload, showToast }) {
         {MASTER_TIPE.map((t) => (
           <button
             key={t.key}
-            onClick={() => setActiveTipe(t.key)}
+            onClick={() => {
+              setActiveTipe(t.key);
+              cancelEdit();
+            }}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
               activeTipe === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
             }`}
@@ -99,24 +149,78 @@ export default function MasterData({ master, reload, showToast }) {
             Belum ada kode untuk {MASTER_TIPE.find((t) => t.key === activeTipe)?.label}.
           </div>
         ) : (
-          list.map((m, i) => (
-            <div
-              key={m.id}
-              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-xs text-amber-400 w-14">{m.kode}</span>
-                <span className="text-sm text-slate-200">{m.label}</span>
-              </div>
-              <button
-                onClick={() => deleteEntry(m.id)}
-                className="text-slate-600 hover:text-red-400"
-                title="Hapus"
+          list.map((m, i) => {
+            const isEditing = editingId === m.id;
+            return (
+              <div
+                key={m.id}
+                className={`px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
               >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))
+                {isEditing ? (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={editKode}
+                        onChange={(e) => setEditKode(e.target.value)}
+                        className="w-20 bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs font-mono uppercase outline-none focus:border-amber-500"
+                      />
+                      <input
+                        value={editLabel}
+                        onChange={(e) => setEditLabel(e.target.value)}
+                        className="flex-1 bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                        onKeyDown={(e) => e.key === "Enter" && saveEdit(m)}
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => saveEdit(m)}
+                        disabled={!editKode.trim() || !editLabel.trim() || editSaving}
+                        className="p-1.5 rounded-lg text-emerald-400 hover:bg-slate-800 disabled:opacity-40 flex-shrink-0"
+                        title="Simpan"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        disabled={editSaving}
+                        className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-800 flex-shrink-0"
+                        title="Batal"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {editKode.trim().toUpperCase() !== m.kode && (
+                      <div className="text-[10px] text-amber-500/80 mt-1">
+                        Kode diganti — SKU/data lama yang masih pakai kode "{m.kode}" tidak otomatis ikut berubah.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-xs text-amber-400 w-14">{m.kode}</span>
+                      <span className="text-sm text-slate-200">{m.label}</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => startEdit(m)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                        title="Edit"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        onClick={() => deleteEntry(m.id)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800"
+                        title="Hapus"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
