@@ -226,7 +226,7 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
                   <Plus size={13} /> Tambah baru "{query.trim()}"
                 </button>
               ) : (
-                <div onMouseDown={(e) => e.preventDefault()} className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-2">
+                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-2">
                   <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
                   <div className="flex gap-1.5 items-end">
                     <div className="w-16 flex-shrink-0">
@@ -251,6 +251,7 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
                     </div>
                     <button
                       type="button"
+                      onMouseDown={(e) => e.preventDefault()}
                       disabled={!newKode.trim() || !newLabel.trim() || creating}
                       onClick={submitNew}
                       className="flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-2.5 py-1.5 rounded-md flex-shrink-0"
