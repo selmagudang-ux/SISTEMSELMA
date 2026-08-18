@@ -4,9 +4,11 @@ import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "../lib/api";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
+import MasterData from "./MasterData";
 
-export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal }) {
+export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal, reload, showToast }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
+  if (sub === "kategori") return <MasterData master={master} reload={reload} showToast={showToast} />;
   return <MasterBarang skuMaster={skuMaster} items={items} master={master} penempatan={penempatan} setModal={setModal} />;
 }
 

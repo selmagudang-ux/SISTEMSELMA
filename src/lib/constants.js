@@ -59,6 +59,7 @@ export const NAV = [
         children: [
           { key: "buat", label: "Buat SKU" },
           { key: "master-barang", label: "Master Barang" },
+          { key: "kategori", label: "Kategori, Bahan, dll" },
         ],
       },
       {

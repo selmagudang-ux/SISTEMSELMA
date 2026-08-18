@@ -387,7 +387,16 @@ function MainApp({ session, onLogout }) {
                 <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
-                <SkuHarga sub={nav.sub || "buat"} items={items} skuMaster={skuMaster} master={master} penempatan={penempatan} setModal={setModal} />
+                <SkuHarga
+                  sub={nav.sub || "buat"}
+                  items={items}
+                  skuMaster={skuMaster}
+                  master={master}
+                  penempatan={penempatan}
+                  setModal={setModal}
+                  reload={loadAll}
+                  showToast={showToast}
+                />
               )}
               {nav.menu === "stok" && (
                 <Stok sub={nav.sub || "barang"} skuMaster={skuMaster} penempatan={penempatan} stockHistory={stockHistory} setModal={setModal} />
