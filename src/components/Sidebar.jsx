@@ -182,13 +182,22 @@ export default function Sidebar({
         } lg:translate-x-0`}
       >
         <div className="flex items-center justify-between gap-2.5 px-4 py-3.5 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
               <Warehouse size={18} className="text-slate-950" />
             </div>
-            <div>
-              <div className="font-bold text-sm leading-none">Sistem Selma</div>
-              <div className="text-[11px] text-slate-500 leading-none mt-1">Manajemen inventori</div>
+            <div className="min-w-0">
+              {user && user.role !== "superadmin" && user.role !== "owner" ? (
+                <>
+                  <div className="font-bold text-sm leading-none truncate">{user.nama || user.username}</div>
+                  <div className="text-[11px] text-slate-500 leading-none mt-1 truncate">{roleLabel(user.role)}</div>
+                </>
+              ) : (
+                <>
+                  <div className="font-bold text-sm leading-none">Sistem Selma</div>
+                  <div className="text-[11px] text-slate-500 leading-none mt-1">Manajemen inventori</div>
+                </>
+              )}
             </div>
           </div>
           <button
