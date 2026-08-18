@@ -226,22 +226,29 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
                   <Plus size={13} /> Tambah baru "{query.trim()}"
                 </button>
               ) : (
-                <div onMouseDown={(e) => e.preventDefault()}>
+                <div onMouseDown={(e) => e.preventDefault()} className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-2">
                   <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
-                  <div className="flex gap-1.5">
-                    <input
-                      value={newKode}
-                      onChange={(e) => setNewKode(e.target.value)}
-                      placeholder="Kode"
-                      className="w-14 flex-shrink-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase"
-                    />
-                    <input
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      placeholder="Nama"
-                      className="flex-1 min-w-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
-                      onKeyDown={(e) => e.key === "Enter" && submitNew()}
-                    />
+                  <div className="flex gap-1.5 items-end">
+                    <div className="w-16 flex-shrink-0">
+                      <div className="text-[10px] text-slate-500 mb-1">Kode</div>
+                      <input
+                        value={newKode}
+                        onChange={(e) => setNewKode(e.target.value)}
+                        placeholder="KODE"
+                        maxLength={8}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase text-center"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[10px] text-slate-500 mb-1">Nama</div>
+                      <input
+                        value={newLabel}
+                        onChange={(e) => setNewLabel(e.target.value)}
+                        placeholder="Nama baru"
+                        className="w-full min-w-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
+                        onKeyDown={(e) => e.key === "Enter" && submitNew()}
+                      />
+                    </div>
                     <button
                       type="button"
                       disabled={!newKode.trim() || !newLabel.trim() || creating}
@@ -377,28 +384,42 @@ export function SearchableSelectOrNew({
         options={options}
         placeholder={placeholder || "Cari…"}
       />
-      <div className="flex gap-1.5 mt-1.5">
-        <input
-          className={`${inputClass} w-16 flex-shrink-0 uppercase`}
-          value={newKode}
-          onChange={(e) => {
-            onNewKodeChange(e.target.value);
-            setKodeTouched(true);
-            onChange("");
-          }}
-          placeholder="Kode"
-        />
-        <input
-          className={`${inputClass} flex-1 min-w-0`}
-          value={newLabel}
-          onChange={(e) => {
-            const nama = e.target.value;
-            onNewLabelChange(nama);
-            onChange("");
-            if (!kodeTouched) onNewKodeChange(suggestKode(nama));
-          }}
-          placeholder={newPlaceholder || "Atau ketik nama baru"}
-        />
+
+      <div className="flex items-center gap-2 my-2">
+        <div className="h-px flex-1 bg-slate-800" />
+        <span className="text-[10px] text-slate-500 uppercase tracking-wide">atau tambah baru</span>
+        <div className="h-px flex-1 bg-slate-800" />
+      </div>
+
+      <div className="flex gap-2 p-2 rounded-lg border border-dashed border-slate-800 bg-slate-950/40">
+        <div className="w-20 flex-shrink-0">
+          <div className="text-[10px] text-slate-500 mb-1">Kode</div>
+          <input
+            className={`${inputClass} px-2 uppercase text-center`}
+            value={newKode}
+            onChange={(e) => {
+              onNewKodeChange(e.target.value);
+              setKodeTouched(true);
+              onChange("");
+            }}
+            placeholder="KODE"
+            maxLength={8}
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] text-slate-500 mb-1">Nama</div>
+          <input
+            className={`${inputClass} min-w-0`}
+            value={newLabel}
+            onChange={(e) => {
+              const nama = e.target.value;
+              onNewLabelChange(nama);
+              onChange("");
+              if (!kodeTouched) onNewKodeChange(suggestKode(nama));
+            }}
+            placeholder={newPlaceholder || "Atau ketik nama baru"}
+          />
+        </div>
       </div>
     </div>
   );
