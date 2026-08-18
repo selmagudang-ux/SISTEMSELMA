@@ -408,6 +408,7 @@ export default function ModalRouter({
     return (
       <TokoForm
         toko={t}
+        tokoList={tokoGrosir}
         kodeBaru={t ? null : nextKode(tokoGrosir, "kode", "TKO-")}
         onClose={close}
         saving={saving}
