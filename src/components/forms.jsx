@@ -988,10 +988,13 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
   const [tipe, setTipe] = useState(transaksi?.tipe || "masuk");
   const [rekening, setRekening] = useState(transaksi?.rekening || "");
+  const [rekeningBaruKode, setRekeningBaruKode] = useState("");
   const [rekeningBaru, setRekeningBaru] = useState("");
   const [rekeningTujuan, setRekeningTujuan] = useState(transaksi?.rekening_tujuan || "");
+  const [rekeningTujuanBaruKode, setRekeningTujuanBaruKode] = useState("");
   const [rekeningTujuanBaru, setRekeningTujuanBaru] = useState("");
   const [kategori, setKategori] = useState(transaksi?.kategori || "");
+  const [kategoriBaruKode, setKategoriBaruKode] = useState("");
   const [kategoriBaru, setKategoriBaru] = useState("");
   const [jumlah, setJumlah] = useState(transaksi?.jumlah ?? "");
   const [keterangan, setKeterangan] = useState(transaksi?.keterangan || "");
@@ -1007,6 +1010,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
     setTipe(t);
     if (t === "transfer") {
       setKategori("");
+      setKategoriBaruKode("");
       setKategoriBaru("");
     } else {
       const list = t === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
@@ -1092,6 +1096,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
         <SearchableSelectOrNew
           value={rekening}
           onChange={setRekening}
+          newKode={rekeningBaruKode}
+          onNewKodeChange={setRekeningBaruKode}
           newLabel={rekeningBaru}
           onNewLabelChange={setRekeningBaru}
           options={rekeningOptions}
@@ -1110,6 +1116,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
           <SearchableSelectOrNew
             value={rekeningTujuan}
             onChange={setRekeningTujuan}
+            newKode={rekeningTujuanBaruKode}
+            onNewKodeChange={setRekeningTujuanBaruKode}
             newLabel={rekeningTujuanBaru}
             onNewLabelChange={setRekeningTujuanBaru}
             options={rekeningOptions.filter((r) => r.value !== rekening)}
@@ -1127,6 +1135,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
           <SearchableSelectOrNew
             value={kategori}
             onChange={setKategori}
+            newKode={kategoriBaruKode}
+            onNewKodeChange={setKategoriBaruKode}
             newLabel={kategoriBaru}
             onNewLabelChange={setKategoriBaru}
             options={kategoriOptions}
@@ -1177,10 +1187,13 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
             tanggal,
             tipe,
             rekening: rekening || null,
+            rekeningBaruKode: rekeningBaruKode.trim() || null,
             rekeningBaru: rekeningBaru.trim() || null,
             rekening_tujuan: isTransfer ? rekeningTujuan || null : null,
+            rekeningTujuanBaruKode: isTransfer ? rekeningTujuanBaruKode.trim() || null : null,
             rekeningTujuanBaru: isTransfer ? rekeningTujuanBaru.trim() || null : null,
             kategori: isTransfer ? null : kategori || null,
+            kategoriBaruKode: isTransfer ? null : kategoriBaruKode.trim() || null,
             kategoriBaru: isTransfer ? null : kategoriBaru.trim() || null,
             jumlah: jumlahNum,
             keterangan: keterangan.trim() || null,

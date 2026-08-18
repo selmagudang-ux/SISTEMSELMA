@@ -511,19 +511,17 @@ export default function ModalRouter({
         onSubmit={(data) =>
           run(async () => {
             // Field Rekening & Kategori sekarang pakai pola "pilih yang sudah
-            // ada ATAU ketik nama baru" (sama seperti Pelanggan di Grosir >
-            // Buat Pesanan Baru) — jadi kalau user ketik nama baru, kode-nya
-            // belum ada sama sekali dan harus dibuat dulu di sini sebelum
-            // transaksi disimpan. Kode disarankan otomatis dari nama (lihat
-            // suggestKode di components/ui.jsx), lalu dibikin unik kalau
-            // ternyata sudah kepakai.
-            const buatKodeBaru = async (tipe, label) => {
-              let kode = suggestKode(label);
+            // ada ATAU tambah baru dengan Kode + Nama sendiri" (kode disarankan
+            // otomatis di form, tapi user bisa ubah manual — lihat
+            // SearchableSelectOrNew di components/ui.jsx). Kalau user ketik
+            // baru, entri master_data-nya belum ada sama sekali dan harus
+            // dibuat dulu di sini sebelum transaksi disimpan, pakai persis
+            // kode yang diisi user (bukan dibikin otomatis lagi di sini).
+            const buatEntriBaru = async (tipe, kodeInput, label) => {
+              const kode = kodeInput.trim().toUpperCase();
               const daftar = master[tipe] || [];
               if (daftar.some((m) => m.kode === kode)) {
-                let n = 2;
-                while (daftar.some((m) => m.kode === `${kode}${n}`)) n++;
-                kode = `${kode}${n}`;
+                throw new Error(`Kode "${kode}" sudah dipakai — pilih dari daftar atau ganti kode.`);
               }
               await sb("master_data", {
                 method: "POST",
@@ -533,16 +531,24 @@ export default function ModalRouter({
             };
 
             let rekening = data.rekening;
-            if (!rekening && data.rekeningBaru) rekening = await buatKodeBaru("rekening", data.rekeningBaru);
+            if (!rekening && data.rekeningBaru) {
+              rekening = await buatEntriBaru("rekening", data.rekeningBaruKode || suggestKode(data.rekeningBaru), data.rekeningBaru);
+            }
 
             let rekeningTujuan = data.rekening_tujuan;
             if (!rekeningTujuan && data.rekeningTujuanBaru) {
-              rekeningTujuan = await buatKodeBaru("rekening", data.rekeningTujuanBaru);
+              rekeningTujuan = await buatEntriBaru(
+                "rekening",
+                data.rekeningTujuanBaruKode || suggestKode(data.rekeningTujuanBaru),
+                data.rekeningTujuanBaru
+              );
             }
 
             const tipeKategori = data.tipe === "masuk" ? "kategori_masuk" : "kategori_keluar";
             let kategori = data.kategori;
-            if (!kategori && data.kategoriBaru) kategori = await buatKodeBaru(tipeKategori, data.kategoriBaru);
+            if (!kategori && data.kategoriBaru) {
+              kategori = await buatEntriBaru(tipeKategori, data.kategoriBaruKode || suggestKode(data.kategoriBaru), data.kategoriBaru);
+            }
 
             const body = {
               tanggal: data.tanggal,

@@ -342,41 +342,64 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
   );
 }
 
-// Pola "pilih dari daftar ATAU ketik nama baru langsung di bawahnya" — sama
-// seperti field Pelanggan di Grosir > Buat Pesanan Baru. Beda dari Combobox:
-// opsi "buat baru" bukan popup mini-form di dalam dropdown, tapi input teks
-// polos yang selalu terlihat di bawah SearchableSelect, dan kode untuk entri
-// baru itu baru dibuat (lihat suggestKode) saat form ini disimpan — bukan
-// begitu diketik. Memilih salah satu otomatis mengosongkan yang lain.
+// Pola "pilih dari daftar ATAU tambah baru langsung di bawahnya" — bagian
+// pilihnya sama seperti field Pelanggan di Grosir > Buat Pesanan Baru
+// (SearchableSelect di atas, input di bawahnya selalu terlihat, tidak perlu
+// buka popup). Beda dari versi pelanggan: entri baru di sini butuh Kode +
+// Nama terpisah (bukan cuma satu nama), konsisten dengan field master_data
+// lain seperti Bahan/Peruntukan/Kategori di form SKU (lihat Combobox).
+// Kode disarankan otomatis dari Nama yang diketik (lihat suggestKode), tapi
+// tetap bisa diubah manual — begitu diubah manual, saran otomatis berhenti
+// menimpa. Memilih salah satu (existing vs baru) otomatis mengosongkan yang lain.
 export function SearchableSelectOrNew({
   value,
   onChange,
+  newKode,
+  onNewKodeChange,
   newLabel,
   onNewLabelChange,
   options,
   placeholder,
   newPlaceholder,
 }) {
+  const [kodeTouched, setKodeTouched] = useState(false);
+
   return (
     <div>
       <SearchableSelect
         value={value}
         onChange={(kode) => {
           onChange(kode);
+          onNewKodeChange("");
           onNewLabelChange("");
+          setKodeTouched(false);
         }}
         options={options}
         placeholder={placeholder || "Cari…"}
       />
-      <input
-        className={`${inputClass} mt-1.5`}
-        value={newLabel}
-        onChange={(e) => {
-          onNewLabelChange(e.target.value);
-          onChange("");
-        }}
-        placeholder={newPlaceholder || "Atau ketik nama baru"}
-      />
+      <div className="flex gap-1.5 mt-1.5">
+        <input
+          className={`${inputClass} w-24 uppercase`}
+          value={newKode}
+          onChange={(e) => {
+            onNewKodeChange(e.target.value);
+            setKodeTouched(true);
+            onChange("");
+          }}
+          placeholder="Kode"
+        />
+        <input
+          className={`${inputClass} flex-1`}
+          value={newLabel}
+          onChange={(e) => {
+            const nama = e.target.value;
+            onNewLabelChange(nama);
+            onChange("");
+            if (!kodeTouched) onNewKodeChange(suggestKode(nama));
+          }}
+          placeholder={newPlaceholder || "Atau ketik nama baru"}
+        />
+      </div>
     </div>
   );
 }
