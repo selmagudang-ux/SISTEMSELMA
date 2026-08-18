@@ -1014,6 +1014,11 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
 // di halaman Keuangan > Rekening & Kategori (prop `master`, dengan shape
 // { rekening: [], kategori_masuk: [], kategori_keluar: [] } — masing-masing
 // array berisi { kode, label } dari tabel master_data).
+// Ketiga field (Sumber Dana/Rekening Asal, Rekening Tujuan, Kategori) pakai
+// Combobox (bisa diketik) — kalau yang diketik belum ada di daftar, tetap
+// bisa dipilih apa adanya sebagai kode baru: otomatis dibuat ke master_data
+// (tabel yang sama dipakai halaman Rekening & Kategori) saat transaksi
+// disimpan, lihat ModalRouter.jsx.
 export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
@@ -1102,17 +1107,12 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, on
       </Field>
 
       <Field label={isTransfer ? "Rekening Asal" : "Sumber Dana"}>
-        <select value={rekening} onChange={(e) => setRekening(e.target.value)} className={inputClass}>
-          <option value="">Pilih rekening…</option>
-          {daftarRekening.map((r) => (
-            <option key={r.kode} value={r.kode}>{r.label}</option>
-          ))}
-        </select>
-        {daftarRekening.length === 0 && (
-          <div className="text-[11px] text-amber-400 mt-1">
-            Belum ada rekening terdaftar — tambah dulu di menu Keuangan &gt; Rekening &amp; Kategori.
-          </div>
-        )}
+        <Combobox
+          value={rekening}
+          onChange={setRekening}
+          options={daftarRekening}
+          placeholder="Ketik atau pilih rekening…"
+        />
         {rekening && saldoRekeningAsal !== null && (
           <div className={`text-[11px] mt-1 ${saldoTidakCukup ? "text-red-400" : "text-slate-500"}`}>
             Saldo saat ini: {fmtRp(saldoRekeningAsal)}
@@ -1122,31 +1122,23 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, on
 
       {isTransfer && (
         <Field label="Rekening Tujuan">
-          <select value={rekeningTujuan} onChange={(e) => setRekeningTujuan(e.target.value)} className={inputClass}>
-            <option value="">Pilih rekening tujuan…</option>
-            {daftarRekening
-              .filter((r) => r.kode !== rekening)
-              .map((r) => (
-                <option key={r.kode} value={r.kode}>{r.label}</option>
-              ))}
-          </select>
+          <Combobox
+            value={rekeningTujuan}
+            onChange={setRekeningTujuan}
+            options={daftarRekening.filter((r) => r.kode !== rekening)}
+            placeholder="Ketik atau pilih rekening tujuan…"
+          />
         </Field>
       )}
 
       {!isTransfer && (
         <Field label="Kategori">
-          <select value={kategori} onChange={(e) => setKategori(e.target.value)} className={inputClass}>
-            <option value="">Pilih kategori…</option>
-            {daftarKategori.map((k) => (
-              <option key={k.kode} value={k.kode}>{k.label}</option>
-            ))}
-          </select>
-          {daftarKategori.length === 0 && (
-            <div className="text-[11px] text-amber-400 mt-1">
-              Belum ada kategori {tipe === "masuk" ? "pemasukan" : "pengeluaran"} — tambah dulu di menu Keuangan &gt;
-              Rekening &amp; Kategori.
-            </div>
-          )}
+          <Combobox
+            value={kategori}
+            onChange={setKategori}
+            options={daftarKategori}
+            placeholder={`Ketik atau pilih kategori ${tipe === "masuk" ? "pemasukan" : "pengeluaran"}…`}
+          />
         </Field>
       )}
 
