@@ -342,6 +342,45 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
   );
 }
 
+// Pola "pilih dari daftar ATAU ketik nama baru langsung di bawahnya" — sama
+// seperti field Pelanggan di Grosir > Buat Pesanan Baru. Beda dari Combobox:
+// opsi "buat baru" bukan popup mini-form di dalam dropdown, tapi input teks
+// polos yang selalu terlihat di bawah SearchableSelect, dan kode untuk entri
+// baru itu baru dibuat (lihat suggestKode) saat form ini disimpan — bukan
+// begitu diketik. Memilih salah satu otomatis mengosongkan yang lain.
+export function SearchableSelectOrNew({
+  value,
+  onChange,
+  newLabel,
+  onNewLabelChange,
+  options,
+  placeholder,
+  newPlaceholder,
+}) {
+  return (
+    <div>
+      <SearchableSelect
+        value={value}
+        onChange={(kode) => {
+          onChange(kode);
+          onNewLabelChange("");
+        }}
+        options={options}
+        placeholder={placeholder || "Cari…"}
+      />
+      <input
+        className={`${inputClass} mt-1.5`}
+        value={newLabel}
+        onChange={(e) => {
+          onNewLabelChange(e.target.value);
+          onChange("");
+        }}
+        placeholder={newPlaceholder || "Atau ketik nama baru"}
+      />
+    </div>
+  );
+}
+
 export function StatCard({ label, value, accent, icon: Icon, iconColor }) {
   return (
     <div className="rounded-xl border border-slate-800 p-4 bg-slate-900/50">

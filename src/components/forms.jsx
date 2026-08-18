@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
-import { ModalShell, Field, Combobox, SearchableSelect, inputClass, InputTanggal } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
@@ -54,21 +54,17 @@ export function BarangMasukForm({ onClose, onSubmit, saving }) {
   );
 }
 
-// Form pembuatan SKU — DIGABUNG jadi satu alur "search-first":
-// 1) User cari dulu apakah SKU-nya sudah ada (ketik kode SKU).
-// 2) Kalau ketemu → pilih dari hasil pencarian, stok tinggal ditambahkan ke SKU itu.
-// 3) Kalau tidak ketemu → lanjut ke form pembuatan SKU baru (bahan/kategori/dst).
-// Ini menggantikan pemisahan lama "Barang Baru" vs "Barang Lama" yang dulu
-// ditentukan di form Barang Masuk — sekarang keputusannya murni dari hasil pencarian.
+// Form pembuatan SKU — satu layar saja, tidak ada lagi navigasi berpindah
+// layar (dulu "cari" → "buat" dengan tombol kembali). Persis pola field
+// Pelanggan di Grosir > Buat Pesanan Baru: pilih dari daftar yang sudah ada
+// DI ATAS, atau isi bagian "buat SKU baru" di bawahnya — dua-duanya kelihatan
+// sekaligus, user tinggal pakai salah satu lalu simpan.
 export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, saving }) {
-  const [q, setQ] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [mode, setMode] = useState("cari"); // "cari" | "buat"
+  const [selectedId, setSelectedId] = useState("");
   const [hargaBaru, setHargaBaru] = useState("");
 
-  const filtered = q.trim()
-    ? skuMaster.filter((s) => s.sku.toLowerCase().includes(q.trim().toLowerCase()))
-    : skuMaster;
+  const selected = skuMaster.find((s) => String(s.id) === String(selectedId)) || null;
+  const skuOptions = skuMaster.map((s) => ({ value: s.id, label: `${s.sku} · stok ${s.stok}` }));
 
   const [bahan, setBahan] = useState("");
   const [peruntukan, setPeruntukan] = useState("");
@@ -110,15 +106,73 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
       ? `${bahan}${peruntukan}${kategori}-${subkategori}-${model}-${warna}-${ukuran}`
       : null;
 
-  if (mode === "buat") {
-    return (
-      <ModalShell title={`Buat SKU Baru — ${item.jumlah}x barang`} onClose={onClose}>
-        <button
-          onClick={() => setMode("cari")}
-          className="text-xs text-slate-500 hover:text-slate-300 mb-3"
-        >
-          ← Kembali ke pencarian SKU
-        </button>
+  return (
+    <ModalShell title={`Buat SKU — ${item.jumlah}x barang`} onClose={onClose}>
+      <p className="text-xs text-slate-500 mb-3">
+        Pilih SKU yang sudah ada untuk menambah stok, atau isi bagian "buat SKU baru" di bawah kalau belum ada.
+      </p>
+
+      <Field label="SKU yang sudah ada (opsional)">
+        <SearchableSelect
+          value={selectedId}
+          onChange={(id) => {
+            setSelectedId(id);
+            setHargaBaru("");
+          }}
+          options={skuOptions}
+          placeholder="Cari kode SKU…"
+        />
+      </Field>
+
+      {selected && (
+        <>
+          <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+            <div className="text-[11px] text-slate-500">Stok setelah ditambah</div>
+            <div className="font-mono text-sm text-amber-400">
+              {selected.stok} + {item.jumlah} = {selected.stok + item.jumlah}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-2">Harga asli SKU ini saat ini</div>
+            <div className="font-mono text-sm text-slate-300">{fmtRp(selected.harga_asli)}</div>
+          </div>
+
+          <Field label="Harga Asli barang ini (kosongkan kalau sama)">
+            <input
+              type="number"
+              className={inputClass}
+              value={hargaBaru}
+              onChange={(e) => setHargaBaru(e.target.value)}
+              placeholder={`${selected.harga_asli}`}
+            />
+            {hargaBaru && Number(hargaBaru) !== selected.harga_asli && (
+              <p className="text-[11px] text-amber-400 mt-1.5">
+                Harga beda dari harga lama — nanti di Master Barang akan muncul pilihan mau pakai harga lama atau
+                harga baru ini. Stok tetap masuk dulu memakai harga jual yang berlaku sekarang.
+              </p>
+            )}
+          </Field>
+
+          <button
+            disabled={saving}
+            onClick={() =>
+              onSubmitExisting(
+                selected,
+                hargaBaru && Number(hargaBaru) !== selected.harga_asli ? Number(hargaBaru) : null
+              )
+            }
+            className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg mb-4"
+          >
+            {saving ? "Menyimpan…" : "Tambahkan Stok & Lanjut ke Rak"}
+          </button>
+        </>
+      )}
+
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-px flex-1 bg-slate-800" />
+        <span className="text-[11px] text-slate-500 whitespace-nowrap">atau buat SKU baru</span>
+        <div className="h-px flex-1 bg-slate-800" />
+      </div>
+
+      <div>
         <div className="grid grid-cols-2 gap-x-3">
           <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} tipe="bahan" reload={reload} /></Field>
           <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} tipe="peruntukan" reload={reload} /></Field>
@@ -176,103 +230,9 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           onClick={() => onSubmitNew({ bahan, peruntukan, kategori, subkategori, model, warna, ukuran }, Number(hargaAsli))}
           className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
         >
-          {saving ? "Menyimpan…" : "Buat SKU & Lanjut ke Rak"}
+          {saving ? "Menyimpan…" : "Buat SKU Baru & Lanjut ke Rak"}
         </button>
-      </ModalShell>
-    );
-  }
-
-  return (
-    <ModalShell title={`Buat SKU — ${item.jumlah}x barang`} onClose={onClose}>
-      <p className="text-xs text-slate-500 mb-3">
-        Cari dulu apakah SKU-nya sudah ada. Kalau ketemu, stok tinggal ditambahkan. Kalau belum ada, buat SKU baru.
-      </p>
-
-      <Field label="Cari SKU">
-        <input
-          className={inputClass}
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setSelected(null);
-          }}
-          placeholder="Ketik kode SKU…"
-          autoFocus
-        />
-      </Field>
-
-      <div className="max-h-56 overflow-y-auto border border-slate-800 rounded-lg mb-3 divide-y divide-slate-800">
-        {filtered.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-slate-500 text-center">
-            {q.trim() ? "SKU tidak ditemukan." : "Belum ada SKU tersimpan."}
-          </div>
-        ) : (
-          filtered.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => {
-                setSelected(s);
-                setHargaBaru("");
-              }}
-              className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm ${
-                selected?.id === s.id ? "bg-amber-500/15" : "hover:bg-slate-900"
-              }`}
-            >
-              <span className="font-mono text-xs text-slate-200">{s.sku}</span>
-              <span className="text-[11px] text-slate-500">Stok: {s.stok}</span>
-            </button>
-          ))
-        )}
       </div>
-
-      {selected && (
-        <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-          <div className="text-[11px] text-slate-500">Stok setelah ditambah</div>
-          <div className="font-mono text-sm text-amber-400">
-            {selected.stok} + {item.jumlah} = {selected.stok + item.jumlah}
-          </div>
-          <div className="text-[11px] text-slate-500 mt-2">Harga asli SKU ini saat ini</div>
-          <div className="font-mono text-sm text-slate-300">{fmtRp(selected.harga_asli)}</div>
-        </div>
-      )}
-
-      {selected && (
-        <Field label="Harga Asli barang ini (kosongkan kalau sama)">
-          <input
-            type="number"
-            className={inputClass}
-            value={hargaBaru}
-            onChange={(e) => setHargaBaru(e.target.value)}
-            placeholder={`${selected.harga_asli}`}
-          />
-          {hargaBaru && Number(hargaBaru) !== selected.harga_asli && (
-            <p className="text-[11px] text-amber-400 mt-1.5">
-              Harga beda dari harga lama — nanti di Master Barang akan muncul pilihan mau pakai harga lama atau
-              harga baru ini. Stok tetap masuk dulu memakai harga jual yang berlaku sekarang.
-            </p>
-          )}
-        </Field>
-      )}
-
-      <button
-        disabled={!selected || saving}
-        onClick={() =>
-          onSubmitExisting(
-            selected,
-            hargaBaru && Number(hargaBaru) !== selected.harga_asli ? Number(hargaBaru) : null
-          )
-        }
-        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg mb-2"
-      >
-        {saving ? "Menyimpan…" : "Tambahkan Stok & Lanjut ke Rak"}
-      </button>
-
-      <button
-        onClick={() => setMode("buat")}
-        className="w-full border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium py-2.5 rounded-lg"
-      >
-        SKU tidak ditemukan? Buat SKU baru →
-      </button>
     </ModalShell>
   );
 }
@@ -1016,18 +976,30 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
 // bisa dipilih apa adanya sebagai kode baru: otomatis dibuat ke master_data
 // (tabel yang sama dipakai halaman Rekening & Kategori) saat transaksi
 // disimpan, lihat ModalRouter.jsx.
+// Field Rekening & Kategori dulu pakai Combobox (popup mini-form "Kode" +
+// "Nama" di dalam dropdown untuk bikin entri baru). Sekarang pakai
+// SearchableSelectOrNew — persis pola field Pelanggan di Grosir > Buat
+// Pesanan Baru: pilih dari daftar di SearchableSelect, ATAU ketik nama baru
+// langsung di input polos di bawahnya. Kode untuk entri baru (rekening/
+// kategori) baru dibuat otomatis dari nama yang diketik saat form ini
+// disimpan — lihat penanganannya di ModalRouter.
 export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, reload, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
   const [tipe, setTipe] = useState(transaksi?.tipe || "masuk");
   const [rekening, setRekening] = useState(transaksi?.rekening || "");
+  const [rekeningBaru, setRekeningBaru] = useState("");
   const [rekeningTujuan, setRekeningTujuan] = useState(transaksi?.rekening_tujuan || "");
+  const [rekeningTujuanBaru, setRekeningTujuanBaru] = useState("");
   const [kategori, setKategori] = useState(transaksi?.kategori || "");
+  const [kategoriBaru, setKategoriBaru] = useState("");
   const [jumlah, setJumlah] = useState(transaksi?.jumlah ?? "");
   const [keterangan, setKeterangan] = useState(transaksi?.keterangan || "");
 
   const daftarRekening = master?.rekening || [];
   const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
+  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const kategoriOptions = daftarKategori.map((k) => ({ value: k.kode, label: `${k.label} (${k.kode})` }));
   const isTransfer = tipe === "transfer";
   const isKeluarSaldo = tipe === "keluar" || isTransfer; // dua-duanya narik dari saldo rekening asal
 
@@ -1035,6 +1007,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
     setTipe(t);
     if (t === "transfer") {
       setKategori("");
+      setKategoriBaru("");
     } else {
       const list = t === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
       if (!list.some((k) => k.kode === kategori)) setKategori("");
@@ -1043,21 +1016,33 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
 
   // Saldo rekening asal SAAT INI, dihitung dari semua transaksi lain (kalau
   // sedang edit transaksi ini, transaksi lama ini sendiri dikeluarkan dulu
-  // dari perhitungan supaya tidak dobel-hitung dampaknya ke saldo).
+  // dari perhitungan supaya tidak dobel-hitung dampaknya ke saldo). Rekening
+  // yang baru diketik (belum tersimpan) dianggap saldonya 0.
   const riwayatUntukSaldo = (keuanganTransaksi || []).filter((t) => t.id !== transaksi?.id);
   const saldoSaatIni = saldoPerRekening(riwayatUntukSaldo, daftarRekening);
-  const saldoRekeningAsal = rekening ? (saldoSaatIni.find((r) => r.kode === rekening)?.saldo ?? 0) : null;
+  const saldoRekeningAsal = rekening
+    ? (saldoSaatIni.find((r) => r.kode === rekening)?.saldo ?? 0)
+    : rekeningBaru.trim()
+    ? 0
+    : null;
+
+  const rekeningTerisi = !!(rekening || rekeningBaru.trim());
+  const kategoriTerisi = !!(kategori || kategoriBaru.trim());
+  const rekeningTujuanTerisi = !!(rekeningTujuan || rekeningTujuanBaru.trim());
+  const rekeningSamaDenganTujuan =
+    (rekening && rekening === rekeningTujuan) ||
+    (rekeningBaru.trim() && rekeningTujuanBaru.trim() && rekeningBaru.trim().toLowerCase() === rekeningTujuanBaru.trim().toLowerCase());
 
   const jumlahNum = Number(jumlah) || 0;
-  const saldoTidakCukup = isKeluarSaldo && rekening && jumlahNum > 0 && jumlahNum > saldoRekeningAsal;
+  const saldoTidakCukup = isKeluarSaldo && rekeningTerisi && jumlahNum > 0 && jumlahNum > (saldoRekeningAsal ?? 0);
 
   const canSubmit =
     tanggal &&
-    rekening &&
+    rekeningTerisi &&
     jumlahNum > 0 &&
     !saving &&
     !saldoTidakCukup &&
-    (isTransfer ? rekeningTujuan && rekeningTujuan !== rekening : !!kategori);
+    (isTransfer ? rekeningTujuanTerisi && !rekeningSamaDenganTujuan : kategoriTerisi);
 
   return (
     <ModalShell title={transaksi ? "Edit Transaksi" : "Tambah Transaksi"} onClose={onClose}>
@@ -1104,15 +1089,16 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
       </Field>
 
       <Field label={isTransfer ? "Rekening Asal" : "Sumber Dana"}>
-        <Combobox
+        <SearchableSelectOrNew
           value={rekening}
           onChange={setRekening}
-          options={daftarRekening}
-          placeholder="Ketik atau pilih rekening…"
-          tipe="rekening"
-          reload={reload}
+          newLabel={rekeningBaru}
+          onNewLabelChange={setRekeningBaru}
+          options={rekeningOptions}
+          placeholder="Cari rekening yang sudah ada…"
+          newPlaceholder="Atau ketik nama rekening baru"
         />
-        {rekening && saldoRekeningAsal !== null && (
+        {saldoRekeningAsal !== null && (
           <div className={`text-[11px] mt-1 ${saldoTidakCukup ? "text-red-400" : "text-slate-500"}`}>
             Saldo saat ini: {fmtRp(saldoRekeningAsal)}
           </div>
@@ -1121,26 +1107,31 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
 
       {isTransfer && (
         <Field label="Rekening Tujuan">
-          <Combobox
+          <SearchableSelectOrNew
             value={rekeningTujuan}
             onChange={setRekeningTujuan}
-            options={daftarRekening.filter((r) => r.kode !== rekening)}
-            placeholder="Ketik atau pilih rekening tujuan…"
-            tipe="rekening"
-            reload={reload}
+            newLabel={rekeningTujuanBaru}
+            onNewLabelChange={setRekeningTujuanBaru}
+            options={rekeningOptions.filter((r) => r.value !== rekening)}
+            placeholder="Cari rekening tujuan yang sudah ada…"
+            newPlaceholder="Atau ketik nama rekening baru"
           />
+          {rekeningSamaDenganTujuan && (
+            <div className="text-[11px] text-red-400 mt-1">Rekening tujuan tidak boleh sama dengan rekening asal.</div>
+          )}
         </Field>
       )}
 
       {!isTransfer && (
         <Field label="Kategori">
-          <Combobox
+          <SearchableSelectOrNew
             value={kategori}
             onChange={setKategori}
-            options={daftarKategori}
-            placeholder={`Ketik atau pilih kategori ${tipe === "masuk" ? "pemasukan" : "pengeluaran"}…`}
-            tipe={tipe === "masuk" ? "kategori_masuk" : "kategori_keluar"}
-            reload={reload}
+            newLabel={kategoriBaru}
+            onNewLabelChange={setKategoriBaru}
+            options={kategoriOptions}
+            placeholder={`Cari kategori ${tipe === "masuk" ? "pemasukan" : "pengeluaran"} yang sudah ada…`}
+            newPlaceholder="Atau ketik nama kategori baru"
           />
         </Field>
       )}
@@ -1173,8 +1164,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
         <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
-            Saldo {daftarRekening.find((r) => r.kode === rekening)?.label || rekening} tidak cukup — saldo saat ini
-            hanya {fmtRp(saldoRekeningAsal)}, tapi jumlah transaksi {fmtRp(jumlahNum)}.
+            Saldo {daftarRekening.find((r) => r.kode === rekening)?.label || rekeningBaru || rekening} tidak cukup —
+            saldo saat ini hanya {fmtRp(saldoRekeningAsal ?? 0)}, tapi jumlah transaksi {fmtRp(jumlahNum)}.
           </div>
         </div>
       )}
@@ -1185,9 +1176,12 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
           onSubmit({
             tanggal,
             tipe,
-            rekening,
-            rekening_tujuan: isTransfer ? rekeningTujuan : null,
-            kategori: isTransfer ? null : kategori,
+            rekening: rekening || null,
+            rekeningBaru: rekeningBaru.trim() || null,
+            rekening_tujuan: isTransfer ? rekeningTujuan || null : null,
+            rekeningTujuanBaru: isTransfer ? rekeningTujuanBaru.trim() || null : null,
+            kategori: isTransfer ? null : kategori || null,
+            kategoriBaru: isTransfer ? null : kategoriBaru.trim() || null,
             jumlah: jumlahNum,
             keterangan: keterangan.trim() || null,
           })

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer } from "lucide-react";
-import { ModalShell, Badge } from "./ui";
+import { ModalShell, Badge, suggestKode } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode,
@@ -510,34 +510,57 @@ export default function ModalRouter({
         saving={saving}
         onSubmit={(data) =>
           run(async () => {
-            // Jaring pengaman: rekening/kategori seharusnya sudah dibuat langsung
-            // lewat mini-form "Kode + Nama" di Combobox (lihat components/ui.jsx)
-            // begitu diisi, jadi biasanya sudah ada di Master Data di titik ini.
-            // Loop ini cuma jaga-jaga (idempotent — dicek dulu sebelum POST)
-            // supaya transaksi tidak pernah nunjuk ke kode yang belum terdaftar.
-            const kodeBaru = [
-              { tipe: "rekening", kode: data.rekening },
-              { tipe: "rekening", kode: data.rekening_tujuan },
-              { tipe: data.tipe === "masuk" ? "kategori_masuk" : "kategori_keluar", kode: data.kategori },
-            ];
-            for (const { tipe, kode } of kodeBaru) {
-              if (!kode) continue;
-              const sudahAda = (master[tipe] || []).some((m) => m.kode === kode);
-              if (!sudahAda) {
-                await sb("master_data", {
-                  method: "POST",
-                  body: JSON.stringify({ tipe, kode, label: kode }),
-                });
+            // Field Rekening & Kategori sekarang pakai pola "pilih yang sudah
+            // ada ATAU ketik nama baru" (sama seperti Pelanggan di Grosir >
+            // Buat Pesanan Baru) — jadi kalau user ketik nama baru, kode-nya
+            // belum ada sama sekali dan harus dibuat dulu di sini sebelum
+            // transaksi disimpan. Kode disarankan otomatis dari nama (lihat
+            // suggestKode di components/ui.jsx), lalu dibikin unik kalau
+            // ternyata sudah kepakai.
+            const buatKodeBaru = async (tipe, label) => {
+              let kode = suggestKode(label);
+              const daftar = master[tipe] || [];
+              if (daftar.some((m) => m.kode === kode)) {
+                let n = 2;
+                while (daftar.some((m) => m.kode === `${kode}${n}`)) n++;
+                kode = `${kode}${n}`;
               }
+              await sb("master_data", {
+                method: "POST",
+                body: JSON.stringify({ tipe, kode, label: label.trim() }),
+              });
+              return kode;
+            };
+
+            let rekening = data.rekening;
+            if (!rekening && data.rekeningBaru) rekening = await buatKodeBaru("rekening", data.rekeningBaru);
+
+            let rekeningTujuan = data.rekening_tujuan;
+            if (!rekeningTujuan && data.rekeningTujuanBaru) {
+              rekeningTujuan = await buatKodeBaru("rekening", data.rekeningTujuanBaru);
             }
+
+            const tipeKategori = data.tipe === "masuk" ? "kategori_masuk" : "kategori_keluar";
+            let kategori = data.kategori;
+            if (!kategori && data.kategoriBaru) kategori = await buatKodeBaru(tipeKategori, data.kategoriBaru);
+
+            const body = {
+              tanggal: data.tanggal,
+              tipe: data.tipe,
+              rekening,
+              rekening_tujuan: rekeningTujuan,
+              kategori,
+              jumlah: data.jumlah,
+              keterangan: data.keterangan,
+            };
 
             if (t) {
               await sb(`keuangan_transaksi?id=eq.${t.id}`, {
                 method: "PATCH",
-                body: JSON.stringify(data),
+                body: JSON.stringify(body),
               });
             } else {
-              await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(data) });
+              await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(body) });
             }
           }, t ? "Transaksi diperbarui" : "Transaksi ditambahkan")
         }
