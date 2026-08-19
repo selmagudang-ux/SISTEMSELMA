@@ -20,9 +20,20 @@ import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, co
 import Grosir from "./pages/Grosir";
 import Keuangan from "./pages/Keuangan";
 import Pengaturan from "./pages/Pengaturan";
+import Absensi from "./pages/Absensi";
+import AbsenKaryawan from "./pages/AbsenKaryawan";
 
 export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
+
+  // Halaman absen karyawan (?absen di URL) BERDIRI SENDIRI, dicek SEBELUM
+  // gerbang login SELMA — karyawan absen pakai akun sendiri (tabel
+  // `karyawan`), bukan akun admin SELMA (app_users), jadi tidak boleh
+  // ketutup layar Login di bawah.
+  const isAbsenRoute = typeof window !== "undefined" && window.location.search.includes("absen");
+  if (isAbsenRoute) {
+    return <AbsenKaryawan />;
+  }
 
   if (!session) {
     return <Login onLogin={setSession} />;
@@ -444,6 +455,9 @@ function MainApp({ session, onLogout }) {
                   showToast={showToast}
                   setModal={setModal}
                 />
+              )}
+              {nav.menu === "absensi" && (
+                <Absensi sub={nav.sub || "rekap"} showToast={showToast} />
               )}
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
