@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
-import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal, InputRupiah } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
@@ -1018,6 +1018,20 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
     }
   };
 
+  // Rekomendasi "Keterangan" diambil dari riwayat transaksi yang tipenya sama
+  // (masuk/keluar/transfer) — dihitung frekuensinya lalu diurutkan dari yang
+  // paling sering dipakai, supaya keterangan yang berulang (mis. "Bayar
+  // listrik", "Setoran harian") langsung muncul begitu mulai mengetik.
+  const keteranganSuggestions = (() => {
+    const count = new Map();
+    for (const t of keuanganTransaksi || []) {
+      const k = (t.keterangan || "").trim();
+      if (!k || t.tipe !== tipe) continue;
+      count.set(k, (count.get(k) || 0) + 1);
+    }
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  })();
+
   // Saldo rekening asal SAAT INI, dihitung dari semua transaksi lain (kalau
   // sedang edit transaksi ini, transaksi lama ini sendiri dikeluarkan dulu
   // dari perhitungan supaya tidak dobel-hitung dampaknya ke saldo). Rekening
@@ -1147,10 +1161,10 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
       )}
 
       <Field label="Keterangan (opsional)">
-        <input
-          className={inputClass}
+        <SuggestInput
           value={keterangan}
-          onChange={(e) => setKeterangan(e.target.value)}
+          onChange={setKeterangan}
+          suggestions={keteranganSuggestions}
           placeholder={isTransfer ? "Contoh: setor tunai ke bank" : "Penjelasan tambahan dari kategori di atas"}
         />
       </Field>

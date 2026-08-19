@@ -84,6 +84,64 @@ export function InputRupiah({ value, onChange, className, placeholder }) {
   );
 }
 
+// Input teks dengan dropdown rekomendasi berdasarkan riwayat (dipakai untuk
+// "Keterangan" di form Transaksi Keuangan). Rekomendasi difilter dari daftar
+// `suggestions` (biasanya keterangan-keterangan yang pernah diketik sebelumnya,
+// sudah diurutkan dari yang paling sering dipakai), cocok kalau teksnya
+// mengandung apa yang sedang diketik. Klik salah satu rekomendasi langsung
+// mengisi field-nya.
+export function SuggestInput({ value, onChange, suggestions, placeholder, className }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const q = (value || "").trim().toLowerCase();
+  const filtered = (suggestions || [])
+    .filter((s) => s.toLowerCase() !== q)
+    .filter((s) => !q || s.toLowerCase().includes(q))
+    .slice(0, 6);
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <input
+        className={className || inputClass}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-30 mt-1 w-full bg-slate-900 border border-slate-800 rounded-lg overflow-hidden shadow-lg">
+          {filtered.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                onChange(s);
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-400 truncate"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Field({ label, children }) {
   return (
     <label className="block mb-3">
