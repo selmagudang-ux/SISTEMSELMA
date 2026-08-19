@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight,
+  Landmark, ArrowRight, Clock, Users, UserCheck, UserX,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import {
@@ -13,17 +13,19 @@ import {
   arusKasPerPeriode,
   breakdownPengeluaranKategori,
 } from "../lib/api";
+import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
 import { GrafikArusKas, BreakdownPengeluaran, labelDari } from "./Keuangan";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
-// supaya masing-masing tetap fokus (angka gudang tidak nyampur sama angka
-// grosir/keuangan), tapi tetap satu halaman "Dashboard" (pola sama seperti
-// halaman Laporan), bukan menu terpisah di sidebar.
+// vs Absensi supaya masing-masing tetap fokus (angka gudang tidak nyampur sama
+// angka grosir/keuangan/absensi), tapi tetap satu halaman "Dashboard" (pola
+// sama seperti halaman Laporan), bukan menu terpisah di sidebar.
 const TABS = [
   { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
   { key: "grosir", label: "Dashboard Grosir", icon: Store },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
+  { key: "absensi", label: "Dashboard Absensi", icon: Clock },
 ];
 
 function awalBulanIni() {
@@ -61,6 +63,8 @@ export default function Dashboard({
   pelangganGrosir = [],
   keuanganTransaksi = [],
   master = {},
+  absensiRows = [],
+  karyawanList = [],
 }) {
   const [tab, setTab] = useState("gudang");
 
@@ -73,6 +77,8 @@ export default function Dashboard({
             ? "Ringkasan penjualan, piutang, dan deposit pelanggan grosir."
             : tab === "keuangan"
             ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
+            : tab === "absensi"
+            ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
         }
       />
@@ -114,10 +120,16 @@ export default function Dashboard({
           pelangganGrosir={pelangganGrosir}
           onNavigate={onNavigate}
         />
-      ) : (
+      ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
           master={master}
+          onNavigate={onNavigate}
+        />
+      ) : (
+        <DashboardAbsensi
+          absensiRows={absensiRows}
+          karyawanList={karyawanList}
           onNavigate={onNavigate}
         />
       )}
@@ -381,6 +393,158 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
                       {p.status_bayar}
                     </Badge>
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
+  const hariIniStr = hariIniIso();
+
+  const rekapHarian = rekapHarianAbsensi(absensiRows);
+  const rekapBulanan = rekapBulananAbsensi(rekapHarian);
+  const rekapMingguan = rekapMingguanAbsensi(rekapHarian, hariIniStr, karyawanList);
+
+  const karyawanAktif = karyawanList.filter((k) => k.aktif);
+  const hadirHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.masuk);
+  const idHadirHariIni = new Set(hadirHariIni.map((r) => r.idKaryawan));
+  const belumHadirHariIni = karyawanAktif.filter((k) => !idHadirHariIni.has(k.id_karyawan));
+  const telatHariIni = hadirHariIni.filter((r) => r.telatMenit > 0).length;
+
+  const bulanIni = hariIniStr.slice(0, 7);
+  const rekapBulanIni = rekapBulanan.filter((r) => r.bulan === bulanIni);
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Karyawan Aktif" value={karyawanAktif.length} icon={Users} />
+        <StatCard label="Hadir Hari Ini" value={hadirHariIni.length} accent="text-emerald-400" icon={UserCheck} iconColor="text-emerald-500" />
+        <StatCard label="Belum Absen Hari Ini" value={belumHadirHariIni.length} accent="text-red-400" icon={UserX} iconColor="text-red-500" />
+        <StatCard label="Telat Hari Ini" value={telatHariIni} accent="text-amber-400" icon={Clock} iconColor="text-amber-500" />
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold">Kehadiran Hari Ini ({hariIniStr})</div>
+          <button
+            onClick={() => onNavigate && onNavigate("absensi", "rekap")}
+            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+          >
+            Lihat Rekap Lengkap <ArrowRight size={12} />
+          </button>
+        </div>
+        {karyawanAktif.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="Belum ada karyawan aktif." />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {hadirHariIni.map((r) => (
+                <tr key={r.idKaryawan} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 text-slate-200 font-medium">{r.nama}</td>
+                  <td className="px-4 py-2.5 text-slate-400 text-xs">Masuk {r.masuk}{r.pulang ? ` — Pulang ${r.pulang}` : ""}</td>
+                  <td className="px-4 py-2.5">
+                    <Badge color={r.status === "Normal" ? "emerald" : r.status.includes("Tidak Absen") ? "slate" : "amber"}>
+                      {r.status}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+              {belumHadirHariIni.map((k) => (
+                <tr key={k.id} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 text-slate-400">{k.nama}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">—</td>
+                  <td className="px-4 py-2.5">
+                    <Badge color="slate">Belum Absen</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
+          Rekap Mingguan ({rekapMingguan.tanggalMinggu[0]} – {rekapMingguan.tanggalMinggu[6]})
+        </div>
+        {rekapMingguan.data.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="Belum ada karyawan aktif." />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900/70 text-slate-400 text-xs">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-medium sticky left-0 bg-slate-900/70">Nama</th>
+                  {rekapMingguan.tanggalMinggu.map((tgl, i) => (
+                    <th key={tgl} className="text-center px-2 py-2.5 font-medium whitespace-nowrap">
+                      <div>{NAMA_HARI[i]}</div>
+                      <div className="text-slate-500 font-normal">{tgl.slice(8, 10)}/{tgl.slice(5, 7)}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rekapMingguan.data.map((p) => (
+                  <tr key={p.idKaryawan} className="border-t border-slate-800/70">
+                    <td className="px-4 py-2.5 font-medium whitespace-nowrap sticky left-0 bg-slate-950">{p.nama}</td>
+                    {rekapMingguan.tanggalMinggu.map((tgl) => {
+                      const r = p.hari[tgl];
+                      return (
+                        <td key={tgl} className="px-2 py-2.5 text-center">
+                          {!r ? (
+                            <span className="text-slate-600">—</span>
+                          ) : !r.masuk ? (
+                            <Badge color="slate">Tidak Absen</Badge>
+                          ) : (
+                            <span className={r.telatMenit > 0 ? "text-amber-400 font-semibold" : "text-emerald-400 font-semibold"}>
+                              {r.masuk}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Rekap Bulanan ({bulanIni})</div>
+        {rekapBulanIni.length === 0 ? (
+          <div className="p-6">
+            <EmptyState label="Belum ada data absensi bulan ini." />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-900/70 text-slate-400 text-xs">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium">Nama</th>
+                <th className="text-left px-4 py-2.5 font-medium">Hari Masuk</th>
+                <th className="text-left px-4 py-2.5 font-medium">Hari Telat</th>
+                <th className="text-left px-4 py-2.5 font-medium">Total Lembur</th>
+                <th className="text-left px-4 py-2.5 font-medium">Total Jam Kerja</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rekapBulanIni.map((r) => (
+                <tr key={r.idKaryawan} className="border-t border-slate-800/70">
+                  <td className="px-4 py-2.5 font-medium">{r.nama}</td>
+                  <td className="px-4 py-2.5">{r.hariMasuk}</td>
+                  <td className="px-4 py-2.5">{r.hariTelat}</td>
+                  <td className="px-4 py-2.5">{r.totalLemburJam} jam</td>
+                  <td className="px-4 py-2.5">{r.totalJamKerja} jam</td>
                 </tr>
               ))}
             </tbody>

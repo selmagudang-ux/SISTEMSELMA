@@ -23,6 +23,7 @@ import Keuangan from "./pages/Keuangan";
 import Pengaturan from "./pages/Pengaturan";
 import Absensi from "./pages/Absensi";
 import { FormAbsen } from "./pages/AbsenKaryawan";
+import { listAbsensi, listKaryawan } from "./lib/absensi";
 
 // Satu gerbang login untuk semua orang — link yang dibagikan ke karyawan
 // maupun ke pemegang role SELMA (admin, gudang, dst.) SAMA PERSIS. Login.jsx
@@ -88,6 +89,8 @@ function MainApp({ session, onLogout }) {
   const [pembayaranGrosir, setPembayaranGrosir] = useState([]);
   const [depositGrosir, setDepositGrosir] = useState([]);
   const [keuanganTransaksi, setKeuanganTransaksi] = useState([]);
+  const [absensiRows, setAbsensiRows] = useState([]);
+  const [karyawanList, setKaryawanList] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
@@ -156,7 +159,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes] = await Promise.all([
+      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
         sbAll("rak?select=*&order=code"),
@@ -174,6 +177,8 @@ function MainApp({ session, onLogout }) {
         sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
         sbAll("grosir_deposit?select=*&order=created_at.desc"),
         sbAll("keuangan_transaksi?select=*&order=tanggal.desc"),
+        listAbsensi(),
+        listKaryawan(),
       ]);
       setItems(itemsRes || []);
       setSkuMaster(skuRes || []);
@@ -197,6 +202,8 @@ function MainApp({ session, onLogout }) {
       setPembayaranGrosir(pembayaranRes || []);
       setDepositGrosir(depositRes || []);
       setKeuanganTransaksi(keuanganRes || []);
+      setAbsensiRows(absensiRes || []);
+      setKaryawanList(karyawanRes || []);
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -396,6 +403,8 @@ function MainApp({ session, onLogout }) {
                   pelangganGrosir={pelangganGrosir}
                   keuanganTransaksi={keuanganTransaksi}
                   master={master}
+                  absensiRows={absensiRows}
+                  karyawanList={karyawanList}
                 />
               )}
               {nav.menu === "barang-masuk" && (
