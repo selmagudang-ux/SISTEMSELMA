@@ -193,10 +193,9 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
 // CETAK LABEL PENGIRIMAN (PENGIRIM -> PENERIMA)
 // Beda dari Nota: label ini fokus buat kurir/ekspedisi, bukan bukti transaksi.
 // Yang ditampilkan cuma identitas pengirim (Toko Pengirim yang dipilih di
-// pesanan, atau alamat toko utama kalau tidak ada toko dipilih), identitas
-// penerima (data Pelanggan: nama, alamat, kota, WA), nomor pesanan, dan
-// ringkasan isi paket (nama barang + qty saja, TANPA harga — supaya kalau
-// labelnya kelihatan kurir, harga barang tidak ikut terekspos).
+// pesanan, atau alamat toko utama kalau tidak ada toko dipilih) dan identitas
+// penerima (data Pelanggan: nama, alamat, kota, WA). Daftar isi barang
+// sengaja tidak ditampilkan di label ini.
 // =========================================================
 export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, onClose }) {
   const p = pesanan;
@@ -268,7 +267,7 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, on
 }
 
 // Isi label — dipakai baik untuk preview di layar maupun area cetak sesungguhnya.
-// Format ringkas: cuma PENGIRIM, PENERIMA, dan ISI BARANG — muat di kertas 100x150mm.
+// Format ringkas: cuma PENGIRIM dan PENERIMA — muat di kertas 100x150mm.
 function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
   // Kalau pesanan tidak punya Toko Pengirim (opsional saat buat pesanan),
   // pakai identitas toko utama sebagai pengirim default.
@@ -326,20 +325,6 @@ function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
           </>
         )}
       </p>
-
-      <div className="ss-label-line border-t-2 border-dashed border-black my-2" />
-
-      <p className="mb-1 font-bold text-[13px]">ISI BARANG</p>
-      <table className="w-full border-collapse">
-        <tbody>
-          {(detailItems || []).map((d) => (
-            <tr key={d.id}>
-              <td className="p-0 align-top">{d.nama_produk}</td>
-              <td className="p-0 align-top text-right whitespace-nowrap">{d.qty}x</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
