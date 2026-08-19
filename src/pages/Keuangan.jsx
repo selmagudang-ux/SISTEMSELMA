@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3 } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -9,6 +9,7 @@ import {
   breakdownPengeluaranKategori,
   laporanBulananData,
   rekapTahunanData,
+  laporanLabaRugi,
   sb,
 } from "../lib/api";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
@@ -365,6 +366,85 @@ export function BreakdownPengeluaran({ total, data }) {
   );
 }
 
+// Laporan Laba Rugi (Income Statement) — rincian tiap kategori Pendapatan &
+// Beban untuk satu rentang tanggal, ditutup dengan Laba (Rugi) Bersih dan
+// margin-nya. Dipakai bareng oleh halaman Laporan Keuangan (rentang bebas)
+// dan Dashboard Keuangan (rentang bulan berjalan, menggantikan tabel
+// Transaksi Terbaru supaya dashboard langsung menunjukkan untung/rugi).
+export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action }) {
+  const untung = labaRugi >= 0;
+  return (
+    <div className="rounded-xl border border-slate-800 overflow-hidden mb-5">
+      <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2 flex-wrap justify-between">
+        <div className="flex items-center gap-2">
+          <Scale size={14} className="text-slate-400" />
+          <div className="text-sm font-semibold">Laporan Laba Rugi</div>
+          {subtitle && <div className="text-[11px] text-slate-500">{subtitle}</div>}
+        </div>
+        {action}
+      </div>
+      <table className="w-full text-sm">
+        <tbody>
+          <tr>
+            <td colSpan={2} className="px-4 py-2 font-semibold text-emerald-400 bg-emerald-500/5">PENDAPATAN</td>
+          </tr>
+          {pendapatan.data.length === 0 ? (
+            <tr>
+              <td colSpan={2} className="px-4 py-3 text-center text-slate-600 text-xs">Belum ada pendapatan pada rentang ini.</td>
+            </tr>
+          ) : (
+            pendapatan.data.map((d) => (
+              <tr key={d.kode || d.label} className="border-b border-slate-800/40 last:border-0">
+                <td className="pl-8 pr-4 py-1.5 text-slate-300">{d.label}</td>
+                <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(d.jumlah)}</td>
+              </tr>
+            ))
+          )}
+          <tr className="bg-slate-900/60">
+            <td className="px-4 py-2 font-semibold text-slate-100">Total Pendapatan</td>
+            <td className="px-4 py-2 text-right font-semibold text-emerald-400">{fmtRp(pendapatan.total)}</td>
+          </tr>
+
+          <tr>
+            <td colSpan={2} className="px-4 py-2 font-semibold text-red-400 bg-red-500/5">BEBAN (PENGELUARAN)</td>
+          </tr>
+          {beban.data.length === 0 ? (
+            <tr>
+              <td colSpan={2} className="px-4 py-3 text-center text-slate-600 text-xs">Belum ada beban pada rentang ini.</td>
+            </tr>
+          ) : (
+            beban.data.map((d) => (
+              <tr key={d.kode || d.label} className="border-b border-slate-800/40 last:border-0">
+                <td className="pl-8 pr-4 py-1.5 text-slate-300">{d.label}</td>
+                <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(d.jumlah)}</td>
+              </tr>
+            ))
+          )}
+          <tr className="bg-slate-900/60">
+            <td className="px-4 py-2 font-semibold text-slate-100">Total Beban</td>
+            <td className="px-4 py-2 text-right font-semibold text-red-400">{fmtRp(beban.total)}</td>
+          </tr>
+
+          <tr className={untung ? "bg-emerald-500/10" : "bg-red-500/10"}>
+            <td className={`px-4 py-3 font-bold text-base ${untung ? "text-emerald-400" : "text-red-400"}`}>
+              LABA (RUGI) BERSIH
+            </td>
+            <td className={`px-4 py-3 text-right font-bold text-base ${untung ? "text-emerald-400" : "text-red-400"}`}>
+              {labaRugi < 0 ? `(${fmtRp(Math.abs(labaRugi)).replace("Rp ", "")})` : fmtRp(labaRugi)}
+            </td>
+          </tr>
+          <tr>
+            <td className="px-4 py-1.5 text-xs text-slate-500">Margin Laba Bersih</td>
+            <td className={`px-4 py-1.5 text-right text-xs font-medium ${untung ? "text-emerald-400" : "text-red-400"}`}>
+              {(Math.round(marginPersen * 10) / 10).toLocaleString("id-ID")}%
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
@@ -676,6 +756,7 @@ function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
+  const labaRugi = laporanLabaRugi(keuanganTransaksi, kategoriMasukList, kategoriKeluarList, dari || null, sampai || null);
 
   const sorted = [...list].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
 
@@ -768,6 +849,14 @@ function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
           </div>
         </div>
       )}
+
+      <LaporanLabaRugi
+        pendapatan={labaRugi.pendapatan}
+        beban={labaRugi.beban}
+        labaRugi={labaRugi.labaRugi}
+        marginPersen={labaRugi.marginPersen}
+        subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
+      />
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
 

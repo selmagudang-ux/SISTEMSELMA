@@ -12,11 +12,12 @@ import {
   saldoPerRekening,
   arusKasPerPeriode,
   breakdownPengeluaranKategori,
+  laporanLabaRugi,
   ringkasanGrosir,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
-import { GrafikArusKas, BreakdownPengeluaran, labelDari } from "./Keuangan";
+import { GrafikArusKas, BreakdownPengeluaran, LaporanLabaRugi } from "./Keuangan";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
 // vs Absensi supaya masing-masing tetap fokus (angka gudang tidak nyampur sama
@@ -155,7 +156,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
 
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
 
-  const transaksiTerbaru = keuanganTransaksi.slice(0, 6);
+  const labaRugiBulanIni = laporanLabaRugi(keuanganTransaksi, master.kategori_masuk || [], master.kategori_keluar || [], dari, sampai);
 
   return (
     <div>
@@ -198,42 +199,21 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Transaksi Terbaru</div>
+      <LaporanLabaRugi
+        pendapatan={labaRugiBulanIni.pendapatan}
+        beban={labaRugiBulanIni.beban}
+        labaRugi={labaRugiBulanIni.labaRugi}
+        marginPersen={labaRugiBulanIni.marginPersen}
+        subtitle="Bulan Ini"
+        action={
           <button
-            onClick={() => onNavigate && onNavigate("keuangan", "transaksi")}
+            onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
             className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
           >
-            Kelola Keuangan <ArrowRight size={12} />
+            Lihat Laporan Lengkap <ArrowRight size={12} />
           </button>
-        </div>
-        {transaksiTerbaru.length === 0 ? (
-          <div className="p-6"><EmptyState label="Belum ada transaksi keuangan." /></div>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody>
-              {transaksiTerbaru.map((t) => (
-                <tr key={t.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{t.tanggal}</td>
-                  <td className="px-4 py-2.5">
-                    <Badge color={t.tipe === "masuk" ? "emerald" : t.tipe === "keluar" ? "red" : "sky"}>
-                      {t.tipe === "masuk" ? "Masuk" : t.tipe === "keluar" ? "Keluar" : "Transfer"}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-300">
-                    {t.keterangan || labelDari(master[t.tipe === "keluar" ? "kategori_keluar" : "kategori_masuk"], t.kategori) || "—"}
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs">{labelDari(master.rekening, t.rekening)}</td>
-                  <td className={`px-4 py-2.5 text-right font-semibold ${t.tipe === "masuk" ? "text-emerald-400" : t.tipe === "keluar" ? "text-red-400" : "text-slate-300"}`}>
-                    {fmtRp(t.jumlah)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+        }
+      />
     </div>
   );
 }

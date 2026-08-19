@@ -529,6 +529,45 @@ export function breakdownPengeluaranKategori(transaksi, kategoriList) {
   return { total, data };
 }
 
+// Breakdown pemasukan per kategori — pasangan dari breakdownPengeluaranKategori
+// di atas, tapi untuk transaksi tipe "masuk". kategoriList = master_data tipe
+// "kategori_masuk". Dipakai oleh Laporan Laba Rugi di bawah.
+export function breakdownPemasukanKategori(transaksi, kategoriList) {
+  const pemasukan = (transaksi || []).filter((t) => t.tipe === "masuk");
+  const total = pemasukan.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+
+  const map = new Map();
+  pemasukan.forEach((t) => {
+    const kode = t.kategori || "";
+    const found = (kategoriList || []).find((k) => k.kode === kode);
+    const label = found ? found.label : kode || "Tanpa Kategori";
+    if (!map.has(kode || "__tanpa__")) {
+      map.set(kode || "__tanpa__", { kode, label, jumlah: 0 });
+    }
+    map.get(kode || "__tanpa__").jumlah += Number(t.jumlah) || 0;
+  });
+
+  const data = Array.from(map.values())
+    .map((d) => ({ ...d, persen: total > 0 ? (d.jumlah / total) * 100 : 0 }))
+    .sort((a, b) => b.jumlah - a.jumlah);
+
+  return { total, data };
+}
+
+// Laporan Laba Rugi (Income Statement) untuk satu rentang tanggal: rincian
+// tiap kategori Pendapatan & Beban (pakai breakdown di atas) + total masing-
+// masing, Laba (Rugi) Bersih, dan margin laba bersih (%). dari/sampai kosong
+// = tidak dibatasi ke arah itu (sama pola dengan ringkasanKeuangan()).
+// Dipakai bareng oleh Laporan Keuangan & Dashboard Keuangan.
+export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai) {
+  const { list } = ringkasanKeuangan(transaksi, dari, sampai);
+  const pendapatan = breakdownPemasukanKategori(list, kategoriMasukList);
+  const beban = breakdownPengeluaranKategori(list, kategoriKeluarList);
+  const labaRugi = pendapatan.total - beban.total;
+  const marginPersen = pendapatan.total > 0 ? (labaRugi / pendapatan.total) * 100 : 0;
+  return { pendapatan, beban, labaRugi, marginPersen };
+}
+
 // Susun data "Laporan Bulanan" untuk satu tahun: tiap kategori pemasukan &
 // pengeluaran jadi satu baris dengan 12 kolom bulan + Total, mirip format
 // Laporan Bulanan di Excel (SELMA_FINANCE.xlsx). Kategori yang tidak pernah
