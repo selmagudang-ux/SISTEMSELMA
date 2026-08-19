@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Camera, Download } from "lucide-react";
+import { Search, Camera, Download, Plus } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
 import { downloadCsv } from "../lib/api";
@@ -55,13 +55,21 @@ export default function DataBarang({ items, penempatan, setModal }) {
         title="Alur Barang"
         description="Cari dan lihat detail semua barang yang tercatat di sistem."
         action={
-          <button
-            onClick={handleDownload}
-            disabled={filtered.length === 0}
-            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-          >
-            <Download size={14} /> Download CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownload}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+            >
+              <Download size={14} /> Download CSV
+            </button>
+            <button
+              onClick={() => setModal({ type: "barang-masuk" })}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Plus size={14} /> Barang Masuk
+            </button>
+          </div>
         }
       />
 

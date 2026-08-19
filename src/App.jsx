@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { RefreshCw, Plus, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
+import { RefreshCw, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
@@ -333,14 +333,6 @@ function MainApp({ session, onLogout }) {
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
               </button>
-              {canSee("barang-masuk") && (
-                <button
-                  onClick={() => setModal({ type: "barang-masuk" })}
-                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-                >
-                  <Plus size={14} /> <span className="hidden sm:inline">Barang Masuk</span>
-                </button>
-              )}
             </div>
           </div>
         </header>
