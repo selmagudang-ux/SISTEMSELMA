@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Copy, Save, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
 import { downloadCsv } from "../lib/api";
 import {
@@ -363,17 +363,6 @@ function DataKaryawan({ showToast }) {
     load();
   }, []);
 
-  const absenUrl = `${window.location.origin}${window.location.pathname}`;
-
-  const salinLink = async () => {
-    try {
-      await navigator.clipboard.writeText(absenUrl);
-      showToast?.("Link absen disalin.");
-    } catch {
-      showToast?.("Gagal menyalin link.", "err");
-    }
-  };
-
   const tambah = async (e) => {
     e.preventDefault();
     if (!form.id_karyawan.trim() || !form.nama.trim() || !form.password) {
@@ -429,19 +418,6 @@ function DataKaryawan({ showToast }) {
 
   return (
     <div>
-      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-5 flex flex-wrap items-center gap-3">
-        <div className="text-xs text-slate-400 flex-1 min-w-[220px]">
-          Bagikan link ini ke karyawan untuk absen lewat HP masing-masing — sama dengan link login SELMA, mereka cukup login pakai ID Karyawan:
-          <div className="text-slate-200 font-mono text-[11px] mt-1 break-all">{absenUrl}</div>
-        </div>
-        <button
-          onClick={salinLink}
-          className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg"
-        >
-          <Copy size={13} /> Salin Link
-        </button>
-      </div>
-
       <form onSubmit={tambah} className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-5">
         <div className="text-sm font-semibold mb-3">Tambah Karyawan</div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
