@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Warehouse, Loader2, AlertCircle } from "lucide-react";
-import { login } from "../lib/auth";
+import { unifiedLogin } from "../lib/unifiedLogin";
 
+// Satu halaman login untuk semua orang — admin/role SELMA maupun karyawan
+// absen. Sistem otomatis mendeteksi jenis akunnya dari username/ID yang
+// dimasukkan (lihat lib/unifiedLogin.js), jadi link yang dibagikan sama
+// persis untuk siapa saja.
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -14,8 +18,8 @@ export default function Login({ onLogin }) {
     setLoading(true);
     setError("");
     try {
-      const session = await login(username, password);
-      onLogin(session);
+      const result = await unifiedLogin(username, password);
+      onLogin(result);
     } catch (err) {
       setError(err.message || "Gagal login");
     } finally {
@@ -45,7 +49,7 @@ export default function Login({ onLogin }) {
           )}
 
           <label className="block">
-            <div className="text-xs text-slate-400 mb-1">Username</div>
+            <div className="text-xs text-slate-400 mb-1">Username / ID Karyawan</div>
             <input
               autoFocus
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500"

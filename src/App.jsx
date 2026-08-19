@@ -3,6 +3,7 @@ import { RefreshCw, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
+import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
 import Login from "./pages/Login";
@@ -21,25 +22,40 @@ import Grosir from "./pages/Grosir";
 import Keuangan from "./pages/Keuangan";
 import Pengaturan from "./pages/Pengaturan";
 import Absensi from "./pages/Absensi";
-import AbsenKaryawan from "./pages/AbsenKaryawan";
+import { FormAbsen } from "./pages/AbsenKaryawan";
 
+// Satu gerbang login untuk semua orang — link yang dibagikan ke karyawan
+// maupun ke pemegang role SELMA (admin, gudang, dst.) SAMA PERSIS. Login.jsx
+// (lewat lib/unifiedLogin.js) yang menentukan jenis akunnya (admin/app_users
+// vs karyawan absen), lalu di sini tinggal dirutekan ke tampilan yang sesuai.
 export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
+  const [absenSession, setAbsenSession] = useState(() => getAbsenSession());
 
-  // Halaman absen karyawan (?absen di URL) BERDIRI SENDIRI, dicek SEBELUM
-  // gerbang login SELMA — karyawan absen pakai akun sendiri (tabel
-  // `karyawan`), bukan akun admin SELMA (app_users), jadi tidak boleh
-  // ketutup layar Login di bawah.
-  const isAbsenRoute = typeof window !== "undefined" && window.location.search.includes("absen");
-  if (isAbsenRoute) {
-    return <AbsenKaryawan />;
+  if (session) {
+    return <MainApp session={session} onLogout={() => { logout(); setSession(null); }} />;
   }
 
-  if (!session) {
-    return <Login onLogin={setSession} />;
+  if (absenSession) {
+    return (
+      <FormAbsen
+        session={absenSession}
+        onLogout={() => {
+          logoutKaryawan();
+          setAbsenSession(null);
+        }}
+      />
+    );
   }
 
-  return <MainApp session={session} onLogout={() => { logout(); setSession(null); }} />;
+  return (
+    <Login
+      onLogin={(result) => {
+        if (result.type === "admin") setSession(result.session);
+        else setAbsenSession(result.session);
+      }}
+    />
+  );
 }
 
 function MainApp({ session, onLogout }) {

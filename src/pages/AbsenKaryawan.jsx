@@ -1,106 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2 } from "lucide-react";
-import {
-  getAbsenSession,
-  loginKaryawan,
-  logoutKaryawan,
-  gantiPasswordKaryawan,
-  getAbsensiSettings,
-  hitungJarakMeter,
-  submitAbsen,
-} from "../lib/absensi";
+import { gantiPasswordKaryawan, getAbsensiSettings, hitungJarakMeter, submitAbsen } from "../lib/absensi";
 
-// Halaman berdiri sendiri untuk karyawan absen Masuk/Pulang lewat HP.
-// SENGAJA TIDAK butuh login SELMA (app_users) — karyawan pakai akun sendiri
-// (tabel `karyawan`, dikelola admin lewat menu Absensi > Data Karyawan).
-// Diakses lewat path terpisah (?absen di URL) supaya tidak ketutup layar
-// login SELMA — lihat pengecekan di App.jsx.
-export default function AbsenKaryawan() {
-  const [session, setSession] = useState(() => getAbsenSession());
-
-  if (!session) {
-    return <LoginKaryawan onLogin={setSession} />;
-  }
-  return <FormAbsen session={session} onLogout={() => { logoutKaryawan(); setSession(null); }} />;
-}
-
-function LoginKaryawan({ onLogin }) {
-  const [id, setId] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!id.trim() || !password || loading) return;
-    setLoading(true);
-    setError("");
-    try {
-      const s = await loginKaryawan(id, password);
-      onLogin(s);
-    } catch (err) {
-      setError(err.message || "Gagal login");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-6">
-          <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center mb-3">
-            <Clock size={24} className="text-slate-950" />
-          </div>
-          <div className="font-bold text-lg">Absensi Online</div>
-          <div className="text-xs text-slate-500 mt-0.5">Login pakai ID Karyawan</div>
-        </div>
-
-        <form onSubmit={submit} className="bg-slate-900/50 border border-slate-800 rounded-xl p-5 space-y-3.5">
-          {error && (
-            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
-              <AlertCircle size={14} className="flex-shrink-0" /> {error}
-            </div>
-          )}
-
-          <label className="block">
-            <div className="text-xs text-slate-400 mb-1">ID Karyawan</div>
-            <input
-              autoFocus
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500"
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              autoComplete="username"
-            />
-          </label>
-
-          <label className="block">
-            <div className="text-xs text-slate-400 mb-1">Password</div>
-            <input
-              type="password"
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </label>
-
-          <button
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg mt-1"
-          >
-            {loading && <Loader2 size={14} className="animate-spin" />}
-            {loading ? "Memproses…" : "Login"}
-          </button>
-        </form>
-
-        <div className="text-center text-[11px] text-slate-600 mt-4">Lupa password? Hubungi HRD/Admin.</div>
-      </div>
-    </div>
-  );
-}
-
-function FormAbsen({ session, onLogout }) {
+// Form absen Masuk/Pulang untuk karyawan, dipakai setelah login lewat
+// halaman Login gabungan (lib/unifiedLogin.js) — karyawan absen pakai akun
+// sendiri (tabel `karyawan`, dikelola admin lewat menu Absensi > Data
+// Karyawan), bukan akun admin SELMA (app_users). Perutean sesi dan logout
+// ditangani terpusat di App.jsx.
+export function FormAbsen({ session, onLogout }) {
   const [clock, setClock] = useState("");
   const [settings, setSettings] = useState(null);
   const [tipe, setTipe] = useState("Masuk");

@@ -363,7 +363,7 @@ function DataKaryawan({ showToast }) {
     load();
   }, []);
 
-  const absenUrl = `${window.location.origin}${window.location.pathname}?absen`;
+  const absenUrl = `${window.location.origin}${window.location.pathname}`;
 
   const salinLink = async () => {
     try {
@@ -431,7 +431,7 @@ function DataKaryawan({ showToast }) {
     <div>
       <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-5 flex flex-wrap items-center gap-3">
         <div className="text-xs text-slate-400 flex-1 min-w-[220px]">
-          Bagikan link ini ke karyawan untuk absen lewat HP masing-masing (tidak perlu akun SELMA):
+          Bagikan link ini ke karyawan untuk absen lewat HP masing-masing — sama dengan link login SELMA, mereka cukup login pakai ID Karyawan:
           <div className="text-slate-200 font-mono text-[11px] mt-1 break-all">{absenUrl}</div>
         </div>
         <button
