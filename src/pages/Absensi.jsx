@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight, Pencil, Stethoscope } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
 import { downloadCsv } from "../lib/api";
 import {
@@ -8,8 +8,10 @@ import {
   resetPasswordKaryawan,
   setAktifKaryawan,
   hapusKaryawan,
+  updateNamaKaryawan,
   listAbsensi,
   hapusAbsensiHarian,
+  simpanAbsensiManual,
   rekapHarianAbsensi,
   rekapBulananAbsensi,
   rekapMingguanAbsensi,
@@ -19,16 +21,23 @@ import {
   updateAbsensiSettings,
 } from "../lib/absensi";
 
-export default function Absensi({ sub, showToast }) {
+// Hanya superadmin & owner yang boleh: (1) mengedit/menandai absensi manual
+// (Sakit/Izin) untuk karyawan yang tidak absen, dan (2) mengubah nama data
+// karyawan. Role lain yang mungkin nanti dibuka aksesnya ke menu Absensi
+// tetap hanya bisa LIHAT, tidak bisa mengedit kedua hal ini.
+const ROLE_BOLEH_EDIT = ["superadmin", "owner"];
+
+export default function Absensi({ sub, showToast, session }) {
   const s = sub || "rekap";
+  const role = session?.role;
   return (
     <div>
       <PageHeader
         title="Absensi"
         description="Kelola absen karyawan — rekap kehadiran, data akun karyawan, dan pengaturan lokasi kantor."
       />
-      {s === "rekap" && <RekapAbsensi showToast={showToast} />}
-      {s === "karyawan" && <DataKaryawan showToast={showToast} />}
+      {s === "rekap" && <RekapAbsensi showToast={showToast} role={role} />}
+      {s === "karyawan" && <DataKaryawan showToast={showToast} role={role} />}
       {s === "pengaturan" && <PengaturanAbsensi showToast={showToast} />}
     </div>
   );
@@ -37,12 +46,15 @@ export default function Absensi({ sub, showToast }) {
 // =========================================================
 // REKAP (Harian & Bulanan) — dihitung dinamis dari data mentah.
 // =========================================================
-function RekapAbsensi({ showToast }) {
+function RekapAbsensi({ showToast, role }) {
+  const bolehEdit = ROLE_BOLEH_EDIT.includes(role);
   const [mode, setMode] = useState("harian"); // harian | mingguan | bulanan
   const [rows, setRows] = useState(null);
   const [karyawanList, setKaryawanList] = useState(null);
   const [q, setQ] = useState("");
   const [tglAcuan, setTglAcuan] = useState(new Date().toISOString().slice(0, 10)); // dipakai mode mingguan
+  const [manualFor, setManualFor] = useState(null); // {idKaryawan, karyawanId, nama, tanggal, tipe, keterangan}
+  const [savingManual, setSavingManual] = useState(false);
 
   const load = async () => {
     try {
@@ -92,6 +104,68 @@ function RekapAbsensi({ showToast }) {
     }
   };
 
+  // Buka modal Sakit/Izin — dari baris rekap yang sudah ada (tombol pensil)
+  // atau dari sel "Tidak Absen" di rekap mingguan, atau dari tombol "+"
+  // untuk karyawan yang belum punya baris sama sekali di tanggal itu.
+  const bukaManual = ({ idKaryawan, nama, tanggal, tipeAwal, keteranganAwal, existing }) => {
+    const k = (karyawanList || []).find((x) => x.id_karyawan === idKaryawan);
+    setManualFor({
+      idKaryawan,
+      karyawanId: k?.id || null,
+      nama,
+      tanggal: tanggal || new Date().toISOString().slice(0, 10),
+      tipe: tipeAwal || "Sakit",
+      keterangan: keteranganAwal || "",
+      existing: !!existing,
+    });
+  };
+
+  const simpanManual = async () => {
+    if (!manualFor?.idKaryawan || !manualFor?.tanggal) {
+      showToast?.("Pilih karyawan dan tanggal dulu", "err");
+      return;
+    }
+    setSavingManual(true);
+    try {
+      await simpanAbsensiManual({
+        karyawanId: manualFor.karyawanId,
+        idKaryawan: manualFor.idKaryawan,
+        nama: manualFor.nama,
+        tanggal: manualFor.tanggal,
+        tipe: manualFor.tipe,
+        keterangan: manualFor.keterangan,
+      });
+      showToast?.(`Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditandai ${manualFor.tipe}.`);
+      setManualFor(null);
+      load();
+    } catch (e) {
+      showToast?.(e.message || "Gagal menyimpan absensi manual", "err");
+    } finally {
+      setSavingManual(false);
+    }
+  };
+
+  const hapusManual = async () => {
+    if (!manualFor?.idKaryawan || !manualFor?.tanggal) return;
+    if (
+      !confirm(
+        `Hapus data absen "${manualFor.nama}" tanggal ${manualFor.tanggal}? Ini menghapus baris absen (baik itu tanda Sakit/Izin, maupun absen Masuk/Pulang asli) pada tanggal tsb.`
+      )
+    )
+      return;
+    setSavingManual(true);
+    try {
+      await hapusAbsensiHarian(manualFor.idKaryawan, manualFor.tanggal);
+      showToast?.("Tanda dihapus.");
+      setManualFor(null);
+      load();
+    } catch (e) {
+      showToast?.(e.message || "Gagal menghapus", "err");
+    } finally {
+      setSavingManual(false);
+    }
+  };
+
   const unduh = () => {
     if (mode === "harian") {
       downloadCsv(
@@ -115,6 +189,8 @@ function RekapAbsensi({ showToast }) {
           { key: "bulan", label: "Bulan" },
           { key: "nama", label: "Nama" },
           { key: "hariMasuk", label: "Total Hari Masuk" },
+          { key: "hariSakit", label: "Total Hari Sakit" },
+          { key: "hariIzin", label: "Total Hari Izin" },
           { key: "hariTelat", label: "Total Hari Telat" },
           { key: "totalTelatMenit", label: "Total Telat (menit)" },
           { key: "totalLemburJam", label: "Total Lembur (jam)" },
@@ -189,6 +265,14 @@ function RekapAbsensi({ showToast }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
+        {bolehEdit && (
+          <button
+            onClick={() => bukaManual({ idKaryawan: "", nama: "", tanggal: new Date().toISOString().slice(0, 10) })}
+            className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg"
+          >
+            <Stethoscope size={14} /> Tandai Sakit/Izin
+          </button>
+        )}
         <button
           onClick={unduh}
           className="ml-auto flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg"
@@ -244,12 +328,45 @@ function RekapAbsensi({ showToast }) {
                   <td className="px-3 py-2.5 font-medium whitespace-nowrap sticky left-0 bg-slate-950">{p.nama}</td>
                   {rekapMingguan.tanggalMinggu.map((tgl) => {
                     const r = p.hari[tgl];
+                    const bukaDariSel = (tipeAwal) =>
+                      bukaManual({
+                        idKaryawan: p.idKaryawan,
+                        nama: p.nama,
+                        tanggal: tgl,
+                        tipeAwal: r?.manual || tipeAwal,
+                        keteranganAwal: r?.keteranganManual || "",
+                        existing: !!r,
+                      });
                     return (
                       <td key={tgl} className="px-2 py-2.5 text-center">
                         {!r ? (
-                          <span className="text-slate-600">—</span>
+                          bolehEdit ? (
+                            <button
+                              title="Tandai Sakit/Izin"
+                              onClick={() => bukaDariSel("Sakit")}
+                              className="text-slate-600 hover:text-amber-400 text-xs"
+                            >
+                              —
+                            </button>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )
+                        ) : r.manual ? (
+                          bolehEdit ? (
+                            <button onClick={() => bukaDariSel(r.manual)}>
+                              <Badge color={r.manual === "Sakit" ? "pink" : "amber"}>{r.manual}</Badge>
+                            </button>
+                          ) : (
+                            <Badge color={r.manual === "Sakit" ? "pink" : "amber"}>{r.manual}</Badge>
+                          )
                         ) : !r.masuk ? (
-                          <Badge color="slate">Tidak Absen</Badge>
+                          bolehEdit ? (
+                            <button onClick={() => bukaDariSel("Sakit")}>
+                              <Badge color="slate">Tidak Absen</Badge>
+                            </button>
+                          ) : (
+                            <Badge color="slate">Tidak Absen</Badge>
+                          )
                         ) : (
                           <div className="flex flex-col items-center gap-0.5">
                             <span className={r.telatMenit > 0 ? "text-amber-400 font-semibold" : "text-emerald-400 font-semibold"}>
@@ -290,18 +407,43 @@ function RekapAbsensi({ showToast }) {
                   <td className="px-3 py-2.5">{r.pulang || "—"}</td>
                   <td className="px-3 py-2.5">{r.jamKerja || "—"}</td>
                   <td className="px-3 py-2.5">
-                    <Badge color={r.status === "Normal" ? "emerald" : r.status.includes("Tidak Absen") ? "slate" : "amber"}>
+                    <Badge
+                      color={
+                        r.manual === "Sakit" ? "pink" : r.manual === "Izin" ? "amber" :
+                        r.status === "Normal" ? "emerald" : r.status.includes("Tidak Absen") ? "slate" : "amber"
+                      }
+                    >
                       {r.status}
                     </Badge>
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <button
-                      title="Hapus data absen hari ini"
-                      onClick={() => hapusHarian(r)}
-                      className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex justify-end gap-1.5">
+                      {bolehEdit && (
+                        <button
+                          title="Tandai/ubah Sakit atau Izin"
+                          onClick={() =>
+                            bukaManual({
+                              idKaryawan: r.idKaryawan,
+                              nama: r.nama,
+                              tanggal: r.tanggal,
+                              tipeAwal: r.manual || "Sakit",
+                              keteranganAwal: r.keteranganManual || "",
+                              existing: true,
+                            })
+                          }
+                          className="p-1.5 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
+                      <button
+                        title="Hapus data absen hari ini"
+                        onClick={() => hapusHarian(r)}
+                        className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -316,6 +458,8 @@ function RekapAbsensi({ showToast }) {
                 <th className="text-left px-3 py-2.5 font-medium">Bulan</th>
                 <th className="text-left px-3 py-2.5 font-medium">Nama</th>
                 <th className="text-left px-3 py-2.5 font-medium">Hari Masuk</th>
+                <th className="text-left px-3 py-2.5 font-medium">Sakit</th>
+                <th className="text-left px-3 py-2.5 font-medium">Izin</th>
                 <th className="text-left px-3 py-2.5 font-medium">Hari Telat</th>
                 <th className="text-left px-3 py-2.5 font-medium">Total Telat</th>
                 <th className="text-left px-3 py-2.5 font-medium">Total Lembur</th>
@@ -328,6 +472,8 @@ function RekapAbsensi({ showToast }) {
                   <td className="px-3 py-2.5 whitespace-nowrap">{r.bulan}</td>
                   <td className="px-3 py-2.5">{r.nama}</td>
                   <td className="px-3 py-2.5">{r.hariMasuk}</td>
+                  <td className="px-3 py-2.5">{r.hariSakit}</td>
+                  <td className="px-3 py-2.5">{r.hariIzin}</td>
                   <td className="px-3 py-2.5">{r.hariTelat}</td>
                   <td className="px-3 py-2.5">{r.totalTelatMenit} menit</td>
                   <td className="px-3 py-2.5">{r.totalLemburJam} jam</td>
@@ -338,6 +484,86 @@ function RekapAbsensi({ showToast }) {
           </table>
         </div>
       )}
+
+      {manualFor && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
+            <div className="text-sm font-semibold mb-3">Tandai Sakit / Izin</div>
+            <div className="space-y-3">
+              {manualFor.idKaryawan ? (
+                <Field label="Karyawan">
+                  <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{manualFor.nama}</div>
+                </Field>
+              ) : (
+                <Field label="Karyawan">
+                  <select
+                    className={inputClass}
+                    value={manualFor.idKaryawan}
+                    onChange={(e) => {
+                      const k = (karyawanList || []).find((x) => x.id_karyawan === e.target.value);
+                      setManualFor((f) => ({ ...f, idKaryawan: e.target.value, karyawanId: k?.id || null, nama: k?.nama || "" }));
+                    }}
+                  >
+                    <option value="">— Pilih karyawan —</option>
+                    {(karyawanList || []).filter((k) => k.aktif).map((k) => (
+                      <option key={k.id} value={k.id_karyawan}>{k.nama}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <Field label="Tanggal">
+                <InputTanggal
+                  value={manualFor.tanggal}
+                  onChange={(v) => setManualFor((f) => ({ ...f, tanggal: v }))}
+                />
+              </Field>
+              <Field label="Status">
+                <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-1">
+                  {["Sakit", "Izin"].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setManualFor((f) => ({ ...f, tipe: t }))}
+                      className={`flex-1 px-3 py-1.5 text-xs font-semibold rounded-md ${manualFor.tipe === t ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Catatan (opsional)">
+                <input
+                  className={inputClass}
+                  placeholder="mis. Surat dokter, keperluan keluarga, dll."
+                  value={manualFor.keterangan}
+                  onChange={(e) => setManualFor((f) => ({ ...f, keterangan: e.target.value }))}
+                />
+              </Field>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                disabled={savingManual}
+                onClick={simpanManual}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-sm font-semibold py-2 rounded-lg"
+              >
+                {savingManual ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan
+              </button>
+              <button onClick={() => setManualFor(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold py-2 rounded-lg">
+                Batal
+              </button>
+            </div>
+            {manualFor.existing && (
+              <button
+                disabled={savingManual}
+                onClick={hapusManual}
+                className="w-full mt-2 text-xs font-semibold text-red-400 hover:text-red-300 py-1.5"
+              >
+                Hapus tanda ini
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -345,11 +571,14 @@ function RekapAbsensi({ showToast }) {
 // =========================================================
 // DATA KARYAWAN — kelola akun absen (terpisah dari akun login SELMA).
 // =========================================================
-function DataKaryawan({ showToast }) {
+function DataKaryawan({ showToast, role }) {
+  const bolehEditNama = ROLE_BOLEH_EDIT.includes(role);
   const [list, setList] = useState(null);
   const [form, setForm] = useState({ id_karyawan: "", nama: "", password: "" });
   const [saving, setSaving] = useState(false);
   const [resetFor, setResetFor] = useState(null); // {id, nama, value}
+  const [editNamaFor, setEditNamaFor] = useState(null); // {id, nama, value}
+  const [savingNama, setSavingNama] = useState(false);
 
   const load = async () => {
     try {
@@ -416,6 +645,24 @@ function DataKaryawan({ showToast }) {
     }
   };
 
+  const simpanEditNama = async () => {
+    if (!editNamaFor?.value?.trim()) {
+      showToast?.("Nama tidak boleh kosong", "err");
+      return;
+    }
+    setSavingNama(true);
+    try {
+      await updateNamaKaryawan(editNamaFor.id, editNamaFor.value.trim());
+      showToast?.(`Nama berhasil diubah menjadi "${editNamaFor.value.trim()}".`);
+      setEditNamaFor(null);
+      load();
+    } catch (e) {
+      showToast?.(e.message || "Gagal mengubah nama", "err");
+    } finally {
+      setSavingNama(false);
+    }
+  };
+
   return (
     <div>
       <form onSubmit={tambah} className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-5">
@@ -464,6 +711,15 @@ function DataKaryawan({ showToast }) {
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex justify-end gap-1.5">
+                      {bolehEditNama && (
+                        <button
+                          title="Edit Nama"
+                          onClick={() => setEditNamaFor({ id: k.id, nama: k.nama, value: k.nama })}
+                          className="p-1.5 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                       <button
                         title="Reset Password"
                         onClick={() => setResetFor({ id: k.id, nama: k.nama, value: "" })}
@@ -510,6 +766,33 @@ function DataKaryawan({ showToast }) {
                 Simpan
               </button>
               <button onClick={() => setResetFor(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold py-2 rounded-lg">
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editNamaFor && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
+            <div className="text-sm font-semibold mb-3">Edit Nama Karyawan</div>
+            <input
+              autoFocus
+              placeholder="Nama karyawan"
+              className={inputClass}
+              value={editNamaFor.value}
+              onChange={(e) => setEditNamaFor((f) => ({ ...f, value: e.target.value }))}
+            />
+            <div className="flex gap-2 mt-3.5">
+              <button
+                disabled={savingNama}
+                onClick={simpanEditNama}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-sm font-semibold py-2 rounded-lg"
+              >
+                {savingNama ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan
+              </button>
+              <button onClick={() => setEditNamaFor(null)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold py-2 rounded-lg">
                 Batal
               </button>
             </div>

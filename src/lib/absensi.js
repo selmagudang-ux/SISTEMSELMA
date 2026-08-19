@@ -104,6 +104,29 @@ export async function setAktifKaryawan(id, aktif) {
   });
 }
 
+// Ubah nama karyawan — khusus superadmin & owner (ditegakkan di halaman UI).
+// Nama juga diselaraskan ke semua baris riwayat `absensi` milik karyawan itu
+// (kolom `nama` di sana disalin/denormalisasi saat absen, bukan JOIN ke tabel
+// karyawan), supaya rekap & unduhan CSV lama tidak tetap menampilkan nama usang.
+export async function updateNamaKaryawan(id, namaBaru) {
+  const nama = (namaBaru || "").trim();
+  if (!nama) throw new Error("Nama tidak boleh kosong.");
+
+  await sb(`karyawan?id=eq.${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ nama }),
+  });
+
+  const rows = await sb(`karyawan?id=eq.${id}&select=id_karyawan`);
+  const idKaryawan = (rows || [])[0]?.id_karyawan;
+  if (idKaryawan) {
+    await sb(`absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ nama }),
+    });
+  }
+}
+
 // Hapus karyawan sekaligus SELURUH riwayat absennya (tabel `absensi`, dicocokkan
 // lewat karyawan_id). Riwayat dihapus dulu sebelum baris karyawan-nya, supaya
 // tidak ada data absensi "yatim" yang nyangkut nunjuk ke karyawan yang sudah
@@ -229,6 +252,38 @@ export async function hapusAbsensiHarian(idKaryawan, tanggal) {
   );
 }
 
+// ---- Absensi manual (Sakit/Izin) — khusus superadmin & owner. ----
+// Dipakai kalau ada karyawan yang tidak absen (lupa / memang tidak masuk)
+// tapi ternyata izin atau sakit, supaya rekap tidak menampilkan "Tidak
+// Absen" begitu saja. Disimpan sebagai SATU baris di tabel `absensi` dengan
+// tipe "Sakit"/"Izin" (bukan Masuk/Pulang). Baris asli (kalau ada, mis. mau
+// mengoreksi absen asli jadi izin) dihapus dulu supaya tidak dobel dan rekap
+// harian/mingguan/bulanan tetap konsisten karena semua dihitung ulang dari
+// tabel ini.
+export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tanggal, tipe, keterangan }) {
+  if (!["Sakit", "Izin"].includes(tipe)) throw new Error("Status wajib Sakit atau Izin.");
+  if (!idKaryawan || !tanggal) throw new Error("Karyawan dan tanggal wajib diisi.");
+
+  await hapusAbsensiHarian(idKaryawan, tanggal);
+  return sb("absensi", {
+    method: "POST",
+    body: JSON.stringify({
+      karyawan_id: karyawanId,
+      nama,
+      id_karyawan: idKaryawan,
+      tipe,
+      tanggal,
+      jam: null,
+      latitude: null,
+      longitude: null,
+      jarak_meter: null,
+      telat_menit: 0,
+      lembur_jam: 0,
+      keterangan: (keterangan || "").trim() || tipe,
+    }),
+  });
+}
+
 // =========================================================
 // REKAP — dihitung dinamis dari data mentah `absensi` (bukan tabel terpisah).
 // =========================================================
@@ -247,6 +302,8 @@ export function rekapHarianAbsensi(absensiRows) {
         pulang: "",
         telatMenit: 0,
         lemburJam: 0,
+        manual: null, // "Sakit" | "Izin" — ditandai manual oleh admin, bukan absen asli
+        keteranganManual: "",
       });
     }
     const v = map.get(key);
@@ -256,6 +313,9 @@ export function rekapHarianAbsensi(absensiRows) {
     } else if (r.tipe === "Pulang") {
       v.pulang = String(r.jam).slice(0, 5);
       v.lemburJam = Number(r.lembur_jam) || 0;
+    } else if (r.tipe === "Sakit" || r.tipe === "Izin") {
+      v.manual = r.tipe;
+      v.keteranganManual = r.keterangan || r.tipe;
     }
   });
 
@@ -268,10 +328,14 @@ export function rekapHarianAbsensi(absensiRows) {
         if (!isNaN(d1) && !isNaN(d2)) jamKerja = ((d2 - d1) / 1000 / 3600).toFixed(2);
       }
       const status = [];
-      if (v.telatMenit > 0) status.push(`Telat ${v.telatMenit} menit`);
-      if (v.lemburJam > 0) status.push(`Lembur ${v.lemburJam} jam`);
-      if (!v.masuk) status.push("Tidak Absen Masuk");
-      if (!v.pulang) status.push("Tidak Absen Pulang");
+      if (v.manual) {
+        status.push(v.manual);
+      } else {
+        if (v.telatMenit > 0) status.push(`Telat ${v.telatMenit} menit`);
+        if (v.lemburJam > 0) status.push(`Lembur ${v.lemburJam} jam`);
+        if (!v.masuk) status.push("Tidak Absen Masuk");
+        if (!v.pulang) status.push("Tidak Absen Pulang");
+      }
       if (status.length === 0) status.push("Normal");
       return { ...v, jamKerja, status: status.join(", ") };
     })
@@ -355,13 +419,17 @@ export function rekapBulananAbsensi(rekapHarian) {
         idKaryawan: v.idKaryawan,
         hariMasuk: 0,
         hariTelat: 0,
+        hariSakit: 0,
+        hariIzin: 0,
         totalTelatMenit: 0,
         totalLemburJam: 0,
         totalJamKerja: 0,
       });
     }
     const b = map.get(key);
-    if (v.masuk) b.hariMasuk += 1;
+    if (v.manual === "Sakit") b.hariSakit += 1;
+    else if (v.manual === "Izin") b.hariIzin += 1;
+    else if (v.masuk) b.hariMasuk += 1;
     if (v.telatMenit > 0) {
       b.hariTelat += 1;
       b.totalTelatMenit += v.telatMenit;

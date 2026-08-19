@@ -482,7 +482,7 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "absensi" && (
-                <Absensi sub={nav.sub || "rekap"} showToast={showToast} />
+                <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} />
               )}
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
