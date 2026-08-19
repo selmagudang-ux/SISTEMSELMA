@@ -260,6 +260,11 @@ export async function hapusAbsensiHarian(idKaryawan, tanggal) {
 // mengoreksi absen asli jadi izin) dihapus dulu supaya tidak dobel dan rekap
 // harian/mingguan/bulanan tetap konsisten karena semua dihitung ulang dari
 // tabel ini.
+// CATATAN: kolom jam/latitude/longitude/jarak_meter sengaja diisi nilai 0 /
+// "00:00:00" (bukan null) — kolom-kolom itu selalu terisi oleh submitAbsen()
+// jadi kemungkinan besar NOT NULL di tabel Supabase-nya. Tidak dibaca ulang
+// di rekap manapun untuk baris bertipe Sakit/Izin/Libur, jadi aman dipakai
+// sebagai nilai pengganti (placeholder).
 export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tanggal, tipe, keterangan }) {
   if (!["Sakit", "Izin", "Libur"].includes(tipe)) throw new Error("Status wajib Sakit, Izin, atau Libur.");
   if (!idKaryawan || !tanggal) throw new Error("Karyawan dan tanggal wajib diisi.");
@@ -273,10 +278,10 @@ export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tangga
       id_karyawan: idKaryawan,
       tipe,
       tanggal,
-      jam: null,
-      latitude: null,
-      longitude: null,
-      jarak_meter: null,
+      jam: "00:00:00",
+      latitude: 0,
+      longitude: 0,
+      jarak_meter: 0,
       telat_menit: 0,
       lembur_jam: 0,
       keterangan: (keterangan || "").trim() || tipe,
