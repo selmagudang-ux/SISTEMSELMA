@@ -403,7 +403,7 @@ function DataKaryawan({ showToast }) {
   };
 
   const hapus = async (k) => {
-    if (!confirm(`Hapus akun karyawan "${k.nama}"? Riwayat absennya tetap tersimpan.`)) return;
+    if (!confirm(`Hapus akun karyawan "${k.nama}"? Seluruh riwayat absennya juga akan ikut terhapus permanen.`)) return;
     try {
       await hapusKaryawan(k.id);
       showToast?.("Karyawan dihapus.");

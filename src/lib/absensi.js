@@ -104,7 +104,12 @@ export async function setAktifKaryawan(id, aktif) {
   });
 }
 
+// Hapus karyawan sekaligus SELURUH riwayat absennya (tabel `absensi`, dicocokkan
+// lewat karyawan_id). Riwayat dihapus dulu sebelum baris karyawan-nya, supaya
+// tidak ada data absensi "yatim" yang nyangkut nunjuk ke karyawan yang sudah
+// tidak ada.
 export async function hapusKaryawan(id) {
+  await sb(`absensi?karyawan_id=eq.${id}`, { method: "DELETE" });
   return sb(`karyawan?id=eq.${id}`, { method: "DELETE" });
 }
 
