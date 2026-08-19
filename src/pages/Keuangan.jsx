@@ -90,7 +90,7 @@ export default function Keuangan({ sub, keuanganTransaksi = [], master = {}, rel
     return <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} showToast={showToast} />;
   }
   if (sub === "log") {
-    return <LogKeterangan keuanganTransaksi={keuanganTransaksi} master={master} />;
+    return <LogKeterangan keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
   }
   return (
     <Transaksi keuanganTransaksi={keuanganTransaksi} master={master} setModal={setModal} showToast={showToast} />
@@ -507,13 +507,22 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
 // sama dipakai buat rekomendasi otomatis di field "Keterangan" pada form
 // Tambah/Edit Transaksi — halaman ini cuma menampilkannya biar bisa dicek
 // keterangan apa saja yang sudah pernah dicatat.
-function LogKeterangan({ keuanganTransaksi, master }) {
+//
+// "Hapus" di sini TIDAK menghapus transaksi aslinya (data keuangan tetap utuh,
+// riwayat & laporan tidak berubah) — cuma menyembunyikan teks itu dari daftar
+// log ini dan dari rekomendasi otomatis, buat keterangan typo/satu-kali-pakai
+// yang tidak mau muncul lagi. Disimpan sebagai baris baru di master_data
+// dengan tipe "keterangan_hidden" (pola yang sama dengan rekening/kategori).
+function LogKeterangan({ keuanganTransaksi, master, reload, showToast }) {
   const [q, setQ] = useState("");
   const [tipeFilter, setTipeFilter] = useState("");
+  const [hidingKey, setHidingKey] = useState(null);
 
   const rekeningList = master.rekening || [];
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
+  const hiddenList = master.keterangan_hidden || [];
+  const hiddenSet = new Set(hiddenList.map((m) => m.label.toLowerCase()));
 
   // Kelompokkan per (tipe + keterangan) — keterangan yang sama tapi beda tipe
   // (mis. "Titip Sesama" di Pemasukan vs Pengeluaran) dihitung terpisah,
@@ -522,7 +531,7 @@ function LogKeterangan({ keuanganTransaksi, master }) {
     const map = new Map();
     for (const t of keuanganTransaksi || []) {
       const keterangan = (t.keterangan || "").trim();
-      if (!keterangan) continue;
+      if (!keterangan || hiddenSet.has(keterangan.toLowerCase())) continue;
       const groupKey = `${t.tipe}::${keterangan.toLowerCase()}`;
       const existing = map.get(groupKey);
       if (existing) {
@@ -553,11 +562,32 @@ function LogKeterangan({ keuanganTransaksi, master }) {
     transfer: { label: "Transfer", color: "sky" },
   };
 
+  const hapusDariLog = async (g) => {
+    const key = `${g.tipe}::${g.keterangan.toLowerCase()}`;
+    setHidingKey(key);
+    try {
+      await sb("master_data", {
+        method: "POST",
+        body: JSON.stringify({
+          tipe: "keterangan_hidden",
+          kode: `KH${Date.now()}`,
+          label: g.keterangan,
+        }),
+      });
+      await reload();
+      showToast?.("Keterangan dihapus dari log & rekomendasi");
+    } catch (e) {
+      showToast?.(e.message || "Gagal menghapus", "err");
+    } finally {
+      setHidingKey(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
         title="Log Keterangan"
-        description="Daftar keterangan yang pernah dicatat di Transaksi, dikelompokkan dan diurutkan dari yang paling sering dipakai. Teks ini juga yang jadi rekomendasi otomatis saat mengisi keterangan transaksi baru."
+        description="Daftar keterangan yang pernah dicatat di Transaksi, dikelompokkan dan diurutkan dari yang paling sering dipakai. Teks ini juga yang jadi rekomendasi otomatis saat mengisi keterangan transaksi baru. Hapus di sini hanya menyembunyikan dari log & rekomendasi — transaksi aslinya tidak ikut terhapus."
       />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -590,9 +620,10 @@ function LogKeterangan({ keuanganTransaksi, master }) {
                 ? labelDari(kategoriKeluarList, g.kategori)
                 : "";
             const meta = tipeMeta[g.tipe] || { label: g.tipe, color: "slate" };
+            const key = `${g.tipe}::${g.keterangan.toLowerCase()}`;
             return (
               <div
-                key={`${g.tipe}::${g.keterangan.toLowerCase()}`}
+                key={key}
                 className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
               >
                 <div className="min-w-0 flex-1">
@@ -605,9 +636,19 @@ function LogKeterangan({ keuanganTransaksi, master }) {
                     Dipakai {g.count}x · Terakhir {formatTanggalID(g.terakhir)}
                   </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-[11px] text-slate-500">Total</div>
-                  <div className="text-sm font-semibold text-slate-200">{fmtRp(g.total)}</div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="text-right">
+                    <div className="text-[11px] text-slate-500">Total</div>
+                    <div className="text-sm font-semibold text-slate-200">{fmtRp(g.total)}</div>
+                  </div>
+                  <button
+                    onClick={() => hapusDariLog(g)}
+                    disabled={hidingKey === key}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 disabled:opacity-40"
+                    title="Hapus dari log & rekomendasi"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
             );

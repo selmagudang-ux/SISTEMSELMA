@@ -1022,11 +1022,14 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   // (masuk/keluar/transfer) — dihitung frekuensinya lalu diurutkan dari yang
   // paling sering dipakai, supaya keterangan yang berulang (mis. "Bayar
   // listrik", "Setoran harian") langsung muncul begitu mulai mengetik.
+  // Keterangan yang sudah dihapus dari "Log Keterangan" (master_data tipe
+  // "keterangan_hidden") tidak ikut direkomendasikan lagi.
   const keteranganSuggestions = (() => {
+    const hidden = new Set((master?.keterangan_hidden || []).map((m) => m.label.toLowerCase()));
     const count = new Map();
     for (const t of keuanganTransaksi || []) {
       const k = (t.keterangan || "").trim();
-      if (!k || t.tipe !== tipe) continue;
+      if (!k || t.tipe !== tipe || hidden.has(k.toLowerCase())) continue;
       count.set(k, (count.get(k) || 0) + 1);
     }
     return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
