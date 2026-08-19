@@ -279,6 +279,98 @@ export function totalHutangPerPelanggan(pesananList, pembayaranList) {
 }
 
 // =========================================================
+// GROSIR — LAPORAN HARIAN / BULANAN / TAHUNAN
+// Pola sama seperti helper Laporan Keuangan di bawah: dihitung dinamis dari
+// grosir_pesanan (bukan disimpan sbg angka statis) supaya selalu akurat.
+// Pesanan berstatus "Batal" TIDAK pernah dihitung ke omset manapun.
+// =========================================================
+
+// Ringkasan omset & jumlah pesanan grosir, opsional difilter ke rentang
+// tanggal [dari, sampai] (format "YYYY-MM-DD", inklusif di kedua ujung).
+// dari/sampai kosong ("" atau null/undefined) = tidak dibatasi ke arah itu.
+export function ringkasanGrosir(pesananGrosir, dari, sampai) {
+  const list = (pesananGrosir || []).filter((p) => {
+    if (p.status === "Batal") return false;
+    if (dari && p.tanggal < dari) return false;
+    if (sampai && p.tanggal > sampai) return false;
+    return true;
+  });
+  const omset = list.reduce((a, p) => a + (Number(p.total) || 0), 0);
+  const jumlahPesanan = list.length;
+  return { omset, jumlahPesanan, rataRata: jumlahPesanan > 0 ? omset / jumlahPesanan : 0, list };
+}
+
+// Kelompokkan omset & jumlah pesanan grosir per hari, atau per minggu kalau
+// rentang datanya cukup panjang (>31 hari) — pola & fungsi bantu (awalMingguIso
+// dkk) sama persis dengan arusKasPerPeriode() di bawah supaya grafiknya konsisten.
+export function omsetGrosirPerPeriode(pesananList) {
+  const list = (pesananList || []).filter((p) => p.status !== "Batal" && p.tanggal);
+  if (list.length === 0) return { mode: "harian", data: [] };
+
+  const tanggalUrut = list.map((p) => p.tanggal).sort();
+  const rentangHari =
+    Math.round(
+      (new Date(`${tanggalUrut[tanggalUrut.length - 1]}T00:00:00`) - new Date(`${tanggalUrut[0]}T00:00:00`)) /
+        86400000
+    ) + 1;
+  const mode = rentangHari > 31 ? "mingguan" : "harian";
+
+  const map = new Map();
+  list.forEach((p) => {
+    const key = mode === "harian" ? p.tanggal : awalMingguIso(p.tanggal);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        label: mode === "harian" ? labelHarianIso(key) : labelMingguanIso(key),
+        omset: 0,
+        jumlahPesanan: 0,
+      });
+    }
+    const g = map.get(key);
+    g.omset += Number(p.total) || 0;
+    g.jumlahPesanan += 1;
+  });
+
+  const data = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+  return { mode, data };
+}
+
+// Rekap omset & jumlah pesanan per bulan untuk satu tahun (analog dengan
+// laporanBulananData di Keuangan, tapi grosir tidak dikelompokkan per
+// kategori — cuma dua baris: Omset & Jumlah Pesanan per bulan + Total).
+export function laporanBulananGrosir(pesananGrosir, tahun) {
+  const tahunStr = String(tahun);
+  const list = (pesananGrosir || []).filter(
+    (p) => p.status !== "Batal" && (p.tanggal || "").slice(0, 4) === tahunStr
+  );
+  const omsetBulan = Array(12).fill(0);
+  const jumlahBulan = Array(12).fill(0);
+  list.forEach((p) => {
+    const idx = Number((p.tanggal || "").slice(5, 7)) - 1;
+    if (idx >= 0 && idx < 12) {
+      omsetBulan[idx] += Number(p.total) || 0;
+      jumlahBulan[idx] += 1;
+    }
+  });
+  return {
+    tahun: Number(tahun),
+    omset: { bulan: omsetBulan, total: omsetBulan.reduce((a, v) => a + v, 0) },
+    jumlahPesanan: { bulan: jumlahBulan, total: jumlahBulan.reduce((a, v) => a + v, 0) },
+  };
+}
+
+// Rekap omset & jumlah pesanan per tahun, untuk `jumlahTahun` tahun berurutan
+// mulai dari tahunMulai (analog rekapTahunanData di Keuangan).
+export function rekapTahunanGrosir(pesananGrosir, tahunMulai, jumlahTahun = 6) {
+  const tahunList = Array.from({ length: jumlahTahun }, (_, i) => Number(tahunMulai) + i);
+  const perTahun = tahunList.map((tahun) => {
+    const { omset, jumlahPesanan } = ringkasanGrosir(pesananGrosir, `${tahun}-01-01`, `${tahun}-12-31`);
+    return { tahun, omset, jumlahPesanan, rataRata: jumlahPesanan > 0 ? omset / jumlahPesanan : 0 };
+  });
+  return { tahunList, perTahun };
+}
+
+// =========================================================
 // KEUANGAN — pencatatan kas masuk/keluar/transfer antar rekening
 // =========================================================
 // Kategori pemasukan & pengeluaran TIDAK lagi hardcode di sini — sekarang

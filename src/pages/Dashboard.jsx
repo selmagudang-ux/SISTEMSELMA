@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight, Clock, UserCheck,
+  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import {
@@ -12,6 +12,7 @@ import {
   saldoPerRekening,
   arusKasPerPeriode,
   breakdownPengeluaranKategori,
+  ringkasanGrosir,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
@@ -333,6 +334,16 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
 
   const namaPelanggan = (id) => pelangganGrosir.find((c) => c.id === id)?.nama || "—";
 
+  // Laporan cepat harian/bulanan/tahunan — angka lengkapnya (grafik, tabel per
+  // bulan/tahun, unduh CSV) ada di menu Grosir > Laporan Grosir; di sini cuma
+  // ringkasan sekilas supaya tidak perlu pindah halaman untuk cek omset.
+  const hariIniStr = hariIniIso();
+  const bulanIniAwal = awalBulanIni();
+  const tahunIniAwal = `${new Date().getFullYear()}-01-01`;
+  const laporanHarian = ringkasanGrosir(pesananGrosir, hariIniStr, hariIniStr);
+  const laporanBulanan = ringkasanGrosir(pesananGrosir, bulanIniAwal, hariIniStr);
+  const laporanTahunan = ringkasanGrosir(pesananGrosir, tahunIniAwal, hariIniStr);
+
   return (
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
@@ -340,6 +351,41 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
         <StatCard label="Pesanan Hari Ini" value={pesananHariIni.length} icon={ShoppingCart} />
         <StatCard label="Piutang Belum Lunas" value={fmtRp(totalPiutang)} accent="text-amber-400" icon={Wallet} iconColor="text-amber-500" />
         <StatCard label="Total Saldo Deposit" value={fmtRp(totalDeposit)} icon={Package} />
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold">Laporan Grosir — Harian / Bulanan / Tahunan</div>
+          <button
+            onClick={() => onNavigate && onNavigate("grosir", "laporan")}
+            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+          >
+            Lihat Laporan Lengkap <ArrowRight size={12} />
+          </button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-800">
+          <div className="p-4">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+              <Clock size={12} /> Hari Ini ({hariIniStr.slice(8, 10)}/{hariIniStr.slice(5, 7)})
+            </div>
+            <div className="text-lg font-bold text-amber-400">{fmtRp(laporanHarian.omset)}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{laporanHarian.jumlahPesanan} pesanan</div>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+              <CalendarRange size={12} /> Bulan Ini
+            </div>
+            <div className="text-lg font-bold text-amber-400">{fmtRp(laporanBulanan.omset)}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{laporanBulanan.jumlahPesanan} pesanan</div>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+              <BarChart3 size={12} /> Tahun Ini
+            </div>
+            <div className="text-lg font-bold text-amber-400">{fmtRp(laporanTahunan.omset)}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5">{laporanTahunan.jumlahPesanan} pesanan</div>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">

@@ -114,6 +114,7 @@ export const NAV = [
           { key: "pelanggan", label: "Pelanggan" },
           { key: "toko", label: "Toko Pengirim" },
           { key: "produk-manual", label: "Produk Manual" },
+          { key: "laporan", label: "Laporan Grosir" },
         ],
       },
     ],
@@ -300,7 +301,7 @@ export const ROLE_SUBMENUS = {
   grosir: {
     // Admin Grosir sekarang juga diberi akses ke "Toko Pengirim" (master
     // data toko), selain transaksi & pelanggan.
-    grosir: ["pesanan", "semua-pesanan", "pelanggan", "toko", "produk-manual"],
+    grosir: ["pesanan", "semua-pesanan", "pelanggan", "toko", "produk-manual", "laporan"],
   },
 };
 
