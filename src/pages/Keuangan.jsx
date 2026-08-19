@@ -394,6 +394,7 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
       <PageHeader
         title="Transaksi Keuangan"
         description="Pencatatan kas masuk, kas keluar, dan transfer antar rekening. Untuk ringkasan, grafik, dan unduh laporan, buka menu Laporan Keuangan."
+        sticky
         action={
           <button
             onClick={() => setModal({ type: "keuangan-transaksi-form" })}

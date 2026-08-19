@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
-import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal, InputRupiah } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
@@ -1156,13 +1156,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
       </Field>
 
       <Field label="Jumlah (Rp)">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlah}
-          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
-        />
+        <InputRupiah value={jumlah} onChange={setJumlah} />
         <div className="text-[11px] text-slate-500 mt-1">
           {isTransfer
             ? "Dicatat sebagai saldo keluar dari rekening asal dan masuk ke rekening tujuan."

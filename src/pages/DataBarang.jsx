@@ -54,6 +54,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
       <PageHeader
         title="Alur Barang"
         description="Cari dan lihat detail semua barang yang tercatat di sistem."
+        sticky
         action={
           <div className="flex items-center gap-2">
             <button

@@ -61,6 +61,29 @@ export function InputTanggal({ value, onChange, className }) {
   );
 }
 
+// Input angka Rupiah dengan tanda ribuan otomatis saat mengetik (mis. "150.000").
+// Sengaja pakai type="text" (bukan type="number") supaya: (1) titik ribuan bisa
+// ditampilkan, dan (2) scroll mouse di atas input tidak diam-diam mengubah
+// angkanya — perilaku bawaan browser pada <input type="number"> yang sering
+// bikin nominal berubah sendiri tanpa sengaja saat user scroll halaman.
+export function InputRupiah({ value, onChange, className, placeholder }) {
+  const display = value === "" || value === null || value === undefined ? "" : Number(value).toLocaleString("id-ID");
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={display}
+      onChange={(e) => {
+        const digitsOnly = e.target.value.replace(/\D/g, "");
+        onChange(digitsOnly === "" ? "" : Number(digitsOnly));
+      }}
+      className={className || inputClass}
+      placeholder={placeholder}
+    />
+  );
+}
+
 export function Field({ label, children }) {
   return (
     <label className="block mb-3">
@@ -540,9 +563,17 @@ export function StatCard({ label, value, accent, icon: Icon, iconColor }) {
   );
 }
 
-export function PageHeader({ title, description, action }) {
+// `sticky` opsional: dipakai di halaman yang tombol aksinya (mis. "+ Barang
+// Masuk", "+ Transaksi") perlu tetap terlihat walau daftar di bawahnya
+// discroll — nempel di bawah header utama (yang tingginya ~53px), sama
+// seperti pola sticky search bar di halaman Peta Rak.
+export function PageHeader({ title, description, action, sticky }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-5">
+    <div
+      className={`flex items-start justify-between gap-4 mb-5 ${
+        sticky ? "sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3" : ""
+      }`}
+    >
       <div>
         <h1 className="text-lg font-bold text-slate-100">{title}</h1>
         {description && <p className="text-xs text-slate-500 mt-1 max-w-xl">{description}</p>}
