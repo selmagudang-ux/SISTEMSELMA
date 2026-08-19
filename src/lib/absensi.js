@@ -261,6 +261,70 @@ export function rekapHarianAbsensi(absensiRows) {
     .sort((a, b) => (b.tanggal + a.nama).localeCompare(a.tanggal + b.nama));
 }
 
+// ---- Util minggu (Senin—Minggu) ----
+export const NAMA_HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+function keTanggalStr(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+// Cari tanggal hari Senin dari minggu yang memuat `tanggalStr` ("YYYY-MM-DD").
+export function seninMingguDari(tanggalStr) {
+  const d = new Date(`${tanggalStr}T00:00:00`);
+  const hari = d.getDay(); // 0=Minggu..6=Sabtu
+  const geser = hari === 0 ? -6 : 1 - hari;
+  d.setDate(d.getDate() + geser);
+  return keTanggalStr(d);
+}
+
+// 7 tanggal berurutan (Senin s.d. Minggu) mulai dari `seninStr`.
+export function tanggalSeminggu(seninStr) {
+  const d = new Date(`${seninStr}T00:00:00`);
+  const hasil = [];
+  for (let i = 0; i < 7; i++) {
+    const cur = new Date(d);
+    cur.setDate(d.getDate() + i);
+    hasil.push(keTanggalStr(cur));
+  }
+  return hasil;
+}
+
+// Geser tanggal acuan minggu (dipakai tombol minggu sebelumnya/berikutnya).
+export function geserTanggal(tanggalStr, hari) {
+  const d = new Date(`${tanggalStr}T00:00:00`);
+  d.setDate(d.getDate() + hari);
+  return keTanggalStr(d);
+}
+
+// Rekap mingguan: matriks nama x hari untuk satu minggu (Senin—Minggu) yang
+// memuat `tanggalAcuan`. Baris dibangun dari karyawan aktif (supaya karyawan
+// yang tidak absen sama sekali tetap tampil) digabung nama yang muncul di
+// rekapHarian pada minggu tsb (jaga-jaga karyawan nonaktif yang masih ada
+// riwayat absen di minggu itu).
+export function rekapMingguanAbsensi(rekapHarian, tanggalAcuan, daftarKaryawan) {
+  const senin = seninMingguDari(tanggalAcuan || new Date().toISOString().slice(0, 10));
+  const tanggalMinggu = tanggalSeminggu(senin);
+  const setTanggal = new Set(tanggalMinggu);
+
+  const perOrang = new Map(); // idKaryawan -> { nama, idKaryawan, hari: {tanggal: rowHarian} }
+  (daftarKaryawan || []).forEach((k) => {
+    if (k.aktif) perOrang.set(k.id_karyawan, { nama: k.nama, idKaryawan: k.id_karyawan, hari: {} });
+  });
+  (rekapHarian || []).forEach((r) => {
+    if (!setTanggal.has(r.tanggal)) return;
+    if (!perOrang.has(r.idKaryawan)) {
+      perOrang.set(r.idKaryawan, { nama: r.nama, idKaryawan: r.idKaryawan, hari: {} });
+    }
+    perOrang.get(r.idKaryawan).hari[r.tanggal] = r;
+  });
+
+  const data = Array.from(perOrang.values()).sort((a, b) => a.nama.localeCompare(b.nama));
+  return { senin, tanggalMinggu, data };
+}
+
 // Rekap bulanan: satu baris per (karyawan, bulan), dari hasil rekapHarianAbsensi().
 export function rekapBulananAbsensi(rekapHarian) {
   const map = new Map();

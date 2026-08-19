@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Copy, Save, Loader2 } from "lucide-react";
-import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge } from "../components/ui";
+import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Copy, Save, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
 import { downloadCsv } from "../lib/api";
 import {
   listKaryawan,
@@ -11,6 +11,9 @@ import {
   listAbsensi,
   rekapHarianAbsensi,
   rekapBulananAbsensi,
+  rekapMingguanAbsensi,
+  geserTanggal,
+  NAMA_HARI,
   getAbsensiSettings,
   updateAbsensiSettings,
 } from "../lib/absensi";
@@ -34,14 +37,17 @@ export default function Absensi({ sub, showToast }) {
 // REKAP (Harian & Bulanan) — dihitung dinamis dari data mentah.
 // =========================================================
 function RekapAbsensi({ showToast }) {
-  const [mode, setMode] = useState("harian"); // harian | bulanan
+  const [mode, setMode] = useState("harian"); // harian | mingguan | bulanan
   const [rows, setRows] = useState(null);
+  const [karyawanList, setKaryawanList] = useState(null);
   const [q, setQ] = useState("");
+  const [tglAcuan, setTglAcuan] = useState(new Date().toISOString().slice(0, 10)); // dipakai mode mingguan
 
   const load = async () => {
     try {
-      const raw = await listAbsensi();
+      const [raw, kar] = await Promise.all([listAbsensi(), listKaryawan()]);
       setRows(raw);
+      setKaryawanList(kar);
     } catch (e) {
       showToast?.(e.message || "Gagal memuat data absensi", "err");
     }
@@ -53,8 +59,12 @@ function RekapAbsensi({ showToast }) {
 
   const rekapHarian = useMemo(() => rekapHarianAbsensi(rows || []), [rows]);
   const rekapBulanan = useMemo(() => rekapBulananAbsensi(rekapHarian), [rekapHarian]);
+  const rekapMingguan = useMemo(
+    () => rekapMingguanAbsensi(rekapHarian, tglAcuan, karyawanList || []),
+    [rekapHarian, tglAcuan, karyawanList]
+  );
 
-  const data = mode === "harian" ? rekapHarian : rekapBulanan;
+  const data = mode === "harian" ? rekapHarian : mode === "bulanan" ? rekapBulanan : rekapMingguan.data;
   const filtered = q
     ? data.filter((r) => r.nama.toLowerCase().includes(q.toLowerCase()))
     : data;
@@ -62,6 +72,8 @@ function RekapAbsensi({ showToast }) {
   const hariIniStr = new Date().toISOString().slice(0, 10);
   const hadirHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.masuk).length;
   const telatHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.telatMenit > 0).length;
+
+  const geserMinggu = (arah) => setTglAcuan((t) => geserTanggal(t, arah * 7));
 
   const unduh = () => {
     if (mode === "harian") {
@@ -79,7 +91,7 @@ function RekapAbsensi({ showToast }) {
         ],
         filtered
       );
-    } else {
+    } else if (mode === "bulanan") {
       downloadCsv(
         `rekap-absensi-bulanan-${hariIniStr}.csv`,
         [
@@ -92,6 +104,31 @@ function RekapAbsensi({ showToast }) {
           { key: "totalJamKerja", label: "Total Jam Kerja" },
         ],
         filtered
+      );
+    } else {
+      const kolomHari = rekapMingguan.tanggalMinggu.map((tgl, i) => ({
+        key: tgl,
+        label: `${NAMA_HARI[i]} (${tgl.slice(8, 10)}/${tgl.slice(5, 7)})`,
+      }));
+      const baris = filtered.map((p) => {
+        const row = { nama: p.nama };
+        rekapMingguan.tanggalMinggu.forEach((tgl) => {
+          const r = p.hari[tgl];
+          if (!r) row[tgl] = "";
+          else if (!r.masuk) row[tgl] = "Tidak Absen";
+          else {
+            let s = r.masuk;
+            if (r.telatMenit > 0) s += ` (Telat ${r.telatMenit}m)`;
+            if (r.lemburJam > 0) s += ` (Lembur ${r.lemburJam}j)`;
+            row[tgl] = s;
+          }
+        });
+        return row;
+      });
+      downloadCsv(
+        `rekap-absensi-mingguan-${rekapMingguan.senin}.csv`,
+        [{ key: "nama", label: "Nama" }, ...kolomHari],
+        baris
       );
     }
   };
@@ -117,6 +154,12 @@ function RekapAbsensi({ showToast }) {
             Rekap Harian
           </button>
           <button
+            onClick={() => setMode("mingguan")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md ${mode === "mingguan" ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
+          >
+            Rekap Mingguan
+          </button>
+          <button
             onClick={() => setMode("bulanan")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md ${mode === "bulanan" ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
           >
@@ -137,8 +180,76 @@ function RekapAbsensi({ showToast }) {
         </button>
       </div>
 
+      {mode === "mingguan" && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <button
+            onClick={() => geserMinggu(-1)}
+            title="Minggu sebelumnya"
+            className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-400 hover:border-slate-700"
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <div className="w-40">
+            <InputTanggal value={tglAcuan} onChange={setTglAcuan} />
+          </div>
+          <button
+            onClick={() => geserMinggu(1)}
+            title="Minggu berikutnya"
+            className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-amber-400 hover:border-slate-700"
+          >
+            <ChevronRight size={15} />
+          </button>
+          <span className="text-xs text-slate-400">
+            Minggu {formatTanggalID(rekapMingguan.tanggalMinggu[0])} – {formatTanggalID(rekapMingguan.tanggalMinggu[6])}
+          </span>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
-        <EmptyState label="Belum ada data absensi." />
+        <EmptyState label={mode === "mingguan" ? "Belum ada karyawan aktif." : "Belum ada data absensi."} />
+      ) : mode === "mingguan" ? (
+        <div className="border border-slate-800 rounded-xl overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-900/70 text-slate-400 text-xs">
+              <tr>
+                <th className="text-left px-3 py-2.5 font-medium sticky left-0 bg-slate-900/70">Nama</th>
+                {rekapMingguan.tanggalMinggu.map((tgl, i) => (
+                  <th key={tgl} className="text-center px-2 py-2.5 font-medium whitespace-nowrap">
+                    <div>{NAMA_HARI[i]}</div>
+                    <div className="text-slate-500 font-normal">{tgl.slice(8, 10)}/{tgl.slice(5, 7)}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p) => (
+                <tr key={p.idKaryawan} className="border-t border-slate-800/70">
+                  <td className="px-3 py-2.5 font-medium whitespace-nowrap sticky left-0 bg-slate-950">{p.nama}</td>
+                  {rekapMingguan.tanggalMinggu.map((tgl) => {
+                    const r = p.hari[tgl];
+                    return (
+                      <td key={tgl} className="px-2 py-2.5 text-center">
+                        {!r ? (
+                          <span className="text-slate-600">—</span>
+                        ) : !r.masuk ? (
+                          <Badge color="slate">Tidak Absen</Badge>
+                        ) : (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className={r.telatMenit > 0 ? "text-amber-400 font-semibold" : "text-emerald-400 font-semibold"}>
+                              {r.masuk}
+                            </span>
+                            {r.telatMenit > 0 && <span className="text-[10px] text-amber-500">Telat {r.telatMenit}m</span>}
+                            {r.lemburJam > 0 && <span className="text-[10px] text-sky-400">Lembur {r.lemburJam}j</span>}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : mode === "harian" ? (
         <div className="border border-slate-800 rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
