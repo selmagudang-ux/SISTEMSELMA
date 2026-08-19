@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -997,7 +997,12 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   const [kategoriBaruKode, setKategoriBaruKode] = useState("");
   const [kategoriBaru, setKategoriBaru] = useState("");
   const [jumlah, setJumlah] = useState(transaksi?.jumlah ?? "");
-  const [keterangan, setKeterangan] = useState(transaksi?.keterangan || "");
+  // Keterangan berupa daftar baris — biar bisa bikin beberapa transaksi
+  // sekaligus dengan nominal/rekening/kategori yang sama tapi keterangan
+  // beda-beda (mis. "Gaji Isti", "Gaji Fuji", "Gaji Ido", satu per baris).
+  // Mode multi HANYA untuk transaksi baru — kalau lagi edit transaksi lama,
+  // tetap satu baris seperti biasa supaya tidak ambigu diedit jadi berapa.
+  const [keteranganList, setKeteranganList] = useState([transaksi?.keterangan || ""]);
 
   const daftarRekening = master?.rekening || [];
   const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
@@ -1055,7 +1060,12 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
     (rekeningBaru.trim() && rekeningTujuanBaru.trim() && rekeningBaru.trim().toLowerCase() === rekeningTujuanBaru.trim().toLowerCase());
 
   const jumlahNum = Number(jumlah) || 0;
-  const saldoTidakCukup = isKeluarSaldo && rekeningTerisi && jumlahNum > 0 && jumlahNum > (saldoRekeningAsal ?? 0);
+  // Kalau lagi mode multi (>1 baris keterangan terisi), saldo yang perlu dicek
+  // adalah total semua baris (jumlah x banyak baris), bukan cuma satu baris —
+  // supaya tidak lolos validasi padahal totalnya melebihi saldo rekening.
+  const jumlahBarisTerisi = Math.max(1, keteranganList.filter((k) => k.trim()).length);
+  const totalJumlah = jumlahNum * jumlahBarisTerisi;
+  const saldoTidakCukup = isKeluarSaldo && rekeningTerisi && jumlahNum > 0 && totalJumlah > (saldoRekeningAsal ?? 0);
 
   const canSubmit =
     tanggal &&
@@ -1163,13 +1173,50 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
         </Field>
       )}
 
-      <Field label="Keterangan (opsional)">
-        <SuggestInput
-          value={keterangan}
-          onChange={setKeterangan}
-          suggestions={keteranganSuggestions}
-          placeholder={isTransfer ? "Contoh: setor tunai ke bank" : "Penjelasan tambahan dari kategori di atas"}
-        />
+      <Field label={keteranganList.length > 1 ? "Keterangan (satu transaksi per baris)" : "Keterangan (opsional)"}>
+        <div className="space-y-1.5">
+          {keteranganList.map((k, idx) => (
+            <div key={idx} className="flex items-center gap-1.5">
+              <div className="flex-1">
+                <SuggestInput
+                  value={k}
+                  onChange={(val) => {
+                    const next = [...keteranganList];
+                    next[idx] = val;
+                    setKeteranganList(next);
+                  }}
+                  suggestions={keteranganSuggestions}
+                  placeholder={isTransfer ? "Contoh: setor tunai ke bank" : "Penjelasan tambahan dari kategori di atas"}
+                />
+              </div>
+              {keteranganList.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setKeteranganList(keteranganList.filter((_, i) => i !== idx))}
+                  className="p-2 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 flex-shrink-0"
+                  title="Hapus baris"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {!transaksi && (
+          <button
+            type="button"
+            onClick={() => setKeteranganList([...keteranganList, ""])}
+            className="flex items-center gap-1.5 text-[11px] font-medium text-amber-400 hover:text-amber-300 mt-2"
+          >
+            <Plus size={12} /> Tambah Baris (nominal &amp; rekening sama)
+          </button>
+        )}
+        {keteranganList.length > 1 && (
+          <div className="text-[11px] text-slate-500 mt-1.5">
+            Akan tersimpan sebagai {keteranganList.filter((k) => k.trim()).length || keteranganList.length} transaksi
+            terpisah, masing-masing sebesar jumlah di bawah.
+          </div>
+        )}
       </Field>
 
       <Field label="Jumlah (Rp)">
@@ -1186,14 +1233,16 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
             Saldo {daftarRekening.find((r) => r.kode === rekening)?.label || rekeningBaru || rekening} tidak cukup —
-            saldo saat ini hanya {fmtRp(saldoRekeningAsal ?? 0)}, tapi jumlah transaksi {fmtRp(jumlahNum)}.
+            saldo saat ini hanya {fmtRp(saldoRekeningAsal ?? 0)}, tapi total transaksi{" "}
+            {jumlahBarisTerisi > 1 ? `${jumlahBarisTerisi} x ${fmtRp(jumlahNum)} = ${fmtRp(totalJumlah)}` : fmtRp(jumlahNum)}.
           </div>
         </div>
       )}
 
       <button
         disabled={!canSubmit}
-        onClick={() =>
+        onClick={() => {
+          const daftarKeterangan = keteranganList.map((k) => k.trim()).filter(Boolean);
           onSubmit({
             tanggal,
             tipe,
@@ -1207,12 +1256,18 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
             kategoriBaruKode: isTransfer ? null : kategoriBaruKode.trim() || null,
             kategoriBaru: isTransfer ? null : kategoriBaru.trim() || null,
             jumlah: jumlahNum,
-            keterangan: keterangan.trim() || null,
-          })
-        }
+            // Kalau semua baris keterangan kosong, tetap kirim 1 transaksi tanpa
+            // keterangan (perilaku lama). Kalau ada isinya, satu transaksi per baris.
+            keteranganList: daftarKeterangan.length ? daftarKeterangan : [null],
+          });
+        }}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
-        {saving ? "Menyimpan…" : "Simpan"}
+        {saving
+          ? "Menyimpan…"
+          : keteranganList.filter((k) => k.trim()).length > 1
+          ? `Simpan ${keteranganList.filter((k) => k.trim()).length} Transaksi`
+          : "Simpan"}
       </button>
     </ModalShell>
   );

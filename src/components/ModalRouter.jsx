@@ -557,18 +557,23 @@ export default function ModalRouter({
               rekening_tujuan: rekeningTujuan,
               kategori,
               jumlah: data.jumlah,
-              keterangan: data.keterangan,
             };
 
             if (t) {
               await sb(`keuangan_transaksi?id=eq.${t.id}`, {
                 method: "PATCH",
-                body: JSON.stringify(body),
+                body: JSON.stringify({ ...body, keterangan: data.keteranganList[0] }),
               });
             } else {
-              await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(body) });
+              // Satu baris keterangan = satu transaksi terpisah (tanggal, tipe,
+              // rekening, kategori, dan jumlah sama persis) — dikirim satu-satu
+              // (bukan bulk insert) supaya kalau salah satu gagal, transaksi lain
+              // yang sudah berhasil tetap tersimpan (tidak semuanya batal).
+              for (const keterangan of data.keteranganList) {
+                await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify({ ...body, keterangan }) });
+              }
             }
-          }, t ? "Transaksi diperbarui" : "Transaksi ditambahkan")
+          }, t ? "Transaksi diperbarui" : data.keteranganList.length > 1 ? `${data.keteranganList.length} transaksi ditambahkan` : "Transaksi ditambahkan")
         }
       />
     );
