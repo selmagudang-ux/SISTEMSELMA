@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2 } from "lucide-react";
 import { gantiPasswordKaryawan, getAbsensiSettings, hitungJarakMeter, submitAbsen } from "../lib/absensi";
 

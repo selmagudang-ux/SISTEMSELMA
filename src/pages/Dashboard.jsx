@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight, Clock, Users, UserCheck,
+  Landmark, ArrowRight, Clock, UserCheck,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import {
@@ -410,7 +410,6 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
   const rekapBulanan = rekapBulananAbsensi(rekapHarian);
   const rekapMingguan = rekapMingguanAbsensi(rekapHarian, hariIniStr, karyawanList);
 
-  const karyawanAktif = karyawanList.filter((k) => k.aktif);
   const hadirHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.masuk);
   const telatHariIni = hadirHariIni.filter((r) => r.telatMenit > 0).length;
 

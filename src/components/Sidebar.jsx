@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
-import { NAV, roleLabel, allowedSubMenus, navAncestorKeys, filterNavByAllowed } from "../lib/constants";
+import { NAV, roleLabel, navAncestorKeys, filterNavByAllowed } from "../lib/constants";
 
 // Tombol untuk node "menu" (punya key yang dipakai sebagai nav.menu) — dipakai
 // baik untuk item top-level (Dashboard, Laporan, Pengaturan) MAUPUN untuk menu

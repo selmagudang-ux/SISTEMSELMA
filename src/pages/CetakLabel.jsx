@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
 import { EmptyState, SearchableSelect } from "../components/ui";
 import { priceCode } from "../lib/api";
-import { rakForSku, skuForRak } from "./Rak";
+import { skuForRak } from "./Rak";
 
 // SKU versi singkat untuk label cetak: Bahan+Peruntukan+Kategori - Subkategori - Model
 // (warna & ukuran tidak ikut ditampilkan di label).

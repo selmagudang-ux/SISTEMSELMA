@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, PackagePlus, ClipboardList, Tag, BarChart3, MapPin,
+  LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock,
 } from "lucide-react";
 

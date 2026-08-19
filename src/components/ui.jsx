@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Inbox, Sparkles, CalendarDays, Plus, Loader2, Check } from "lucide-react";
+import { X, Inbox, CalendarDays, Plus, Loader2, Check } from "lucide-react";
 import { sb } from "../lib/api";
 
 export const inputClass =
@@ -148,19 +148,6 @@ export function Field({ label, children }) {
       <div className="text-xs text-slate-400 mb-1">{label}</div>
       {children}
     </label>
-  );
-}
-
-export function Select({ value, onChange, options, placeholder }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
-      <option value="">{placeholder || "Pilih…"}</option>
-      {options.map((o) => (
-        <option key={o.kode} value={o.kode}>
-          {o.label} ({o.kode})
-        </option>
-      ))}
-    </select>
   );
 }
 
@@ -646,18 +633,6 @@ export function EmptyState({ label }) {
     <div className="flex flex-col items-center justify-center py-16 text-slate-600 gap-2 border border-dashed border-slate-800 rounded-xl">
       <Inbox size={22} />
       <div className="text-sm">{label}</div>
-    </div>
-  );
-}
-
-export function ComingSoon({ title, description }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center border border-dashed border-slate-800 rounded-xl">
-      <div className="w-11 h-11 rounded-full bg-amber-500/10 flex items-center justify-center mb-3">
-        <Sparkles size={20} className="text-amber-400" />
-      </div>
-      <div className="text-sm font-semibold text-slate-200">{title}</div>
-      <div className="text-xs text-slate-500 mt-1 max-w-sm">{description}</div>
     </div>
   );
 }
