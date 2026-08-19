@@ -89,6 +89,9 @@ export default function Keuangan({ sub, keuanganTransaksi = [], master = {}, rel
   if (sub === "laporan") {
     return <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} showToast={showToast} />;
   }
+  if (sub === "log") {
+    return <LogKeterangan keuanganTransaksi={keuanganTransaksi} master={master} />;
+  }
   return (
     <Transaksi keuanganTransaksi={keuanganTransaksi} master={master} setModal={setModal} showToast={showToast} />
   );
@@ -488,6 +491,123 @@ function Transaksi({ keuanganTransaksi, master, setModal, showToast }) {
                   >
                     <Trash2 size={13} />
                   </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Halaman "Log Keterangan" — daftar semua keterangan transaksi yang pernah
+// diketik, dikelompokkan per teks yang sama (tanpa peduli besar/kecil huruf),
+// dihitung berapa kali dipakai, dan kapan terakhir dipakai. Ini sumber yang
+// sama dipakai buat rekomendasi otomatis di field "Keterangan" pada form
+// Tambah/Edit Transaksi — halaman ini cuma menampilkannya biar bisa dicek
+// keterangan apa saja yang sudah pernah dicatat.
+function LogKeterangan({ keuanganTransaksi, master }) {
+  const [q, setQ] = useState("");
+  const [tipeFilter, setTipeFilter] = useState("");
+
+  const rekeningList = master.rekening || [];
+  const kategoriMasukList = master.kategori_masuk || [];
+  const kategoriKeluarList = master.kategori_keluar || [];
+
+  // Kelompokkan per (tipe + keterangan) — keterangan yang sama tapi beda tipe
+  // (mis. "Titip Sesama" di Pemasukan vs Pengeluaran) dihitung terpisah,
+  // karena konteksnya beda meski teksnya kebetulan sama.
+  const grouped = (() => {
+    const map = new Map();
+    for (const t of keuanganTransaksi || []) {
+      const keterangan = (t.keterangan || "").trim();
+      if (!keterangan) continue;
+      const groupKey = `${t.tipe}::${keterangan.toLowerCase()}`;
+      const existing = map.get(groupKey);
+      if (existing) {
+        existing.count += 1;
+        existing.total += Number(t.jumlah) || 0;
+        if (t.tanggal > existing.terakhir) existing.terakhir = t.tanggal;
+      } else {
+        map.set(groupKey, {
+          keterangan,
+          tipe: t.tipe,
+          kategori: t.kategori,
+          count: 1,
+          total: Number(t.jumlah) || 0,
+          terakhir: t.tanggal,
+        });
+      }
+    }
+    return [...map.values()].sort((a, b) => b.count - a.count || b.terakhir.localeCompare(a.terakhir));
+  })();
+
+  const filtered = grouped
+    .filter((g) => !tipeFilter || g.tipe === tipeFilter)
+    .filter((g) => !q.trim() || g.keterangan.toLowerCase().includes(q.trim().toLowerCase()));
+
+  const tipeMeta = {
+    masuk: { label: "Pemasukan", color: "emerald" },
+    keluar: { label: "Pengeluaran", color: "red" },
+    transfer: { label: "Transfer", color: "sky" },
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Log Keterangan"
+        description="Daftar keterangan yang pernah dicatat di Transaksi, dikelompokkan dan diurutkan dari yang paling sering dipakai. Teks ini juga yang jadi rekomendasi otomatis saat mengisi keterangan transaksi baru."
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <select value={tipeFilter} onChange={(e) => setTipeFilter(e.target.value)} className={`${inputClass} w-auto`}>
+          <option value="">Semua Jenis</option>
+          <option value="masuk">Pemasukan</option>
+          <option value="keluar">Pengeluaran</option>
+          <option value="transfer">Transfer Antar Rekening</option>
+        </select>
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[180px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari keterangan…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState label={q || tipeFilter ? "Tidak ada keterangan yang cocok." : "Belum ada transaksi dengan keterangan."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {filtered.map((g, i) => {
+            const kategoriLabel =
+              g.tipe === "masuk"
+                ? labelDari(kategoriMasukList, g.kategori)
+                : g.tipe === "keluar"
+                ? labelDari(kategoriKeluarList, g.kategori)
+                : "";
+            const meta = tipeMeta[g.tipe] || { label: g.tipe, color: "slate" };
+            return (
+              <div
+                key={`${g.tipe}::${g.keterangan.toLowerCase()}`}
+                className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge color={meta.color}>{meta.label}</Badge>
+                    {kategoriLabel && <span className="text-[11px] text-slate-500">{kategoriLabel}</span>}
+                  </div>
+                  <div className="text-sm text-slate-200 mt-0.5 truncate">{g.keterangan}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    Dipakai {g.count}x · Terakhir {formatTanggalID(g.terakhir)}
+                  </div>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <div className="text-[11px] text-slate-500">Total</div>
+                  <div className="text-sm font-semibold text-slate-200">{fmtRp(g.total)}</div>
                 </div>
               </div>
             );

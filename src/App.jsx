@@ -19,7 +19,6 @@ import Marketplace from "./pages/Marketplace";
 import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs, computeRakPindahNotifs, computeRakKosongNotifs } from "./lib/marketplaceNotif";
 import Grosir from "./pages/Grosir";
 import Keuangan from "./pages/Keuangan";
-import Laporan from "./pages/Laporan";
 import Pengaturan from "./pages/Pengaturan";
 
 export default function SistemSelmaApp() {
@@ -444,20 +443,6 @@ function MainApp({ session, onLogout }) {
                   reload={loadAll}
                   showToast={showToast}
                   setModal={setModal}
-                />
-              )}
-              {nav.menu === "laporan" && (
-                <Laporan
-                  items={items}
-                  skuMaster={skuMaster}
-                  rak={rak}
-                  pesananGrosir={pesananGrosir}
-                  pembayaranGrosir={pembayaranGrosir}
-                  depositGrosir={depositGrosir}
-                  pelangganGrosir={pelangganGrosir}
-                  keuanganTransaksi={keuanganTransaksi}
-                  master={master}
-                  onNavigate={navigate}
                 />
               )}
               {nav.menu === "pengaturan" && (
