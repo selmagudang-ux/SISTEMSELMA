@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight, Clock, Users, UserCheck, UserX,
+  Landmark, ArrowRight, Clock, Users, UserCheck,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import {
@@ -412,8 +412,6 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
 
   const karyawanAktif = karyawanList.filter((k) => k.aktif);
   const hadirHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.masuk);
-  const idHadirHariIni = new Set(hadirHariIni.map((r) => r.idKaryawan));
-  const belumHadirHariIni = karyawanAktif.filter((k) => !idHadirHariIni.has(k.id_karyawan));
   const telatHariIni = hadirHariIni.filter((r) => r.telatMenit > 0).length;
 
   const bulanIni = hariIniStr.slice(0, 7);
@@ -421,16 +419,14 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Karyawan Aktif" value={karyawanAktif.length} icon={Users} />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
         <StatCard label="Hadir Hari Ini" value={hadirHariIni.length} accent="text-emerald-400" icon={UserCheck} iconColor="text-emerald-500" />
-        <StatCard label="Belum Absen Hari Ini" value={belumHadirHariIni.length} accent="text-red-400" icon={UserX} iconColor="text-red-500" />
         <StatCard label="Telat Hari Ini" value={telatHariIni} accent="text-amber-400" icon={Clock} iconColor="text-amber-500" />
       </div>
 
       <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Kehadiran Hari Ini ({hariIniStr})</div>
+          <div className="text-sm font-semibold">Hadir Hari Ini ({hariIniStr})</div>
           <button
             onClick={() => onNavigate && onNavigate("absensi", "rekap")}
             className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
@@ -438,9 +434,9 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
             Lihat Rekap Lengkap <ArrowRight size={12} />
           </button>
         </div>
-        {karyawanAktif.length === 0 ? (
+        {hadirHariIni.length === 0 ? (
           <div className="p-6">
-            <EmptyState label="Belum ada karyawan aktif." />
+            <EmptyState label="Belum ada karyawan yang absen hari ini." />
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -453,15 +449,6 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
                     <Badge color={r.status === "Normal" ? "emerald" : r.status.includes("Tidak Absen") ? "slate" : "amber"}>
                       {r.status}
                     </Badge>
-                  </td>
-                </tr>
-              ))}
-              {belumHadirHariIni.map((k) => (
-                <tr key={k.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 text-slate-400">{k.nama}</td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs">—</td>
-                  <td className="px-4 py-2.5">
-                    <Badge color="slate">Belum Absen</Badge>
                   </td>
                 </tr>
               ))}
