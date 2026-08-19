@@ -252,16 +252,16 @@ export async function hapusAbsensiHarian(idKaryawan, tanggal) {
   );
 }
 
-// ---- Absensi manual (Sakit/Izin) — khusus superadmin & owner. ----
+// ---- Absensi manual (Sakit/Izin/Libur) — khusus superadmin & owner. ----
 // Dipakai kalau ada karyawan yang tidak absen (lupa / memang tidak masuk)
 // tapi ternyata izin atau sakit, supaya rekap tidak menampilkan "Tidak
 // Absen" begitu saja. Disimpan sebagai SATU baris di tabel `absensi` dengan
-// tipe "Sakit"/"Izin" (bukan Masuk/Pulang). Baris asli (kalau ada, mis. mau
+// tipe "Sakit"/"Izin"/"Libur" (bukan Masuk/Pulang). Baris asli (kalau ada, mis. mau
 // mengoreksi absen asli jadi izin) dihapus dulu supaya tidak dobel dan rekap
 // harian/mingguan/bulanan tetap konsisten karena semua dihitung ulang dari
 // tabel ini.
 export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tanggal, tipe, keterangan }) {
-  if (!["Sakit", "Izin"].includes(tipe)) throw new Error("Status wajib Sakit atau Izin.");
+  if (!["Sakit", "Izin", "Libur"].includes(tipe)) throw new Error("Status wajib Sakit, Izin, atau Libur.");
   if (!idKaryawan || !tanggal) throw new Error("Karyawan dan tanggal wajib diisi.");
 
   await hapusAbsensiHarian(idKaryawan, tanggal);
@@ -302,7 +302,7 @@ export function rekapHarianAbsensi(absensiRows) {
         pulang: "",
         telatMenit: 0,
         lemburJam: 0,
-        manual: null, // "Sakit" | "Izin" — ditandai manual oleh admin, bukan absen asli
+        manual: null, // "Sakit" | "Izin" | "Libur" — ditandai manual oleh admin, bukan absen asli
         keteranganManual: "",
       });
     }
@@ -313,7 +313,7 @@ export function rekapHarianAbsensi(absensiRows) {
     } else if (r.tipe === "Pulang") {
       v.pulang = String(r.jam).slice(0, 5);
       v.lemburJam = Number(r.lembur_jam) || 0;
-    } else if (r.tipe === "Sakit" || r.tipe === "Izin") {
+    } else if (r.tipe === "Sakit" || r.tipe === "Izin" || r.tipe === "Libur") {
       v.manual = r.tipe;
       v.keteranganManual = r.keterangan || r.tipe;
     }
@@ -421,6 +421,7 @@ export function rekapBulananAbsensi(rekapHarian) {
         hariTelat: 0,
         hariSakit: 0,
         hariIzin: 0,
+        hariLibur: 0,
         totalTelatMenit: 0,
         totalLemburJam: 0,
         totalJamKerja: 0,
@@ -429,6 +430,7 @@ export function rekapBulananAbsensi(rekapHarian) {
     const b = map.get(key);
     if (v.manual === "Sakit") b.hariSakit += 1;
     else if (v.manual === "Izin") b.hariIzin += 1;
+    else if (v.manual === "Libur") b.hariLibur += 1;
     else if (v.masuk) b.hariMasuk += 1;
     if (v.telatMenit > 0) {
       b.hariTelat += 1;

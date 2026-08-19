@@ -22,10 +22,18 @@ import {
 } from "../lib/absensi";
 
 // Hanya superadmin & owner yang boleh: (1) mengedit/menandai absensi manual
-// (Sakit/Izin) untuk karyawan yang tidak absen, dan (2) mengubah nama data
+// (Sakit/Izin/Libur) untuk karyawan yang tidak absen, dan (2) mengubah nama data
 // karyawan. Role lain yang mungkin nanti dibuka aksesnya ke menu Absensi
 // tetap hanya bisa LIHAT, tidak bisa mengedit kedua hal ini.
 const ROLE_BOLEH_EDIT = ["superadmin", "owner"];
+
+// Warna badge untuk tiap status absensi manual.
+function warnaManual(tipe) {
+  if (tipe === "Sakit") return "pink";
+  if (tipe === "Izin") return "amber";
+  if (tipe === "Libur") return "sky";
+  return "slate";
+}
 
 export default function Absensi({ sub, showToast, session }) {
   const s = sub || "rekap";
@@ -104,7 +112,7 @@ function RekapAbsensi({ showToast, role }) {
     }
   };
 
-  // Buka modal Sakit/Izin — dari baris rekap yang sudah ada (tombol pensil)
+  // Buka modal Sakit/Izin/Libur — dari baris rekap yang sudah ada (tombol pensil)
   // atau dari sel "Tidak Absen" di rekap mingguan, atau dari tombol "+"
   // untuk karyawan yang belum punya baris sama sekali di tanggal itu.
   const bukaManual = ({ idKaryawan, nama, tanggal, tipeAwal, keteranganAwal, existing }) => {
@@ -149,7 +157,7 @@ function RekapAbsensi({ showToast, role }) {
     if (!manualFor?.idKaryawan || !manualFor?.tanggal) return;
     if (
       !confirm(
-        `Hapus data absen "${manualFor.nama}" tanggal ${manualFor.tanggal}? Ini menghapus baris absen (baik itu tanda Sakit/Izin, maupun absen Masuk/Pulang asli) pada tanggal tsb.`
+        `Hapus data absen "${manualFor.nama}" tanggal ${manualFor.tanggal}? Ini menghapus baris absen (baik itu tanda Sakit/Izin/Libur, maupun absen Masuk/Pulang asli) pada tanggal tsb.`
       )
     )
       return;
@@ -191,6 +199,7 @@ function RekapAbsensi({ showToast, role }) {
           { key: "hariMasuk", label: "Total Hari Masuk" },
           { key: "hariSakit", label: "Total Hari Sakit" },
           { key: "hariIzin", label: "Total Hari Izin" },
+          { key: "hariLibur", label: "Total Hari Libur" },
           { key: "hariTelat", label: "Total Hari Telat" },
           { key: "totalTelatMenit", label: "Total Telat (menit)" },
           { key: "totalLemburJam", label: "Total Lembur (jam)" },
@@ -270,7 +279,7 @@ function RekapAbsensi({ showToast, role }) {
             onClick={() => bukaManual({ idKaryawan: "", nama: "", tanggal: new Date().toISOString().slice(0, 10) })}
             className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg"
           >
-            <Stethoscope size={14} /> Tandai Sakit/Izin
+            <Stethoscope size={14} /> Tandai Sakit/Izin/Libur
           </button>
         )}
         <button
@@ -342,7 +351,7 @@ function RekapAbsensi({ showToast, role }) {
                         {!r ? (
                           bolehEdit ? (
                             <button
-                              title="Tandai Sakit/Izin"
+                              title="Tandai Sakit/Izin/Libur"
                               onClick={() => bukaDariSel("Sakit")}
                               className="text-slate-600 hover:text-amber-400 text-xs"
                             >
@@ -354,10 +363,10 @@ function RekapAbsensi({ showToast, role }) {
                         ) : r.manual ? (
                           bolehEdit ? (
                             <button onClick={() => bukaDariSel(r.manual)}>
-                              <Badge color={r.manual === "Sakit" ? "pink" : "amber"}>{r.manual}</Badge>
+                              <Badge color={warnaManual(r.manual)}>{r.manual}</Badge>
                             </button>
                           ) : (
-                            <Badge color={r.manual === "Sakit" ? "pink" : "amber"}>{r.manual}</Badge>
+                            <Badge color={warnaManual(r.manual)}>{r.manual}</Badge>
                           )
                         ) : !r.masuk ? (
                           bolehEdit ? (
@@ -409,7 +418,7 @@ function RekapAbsensi({ showToast, role }) {
                   <td className="px-3 py-2.5">
                     <Badge
                       color={
-                        r.manual === "Sakit" ? "pink" : r.manual === "Izin" ? "amber" :
+                        r.manual ? warnaManual(r.manual) :
                         r.status === "Normal" ? "emerald" : r.status.includes("Tidak Absen") ? "slate" : "amber"
                       }
                     >
@@ -420,7 +429,7 @@ function RekapAbsensi({ showToast, role }) {
                     <div className="flex justify-end gap-1.5">
                       {bolehEdit && (
                         <button
-                          title="Tandai/ubah Sakit atau Izin"
+                          title="Tandai/ubah Sakit, Izin, atau Libur"
                           onClick={() =>
                             bukaManual({
                               idKaryawan: r.idKaryawan,
@@ -460,6 +469,7 @@ function RekapAbsensi({ showToast, role }) {
                 <th className="text-left px-3 py-2.5 font-medium">Hari Masuk</th>
                 <th className="text-left px-3 py-2.5 font-medium">Sakit</th>
                 <th className="text-left px-3 py-2.5 font-medium">Izin</th>
+                <th className="text-left px-3 py-2.5 font-medium">Libur</th>
                 <th className="text-left px-3 py-2.5 font-medium">Hari Telat</th>
                 <th className="text-left px-3 py-2.5 font-medium">Total Telat</th>
                 <th className="text-left px-3 py-2.5 font-medium">Total Lembur</th>
@@ -474,6 +484,7 @@ function RekapAbsensi({ showToast, role }) {
                   <td className="px-3 py-2.5">{r.hariMasuk}</td>
                   <td className="px-3 py-2.5">{r.hariSakit}</td>
                   <td className="px-3 py-2.5">{r.hariIzin}</td>
+                  <td className="px-3 py-2.5">{r.hariLibur}</td>
                   <td className="px-3 py-2.5">{r.hariTelat}</td>
                   <td className="px-3 py-2.5">{r.totalTelatMenit} menit</td>
                   <td className="px-3 py-2.5">{r.totalLemburJam} jam</td>
@@ -488,7 +499,7 @@ function RekapAbsensi({ showToast, role }) {
       {manualFor && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
-            <div className="text-sm font-semibold mb-3">Tandai Sakit / Izin</div>
+            <div className="text-sm font-semibold mb-3">Tandai Sakit / Izin / Libur</div>
             <div className="space-y-3">
               {manualFor.idKaryawan ? (
                 <Field label="Karyawan">
@@ -519,7 +530,7 @@ function RekapAbsensi({ showToast, role }) {
               </Field>
               <Field label="Status">
                 <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-1">
-                  {["Sakit", "Izin"].map((t) => (
+                  {["Sakit", "Izin", "Libur"].map((t) => (
                     <button
                       key={t}
                       type="button"
