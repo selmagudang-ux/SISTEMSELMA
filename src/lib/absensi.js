@@ -212,6 +212,18 @@ export async function listAbsensi() {
   return sbAll("absensi?select=*&order=tanggal.desc,jam.desc");
 }
 
+// Hapus satu baris rekap harian (= hapus SEMUA baris mentah `absensi` milik
+// karyawan itu pada tanggal itu, baik tipe Masuk maupun Pulang). Karena rekap
+// bulanan & mingguan selalu dihitung ulang dari tabel `absensi` (bukan tabel
+// terpisah), penghapusan ini otomatis berpengaruh ke rekap bulanan & mingguan
+// juga — tidak perlu sinkronisasi manual di tempat lain.
+export async function hapusAbsensiHarian(idKaryawan, tanggal) {
+  return sb(
+    `absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&tanggal=eq.${encodeURIComponent(tanggal)}`,
+    { method: "DELETE" }
+  );
+}
+
 // =========================================================
 // REKAP — dihitung dinamis dari data mentah `absensi` (bukan tabel terpisah).
 // =========================================================

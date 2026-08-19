@@ -9,6 +9,7 @@ import {
   setAktifKaryawan,
   hapusKaryawan,
   listAbsensi,
+  hapusAbsensiHarian,
   rekapHarianAbsensi,
   rekapBulananAbsensi,
   rekapMingguanAbsensi,
@@ -74,6 +75,22 @@ function RekapAbsensi({ showToast }) {
   const telatHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.telatMenit > 0).length;
 
   const geserMinggu = (arah) => setTglAcuan((t) => geserTanggal(t, arah * 7));
+
+  const hapusHarian = async (r) => {
+    if (
+      !confirm(
+        `Hapus absen "${r.nama}" tanggal ${r.tanggal}? Ini akan menghapus data Masuk & Pulang hari itu, dan otomatis mengurangi rekap mingguan/bulanan yang terkait.`
+      )
+    )
+      return;
+    try {
+      await hapusAbsensiHarian(r.idKaryawan, r.tanggal);
+      showToast?.("Data absen dihapus.");
+      load();
+    } catch (e) {
+      showToast?.(e.message || "Gagal menghapus data absen", "err");
+    }
+  };
 
   const unduh = () => {
     if (mode === "harian") {
@@ -261,6 +278,7 @@ function RekapAbsensi({ showToast }) {
                 <th className="text-left px-3 py-2.5 font-medium">Pulang</th>
                 <th className="text-left px-3 py-2.5 font-medium">Jam Kerja</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
+                <th className="text-right px-3 py-2.5 font-medium">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -275,6 +293,15 @@ function RekapAbsensi({ showToast }) {
                     <Badge color={r.status === "Normal" ? "emerald" : r.status.includes("Tidak Absen") ? "slate" : "amber"}>
                       {r.status}
                     </Badge>
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <button
+                      title="Hapus data absen hari ini"
+                      onClick={() => hapusHarian(r)}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}
