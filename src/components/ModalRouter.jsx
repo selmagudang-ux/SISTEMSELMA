@@ -1419,6 +1419,7 @@ export default function ModalRouter({
         reload={reload}
         onClose={close}
         saving={saving}
+        session={session}
         onSubmitExisting={(selectedSku, hargaAsliBaru) =>
           run(async () => {
             const jumlah = modal.item.jumlah || 1;
@@ -1453,7 +1454,7 @@ export default function ModalRouter({
             });
           }, "Stok ditambahkan ke SKU")
         }
-        onSubmitNew={(skuFields, hargaAsli) =>
+        onSubmitNew={(skuFields, hargaAsli, hargaManual) =>
           run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
 
@@ -1471,7 +1472,14 @@ export default function ModalRouter({
               }
             }
 
-            const harga = calcHarga(hargaAsli, settings);
+            // hargaManual hanya bisa terisi kalau role-nya superadmin (dijaga di
+            // SkuEntryForm) — kalau ada, pakai itu apa adanya dan lewati rumus
+            // calcHarga untuk grosir/tengah/ecer. hpp & harga_dasar tetap dihitung
+            // dari harga asli seperti biasa supaya laporan lain tetap konsisten.
+            const hargaOtomatis = calcHarga(hargaAsli, settings);
+            const harga = hargaManual
+              ? { ...hargaOtomatis, grosir: hargaManual.grosir, tengah: hargaManual.tengah, ecer: hargaManual.ecer }
+              : hargaOtomatis;
             const sku = `${skuFields.bahan}${skuFields.peruntukan}${skuFields.kategori}-${skuFields.subkategori}-${skuFields.model}-${skuFields.warna}-${skuFields.ukuran}`;
             const jumlah = modal.item.jumlah || 1;
             const existing = skuMaster.find((s) => s.sku === sku);

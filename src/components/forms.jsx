@@ -59,7 +59,8 @@ export function BarangMasukForm({ onClose, onSubmit, saving }) {
 // Pelanggan di Grosir > Buat Pesanan Baru: pilih dari daftar yang sudah ada
 // DI ATAS, atau isi bagian "buat SKU baru" di bawahnya — dua-duanya kelihatan
 // sekaligus, user tinggal pakai salah satu lalu simpan.
-export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, saving }) {
+export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, saving, session }) {
+  const isSuperadmin = session?.role === "superadmin";
   const [selectedId, setSelectedId] = useState("");
   const [hargaBaru, setHargaBaru] = useState("");
 
@@ -75,6 +76,13 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [warna, setWarna] = useState("");
   const [ukuran, setUkuran] = useState("");
   const [hargaAsli, setHargaAsli] = useState("");
+
+  // Khusus superadmin: opsi ketik sendiri harga Grosir/Tengah/Ecer, tanpa
+  // ikut rumus calcHarga otomatis. Role lain tidak lihat opsi ini sama sekali.
+  const [hargaManual, setHargaManual] = useState(false);
+  const [grosirManual, setGrosirManual] = useState("");
+  const [tengahManual, setTengahManual] = useState("");
+  const [ecerManual, setEcerManual] = useState("");
 
   // Rekomendasi nomor Model berikutnya: cari SKU lain dengan kombinasi bahan +
   // peruntukan + kategori + subkategori yang sama, ambil nomor model tertinggi + 1.
@@ -100,7 +108,10 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
     if (modelSuggestion && !modelTouched) setModel(modelSuggestion);
   }, [modelSuggestion, modelTouched]);
 
-  const ready = bahan && peruntukan && kategori && subkategori && model && warna && ukuran && hargaAsli;
+  const manualLengkap = grosirManual !== "" && tengahManual !== "" && ecerManual !== "";
+  const ready =
+    bahan && peruntukan && kategori && subkategori && model && warna && ukuran && hargaAsli &&
+    (!hargaManual || manualLengkap);
   const preview =
     ready && settings
       ? `${bahan}${peruntukan}${kategori}-${subkategori}-${model}-${warna}-${ukuran}`
@@ -213,21 +224,63 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
         </Field>
 
+        {isSuperadmin && (
+          <div className="mb-3">
+            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={hargaManual}
+                onChange={(e) => setHargaManual(e.target.checked)}
+                className="accent-amber-500"
+              />
+              Isi harga Grosir/Tengah/Ecer manual (khusus superadmin)
+            </label>
+          </div>
+        )}
+
+        {isSuperadmin && hargaManual && (
+          <div className="grid grid-cols-3 gap-x-2 mb-1">
+            <Field label="Grosir">
+              <InputRupiah value={grosirManual} onChange={setGrosirManual} placeholder="0" />
+            </Field>
+            <Field label="Tengah">
+              <InputRupiah value={tengahManual} onChange={setTengahManual} placeholder="0" />
+            </Field>
+            <Field label="Ecer">
+              <InputRupiah value={ecerManual} onChange={setEcerManual} placeholder="0" />
+            </Field>
+          </div>
+        )}
+
         {preview && (
           <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
             <div className="text-[11px] text-slate-500">SKU</div>
             <div className="font-mono text-sm text-amber-400">{preview}</div>
-            {settings && hargaAsli && (
+            {hargaManual && manualLengkap ? (
               <div className="text-[11px] text-slate-500 mt-1.5">
-                Ecer: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(hargaAsli, settings).ecer)}</span>
+                Ecer (manual): <span className="text-amber-400 font-medium">{fmtRp(ecerManual)}</span>
               </div>
+            ) : (
+              settings && hargaAsli && (
+                <div className="text-[11px] text-slate-500 mt-1.5">
+                  Ecer: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(hargaAsli, settings).ecer)}</span>
+                </div>
+              )
             )}
           </div>
         )}
 
         <button
           disabled={!ready || saving}
-          onClick={() => onSubmitNew({ bahan, peruntukan, kategori, subkategori, model, warna, ukuran }, Number(hargaAsli))}
+          onClick={() =>
+            onSubmitNew(
+              { bahan, peruntukan, kategori, subkategori, model, warna, ukuran },
+              Number(hargaAsli),
+              isSuperadmin && hargaManual
+                ? { grosir: Number(grosirManual), tengah: Number(tengahManual), ecer: Number(ecerManual) }
+                : null
+            )
+          }
           className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
         >
           {saving ? "Menyimpan…" : "Buat SKU Baru & Lanjut ke Rak"}
