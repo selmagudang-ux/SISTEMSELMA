@@ -13,6 +13,25 @@ export const STAGE_META = {
   selesai: { label: "Selesai", icon: ClipboardList, color: "emerald" },
 };
 
+// Role yang "punya" tugas menyelesaikan tiap tahap di alur barang — dipakai
+// untuk tombol "Lanjut ke Tahap Berikutnya" di modal Detail Barang (dibuka
+// dari Alur Barang, yang menampilkan barang dari SEMUA tahap ke gudang/owner/
+// superadmin sekaligus). Tahap "selesai" tidak ada di sini karena tidak ada
+// lagi tahap berikutnya untuk dilanjutkan.
+export const STAGE_ROLE = {
+  sku: "gudang",
+  rak: "gudang",
+  verifikasi: "pemotretan",
+  marketplace: "marketplace",
+};
+
+// Owner & superadmin selalu boleh melanjutkan tahap apa pun, role lain hanya
+// boleh untuk tahap yang jadi "tugas"-nya sendiri (lihat STAGE_ROLE di atas).
+export function canAdvanceStage(role, stage) {
+  if (role === "superadmin" || role === "owner") return true;
+  return STAGE_ROLE[stage] === role;
+}
+
 export const COLOR = {
   amber: { bg: "bg-amber-500/10", text: "text-amber-400", ring: "ring-amber-500/30", solid: "bg-amber-500" },
   sky: { bg: "bg-sky-500/10", text: "text-sky-400", ring: "ring-sky-500/30", solid: "bg-sky-500" },

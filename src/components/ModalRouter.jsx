@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Trash2, AlertTriangle, Download, RotateCcw, Printer } from "lucide-react";
+import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass } from "./ui";
-import { STAGE_META, COLOR } from "../lib/constants";
+import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
@@ -17,7 +17,7 @@ import { NotaPesananModal, LabelPengirimanModal } from "../pages/NotaGrosir";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
-function DetailItemModal({ item, setModal, saving, run, showToast, close }) {
+function DetailItemModal({ item, setModal, saving, run, showToast, close, session, quickAdvance }) {
   const [unduh, setUnduh] = useState(false);
   const meta = STAGE_META[item.stage];
   const c = COLOR[meta.color];
@@ -28,6 +28,33 @@ function DetailItemModal({ item, setModal, saving, run, showToast, close }) {
     ["SKU", item.sku || "Belum ada"],
     ["Rak", item.rak_code || "Belum ditempatkan"],
   ];
+
+  // Tahap yang masih punya aksi lanjutan (selesai = tidak ada lagi). Untuk
+  // setiap tahap ini, klik tombol "Lanjut" akan membuka form/aksi yang sama
+  // seperti yang dipakai di halaman kerja masing-masing role (Buat SKU,
+  // Tempatkan Rak, Verifikasi Foto, Upload Marketplace) — TAPI hanya kalau
+  // role yang login memang "pemilik" tahap itu (lihat STAGE_ROLE), atau
+  // owner/superadmin yang selalu boleh lewat semua tahap.
+  const stageAksi = { sku: "buat-sku", rak: "advance-rak", verifikasi: "advance-verifikasi" };
+  const bisaLanjut = item.stage in stageAksi || item.stage === "marketplace";
+
+  const handleLanjut = () => {
+    if (!canAdvanceStage(session?.role, item.stage)) {
+      const pemilik = roleLabel(STAGE_ROLE[item.stage]);
+      showToast(
+        `Anda tidak bisa melanjutkan ke tahap selanjutnya. Hanya role ${pemilik} (atau Owner/Superadmin) yang bisa melanjutkan.`,
+        "err"
+      );
+      return;
+    }
+    if (item.stage === "marketplace") {
+      quickAdvance(item, "marketplace");
+      close();
+      return;
+    }
+    setModal({ type: stageAksi[item.stage], item });
+  };
+
   return (
     <ModalShell title={`Detail Barang — ${item.sku || `#${item.id.slice(0, 8)}`}`} onClose={close}>
       {item.foto_url && (
@@ -53,6 +80,15 @@ function DetailItemModal({ item, setModal, saving, run, showToast, close }) {
         ))}
       </div>
       <div className="mt-3 space-y-2">
+        {bisaLanjut && (
+          <button
+            disabled={saving}
+            onClick={handleLanjut}
+            className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-xs font-semibold py-2.5 rounded-lg"
+          >
+            Lanjut ke Tahap Berikutnya <ArrowRight size={14} />
+          </button>
+        )}
         {item.foto_url && (
           <button
             disabled={unduh}
@@ -311,6 +347,7 @@ function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
 
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, keuanganTransaksi, saving, setSaving, reload, showToast, session,
+  quickAdvance,
   pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
   const close = () => setModal(null);
@@ -1338,6 +1375,8 @@ export default function ModalRouter({
         run={run}
         showToast={showToast}
         close={close}
+        session={session}
+        quickAdvance={quickAdvance}
       />
     );
   }

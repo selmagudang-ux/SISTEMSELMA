@@ -509,6 +509,7 @@ function MainApp({ session, onLogout }) {
           reload={loadAll}
           showToast={showToast}
           session={session}
+          quickAdvance={quickAdvance}
           pelangganGrosir={pelangganGrosir}
           tokoGrosir={tokoGrosir}
           produkManualGrosir={produkManualGrosir}
