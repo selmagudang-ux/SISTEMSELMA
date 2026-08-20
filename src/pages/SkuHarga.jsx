@@ -8,7 +8,7 @@ import MasterData from "./MasterData";
 
 export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
-  if (sub === "kategori") return <MasterData master={master} reload={reload} showToast={showToast} />;
+  if (sub === "kategori") return <MasterData master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
   return (
     <MasterBarang
       skuMaster={skuMaster}

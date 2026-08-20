@@ -163,7 +163,87 @@ export const fmtTgl = (iso) => {
   }
 };
 
-// Cari label dari master_data berdasarkan tipe + kode. Fallback ke kode itu sendiri.
+// Susun ulang string SKU dari field-field pembentuknya — pola ini HARUS
+// selalu sama persis dengan yang dipakai waktu SKU pertama kali dibuat
+// (lihat SkuEntryForm/ModalRouter "buat-sku").
+export function buildSkuCode(f) {
+  return `${f.bahan}${f.peruntukan}${f.kategori}-${f.subkategori}-${f.model}-${f.warna}-${f.ukuran}`;
+}
+
+// Tabel-tabel lain (selain sku_master) yang menyimpan kode SKU sebagai teks
+// bebas (bukan foreign key ber-id) — semuanya perlu ikut di-update kalau ada
+// SKU yang berubah kodenya, termasuk data histori (stock_history, rak_events,
+// grosir_detail_pesanan) supaya laporan lama tetap nyambung ke SKU yang benar.
+const SKU_TEXT_TABLES = ["items", "stock_history", "penempatan", "rak_events", "grosir_detail_pesanan"];
+
+async function renameSkuEverywhere(oldSku, newSku) {
+  for (const table of SKU_TEXT_TABLES) {
+    await sb(`${table}?sku=eq.${encodeURIComponent(oldSku)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ sku: newSku }),
+    });
+  }
+}
+
+// Ganti kode Master Data (mis. kategori "ANJ" -> "ANJB") dan rambatkan
+// perubahannya ke semua SKU yang sudah jadi yang masih memakai kode lama itu
+// — termasuk string SKU-nya sendiri (karena SKU dibentuk dari gabungan
+// kode-kode ini) dan semua tabel lain yang menyimpan SKU sebagai teks
+// (Stok, Rak, Riwayat Stok, histori Pesanan Grosir).
+//
+// Kalau hasil penggantian bikin ada SKU yang jadi kembar (baik sesama SKU
+// yang lagi diganti, maupun bentrok dengan SKU lain yang sudah ada), seluruh
+// operasi DIBATALKAN dari awal (tidak ada satupun PATCH yang dikirim) dan
+// melempar Error — supaya tidak ada data yang kepalang berubah separuh.
+export async function renameMasterKode({ masterDataId, tipe, oldKode, newKode, newLabel, skuMaster }) {
+  const affected = (skuMaster || []).filter((s) => s[tipe] === oldKode);
+
+  // Peta SKU lama -> SKU baru untuk baris yang kepengaruh oleh perubahan ini.
+  const rencana = affected.map((s) => ({
+    row: s,
+    skuLama: s.sku,
+    skuBaru: buildSkuCode({ ...s, [tipe]: newKode }),
+  }));
+
+  // Cek tabrakan: (a) dua SKU lama yang berbeda menghasilkan SKU baru yang
+  // sama persis, atau (b) SKU baru itu sudah dipakai SKU lain yang TIDAK ikut
+  // berubah di rencana ini.
+  const skuBaruSet = new Set();
+  const skuLamaYangBerubah = new Set(rencana.map((r) => r.skuLama));
+  for (const r of rencana) {
+    if (skuBaruSet.has(r.skuBaru)) {
+      throw new Error(`Gagal ubah kode: dua SKU akan jadi sama persis ("${r.skuBaru}"). Batal, tidak ada yang disimpan.`);
+    }
+    skuBaruSet.add(r.skuBaru);
+  }
+  const bentrokDenganLain = (skuMaster || []).find(
+    (s) => !skuLamaYangBerubah.has(s.sku) && skuBaruSet.has(s.sku)
+  );
+  if (bentrokDenganLain) {
+    throw new Error(
+      `Gagal ubah kode: SKU baru "${bentrokDenganLain.sku}" sudah dipakai SKU lain. Batal, tidak ada yang disimpan.`
+    );
+  }
+
+  // Aman, lanjut eksekusi — SKU dulu (di semua tabel), master_data terakhir,
+  // supaya kalau ada yang gagal di tengah jalan, kode di Master Data belum
+  // sempat berubah (masih konsisten dengan SKU yang belum sempat di-rename).
+  for (const r of rencana) {
+    await renameSkuEverywhere(r.skuLama, r.skuBaru);
+    await sb(`sku_master?id=eq.${r.row.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ [tipe]: newKode, sku: r.skuBaru }),
+    });
+  }
+  await sb(`master_data?id=eq.${masterDataId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ kode: newKode, label: newLabel }),
+  });
+
+  return { jumlahSkuBerubah: rencana.length };
+}
+
+
 export function labelFor(master, tipe, kode) {
   const found = (master[tipe] || []).find((m) => m.kode === kode);
   return found ? found.label : kode || "—";

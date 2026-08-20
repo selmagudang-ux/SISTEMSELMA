@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { PageHeader, inputClass, suggestKode } from "../components/ui";
 import { MASTER_TIPE } from "../lib/constants";
-import { sb } from "../lib/api";
+import { sb, renameMasterKode } from "../lib/api";
 
-export default function MasterData({ master, reload, showToast }) {
+export default function MasterData({ master, skuMaster, reload, showToast }) {
   const [activeTipe, setActiveTipe] = useState("bahan");
   const [kode, setKode] = useState("");
   const [label, setLabel] = useState("");
@@ -74,15 +74,47 @@ export default function MasterData({ master, reload, showToast }) {
       showToast(`Kode "${kodeBaru}" sudah dipakai`, "err");
       return;
     }
+
+    const kodeBerubah = kodeBaru !== m.kode;
+    if (kodeBerubah) {
+      const jumlahTerpengaruh = (skuMaster || []).filter((s) => s[activeTipe] === m.kode).length;
+      if (
+        jumlahTerpengaruh > 0 &&
+        !confirm(
+          `Kode "${m.kode}" dipakai di ${jumlahTerpengaruh} SKU yang sudah jadi. SKU-SKU itu (beserta data Stok, Rak, Riwayat, dan histori Pesanan Grosir yang terkait) akan ikut diganti ke kode "${kodeBaru}". Lanjutkan?`
+        )
+      ) {
+        return;
+      }
+    }
+
     setEditSaving(true);
     try {
-      await sb(`master_data?id=eq.${m.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ kode: kodeBaru, label: labelBaru }),
-      });
-      await reload();
-      cancelEdit();
-      showToast("Perubahan disimpan");
+      if (kodeBerubah) {
+        const { jumlahSkuBerubah } = await renameMasterKode({
+          masterDataId: m.id,
+          tipe: activeTipe,
+          oldKode: m.kode,
+          newKode: kodeBaru,
+          newLabel: labelBaru,
+          skuMaster,
+        });
+        await reload();
+        cancelEdit();
+        showToast(
+          jumlahSkuBerubah > 0
+            ? `Kode diganti — ${jumlahSkuBerubah} SKU ikut diperbarui`
+            : "Perubahan disimpan"
+        );
+      } else {
+        await sb(`master_data?id=eq.${m.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ kode: kodeBaru, label: labelBaru }),
+        });
+        await reload();
+        cancelEdit();
+        showToast("Perubahan disimpan");
+      }
     } catch (e) {
       showToast(e.message || "Gagal menyimpan", "err");
     } finally {
@@ -198,7 +230,8 @@ export default function MasterData({ master, reload, showToast }) {
                     </div>
                     {editKode.trim().toUpperCase() !== m.kode && (
                       <div className="text-[10px] text-amber-500/80 mt-1">
-                        Kode diganti — SKU/data lama yang masih pakai kode "{m.kode}" tidak otomatis ikut berubah.
+                        Kode diganti — semua SKU yang sudah jadi dengan kode "{m.kode}" (beserta Stok, Rak, Riwayat, dan
+                        histori Pesanan Grosir terkait) akan ikut diganti ke kode baru ini.
                       </div>
                     )}
                   </div>
