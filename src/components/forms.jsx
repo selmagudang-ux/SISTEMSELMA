@@ -84,6 +84,39 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [tengahManual, setTengahManual] = useState("");
   const [ecerManual, setEcerManual] = useState("");
 
+  // Kode cepat: ketik angka gabungan (mis. "102040") supaya Grosir/Tengah/Ecer
+  // otomatis kepisah jadi 3 bagian sama panjang lalu dikali 1000.
+  // "102040" (6 digit -> 3x2 digit) = 10, 20, 40 -> 10.000 / 20.000 / 40.000.
+  // Juga menerima pemisah manual seperti spasi/strip/koma, mis. "10 20 40" atau
+  // "100-20-40" untuk harga yang jumlah digitnya beda-beda.
+  const [kodeCepat, setKodeCepat] = useState("");
+  const applyKodeCepat = (raw) => {
+    setKodeCepat(raw);
+    const bySeparator = raw.split(/[\s\-/,]+/).filter(Boolean);
+    let parts = null;
+    if (bySeparator.length === 3 && bySeparator.every((p) => /^\d+$/.test(p))) {
+      parts = bySeparator;
+    } else {
+      const digitsOnly = raw.replace(/\D/g, "");
+      if (digitsOnly.length > 0 && digitsOnly.length % 3 === 0) {
+        const chunkLen = digitsOnly.length / 3;
+        parts = [
+          digitsOnly.slice(0, chunkLen),
+          digitsOnly.slice(chunkLen, chunkLen * 2),
+          digitsOnly.slice(chunkLen * 2),
+        ];
+      }
+    }
+    if (parts) {
+      const [g, t, e] = parts.map((p) => Number(p) * 1000);
+      if ([g, t, e].every((n) => Number.isFinite(n))) {
+        setGrosirManual(g);
+        setTengahManual(t);
+        setEcerManual(e);
+      }
+    }
+  };
+
   // Rekomendasi nomor Model berikutnya: cari SKU lain dengan kombinasi bahan +
   // peruntukan + kategori + subkategori yang sama, lalu ambil nomor terkecil
   // yang BELUM dipakai (mengisi celah dulu) — bukan sekadar tertinggi + 1.
@@ -245,17 +278,29 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
         )}
 
         {isSuperadmin && hargaManual && (
-          <div className="grid grid-cols-3 gap-x-2 mb-1">
-            <Field label="Grosir">
-              <InputRupiah value={grosirManual} onChange={setGrosirManual} placeholder="0" />
+          <>
+            <Field label="Kode cepat (opsional)">
+              <input
+                type="text"
+                inputMode="numeric"
+                className={inputClass}
+                value={kodeCepat}
+                onChange={(e) => applyKodeCepat(e.target.value)}
+                placeholder="mis. 102040 → Grosir 10rb, Tengah 20rb, Ecer 40rb"
+              />
             </Field>
-            <Field label="Tengah">
-              <InputRupiah value={tengahManual} onChange={setTengahManual} placeholder="0" />
-            </Field>
-            <Field label="Ecer">
-              <InputRupiah value={ecerManual} onChange={setEcerManual} placeholder="0" />
-            </Field>
-          </div>
+            <div className="grid grid-cols-3 gap-x-2 mb-1">
+              <Field label="Grosir">
+                <InputRupiah value={grosirManual} onChange={setGrosirManual} placeholder="0" />
+              </Field>
+              <Field label="Tengah">
+                <InputRupiah value={tengahManual} onChange={setTengahManual} placeholder="0" />
+              </Field>
+              <Field label="Ecer">
+                <InputRupiah value={ecerManual} onChange={setEcerManual} placeholder="0" />
+              </Field>
+            </div>
+          </>
         )}
 
         {preview && (
