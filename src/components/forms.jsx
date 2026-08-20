@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X } from "lucide-react";
-import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 
@@ -220,6 +220,24 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
       </div>
 
       <div>
+        <Field label="Ketik Kode Gabungan Bahan+Peruntukan+Kategori (opsional)">
+          <KodeGabunganInput
+            segments={[
+              { options: master.bahan || [] },
+              { options: master.peruntukan || [] },
+              { options: master.kategori || [] },
+            ]}
+            onPick={([b, p, k]) => {
+              setBahan(b.kode);
+              setPeruntukan(p.kode);
+              setKategori(k.kode);
+            }}
+            placeholder="Ketik gabungan kode, mis. TDGL-"
+          />
+          <p className="text-[11px] text-slate-500 mt-1.5">
+            Pilih dari daftar yang muncul untuk otomatis mengisi dropdown Bahan, Peruntukan &amp; Kategori di bawah.
+          </p>
+        </Field>
         <div className="grid grid-cols-2 gap-x-3">
           <Field label="Bahan"><Combobox value={bahan} onChange={setBahan} options={master.bahan || []} tipe="bahan" reload={reload} /></Field>
           <Field label="Peruntukan"><Combobox value={peruntukan} onChange={setPeruntukan} options={master.peruntukan || []} tipe="peruntukan" reload={reload} /></Field>

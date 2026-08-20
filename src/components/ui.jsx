@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Inbox, CalendarDays, Plus, Loader2, Check } from "lucide-react";
 import { sb } from "../lib/api";
 
@@ -411,6 +411,93 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
             ))
           ) : (
             <div className="px-3 py-2 text-xs text-slate-500">Tidak ada yang cocok.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Box ketik manual untuk gabungan beberapa kode master data sekaligus, mis.
+// Bahan+Peruntukan+Kategori yang di SKU digabung tanpa pemisah di depan
+// (contoh: bahan "T" + peruntukan "D" + kategori "GL" = "TDGL"). User cukup
+// ketik gabungan kodenya (boleh sambil diikuti "-" seperti nulis SKU beneran,
+// tanda "-" di akhir diabaikan) — daftar di bawah menampilkan semua kombinasi
+// yang ADA di master data dan kodenya diawali oleh yang diketik. Pilih salah
+// satu untuk langsung mengisi dropdown-dropdown terkait (mis. Bahan,
+// Peruntukan, Kategori) sekaligus, tanpa perlu pilih satu-satu.
+// segments: [{ options: [{kode,label}, ...] }, ...] — urutan sesuai urutan
+// penggabungan kode di SKU. onPick menerima array opsi terpilih, urutannya
+// sama dengan segments.
+export function KodeGabunganInput({ segments, onPick, placeholder }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  // Susun semua kombinasi yang mungkin dari tiap segmen (cartesian product) —
+  // jumlah segmen tetap kecil (3-4) jadi ini aman dihitung ulang tiap kali
+  // opsi master berubah.
+  const combos = useMemo(() => {
+    let acc = [{ picks: [], kode: "" }];
+    for (const seg of segments) {
+      const next = [];
+      for (const a of acc) {
+        for (const o of seg.options || []) {
+          next.push({ picks: [...a.picks, o], kode: a.kode + String(o.kode).toUpperCase() });
+        }
+      }
+      acc = next;
+    }
+    return acc;
+  }, [segments]);
+
+  const q = query.trim().toUpperCase().replace(/-+$/, "");
+  const filtered = q ? combos.filter((c) => c.kode.startsWith(q)).slice(0, 30) : [];
+
+  const commit = (c) => {
+    onPick(c.picks);
+    setQuery("");
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <input
+        className={inputClass}
+        value={query}
+        placeholder={placeholder || "Ketik gabungan kode, mis. TDGL-"}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        autoComplete="off"
+      />
+      {open && q && (
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+          {filtered.length > 0 ? (
+            filtered.map((c) => (
+              <button
+                key={c.kode}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commit(c)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
+              >
+                <span className="text-slate-300 text-xs">{c.picks.map((p) => p.label).join(" / ")}</span>
+                <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">{c.kode}</span>
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-slate-500">Tidak ada kombinasi kode yang cocok.</div>
           )}
         </div>
       )}
