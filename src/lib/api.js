@@ -185,6 +185,23 @@ async function renameSkuEverywhere(oldSku, newSku) {
   }
 }
 
+// Setiap kali harga sebuah SKU diganti (baik lewat "Pilih Harga Asli Baru"
+// maupun "Edit Harga" superadmin), barang yang fotonya sudah diambil dan
+// sudah lanjut ke tahap Marketplace/Selesai perlu difoto ulang — soalnya
+// foto lama biasanya ikut menampilkan harga, jadi begitu harga berubah
+// fotonya jadi tidak akurat lagi. Fungsi ini menarik balik semua barang SKU
+// itu yang sudah lewat Pemotretan ke tahap Pemotretan lagi (stage
+// "verifikasi") dan menandainya `perlu_foto_ulang` supaya kelihatan jelas di
+// halaman Pemotretan (badge + ringkasan jumlah). Barang yang memang belum
+// pernah difoto (masih di tahap sebelum verifikasi) dibiarkan apa adanya —
+// belum ada foto lama yang perlu dikoreksi.
+export async function tandaiPerluFotoUlang(sku) {
+  await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=in.(marketplace,selesai)`, {
+    method: "PATCH",
+    body: JSON.stringify({ stage: "verifikasi", perlu_foto_ulang: true }),
+  });
+}
+
 // Ganti kode Master Data (mis. kategori "ANJ" -> "ANJB") dan rambatkan
 // perubahannya ke semua SKU yang sudah jadi yang masih memakai kode lama itu
 // — termasuk string SKU-nya sendiri (karena SKU dibentuk dari gabungan

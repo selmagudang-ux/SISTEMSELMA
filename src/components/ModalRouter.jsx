@@ -3,7 +3,7 @@ import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight } from 
 import { ModalShell, Badge, suggestKode, Field, inputClass } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
-  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode,
+  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
 } from "../lib/api";
 import {
@@ -1857,7 +1857,7 @@ export default function ModalRouter({
             const url = await sbUploadFoto(file, path);
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ foto_url: url, stage: "marketplace" }),
+              body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
             });
           }, "Foto verifikasi tersimpan")
         }
@@ -1943,7 +1943,8 @@ export default function ModalRouter({
                 harga_asli_baru: null,
               }),
             });
-          }, "Harga SKU diperbarui")
+            await tandaiPerluFotoUlang(s.sku);
+          }, "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan")
         }
       />
     );
@@ -1974,7 +1975,8 @@ export default function ModalRouter({
               method: "PATCH",
               body: JSON.stringify({ ...patch, harga_asli_baru: null }),
             });
-          }, "Harga SKU diperbarui")
+            await tandaiPerluFotoUlang(s.sku);
+          }, "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan")
         }
       />
     );
