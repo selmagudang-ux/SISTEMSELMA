@@ -1,15 +1,24 @@
 import { useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2 } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "../lib/api";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
 
-export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal, reload, showToast }) {
+export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
   if (sub === "kategori") return <MasterData master={master} reload={reload} showToast={showToast} />;
-  return <MasterBarang skuMaster={skuMaster} items={items} master={master} penempatan={penempatan} setModal={setModal} />;
+  return (
+    <MasterBarang
+      skuMaster={skuMaster}
+      items={items}
+      master={master}
+      penempatan={penempatan}
+      setModal={setModal}
+      session={session}
+    />
+  );
 }
 
 function BuatSkuList({ items, setModal }) {
@@ -46,7 +55,8 @@ function BuatSkuList({ items, setModal }) {
   );
 }
 
-function MasterBarang({ skuMaster, items, master, penempatan, setModal }) {
+function MasterBarang({ skuMaster, items, master, penempatan, setModal, session }) {
+  const isSuperadmin = session?.role === "superadmin";
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");
@@ -305,6 +315,19 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal }) {
                               >
                                 <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                                 Harga Baru
+                              </button>
+                            )}
+                            {isSuperadmin && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setModal({ type: "edit-harga", item: s });
+                                }}
+                                title="Edit harga (khusus superadmin)"
+                                className="absolute top-11 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
+                              >
+                                <Pencil size={12} />
                               </button>
                             )}
                             <button

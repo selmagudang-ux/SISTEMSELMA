@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer } from "lucide-react";
-import { ModalShell, Badge, suggestKode } from "./ui";
+import { ModalShell, Badge, suggestKode, Field, inputClass } from "./ui";
 import { STAGE_META, COLOR } from "../lib/constants";
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode,
@@ -181,6 +181,128 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
           className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
         >
           {saving ? "Menyimpan…" : "Pakai Harga Ini"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// Modal edit harga langsung dari Master Barang — khusus superadmin (tombol
+// pensil di SkuHarga.jsx hanya muncul untuk role itu, tapi modal ini juga
+// dijaga sendiri lewat pengecekan session di ModalRouter sebelum dirender).
+function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
+  const [hargaAsli, setHargaAsli] = useState(String(item.harga_asli ?? ""));
+  const [otomatis, setOtomatis] = useState(true);
+  const [grosir, setGrosir] = useState(String(item.grosir ?? ""));
+  const [tengah, setTengah] = useState(String(item.tengah ?? ""));
+  const [ecer, setEcer] = useState(String(item.ecer ?? ""));
+
+  const preview = otomatis && settings && hargaAsli !== "" ? calcHarga(hargaAsli, settings) : null;
+  const ready =
+    hargaAsli !== "" && (otomatis ? !!settings : grosir !== "" && tengah !== "" && ecer !== "");
+
+  const handleConfirm = () => {
+    if (otomatis) {
+      const harga = calcHarga(hargaAsli, settings);
+      onConfirm({
+        harga_asli: Number(hargaAsli),
+        harga_dasar: harga.hargaDasar,
+        hpp: harga.hpp,
+        grosir: harga.grosir,
+        tengah: harga.tengah,
+        ecer: harga.ecer,
+      });
+    } else {
+      // Manual: harga jual dipakai apa adanya, HPP & harga dasar tetap
+      // dihitung dari harga asli supaya laporan lain tetap konsisten.
+      const otomatisHpp = settings ? calcHarga(hargaAsli, settings) : null;
+      onConfirm({
+        harga_asli: Number(hargaAsli),
+        harga_dasar: otomatisHpp ? otomatisHpp.hargaDasar : Number(hargaAsli),
+        hpp: otomatisHpp ? otomatisHpp.hpp : Number(hargaAsli) * 1.1,
+        grosir: Number(grosir),
+        tengah: Number(tengah),
+        ecer: Number(ecer),
+      });
+    }
+  };
+
+  return (
+    <ModalShell title="Edit Harga (Superadmin)" onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">SKU</div>
+        <div className="font-mono text-sm text-amber-400">{item.sku}</div>
+      </div>
+
+      <Field label="Harga Asli (Rp)">
+        <input
+          type="number"
+          className={inputClass}
+          value={hargaAsli}
+          onChange={(e) => setHargaAsli(e.target.value)}
+          placeholder="0"
+        />
+      </Field>
+
+      <div className="mb-3">
+        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={!otomatis}
+            onChange={(e) => setOtomatis(!e.target.checked)}
+            className="accent-amber-500"
+          />
+          Isi harga Grosir/Tengah/Ecer manual
+        </label>
+      </div>
+
+      {otomatis ? (
+        preview && (
+          <div className="rounded-lg border border-slate-800 overflow-hidden mb-4 text-xs">
+            {[
+              ["HPP", fmtRp(preview.hpp)],
+              ["Grosir", fmtRp(preview.grosir)],
+              ["Tengah", fmtRp(preview.tengah)],
+              ["Ecer", fmtRp(preview.ecer)],
+            ].map(([label, val], i) => (
+              <div
+                key={label}
+                className={`flex items-center justify-between px-3 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <span className="text-slate-500">{label}</span>
+                <span className="text-slate-200">{val}</span>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="grid grid-cols-3 gap-x-2 mb-3">
+          <Field label="Grosir">
+            <input type="number" className={inputClass} value={grosir} onChange={(e) => setGrosir(e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Tengah">
+            <input type="number" className={inputClass} value={tengah} onChange={(e) => setTengah(e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Ecer">
+            <input type="number" className={inputClass} value={ecer} onChange={(e) => setEcer(e.target.value)} placeholder="0" />
+          </Field>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={saving || !ready}
+          onClick={handleConfirm}
+          className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
+        >
+          {saving ? "Menyimpan…" : "Simpan Harga"}
         </button>
       </div>
     </ModalShell>
@@ -1781,6 +1903,37 @@ export default function ModalRouter({
                 ecer: harga.ecer,
                 harga_asli_baru: null,
               }),
+            });
+          }, "Harga SKU diperbarui")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "edit-harga") {
+    const s = modal.item;
+    // Lapis keamanan kedua di sisi UI — tombol pemicu di SkuHarga.jsx sudah
+    // disembunyikan untuk role selain superadmin, tapi modal ini juga dijaga
+    // sendiri kalau-kalau modal.type ini terpanggil dari jalur lain.
+    if (session?.role !== "superadmin") {
+      return (
+        <ModalShell title="Tidak Diizinkan" onClose={close}>
+          <p className="text-xs text-slate-400">Edit harga langsung hanya bisa dilakukan oleh Super Admin.</p>
+        </ModalShell>
+      );
+    }
+    return (
+      <EditHargaModal
+        item={s}
+        settings={settings}
+        saving={saving}
+        onClose={close}
+        onConfirm={(patch) =>
+          run(async () => {
+            if (!settings) throw new Error("Pengaturan harga belum termuat");
+            await sb(`sku_master?id=eq.${s.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ ...patch, harga_asli_baru: null }),
             });
           }, "Harga SKU diperbarui")
         }

@@ -423,6 +423,7 @@ function MainApp({ session, onLogout }) {
                   setModal={setModal}
                   reload={loadAll}
                   showToast={showToast}
+                  session={session}
                 />
               )}
               {nav.menu === "stok" && (
