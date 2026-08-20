@@ -455,45 +455,56 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Susun semua kombinasi yang mungkin dari tiap segmen (cartesian product) —
-  // jumlah segmen tetap kecil (3-4) jadi ini aman dihitung ulang tiap kali
-  // opsi master berubah. `kode` menyimpan versi tampilan (dengan pemisah "-"
-  // sesuai `sep` tiap segmen), `matchKode` versi tanpa pemisah sama sekali
-  // yang dipakai untuk pencocokan supaya "-" boleh diketik atau tidak.
-  const combos = useMemo(() => {
-    let acc = [{ picks: [], kode: "", matchKode: "" }];
-    for (const seg of segments) {
-      const next = [];
-      for (const a of acc) {
-        for (const o of seg.options || []) {
-          const kodeStr = String(o.kode).toUpperCase();
-          next.push({
-            picks: [...a.picks, o],
-            kode: a.kode + (seg.sep || "") + kodeStr,
-            matchKode: a.matchKode + kodeStr,
-          });
-        }
-      }
-      acc = next;
-    }
-    return acc;
-  }, [segments]);
-
   const q = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  // Dua arah kecocokan: kombinasi masih diawali yang diketik (masih diketik
-  // sebagian, belum selesai) ATAU yang diketik sudah lebih panjang dari
-  // kombinasi (kombinasi sudah lengkap, sisanya di belakang = Model bebas).
-  const matches = q
-    ? combos
-        .filter((c) => c.matchKode.startsWith(q) || q.startsWith(c.matchKode))
-        .map((c) => ({ ...c, leftover: q.length > c.matchKode.length ? q.slice(c.matchKode.length) : "" }))
-        .slice(0, 30)
-    : [];
+  const norm = (v) => String(v).toUpperCase();
 
-  const commit = (c) => {
-    onPick(c.picks, c.leftover);
+  // Bangun teks kode gabungan (dengan pemisah "-" sesuai `sep` tiap segmen)
+  // dari sekumpulan picks yang urutannya sama dengan `segments`.
+  const buildKode = (picks) => picks.map((p, i) => (segments[i]?.sep || "") + norm(p.kode)).join("");
+
+  // Resolusi BERTAHAP, bukan cartesian sekaligus: konsumsi remaining dari
+  // kiri, segmen demi segmen. Begitu sebuah segmen match PERSIS (kode opsi
+  // = awalan remaining) DAN tidak ada sisa karakter lagi, berhenti di situ —
+  // supaya "T" cuma menampilkan Bahan yang cocok (Tembaga), bukan langsung
+  // meloncat ke daftar Peruntukan/Kategori/Subkategori di bawahnya. Kalau
+  // masih ada sisa karakter, baru lanjut ke segmen berikutnya. Kalau semua
+  // segmen sudah habis dan masih ada sisa, itu jadi teks Model bebas.
+  const resolveState = (remaining, level, picks) => {
+    if (level >= segments.length) {
+      return { kind: "done", picks, leftover: remaining };
+    }
+    const opts = segments[level].options || [];
+    if (remaining === "") {
+      return { kind: "level", level, picks, candidates: opts };
+    }
+    const fullMatches = opts.filter((o) => remaining.startsWith(norm(o.kode)));
+    if (fullMatches.length > 0) {
+      const maxLen = Math.max(...fullMatches.map((o) => norm(o.kode).length));
+      const chosen = fullMatches.find((o) => norm(o.kode).length === maxLen);
+      const rest = remaining.slice(norm(chosen.kode).length);
+      const nextPicks = [...picks, chosen];
+      if (rest === "") {
+        return { kind: "resolved", level, picks: nextPicks };
+      }
+      return resolveState(rest, level + 1, nextPicks);
+    }
+    const partial = opts.filter((o) => norm(o.kode).startsWith(remaining));
+    return { kind: "level", level, picks, candidates: partial };
+  };
+
+  const state = q ? resolveState(q, 0, []) : null;
+
+  const commit = (picks, leftover) => {
+    onPick(picks, leftover);
     setQuery("");
     setOpen(false);
+  };
+
+  // Klik opsi di tengah jalan (belum segmen terakhir): isi otomatis sisa
+  // kode segmen itu ke input, lalu tetap terbuka supaya user lanjut mengetik
+  // segmen berikutnya.
+  const extend = (picks, candidate) => {
+    setQuery(buildKode([...picks, candidate]));
   };
 
   return (
@@ -509,30 +520,57 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
         onFocus={() => setOpen(true)}
         autoComplete="off"
       />
-      {open && q && (
+      {open && q && state && (
         <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
-          {matches.length > 0 ? (
-            matches.map((c) => (
-              <button
-                key={c.kode}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => commit(c)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
-              >
-                <span className="text-slate-300 text-xs">
-                  {c.picks.map((p) => p.label).join(" / ")}
-                  {c.leftover && <span className="text-slate-500"> · Model {c.leftover}</span>}
-                </span>
-                <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
-                  {c.kode}
-                  {c.leftover && `-${c.leftover}`}
-                </span>
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-xs text-slate-500">Tidak ada kombinasi kode yang cocok.</div>
+          {state.kind === "done" && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => commit(state.picks, state.leftover)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
+            >
+              <span className="text-slate-300 text-xs">
+                {state.picks.map((p) => p.label).join(" / ")}
+                {state.leftover && <span className="text-slate-500"> · Model {state.leftover}</span>}
+              </span>
+              <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
+                {buildKode(state.picks)}
+                {state.leftover && `-${state.leftover}`}
+              </span>
+            </button>
           )}
+
+          {state.kind === "resolved" && (
+            <div className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm">
+              <span className="text-slate-300 text-xs">{state.picks.map((p) => p.label).join(" / ")}</span>
+              <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">{buildKode(state.picks)}</span>
+            </div>
+          )}
+
+          {state.kind === "level" &&
+            (state.candidates.length > 0 ? (
+              state.candidates.map((c) => {
+                const isLast = state.level === segments.length - 1;
+                return (
+                  <button
+                    key={c.kode}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => (isLast ? commit([...state.picks, c], "") : extend(state.picks, c))}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
+                  >
+                    <span className="text-slate-300 text-xs">
+                      {[...state.picks.map((p) => p.label), c.label].join(" / ")}
+                    </span>
+                    <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
+                      {buildKode([...state.picks, c])}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="px-3 py-2 text-xs text-slate-500">Tidak ada kombinasi kode yang cocok.</div>
+            ))}
         </div>
       )}
     </div>
