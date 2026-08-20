@@ -203,6 +203,29 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
               body: JSON.stringify({ sku: r.sku, rak_code: r.rakCode.trim().toUpperCase(), qty: jumlah }),
             });
           }
+
+          // Bikin juga baris di "items" (Alur Barang) supaya barang hasil import
+          // kelihatan & bisa dipantau kelengkapannya di sana — sama seperti
+          // barang yang masuk lewat Barang Masuk. Tahap-nya langsung dilompat
+          // ke sesuai apa yang sudah diisi di sini:
+          //  - rak sudah diisi  -> tahap "verifikasi" (tinggal kurang foto)
+          //  - rak belum diisi  -> tahap "rak" (masih perlu ditempatkan)
+          // Foto & Marketplace TIDAK pernah terisi dari import, jadi barang
+          // ini akan otomatis muncul di Alur Barang sebagai yang belum lengkap
+          // sampai foto diupload & marketplace diisi lewat alur biasa.
+          const rakSudahDiisi = !!r.rakCode.trim();
+          await sb("items", {
+            method: "POST",
+            body: JSON.stringify({
+              tanggal: new Date().toISOString().slice(0, 10),
+              gudang: "Import Excel",
+              jumlah,
+              sku: r.sku,
+              stage: rakSudahDiisi ? "verifikasi" : "rak",
+              rak_code: rakSudahDiisi ? r.rakCode.trim().toUpperCase() : null,
+            }),
+          });
+
           skuSukses.add(r.sku);
         } catch (e) {
           gagal++;
@@ -213,7 +236,7 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
       setRows((prev) => prev.filter((r) => !skuSukses.has(r.sku)));
       await reload();
       showToast(
-        `Import selesai — ${dibuat} SKU baru, ${ditambah} stok ditambah${gagal ? `, ${gagal} gagal` : ""}`,
+        `Import selesai — ${dibuat} SKU baru, ${ditambah} stok ditambah${gagal ? `, ${gagal} gagal` : ""}. Cek Alur Barang untuk lanjutkan yang belum lengkap.`,
         gagal ? "err" : undefined
       );
     } finally {
@@ -225,7 +248,7 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
     <div>
       <PageHeader
         title="Import SKU dari Excel"
-        description="Upload file Excel berisi kolom SKU (format lengkap, sama seperti sistem). Harga diisi 0 dulu — edit belakangan lewat Master Barang. Stok & Kode Rak diisi manual per baris di sini."
+        description="Upload file Excel berisi kolom SKU (format lengkap, sama seperti sistem). Harga diisi 0 dulu — edit belakangan lewat Master Barang. Stok & Kode Rak diisi manual per baris di sini. Setiap SKU yang berhasil diimport otomatis masuk ke Alur Barang, supaya kelengkapannya (rak, foto, marketplace) bisa dipantau dari sana."
       />
 
       <div className="mb-4 flex items-center gap-3">
