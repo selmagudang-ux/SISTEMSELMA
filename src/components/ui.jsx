@@ -419,16 +419,20 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
 }
 
 // Box ketik manual untuk gabungan beberapa kode master data sekaligus, mis.
-// Bahan+Peruntukan+Kategori yang di SKU digabung tanpa pemisah di depan
-// (contoh: bahan "T" + peruntukan "D" + kategori "GL" = "TDGL"). User cukup
-// ketik gabungan kodenya (boleh sambil diikuti "-" seperti nulis SKU beneran,
-// tanda "-" di akhir diabaikan) — daftar di bawah menampilkan semua kombinasi
-// yang ADA di master data dan kodenya diawali oleh yang diketik. Pilih salah
-// satu untuk langsung mengisi dropdown-dropdown terkait (mis. Bahan,
-// Peruntukan, Kategori) sekaligus, tanpa perlu pilih satu-satu.
-// segments: [{ options: [{kode,label}, ...] }, ...] — urutan sesuai urutan
-// penggabungan kode di SKU. onPick menerima array opsi terpilih, urutannya
-// sama dengan segments.
+// Bahan+Peruntukan+Kategori (digabung tanpa pemisah, contoh: bahan "T" +
+// peruntukan "D" + kategori "GL" = "TDGL") ditambah Subkategori (dipisah "-",
+// jadi "TDGL-XX", sesuai format SKU (Bahan,Peruntukan,Kategori)-Subkategori-
+// Model-Warna-Ukuran). User cukup ketik gabungan kodenya — boleh pakai "-"
+// seperti nulis SKU beneran, boleh juga tanpa "-" sama sekali, dua-duanya
+// tetap cocok karena pemisah diabaikan saat pencocokan. Daftar di bawah
+// menampilkan semua kombinasi yang ADA di master data dan kodenya diawali
+// oleh yang diketik. Pilih salah satu untuk langsung mengisi dropdown-
+// dropdown terkait (mis. Bahan, Peruntukan, Kategori, Subkategori) sekaligus,
+// tanpa perlu pilih satu-satu.
+// segments: [{ options: [{kode,label}, ...], sep }, ...] — urutan sesuai
+// urutan penggabungan kode di SKU. `sep` (opsional) adalah pemisah yang
+// ditulis SEBELUM kode segmen ini di tampilan (mis. "-" untuk Subkategori).
+// onPick menerima array opsi terpilih, urutannya sama dengan segments.
 export function KodeGabunganInput({ segments, onPick, placeholder }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -444,14 +448,21 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
 
   // Susun semua kombinasi yang mungkin dari tiap segmen (cartesian product) —
   // jumlah segmen tetap kecil (3-4) jadi ini aman dihitung ulang tiap kali
-  // opsi master berubah.
+  // opsi master berubah. `kode` menyimpan versi tampilan (dengan pemisah "-"
+  // sesuai `sep` tiap segmen), `matchKode` versi tanpa pemisah sama sekali
+  // yang dipakai untuk pencocokan supaya "-" boleh diketik atau tidak.
   const combos = useMemo(() => {
-    let acc = [{ picks: [], kode: "" }];
+    let acc = [{ picks: [], kode: "", matchKode: "" }];
     for (const seg of segments) {
       const next = [];
       for (const a of acc) {
         for (const o of seg.options || []) {
-          next.push({ picks: [...a.picks, o], kode: a.kode + String(o.kode).toUpperCase() });
+          const kodeStr = String(o.kode).toUpperCase();
+          next.push({
+            picks: [...a.picks, o],
+            kode: a.kode + (seg.sep || "") + kodeStr,
+            matchKode: a.matchKode + kodeStr,
+          });
         }
       }
       acc = next;
@@ -459,8 +470,8 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
     return acc;
   }, [segments]);
 
-  const q = query.trim().toUpperCase().replace(/-+$/, "");
-  const filtered = q ? combos.filter((c) => c.kode.startsWith(q)).slice(0, 30) : [];
+  const q = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const filtered = q ? combos.filter((c) => c.matchKode.startsWith(q)).slice(0, 30) : [];
 
   const commit = (c) => {
     onPick(c.picks);
