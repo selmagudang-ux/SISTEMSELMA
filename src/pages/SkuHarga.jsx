@@ -5,10 +5,12 @@ import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "..
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
+import ImportSku from "./ImportSku";
 
 export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
   if (sub === "kategori") return <MasterData master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
+  if (sub === "import") return <ImportSku master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
   return (
     <MasterBarang
       skuMaster={skuMaster}

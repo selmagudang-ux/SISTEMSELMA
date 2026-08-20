@@ -79,6 +79,7 @@ export const NAV = [
           { key: "buat", label: "Buat SKU" },
           { key: "master-barang", label: "Master Barang" },
           { key: "kategori", label: "Master Data" },
+          { key: "import", label: "Import Excel" },
         ],
       },
       {
