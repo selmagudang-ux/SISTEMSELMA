@@ -85,21 +85,27 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [ecerManual, setEcerManual] = useState("");
 
   // Rekomendasi nomor Model berikutnya: cari SKU lain dengan kombinasi bahan +
-  // peruntukan + kategori + subkategori yang sama, ambil nomor model tertinggi + 1.
+  // peruntukan + kategori + subkategori yang sama, lalu ambil nomor terkecil
+  // yang BELUM dipakai (mengisi celah dulu) — bukan sekadar tertinggi + 1.
+  // Contoh: sudah ada 1,2,3,10 -> rekomendasinya 4 (bukan 11), karena 4 & 5 kosong.
   // Kalau belum ada kombinasi yang sama sama sekali, rekomendasinya "1".
   const modelSuggestion = useMemo(() => {
     if (!bahan || !peruntukan || !kategori || !subkategori) return null;
-    const numbers = (skuMaster || [])
-      .filter(
-        (s) =>
-          s.bahan === bahan &&
-          s.peruntukan === peruntukan &&
-          s.kategori === kategori &&
-          s.subkategori === subkategori
-      )
-      .map((s) => Number(s.model))
-      .filter((n) => Number.isFinite(n) && n > 0);
-    return String((numbers.length ? Math.max(...numbers) : 0) + 1);
+    const numbers = new Set(
+      (skuMaster || [])
+        .filter(
+          (s) =>
+            s.bahan === bahan &&
+            s.peruntukan === peruntukan &&
+            s.kategori === kategori &&
+            s.subkategori === subkategori
+        )
+        .map((s) => Number(s.model))
+        .filter((n) => Number.isFinite(n) && n > 0)
+    );
+    let next = 1;
+    while (numbers.has(next)) next++;
+    return String(next);
   }, [bahan, peruntukan, kategori, subkategori, skuMaster]);
 
   // Isi otomatis field Model dengan rekomendasi selama user belum mengetik manual
