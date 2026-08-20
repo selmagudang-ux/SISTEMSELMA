@@ -421,18 +421,27 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
 // Box ketik manual untuk gabungan beberapa kode master data sekaligus, mis.
 // Bahan+Peruntukan+Kategori (digabung tanpa pemisah, contoh: bahan "T" +
 // peruntukan "D" + kategori "GL" = "TDGL") ditambah Subkategori (dipisah "-",
-// jadi "TDGL-XX", sesuai format SKU (Bahan,Peruntukan,Kategori)-Subkategori-
-// Model-Warna-Ukuran). User cukup ketik gabungan kodenya — boleh pakai "-"
-// seperti nulis SKU beneran, boleh juga tanpa "-" sama sekali, dua-duanya
-// tetap cocok karena pemisah diabaikan saat pencocokan. Daftar di bawah
-// menampilkan semua kombinasi yang ADA di master data dan kodenya diawali
-// oleh yang diketik. Pilih salah satu untuk langsung mengisi dropdown-
-// dropdown terkait (mis. Bahan, Peruntukan, Kategori, Subkategori) sekaligus,
-// tanpa perlu pilih satu-satu.
+// jadi "TDGL-XX") ditambah lagi Model (dipisah "-" lagi, jadi "TDGL-XX-100"),
+// sesuai format SKU (Bahan,Peruntukan,Kategori)-Subkategori-Model-Warna-
+// Ukuran. User cukup ketik gabungan kodenya — boleh pakai "-" seperti nulis
+// SKU beneran, boleh juga tanpa "-" sama sekali, dua-duanya tetap cocok
+// karena pemisah diabaikan saat pencocokan. Daftar di bawah menampilkan
+// semua kombinasi Bahan/Peruntukan/Kategori/Subkategori yang ADA di master
+// data dan kodenya diawali (atau mengawali) yang diketik. Kalau yang diketik
+// lebih panjang dari kombinasi itu (mis. "TDGL-GJR-100" sedangkan kombinasi
+// hanya "TDGLGJR"), sisa karakter di belakangnya ("100") diperlakukan sebagai
+// Model bebas (tidak perlu ada di master data) dan ikut ditampilkan/dipilih.
+// Pilih salah satu untuk langsung mengisi dropdown-dropdown terkait (mis.
+// Bahan, Peruntukan, Kategori, Subkategori) sekaligus, plus Model kalau ada.
 // segments: [{ options: [{kode,label}, ...], sep }, ...] — urutan sesuai
-// urutan penggabungan kode di SKU. `sep` (opsional) adalah pemisah yang
-// ditulis SEBELUM kode segmen ini di tampilan (mis. "-" untuk Subkategori).
-// onPick menerima array opsi terpilih, urutannya sama dengan segments.
+// urutan penggabungan kode di SKU, HANYA untuk bagian yang punya daftar
+// tetap di master data (Model TIDAK dimasukkan sebagai segmen karena
+// nilainya bebas ketik, bukan dari daftar — otomatis tertangkap sebagai sisa
+// karakter di belakang). `sep` (opsional) adalah pemisah yang ditulis
+// SEBELUM kode segmen ini di tampilan (mis. "-" untuk Subkategori).
+// onPick(picks, sisaTeks) — picks: array opsi terpilih (urutan sama dengan
+// segments), sisaTeks: string sisa karakter di belakang kombinasi (Model),
+// kosong ("") kalau tidak ada.
 export function KodeGabunganInput({ segments, onPick, placeholder }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -471,10 +480,18 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
   }, [segments]);
 
   const q = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const filtered = q ? combos.filter((c) => c.matchKode.startsWith(q)).slice(0, 30) : [];
+  // Dua arah kecocokan: kombinasi masih diawali yang diketik (masih diketik
+  // sebagian, belum selesai) ATAU yang diketik sudah lebih panjang dari
+  // kombinasi (kombinasi sudah lengkap, sisanya di belakang = Model bebas).
+  const matches = q
+    ? combos
+        .filter((c) => c.matchKode.startsWith(q) || q.startsWith(c.matchKode))
+        .map((c) => ({ ...c, leftover: q.length > c.matchKode.length ? q.slice(c.matchKode.length) : "" }))
+        .slice(0, 30)
+    : [];
 
   const commit = (c) => {
-    onPick(c.picks);
+    onPick(c.picks, c.leftover);
     setQuery("");
     setOpen(false);
   };
@@ -494,8 +511,8 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
       />
       {open && q && (
         <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
-          {filtered.length > 0 ? (
-            filtered.map((c) => (
+          {matches.length > 0 ? (
+            matches.map((c) => (
               <button
                 key={c.kode}
                 type="button"
@@ -503,8 +520,14 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
                 onClick={() => commit(c)}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
               >
-                <span className="text-slate-300 text-xs">{c.picks.map((p) => p.label).join(" / ")}</span>
-                <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">{c.kode}</span>
+                <span className="text-slate-300 text-xs">
+                  {c.picks.map((p) => p.label).join(" / ")}
+                  {c.leftover && <span className="text-slate-500"> · Model {c.leftover}</span>}
+                </span>
+                <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
+                  {c.kode}
+                  {c.leftover && `-${c.leftover}`}
+                </span>
               </button>
             ))
           ) : (
