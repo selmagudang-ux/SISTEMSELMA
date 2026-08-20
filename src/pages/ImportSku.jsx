@@ -4,6 +4,32 @@ import { Upload, FileSpreadsheet, Loader2, AlertTriangle, Trash2, CheckCircle2 }
 import { PageHeader, EmptyState, inputClass } from "../components/ui";
 import { sb } from "../lib/api";
 
+// Kode cepat: ketik angka gabungan (mis. "102040") supaya Grosir/Tengah/Ecer
+// otomatis kepisah jadi 3 bagian sama panjang lalu dikali 1000 (10.000 /
+// 20.000 / 40.000). Juga menerima pemisah manual (spasi/strip/koma) untuk
+// harga yang jumlah digitnya beda-beda, mis. "100 20 40".
+// Sama persis dengan logika kode cepat di form Buat SKU manual.
+function parseKodeCepat(raw) {
+  const bySeparator = raw.split(/[\s\-/,]+/).filter(Boolean);
+  let parts = null;
+  if (bySeparator.length === 3 && bySeparator.every((p) => /^\d+$/.test(p))) {
+    parts = bySeparator;
+  } else {
+    const digitsOnly = raw.replace(/\D/g, "");
+    if (digitsOnly.length > 0 && digitsOnly.length % 3 === 0) {
+      const chunkLen = digitsOnly.length / 3;
+      parts = [
+        digitsOnly.slice(0, chunkLen),
+        digitsOnly.slice(chunkLen, chunkLen * 2),
+        digitsOnly.slice(chunkLen * 2),
+      ];
+    }
+  }
+  if (!parts) return null;
+  const [g, t, e] = parts.map((p) => Number(p) * 1000);
+  return [g, t, e].every((n) => Number.isFinite(n)) ? { grosir: g, tengah: t, ecer: e } : null;
+}
+
 // =========================================================
 // IMPORT SKU DARI EXCEL
 // -----------------------------------------------------------
@@ -44,6 +70,7 @@ function parseSkuRow(rawSku, master, skuMaster) {
   const sku = String(rawSku ?? "").trim();
   const row = {
     sku, stok: "", rakCode: "",
+    kodeCepat: "", grosir: "", tengah: "", ecer: "",
     bahan: "", peruntukan: "", kategori: "", subkategori: "", model: "", warna: "", ukuran: "",
     segment1: "", ambiguous: null, existing: null, error: null,
   };
@@ -133,6 +160,11 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
     );
   };
 
+  const applyKodeCepatRow = (i, raw) => {
+    const hasil = parseKodeCepat(raw);
+    updateRow(i, hasil ? { kodeCepat: raw, ...hasil } : { kodeCepat: raw });
+  };
+
   const removeRow = (i) => setRows((prev) => prev.filter((_, idx) => idx !== i));
 
   const rowReady = (r) =>
@@ -162,6 +194,14 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
           }
 
           const jumlah = Number(r.stok);
+          // Grosir/Tengah/Ecer dari kolom manual (atau kode cepat) di baris ini —
+          // kalau dikosongkan, tetap 0 dan bisa diedit belakangan lewat Master
+          // Barang. Harga Asli/HPP tidak diisi dari import (tidak ada di Excel),
+          // dan harga manual ini HANYA dipakai untuk SKU BARU — kalau SKU-nya
+          // sudah ada, harga lama dibiarkan (tidak ditimpa cuma karena nambah stok).
+          const grosir = Number(r.grosir) || 0;
+          const tengah = Number(r.tengah) || 0;
+          const ecer = Number(r.ecer) || 0;
           if (r.existing) {
             const stokBaru = r.existing.stok + jumlah;
             await sb(`sku_master?id=eq.${r.existing.id}`, {
@@ -183,7 +223,7 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
                 sku: r.sku,
                 bahan: r.bahan, peruntukan: r.peruntukan, kategori: r.kategori,
                 subkategori: r.subkategori, model: r.model, warna: r.warna, ukuran: r.ukuran,
-                harga_asli: 0, harga_dasar: 0, hpp: 0, grosir: 0, tengah: 0, ecer: 0,
+                harga_asli: 0, harga_dasar: 0, hpp: 0, grosir, tengah, ecer,
                 stok: jumlah,
               }),
             });
@@ -248,7 +288,7 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
     <div>
       <PageHeader
         title="Import SKU dari Excel"
-        description="Upload file Excel berisi kolom SKU (format lengkap, sama seperti sistem). Harga diisi 0 dulu — edit belakangan lewat Master Barang. Stok & Kode Rak diisi manual per baris di sini. Setiap SKU yang berhasil diimport otomatis masuk ke Alur Barang, supaya kelengkapannya (rak, foto, marketplace) bisa dipantau dari sana."
+        description="Upload file Excel berisi kolom SKU (format lengkap, sama seperti sistem). Stok, Kode Rak, dan Grosir/Tengah/Ecer diisi manual per baris di sini — Harga Asli/HPP tetap 0 dulu, edit belakangan lewat Master Barang. Setiap SKU yang berhasil diimport otomatis masuk ke Alur Barang, supaya kelengkapannya (rak, foto, marketplace) bisa dipantau dari sana."
       />
 
       <div className="mb-4 flex items-center gap-3">
@@ -306,6 +346,10 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
                   <th className="px-3 py-2 font-medium">Ukuran</th>
                   <th className="px-3 py-2 font-medium w-20">Stok</th>
                   <th className="px-3 py-2 font-medium w-24">Kode Rak</th>
+                  <th className="px-3 py-2 font-medium w-28">Kode Cepat Harga</th>
+                  <th className="px-3 py-2 font-medium w-20">Grosir</th>
+                  <th className="px-3 py-2 font-medium w-20">Tengah</th>
+                  <th className="px-3 py-2 font-medium w-20">Ecer</th>
                   <th className="px-3 py-2 font-medium"></th>
                 </tr>
               </thead>
@@ -406,6 +450,51 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
                           placeholder="opsional"
                           className="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-[11px] text-slate-300 outline-none w-20"
                         />
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        <input
+                          value={r.kodeCepat}
+                          onChange={(e) => applyKodeCepatRow(i, e.target.value)}
+                          placeholder="mis. 102040"
+                          title="Ketik kode gabungan (mis. 102040 -> Grosir 10rb, Tengah 20rb, Ecer 40rb) atau pisah manual mis. 100 20 40"
+                          className="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-[11px] text-slate-300 outline-none w-24"
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          value={r.grosir}
+                          onChange={(e) => updateRow(i, { grosir: e.target.value })}
+                          placeholder="0"
+                          disabled={!!r.existing}
+                          className="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-[11px] text-slate-300 outline-none w-16 disabled:opacity-30"
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          value={r.tengah}
+                          onChange={(e) => updateRow(i, { tengah: e.target.value })}
+                          placeholder="0"
+                          disabled={!!r.existing}
+                          className="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-[11px] text-slate-300 outline-none w-16 disabled:opacity-30"
+                        />
+                      </td>
+                      <td className="px-2 py-2 align-top">
+                        <input
+                          type="number"
+                          min="0"
+                          value={r.ecer}
+                          onChange={(e) => updateRow(i, { ecer: e.target.value })}
+                          placeholder="0"
+                          disabled={!!r.existing}
+                          className="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-[11px] text-slate-300 outline-none w-16 disabled:opacity-30"
+                        />
+                        {r.existing && (
+                          <div className="text-[10px] text-slate-600 mt-0.5">SKU lama · harga tidak berubah</div>
+                        )}
                       </td>
                       <td className="px-2 py-2 align-top">
                         <button
