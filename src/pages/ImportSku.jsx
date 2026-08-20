@@ -4,30 +4,28 @@ import { Upload, FileSpreadsheet, Loader2, AlertTriangle, Trash2, CheckCircle2 }
 import { PageHeader, EmptyState, inputClass } from "../components/ui";
 import { sb } from "../lib/api";
 
-// Kode cepat: ketik angka gabungan (mis. "102040") supaya Grosir/Tengah/Ecer
-// otomatis kepisah jadi 3 bagian sama panjang lalu dikali 1000 (10.000 /
-// 20.000 / 40.000). Juga menerima pemisah manual (spasi/strip/koma) untuk
-// harga yang jumlah digitnya beda-beda, mis. "100 20 40".
+// Kode cepat: ketik angka gabungan (mis. "1020") supaya Grosir & Tengah
+// otomatis kepisah jadi 2 bagian sama panjang lalu dikali 1000, dan Ecer
+// otomatis dihitung = Tengah x 2 (tidak diketik manual di kode).
+// "1020" (4 digit -> 2x2 digit) = 10, 20 -> Grosir 10.000, Tengah 20.000,
+// Ecer 40.000 (otomatis). Juga menerima pemisah manual (spasi/strip/koma)
+// untuk harga yang jumlah digitnya beda-beda, mis. "100 20".
 // Sama persis dengan logika kode cepat di form Buat SKU manual.
 function parseKodeCepat(raw) {
   const bySeparator = raw.split(/[\s\-/,]+/).filter(Boolean);
   let parts = null;
-  if (bySeparator.length === 3 && bySeparator.every((p) => /^\d+$/.test(p))) {
+  if (bySeparator.length === 2 && bySeparator.every((p) => /^\d+$/.test(p))) {
     parts = bySeparator;
   } else {
     const digitsOnly = raw.replace(/\D/g, "");
-    if (digitsOnly.length > 0 && digitsOnly.length % 3 === 0) {
-      const chunkLen = digitsOnly.length / 3;
-      parts = [
-        digitsOnly.slice(0, chunkLen),
-        digitsOnly.slice(chunkLen, chunkLen * 2),
-        digitsOnly.slice(chunkLen * 2),
-      ];
+    if (digitsOnly.length > 0 && digitsOnly.length % 2 === 0) {
+      const chunkLen = digitsOnly.length / 2;
+      parts = [digitsOnly.slice(0, chunkLen), digitsOnly.slice(chunkLen)];
     }
   }
   if (!parts) return null;
-  const [g, t, e] = parts.map((p) => Number(p) * 1000);
-  return [g, t, e].every((n) => Number.isFinite(n)) ? { grosir: g, tengah: t, ecer: e } : null;
+  const [g, t] = parts.map((p) => Number(p) * 1000);
+  return [g, t].every((n) => Number.isFinite(n)) ? { grosir: g, tengah: t, ecer: t * 2 } : null;
 }
 
 // =========================================================
@@ -455,8 +453,8 @@ export default function ImportSku({ master, skuMaster, reload, showToast }) {
                         <input
                           value={r.kodeCepat}
                           onChange={(e) => applyKodeCepatRow(i, e.target.value)}
-                          placeholder="mis. 102040"
-                          title="Ketik kode gabungan (mis. 102040 -> Grosir 10rb, Tengah 20rb, Ecer 40rb) atau pisah manual mis. 100 20 40"
+                          placeholder="mis. 1020"
+                          title="Ketik kode gabungan (mis. 1020 -> Grosir 10rb, Tengah 20rb, Ecer 40rb otomatis) atau pisah manual mis. 100 20"
                           className="bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-[11px] text-slate-300 outline-none w-24"
                         />
                       </td>

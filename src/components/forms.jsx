@@ -84,35 +84,32 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [tengahManual, setTengahManual] = useState("");
   const [ecerManual, setEcerManual] = useState("");
 
-  // Kode cepat: ketik angka gabungan (mis. "102040") supaya Grosir/Tengah/Ecer
-  // otomatis kepisah jadi 3 bagian sama panjang lalu dikali 1000.
-  // "102040" (6 digit -> 3x2 digit) = 10, 20, 40 -> 10.000 / 20.000 / 40.000.
-  // Juga menerima pemisah manual seperti spasi/strip/koma, mis. "10 20 40" atau
-  // "100-20-40" untuk harga yang jumlah digitnya beda-beda.
+  // Kode cepat: ketik angka gabungan (mis. "1020") supaya Grosir & Tengah
+  // otomatis kepisah jadi 2 bagian sama panjang lalu dikali 1000, dan Ecer
+  // otomatis dihitung = Tengah x 2 (tidak diketik manual di kode).
+  // "1020" (4 digit -> 2x2 digit) = 10, 20 -> Grosir 10.000, Tengah 20.000,
+  // Ecer 40.000 (otomatis). Juga menerima pemisah manual seperti spasi/strip/
+  // koma, mis. "10 20" atau "100-20" untuk harga yang jumlah digitnya beda-beda.
   const [kodeCepat, setKodeCepat] = useState("");
   const applyKodeCepat = (raw) => {
     setKodeCepat(raw);
     const bySeparator = raw.split(/[\s\-/,]+/).filter(Boolean);
     let parts = null;
-    if (bySeparator.length === 3 && bySeparator.every((p) => /^\d+$/.test(p))) {
+    if (bySeparator.length === 2 && bySeparator.every((p) => /^\d+$/.test(p))) {
       parts = bySeparator;
     } else {
       const digitsOnly = raw.replace(/\D/g, "");
-      if (digitsOnly.length > 0 && digitsOnly.length % 3 === 0) {
-        const chunkLen = digitsOnly.length / 3;
-        parts = [
-          digitsOnly.slice(0, chunkLen),
-          digitsOnly.slice(chunkLen, chunkLen * 2),
-          digitsOnly.slice(chunkLen * 2),
-        ];
+      if (digitsOnly.length > 0 && digitsOnly.length % 2 === 0) {
+        const chunkLen = digitsOnly.length / 2;
+        parts = [digitsOnly.slice(0, chunkLen), digitsOnly.slice(chunkLen)];
       }
     }
     if (parts) {
-      const [g, t, e] = parts.map((p) => Number(p) * 1000);
-      if ([g, t, e].every((n) => Number.isFinite(n))) {
+      const [g, t] = parts.map((p) => Number(p) * 1000);
+      if ([g, t].every((n) => Number.isFinite(n))) {
         setGrosirManual(g);
         setTengahManual(t);
-        setEcerManual(e);
+        setEcerManual(t * 2);
       }
     }
   };
@@ -286,7 +283,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
                 className={inputClass}
                 value={kodeCepat}
                 onChange={(e) => applyKodeCepat(e.target.value)}
-                placeholder="mis. 102040 → Grosir 10rb, Tengah 20rb, Ecer 40rb"
+                placeholder="mis. 1020 → Grosir 10rb, Tengah 20rb, Ecer 40rb (otomatis 2x Tengah)"
               />
             </Field>
             <div className="grid grid-cols-3 gap-x-2 mb-1">
