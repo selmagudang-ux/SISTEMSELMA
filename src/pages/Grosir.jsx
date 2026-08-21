@@ -888,7 +888,12 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
       //    sekali dibuat, langsung bisa dipilih dari daftar juga di pesanan berikutnya.
       let pelangganIdFinal = pelangganId;
       if (!pelangganIdFinal && pelangganNamaBaru.trim()) {
-        const kodeBaru = nextKode(pelangganGrosir, "kode", "PLG-");
+        // Ambil daftar kode pelanggan TERBARU langsung dari database (bukan
+        // dari state lokal yang bisa basi kalau ada pesanan lain baru saja
+        // dibuat tapi halaman belum sempat reload) — supaya kode PLG-xxxx
+        // yang dihasilkan tidak pernah tabrakan dengan yang baru saja dibuat.
+        const pelangganTerbaru = await sb("grosir_pelanggan?select=kode");
+        const kodeBaru = nextKode(pelangganTerbaru, "kode", "PLG-");
         const [pelangganBaru] = await sb("grosir_pelanggan", {
           method: "POST",
           body: JSON.stringify({
@@ -936,7 +941,11 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
       // dobel/tabrakan (sebelumnya nextKode() selalu ngitung dari daftar awal
       // yang sama, jadi baris ke-2 dst dapat kode yang sama persis dengan
       // baris pertama -> ditolak database karena kode harus unik).
-      let produkManualList = [...produkManualGrosir];
+      // Daftar awalnya diambil FRESH dari database (bukan dari prop state
+      // yang bisa basi kalau ada pesanan lain baru saja bikin produk manual
+      // baru juga tapi halaman belum sempat reload) — sumber utama pesan
+      // eror "kode/SKU sudah ada" yang kadang muncul waktu buat pesanan.
+      let produkManualList = await sb("grosir_produk_manual?select=id,kode");
       for (const r of rows) {
         let produkManualId = r.produk_manual_id || null;
 

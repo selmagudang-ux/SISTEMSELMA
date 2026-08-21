@@ -1073,7 +1073,13 @@ export default function ModalRouter({
             for (const it of data.items) {
               let produkManualId = it.produk_manual_id || null;
               if (it.sumber_produk === "manual" && !produkManualId) {
-                const kodeBaru = nextKode(produkManualGrosir, "kode", "PRM-");
+                // Sama seperti di BuatPesanan: ambil kode terbaru FRESH dari
+                // database (bukan prop produkManualGrosir yang bisa basi) dan
+                // update salinan lokalnya tiap kali ada produk baru dibuat,
+                // supaya kalau dalam satu edit ada >1 produk manual baru,
+                // kodenya tidak tabrakan satu sama lain.
+                const produkManualTerbaru = await sb("grosir_produk_manual?select=id,kode");
+                const kodeBaru = nextKode(produkManualTerbaru, "kode", "PRM-");
                 const [produkBaru] = await sb("grosir_produk_manual", {
                   method: "POST",
                   body: JSON.stringify({
