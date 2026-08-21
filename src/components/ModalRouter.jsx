@@ -454,7 +454,9 @@ export default function ModalRouter({
         ) : (
           <div className="rounded-lg border border-slate-800 overflow-hidden mb-4">
             {pesananPelanggan.map((ps, i) => {
+              const dibayar = totalDibayarPesanan(ps.id, pembayaranGrosir);
               const sisa = sisaHutangPesanan(ps, pembayaranGrosir);
+              const lebih = Math.max(0, dibayar - (Number(ps.total) || 0));
               return (
                 <button
                   key={ps.id}
@@ -474,9 +476,17 @@ export default function ModalRouter({
                     <Badge color={ps.status_bayar === "Lunas" ? "emerald" : ps.status_bayar === "Sebagian" ? "sky" : "amber"}>
                       {ps.status_bayar}
                     </Badge>
-                    <div className="text-slate-200 font-medium mt-0.5">{fmtRp(ps.total)}</div>
-                    {sisa > 0 && ps.status !== "Batal" && (
-                      <div className="text-[10px] text-red-400">Sisa {fmtRp(sisa)}</div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      Tagihan <span className="text-slate-300 font-medium">{fmtRp(ps.total)}</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Dibayar <span className="text-slate-300 font-medium">{fmtRp(dibayar)}</span>
+                    </div>
+                    {ps.status !== "Batal" && sisa > 0 && (
+                      <div className="text-[11px] text-red-400">Sisa Hutang {fmtRp(sisa)}</div>
+                    )}
+                    {ps.status !== "Batal" && lebih > 0 && (
+                      <div className="text-[11px] text-emerald-400">Lebih Bayar {fmtRp(lebih)}</div>
                     )}
                   </div>
                 </button>
