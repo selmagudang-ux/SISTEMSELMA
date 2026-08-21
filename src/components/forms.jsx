@@ -8,18 +8,132 @@ import { rakForSku } from "../pages/Rak";
 // tetap fleksibel untuk kasus di luar Pembelian & Retur.
 const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
 
-export function BarangMasukForm({ onClose, onSubmit, saving }) {
-  const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
+// Satu baris input barang masuk (dipakai berulang saat mode banyak-sekaligus).
+function baris(tanggal) {
+  return { tanggal, jenis: "Pembelian", jenisLainnya: "", jumlah: 1 };
+}
+
+export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const isSuperadmin = session?.role === "superadmin";
+
+  // Mode banyak sekaligus: khusus superadmin. Role lain tetap pakai form
+  // satu-satu seperti biasa.
+  const [multi, setMulti] = useState(false);
+  const [baris_, setBaris] = useState([baris(today)]);
+
+  const updateBaris = (idx, patch) =>
+    setBaris((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const tambahBaris = () => setBaris((rows) => [...rows, baris(today)]);
+  const hapusBaris = (idx) => setBaris((rows) => rows.filter((_, i) => i !== idx));
+
+  const toPayload = (r) => {
+    const gudang = r.jenis === "Lainnya" ? r.jenisLainnya.trim() : r.jenis;
+    return { tanggal: r.tanggal, gudang: gudang || null, jumlah: r.jumlah };
+  };
+  const barisValid = (r) => r.jumlah >= 1 && (r.jenis !== "Lainnya" || r.jenisLainnya.trim());
+
+  // ---- Mode satu-satu (default, semua role) ----
+  const [tanggal, setTanggal] = useState(today);
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
   const [jumlah, setJumlah] = useState(1);
-
-  // Nilai yang dikirim ke kolom "gudang" (tetap dipakai supaya tidak perlu ubah
-  // struktur data) — kalau pilih "Lainnya", pakai teks bebas yang diketik user.
   const gudang = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
+
+  if (multi) {
+    const semuaValid = baris_.length > 0 && baris_.every(barisValid);
+    return (
+      <ModalShell title="Barang Masuk — Banyak Sekaligus" onClose={onClose}>
+        <div className="flex items-center justify-between -mt-1 mb-1">
+          <p className="text-[11px] text-slate-500">Isi beberapa baris, lalu simpan semuanya sekaligus.</p>
+          <button
+            onClick={() => setMulti(false)}
+            className="text-[11px] text-amber-400 hover:text-amber-300 font-medium shrink-0 ml-2"
+          >
+            Kembali ke satu-satu
+          </button>
+        </div>
+
+        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+          {baris_.map((r, idx) => (
+            <div key={idx} className="rounded-lg border border-slate-800 p-3 space-y-2 relative">
+              {baris_.length > 1 && (
+                <button
+                  onClick={() => hapusBaris(idx)}
+                  className="absolute top-2 right-2 text-slate-500 hover:text-red-400"
+                  title="Hapus baris ini"
+                >
+                  <X size={14} />
+                </button>
+              )}
+              <p className="text-[11px] uppercase text-slate-500 font-semibold">Baris {idx + 1}</p>
+              <Field label="Tanggal">
+                <InputTanggal value={r.tanggal} onChange={(v) => updateBaris(idx, { tanggal: v })} />
+              </Field>
+              <Field label="Jenis Barang Masuk">
+                <select
+                  className={inputClass}
+                  value={r.jenis}
+                  onChange={(e) => updateBaris(idx, { jenis: e.target.value })}
+                >
+                  {JENIS_BARANG_MASUK.map((j) => (
+                    <option key={j} value={j}>{j}</option>
+                  ))}
+                </select>
+              </Field>
+              {r.jenis === "Lainnya" && (
+                <Field label="Keterangan">
+                  <input
+                    className={inputClass}
+                    value={r.jenisLainnya}
+                    onChange={(e) => updateBaris(idx, { jenisLainnya: e.target.value })}
+                    placeholder="Contoh: Konsinyasi, Hadiah, dll"
+                  />
+                </Field>
+              )}
+              <Field label="Jumlah">
+                <input
+                  type="number"
+                  min="1"
+                  className={inputClass}
+                  value={r.jumlah}
+                  onChange={(e) => updateBaris(idx, { jumlah: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={tambahBaris}
+          className="w-full mt-3 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
+        >
+          <Plus size={14} /> Tambah Baris
+        </button>
+
+        <button
+          disabled={saving || !semuaValid}
+          onClick={() => onSubmit(baris_.map(toPayload))}
+          className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        >
+          {saving ? "Menyimpan…" : `Simpan ${baris_.length} Baris`}
+        </button>
+      </ModalShell>
+    );
+  }
 
   return (
     <ModalShell title="Barang Masuk" onClose={onClose}>
+      {isSuperadmin && (
+        <div className="flex justify-end -mt-1 mb-1">
+          <button
+            onClick={() => setMulti(true)}
+            className="text-[11px] text-amber-400 hover:text-amber-300 font-medium"
+          >
+            Input banyak sekaligus →
+          </button>
+        </div>
+      )}
       <Field label="Tanggal">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>

@@ -1605,10 +1605,14 @@ export default function ModalRouter({
       <BarangMasukForm
         onClose={close}
         saving={saving}
+        session={session}
         onSubmit={(vals) =>
           run(async () => {
+            // vals bisa berupa satu object (mode satu-satu) atau array of
+            // object (mode banyak sekaligus, khusus superadmin) — PostgREST
+            // menerima keduanya lewat satu kali POST (bulk insert).
             await sb("items", { method: "POST", body: JSON.stringify(vals) });
-          }, "Barang masuk dicatat")
+          }, Array.isArray(vals) ? `${vals.length} barang masuk dicatat` : "Barang masuk dicatat")
         }
       />
     );
