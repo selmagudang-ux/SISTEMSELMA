@@ -467,6 +467,7 @@ function MainApp({ session, onLogout }) {
                   pesananGrosir={pesananGrosir}
                   detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
                   reload={loadAll}
                   showToast={showToast}
                   setModal={setModal}
