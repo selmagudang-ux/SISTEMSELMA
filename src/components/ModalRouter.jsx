@@ -1167,6 +1167,19 @@ export default function ModalRouter({
     const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
     const saldoDeposit = pelanggan ? saldoDepositPelanggan(pelanggan.id, depositGrosir) : 0;
 
+    // Pesanan LAIN milik pelanggan yang sama yang masih berhutang, urut dari
+    // yang paling lama. Kalau bayar pesanan ini lebih dari sisa hutangnya
+    // sendiri, kelebihannya otomatis dipakai melunasi pesanan-pesanan ini
+    // dulu (baru sisanya, kalau masih ada, masuk saldo deposit) — sama
+    // seperti alur BayarHutangPelangganForm, cuma titik masuknya dari satu
+    // pesanan spesifik.
+    const pesananLain = (pesananGrosir || [])
+      .filter((ps) => ps.pelanggan_id === p.pelanggan_id && ps.id !== p.id && ps.status !== "Batal")
+      .map((ps) => ({ ps, sisa: sisaHutangPesanan(ps, pembayaranGrosir) }))
+      .filter((x) => x.sisa > 0.0001)
+      .sort((a, b) => new Date(a.ps.created_at) - new Date(b.ps.created_at));
+    const totalHutangSemua = sisaHutang + pesananLain.reduce((a, x) => a + x.sisa, 0);
+
     return (
       <BayarHutangForm
         pesanan={p}
@@ -1180,70 +1193,78 @@ export default function ModalRouter({
             if (jumlahDiterima <= 0) throw new Error("Jumlah pembayaran harus lebih dari 0");
             const metode = data.metodeBayar || "Cash";
 
-            // "bayarKeOrder" cuma dipakai buat batas hitung kelebihan/pengurangan
-            // deposit — bukan buat nyunat catatan pembayarannya.
-            const bayarKeOrder = Math.min(jumlahDiterima, sisaHutang);
-            let kelebihan = jumlahDiterima - bayarKeOrder;
-
-            if (metode === "Deposit" && bayarKeOrder > saldoDeposit + 0.0001) {
+            const bayarKeHutangTotal = Math.min(jumlahDiterima, totalHutangSemua);
+            if (metode === "Deposit" && bayarKeHutangTotal > saldoDeposit + 0.0001) {
               throw new Error(
-                `Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk membayar ${fmtRp(bayarKeOrder)}`
+                `Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk membayar ${fmtRp(bayarKeHutangTotal)}`
               );
             }
-            if (metode === "Deposit") kelebihan = 0; // bayar pakai deposit tidak menghasilkan deposit baru
 
-            // Jumlah yang dicatat di riwayat pembayaran pesanan ini: kalau
-            // metode Deposit, dibatasi ke sisa hutang (dana dari deposit tidak
-            // masuk akal melebihi hutangnya). Kalau uang beneran (Cash/
-            // Transfer), dicatat APA ADANYA sesuai yang diterima — biar
-            // riwayat pembayaran pesanan mencerminkan uang yang benar-benar
-            // masuk, jadi ketahuan kalau kurang atau lebih, bukan dipotong
-            // paksa supaya pas dengan tagihan.
-            const jumlahDicatat = metode === "Deposit" ? bayarKeOrder : jumlahDiterima;
+            const nomorBayarBase = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
+            let sisaUang = jumlahDiterima;
+            let idx = 0;
 
-            const nomorBayar = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
-            await sb("grosir_pembayaran", {
-              method: "POST",
-              body: JSON.stringify({
-                nomor_bayar: nomorBayar,
-                pesanan_id: p.id,
-                pelanggan_id: p.pelanggan_id,
-                jumlah: jumlahDicatat,
-                metode_bayar: metode,
-                catatan: data.catatan || null,
-              }),
-            });
-
-            if (metode === "Deposit") {
-              await sb("grosir_deposit", {
+            // Urutan pelunasan: pesanan ini dulu (sesuai konteks tombolnya),
+            // baru pesanan lain yang paling lama, sampai uangnya habis atau
+            // semua pesanan pelanggan ini lunas.
+            const antrean = [{ ps: p, sisa: sisaHutang }, ...pesananLain];
+            for (const { ps, sisa: sisaPs } of antrean) {
+              if (sisaUang <= 0.0001 || sisaPs <= 0.0001) continue;
+              const bayarKePs = Math.min(sisaUang, sisaPs);
+              idx += 1;
+              await sb("grosir_pembayaran", {
                 method: "POST",
                 body: JSON.stringify({
-                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  nomor_bayar: `${nomorBayarBase}-${idx}`,
+                  pesanan_id: ps.id,
                   pelanggan_id: p.pelanggan_id,
-                  jumlah: -bayarKeOrder,
-                  keterangan: `Dipakai bayar pesanan ${p.nomor_pesanan}`,
-                  pesanan_id_terkait: p.id,
+                  jumlah: bayarKePs,
+                  metode_bayar: metode,
+                  catatan:
+                    ps.id === p.id
+                      ? data.catatan || null
+                      : `Kelebihan bayar dari pesanan ${p.nomor_pesanan}${data.catatan ? ` — ${data.catatan}` : ""}`,
                 }),
               });
-            } else if (kelebihan > 0.0001) {
+              const totalDibayarBaru = totalDibayarPesanan(ps.id, pembayaranGrosir) + bayarKePs;
+              const statusBaru = hitungStatusBayar(Number(ps.total) || 0, totalDibayarBaru);
+              await sb(`grosir_pesanan?id=eq.${ps.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ status_bayar: statusBaru }),
+              });
+              sisaUang -= bayarKePs;
+            }
+
+            if (metode === "Deposit") {
+              // Yang dikurangi dari saldo deposit cuma sebesar yang benar-benar
+              // terpakai buat melunasi hutang (pesanan ini + pesanan lain).
+              const dipakai = jumlahDiterima - sisaUang;
+              if (dipakai > 0.0001) {
+                await sb("grosir_deposit", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                    pelanggan_id: p.pelanggan_id,
+                    jumlah: -dipakai,
+                    keterangan: `Dipakai bayar pesanan ${p.nomor_pesanan}`,
+                    pesanan_id_terkait: p.id,
+                  }),
+                });
+              }
+            } else if (sisaUang > 0.0001) {
+              // Masih ada sisa uang setelah semua hutang pelanggan ini lunas
+              // -> otomatis jadi saldo deposit, tidak hangus.
               await sb("grosir_deposit", {
                 method: "POST",
                 body: JSON.stringify({
                   nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
                   pelanggan_id: p.pelanggan_id,
-                  jumlah: kelebihan,
+                  jumlah: sisaUang,
                   keterangan: `Kelebihan bayar pesanan ${p.nomor_pesanan}`,
                   pesanan_id_terkait: p.id,
                 }),
               });
             }
-
-            const totalDibayarBaru = totalDibayarPesanan(p.id, pembayaranGrosir) + jumlahDicatat;
-            const statusBaru = hitungStatusBayar(Number(p.total) || 0, totalDibayarBaru);
-            await sb(`grosir_pesanan?id=eq.${p.id}`, {
-              method: "PATCH",
-              body: JSON.stringify({ status_bayar: statusBaru }),
-            });
           }, "Pembayaran tercatat")
         }
       />
