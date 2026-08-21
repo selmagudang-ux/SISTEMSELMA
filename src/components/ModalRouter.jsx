@@ -8,7 +8,7 @@ import {
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
-  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, CairkanDepositForm, KeuanganTransaksiForm,
+  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -423,23 +423,26 @@ export default function ModalRouter({
       .filter((ps) => ps.status !== "Batal")
       .reduce((a, ps) => a + sisaHutangPesanan(ps, pembayaranGrosir), 0);
     const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+    const netTotal = saldoDeposit - totalHutang; // digabung: positif = kelebihan/deposit, negatif = hutang neto
 
     return (
       <ModalShell title={`Riwayat — ${p.nama}`} onClose={close}>
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5">
-            <div className="text-[11px] text-slate-500">Total Hutang</div>
-            <div className={`text-base font-bold ${totalHutang > 0 ? "text-red-400" : "text-slate-200"}`}>
-              {fmtRp(totalHutang)}
-            </div>
-          </div>
-          <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5">
-            <div className="text-[11px] text-slate-500">Saldo Deposit</div>
-            <div className="text-base font-bold text-emerald-400">{fmtRp(saldoDeposit)}</div>
+        <div className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-2.5 mb-4">
+          <div className="text-[11px] text-slate-500">{netTotal >= 0 ? "Saldo Deposit" : "Total Hutang"}</div>
+          <div className={`text-lg font-bold ${netTotal >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {fmtRp(Math.abs(netTotal))}
           </div>
         </div>
 
-        {saldoDeposit > 0 && (
+        {netTotal < -0.0001 && (
+          <button
+            onClick={() => setModal({ type: "grosir-bayar-hutang-pelanggan", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white mb-4"
+          >
+            Bayar Hutang
+          </button>
+        )}
+        {netTotal > 0.0001 && (
           <button
             onClick={() => setModal({ type: "grosir-cairkan-deposit", item: p })}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 mb-4"
@@ -1177,7 +1180,8 @@ export default function ModalRouter({
             if (jumlahDiterima <= 0) throw new Error("Jumlah pembayaran harus lebih dari 0");
             const metode = data.metodeBayar || "Cash";
 
-            // Uang yang benar-benar dipakai melunasi pesanan ini dibatasi maksimal sisa hutangnya.
+            // "bayarKeOrder" cuma dipakai buat batas hitung kelebihan/pengurangan
+            // deposit — bukan buat nyunat catatan pembayarannya.
             const bayarKeOrder = Math.min(jumlahDiterima, sisaHutang);
             let kelebihan = jumlahDiterima - bayarKeOrder;
 
@@ -1188,6 +1192,15 @@ export default function ModalRouter({
             }
             if (metode === "Deposit") kelebihan = 0; // bayar pakai deposit tidak menghasilkan deposit baru
 
+            // Jumlah yang dicatat di riwayat pembayaran pesanan ini: kalau
+            // metode Deposit, dibatasi ke sisa hutang (dana dari deposit tidak
+            // masuk akal melebihi hutangnya). Kalau uang beneran (Cash/
+            // Transfer), dicatat APA ADANYA sesuai yang diterima — biar
+            // riwayat pembayaran pesanan mencerminkan uang yang benar-benar
+            // masuk, jadi ketahuan kalau kurang atau lebih, bukan dipotong
+            // paksa supaya pas dengan tagihan.
+            const jumlahDicatat = metode === "Deposit" ? bayarKeOrder : jumlahDiterima;
+
             const nomorBayar = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
             await sb("grosir_pembayaran", {
               method: "POST",
@@ -1195,7 +1208,7 @@ export default function ModalRouter({
                 nomor_bayar: nomorBayar,
                 pesanan_id: p.id,
                 pelanggan_id: p.pelanggan_id,
-                jumlah: bayarKeOrder,
+                jumlah: jumlahDicatat,
                 metode_bayar: metode,
                 catatan: data.catatan || null,
               }),
@@ -1225,13 +1238,101 @@ export default function ModalRouter({
               });
             }
 
-            const sisaSesudah = sisaHutang - bayarKeOrder;
-            const statusBaru = hitungStatusBayar(Number(p.total) || 0, (Number(p.total) || 0) - sisaSesudah);
+            const totalDibayarBaru = totalDibayarPesanan(p.id, pembayaranGrosir) + jumlahDicatat;
+            const statusBaru = hitungStatusBayar(Number(p.total) || 0, totalDibayarBaru);
             await sb(`grosir_pesanan?id=eq.${p.id}`, {
               method: "PATCH",
               body: JSON.stringify({ status_bayar: statusBaru }),
             });
           }, "Pembayaran tercatat")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "grosir-bayar-hutang-pelanggan") {
+    const p = modal.item; // p = pelanggan
+    // Pesanan yang masih hutang, diurutkan dari yang paling lama dulu — uang
+    // yang masuk dialokasikan ke urutan ini sampai habis atau semua lunas.
+    const pesananHutang = (pesananGrosir || [])
+      .filter((ps) => ps.pelanggan_id === p.id && ps.status !== "Batal")
+      .map((ps) => ({ ps, sisa: sisaHutangPesanan(ps, pembayaranGrosir) }))
+      .filter((x) => x.sisa > 0.0001)
+      .sort((a, b) => new Date(a.ps.created_at) - new Date(b.ps.created_at));
+    const totalHutang = pesananHutang.reduce((a, x) => a + x.sisa, 0);
+    const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+
+    return (
+      <BayarHutangPelangganForm
+        pelanggan={p}
+        totalHutang={totalHutang}
+        saldoDeposit={saldoDeposit}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            const jumlahDiterima = Number(data.jumlah) || 0;
+            if (jumlahDiterima <= 0) throw new Error("Jumlah pembayaran harus lebih dari 0");
+            const metode = data.metodeBayar || "Cash";
+
+            const bayarKeHutang = Math.min(jumlahDiterima, totalHutang);
+            const kelebihan = metode === "Deposit" ? 0 : Math.max(0, jumlahDiterima - totalHutang);
+
+            if (metode === "Deposit" && bayarKeHutang > saldoDeposit + 0.0001) {
+              throw new Error(
+                `Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk membayar ${fmtRp(bayarKeHutang)}`
+              );
+            }
+
+            const nomorBayarBase = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
+            let sisa = bayarKeHutang;
+            let idx = 0;
+            for (const { ps, sisa: sisaPs } of pesananHutang) {
+              if (sisa <= 0.0001) break;
+              const bayarKePs = Math.min(sisa, sisaPs);
+              idx += 1;
+              await sb("grosir_pembayaran", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_bayar: `${nomorBayarBase}-${idx}`,
+                  pesanan_id: ps.id,
+                  pelanggan_id: p.id,
+                  jumlah: bayarKePs,
+                  metode_bayar: metode,
+                  catatan: data.catatan || null,
+                }),
+              });
+              const totalDibayarBaru = totalDibayarPesanan(ps.id, pembayaranGrosir) + bayarKePs;
+              const statusBaru = hitungStatusBayar(Number(ps.total) || 0, totalDibayarBaru);
+              await sb(`grosir_pesanan?id=eq.${ps.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ status_bayar: statusBaru }),
+              });
+              sisa -= bayarKePs;
+            }
+
+            if (metode === "Deposit" && bayarKeHutang > 0.0001) {
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.id,
+                  jumlah: -bayarKeHutang,
+                  keterangan: "Dipakai bayar hutang",
+                }),
+              });
+            } else if (kelebihan > 0.0001) {
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.id,
+                  jumlah: kelebihan,
+                  keterangan: "Kelebihan bayar hutang",
+                }),
+              });
+            }
+          }, "Pembayaran hutang tercatat")
         }
       />
     );

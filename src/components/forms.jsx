@@ -1219,6 +1219,88 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
   );
 }
 
+// Form bayar hutang gabungan di level pelanggan (bukan per-pesanan) — dipakai
+// dari modal Riwayat Pelanggan saat pelanggan masih punya total hutang neto.
+// Uang yang masuk otomatis dialokasikan ke pesanan yang masih hutang, dari
+// yang paling lama dulu, sampai jumlahnya habis atau semua hutang lunas;
+// kalau masih ada sisa setelah semua hutang lunas, otomatis masuk saldo deposit.
+export function BayarHutangPelangganForm({ pelanggan, totalHutang, saldoDeposit, onClose, onSubmit, saving }) {
+  const [jumlah, setJumlah] = useState(totalHutang);
+  const [metodeBayar, setMetodeBayar] = useState("Cash");
+  const [catatan, setCatatan] = useState("");
+
+  const jumlahNum = Number(jumlah) || 0;
+  const kelebihan = metodeBayar !== "Deposit" && jumlahNum > totalHutang ? jumlahNum - totalHutang : 0;
+  const depositTidakCukup = metodeBayar === "Deposit" && Math.min(jumlahNum, totalHutang) > saldoDeposit + 0.0001;
+  const canSubmit = jumlahNum > 0 && !depositTidakCukup && !saving;
+
+  return (
+    <ModalShell title={`Bayar Hutang — ${pelanggan.nama}`} onClose={onClose}>
+      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+        <div className="flex items-center justify-between px-3 py-2 text-sm bg-slate-900">
+          <span className="text-slate-500 text-xs">Total Hutang</span>
+          <span className="text-red-400 font-semibold">{fmtRp(totalHutang)}</span>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2 text-sm bg-slate-950">
+          <span className="text-slate-500 text-xs">Saldo Deposit Pelanggan</span>
+          <span className="text-emerald-400 font-semibold">{fmtRp(saldoDeposit)}</span>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-500 mb-3">
+        Uang yang masuk otomatis dialokasikan ke pesanan yang paling lama belum lunas dulu, sampai semua hutang
+        terbayar atau jumlahnya habis.
+      </p>
+
+      <Field label="Metode Bayar">
+        <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
+          <option value="Cash">Cash</option>
+          <option value="Transfer">Transfer</option>
+          <option value="Deposit">Pakai Saldo Deposit</option>
+        </select>
+      </Field>
+
+      <Field label="Jumlah Dibayar">
+        <input
+          type="number"
+          min="1"
+          className={inputClass}
+          value={jumlah}
+          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
+        />
+      </Field>
+
+      {kelebihan > 0 && (
+        <div className="flex items-start gap-2 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Bayar melebihi total hutang sebesar <span className="font-semibold">{fmtRp(kelebihan)}</span>. Selisihnya
+            otomatis dicatat sebagai saldo deposit pelanggan, tidak hangus.
+          </div>
+        </div>
+      )}
+      {depositTidakCukup && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>Saldo deposit pelanggan tidak cukup untuk jumlah ini.</div>
+        </div>
+      )}
+
+      <Field label="Catatan (opsional)">
+        <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
+      </Field>
+
+      <button
+        disabled={!canSubmit}
+        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, catatan: catatan.trim() })}
+        className="w-full bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Pembayaran"}
+      </button>
+    </ModalShell>
+  );
+}
+
 // Form cairkan (bayar tunai/transfer ke pelanggan) sebagian atau seluruh
 // saldo deposit — dipakai kalau TOKO yang berhutang ke pelanggan (kelebihan
 // bayar/titipan) dan mau dilunasi keluar, bukan dipakai lagi buat pesanan.
