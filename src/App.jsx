@@ -62,9 +62,15 @@ export default function SistemSelmaApp() {
 function MainApp({ session, onLogout }) {
   const allowed = allowedMenus(session.role);
 
-  const [nav, setNav] = useState({
-    menu: allowed.includes("dashboard") ? "dashboard" : allowed[0],
-    sub: null,
+  // Menu terakhir disimpan di sessionStorage supaya begitu halaman di-reload
+  // (lihat fungsi navigate di bawah), tampilan langsung kembali ke menu yang
+  // baru saja diklik, bukan balik lagi ke dashboard.
+  const [nav, setNav] = useState(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");
+      if (saved && allowed.includes(saved.menu)) return saved;
+    } catch {}
+    return { menu: allowed.includes("dashboard") ? "dashboard" : allowed[0], sub: null };
   });
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -104,11 +110,20 @@ function MainApp({ session, onLogout }) {
 
   // Cegah akses ke menu (atau sub-menu) yang tidak diizinkan untuk role ini
   // (mis. lewat state lama, atau URL/badge yang mengarah ke sub tertentu).
+  // Setiap pindah menu, halaman di-reload penuh (bukan cuma ganti state React)
+  // supaya datanya selalu segar — menu tujuan disimpan dulu ke sessionStorage
+  // supaya setelah reload langsung terbuka di menu itu (lihat useState nav).
   const navigate = (menu, sub) => {
     if (!allowed.includes(menu)) return;
     const subs = allowedSubMenus(session.role, menu);
     if (subs && sub && !subs.includes(sub)) return;
-    setNav({ menu, sub });
+
+    if (menu === nav.menu && (sub || null) === (nav.sub || null)) return; // sudah di menu itu, tidak perlu reload
+
+    try {
+      sessionStorage.setItem("selma-nav", JSON.stringify({ menu, sub: sub || null }));
+    } catch {}
+    window.location.reload();
   };
 
   // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
