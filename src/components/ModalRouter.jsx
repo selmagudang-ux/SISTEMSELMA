@@ -8,7 +8,7 @@ import {
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
-  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, KeuanganTransaksiForm,
+  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, CairkanDepositForm, KeuanganTransaksiForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -438,6 +438,15 @@ export default function ModalRouter({
             <div className="text-base font-bold text-emerald-400">{fmtRp(saldoDeposit)}</div>
           </div>
         </div>
+
+        {saldoDeposit > 0 && (
+          <button
+            onClick={() => setModal({ type: "grosir-cairkan-deposit", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 mb-4"
+          >
+            Cairkan Deposit ke Pelanggan
+          </button>
+        )}
 
         <div className="text-xs text-slate-500 mb-1.5">Pesanan ({pesananPelanggan.length})</div>
         {pesananPelanggan.length === 0 ? (
@@ -1207,6 +1216,38 @@ export default function ModalRouter({
               body: JSON.stringify({ status_bayar: statusBaru }),
             });
           }, "Pembayaran tercatat")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "grosir-cairkan-deposit") {
+    const p = modal.item; // p = pelanggan (dikirim dari tombol di modal riwayat pelanggan)
+    const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+
+    return (
+      <CairkanDepositForm
+        pelanggan={p}
+        saldoDeposit={saldoDeposit}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            const jumlah = Number(data.jumlah) || 0;
+            if (jumlah <= 0) throw new Error("Jumlah yang dicairkan harus lebih dari 0");
+            if (jumlah > saldoDeposit + 0.0001) {
+              throw new Error(`Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk dicairkan sebesar ${fmtRp(jumlah)}`);
+            }
+            await sb("grosir_deposit", {
+              method: "POST",
+              body: JSON.stringify({
+                nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                pelanggan_id: p.id,
+                jumlah: -jumlah,
+                keterangan: `Dicairkan ke pelanggan (${data.metodeBayar})${data.catatan ? ` · ${data.catatan}` : ""}`,
+              }),
+            });
+          }, "Deposit dicairkan ke pelanggan")
         }
       />
     );

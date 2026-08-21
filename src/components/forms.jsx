@@ -1105,6 +1105,71 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
   );
 }
 
+// Form cairkan (bayar tunai/transfer ke pelanggan) sebagian atau seluruh
+// saldo deposit — dipakai kalau TOKO yang berhutang ke pelanggan (kelebihan
+// bayar/titipan) dan mau dilunasi keluar, bukan dipakai lagi buat pesanan.
+export function CairkanDepositForm({ pelanggan, saldoDeposit, onClose, onSubmit, saving }) {
+  const [jumlah, setJumlah] = useState(saldoDeposit);
+  const [metodeBayar, setMetodeBayar] = useState("Cash");
+  const [catatan, setCatatan] = useState("");
+
+  const jumlahNum = Number(jumlah) || 0;
+  const melebihi = jumlahNum > saldoDeposit;
+  const canSubmit = jumlahNum > 0 && !melebihi && !saving;
+
+  return (
+    <ModalShell title={`Cairkan Deposit — ${pelanggan.nama}`} onClose={onClose}>
+      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+        <div className="flex items-center justify-between px-3 py-2 text-sm bg-slate-900">
+          <span className="text-slate-500 text-xs">Saldo Deposit Saat Ini</span>
+          <span className="text-emerald-400 font-semibold">{fmtRp(saldoDeposit)}</span>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-500 mb-3">
+        Catat kalau uang ini benar-benar sudah dibayar/dikembalikan ke pelanggan (cash atau transfer). Saldo deposit
+        pelanggan akan berkurang sebesar jumlah yang dicairkan.
+      </p>
+
+      <Field label="Metode Bayar">
+        <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
+          <option value="Cash">Cash</option>
+          <option value="Transfer">Transfer</option>
+        </select>
+      </Field>
+
+      <Field label="Jumlah Dicairkan">
+        <input
+          type="number"
+          min="1"
+          className={inputClass}
+          value={jumlah}
+          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
+        />
+      </Field>
+
+      {melebihi && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>Jumlah melebihi saldo deposit yang tersedia.</div>
+        </div>
+      )}
+
+      <Field label="Catatan (opsional)">
+        <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
+      </Field>
+
+      <button
+        disabled={!canSubmit}
+        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, catatan: catatan.trim() })}
+        className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Cairkan Deposit"}
+      </button>
+    </ModalShell>
+  );
+}
+
 // Form tambah/edit satu baris transaksi keuangan.
 // Jenis transaksi ada 3: Pemasukan, Pengeluaran, Transfer Antar Rekening.
 //   - Pemasukan/Pengeluaran: wajib isi Sumber Dana (rekening) + Kategori.
