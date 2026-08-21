@@ -15,6 +15,7 @@ export default function Marketplace({
   notifRakPindah,
   notifRakKosong,
   ackNotif,
+  session,
 }) {
   if (sub === "sudah") return <SudahUpload items={items} />;
   if (sub === "riwayat") return <RiwayatUpload items={items} />;
@@ -27,6 +28,7 @@ export default function Marketplace({
         notifRakPindah={notifRakPindah}
         notifRakKosong={notifRakKosong}
         ackNotif={ackNotif}
+        isSuperadmin={session?.role === "superadmin"}
       />
     );
   return <BelumUpload items={items} quickAdvance={quickAdvance} setModal={setModal} />;
@@ -41,8 +43,15 @@ export default function Marketplace({
 // setelah diklik "Sudah" / "Sudah diperbarui" — dan otomatis muncul lagi
 // kalau kondisinya berubah lagi setelah itu (mis. stok berubah lagi, atau
 // rak dipindah/dikosongkan lagi).
-function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, notifRakKosong, ackNotif }) {
+//
+// Khusus superadmin: ada mode "bulk aksi" — centang beberapa notifikasi
+// (lintas kategori sekalipun) lalu konfirmasi semuanya sekaligus dalam satu
+// klik, alih-alih klik "Sudah" satu-satu.
+function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, notifRakKosong, ackNotif, isSuperadmin }) {
   const [q, setQ] = useState("");
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
   const lower = q.toLowerCase();
 
   const tipis = (notifTipis || []).filter((n) => n.sku.toLowerCase().includes(lower));
@@ -54,12 +63,59 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
   );
 
   const totalNotif = tipis.length + tambah.length + rakList.length + rakPindah.length + rakKosong.length;
+  const semuaKey = [...tipis, ...tambah, ...rakList, ...rakPindah, ...rakKosong].map((n) => n.key);
+
+  const toggleSelect = (key) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const toggleSelectAll = () =>
+    setSelected((prev) => (prev.size === semuaKey.length ? new Set() : new Set(semuaKey)));
+
+  const konfirmasiTerpilih = async () => {
+    if (selected.size === 0) return;
+    setBulkSaving(true);
+    try {
+      await ackNotif([...selected]);
+      setSelected(new Set());
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const exitBulkMode = () => {
+    setBulkMode(false);
+    setSelected(new Set());
+  };
 
   return (
     <div>
       <PageHeader
         title="Cek Marketplace"
         description="Notifikasi yang perlu ditindaklanjuti admin marketplace: stok tipis/habis, stok baru bertambah, atau rak SKU berubah — supaya listing selalu sesuai kondisi gudang. Klik tombol konfirmasi setelah listing disesuaikan."
+        action={
+          isSuperadmin && totalNotif > 0 ? (
+            bulkMode ? (
+              <button
+                onClick={exitBulkMode}
+                className="text-[11px] font-medium px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-600"
+              >
+                Batal
+              </button>
+            ) : (
+              <button
+                onClick={() => setBulkMode(true)}
+                className="text-[11px] font-medium px-3 py-2 rounded-lg border border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+              >
+                Bulk Aksi
+              </button>
+            )
+          ) : null
+        }
       />
 
       <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
@@ -71,6 +127,28 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
           className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
         />
       </div>
+
+      {bulkMode && totalNotif > 0 && (
+        <div className="flex items-center justify-between gap-3 mb-4 bg-slate-900 border border-amber-500/30 rounded-lg px-3 py-2.5 sticky top-0 z-10">
+          <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={selected.size > 0 && selected.size === semuaKey.length}
+              onChange={toggleSelectAll}
+              className="accent-amber-500"
+            />
+            {selected.size > 0 ? `${selected.size} dipilih` : "Pilih semua"}
+          </label>
+          <button
+            onClick={konfirmasiTerpilih}
+            disabled={selected.size === 0 || bulkSaving}
+            className="flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
+          >
+            <CheckCircle2 size={13} />
+            {bulkSaving ? "Menyimpan…" : `Konfirmasi Terpilih${selected.size ? ` (${selected.size})` : ""}`}
+          </button>
+        </div>
+      )}
 
       {totalNotif === 0 ? (
         <EmptyState label="Tidak ada notifikasi — semua sudah dikonfirmasi." />
@@ -89,6 +167,14 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
                 className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-amber-500/30 rounded-lg"
               >
                 <div className="flex items-center gap-2">
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(n.key)}
+                      onChange={() => toggleSelect(n.key)}
+                      className="accent-amber-500"
+                    />
+                  )}
                   <span className="font-mono text-xs text-slate-300">{n.sku}</span>
                   {n.stok <= 0 ? (
                     <Badge color="red">Habis</Badge>
@@ -96,12 +182,14 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
                     <Badge color="amber">Sisa {n.stok}</Badge>
                   )}
                 </div>
-                <button
-                  onClick={() => ackNotif(n.key)}
-                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                >
-                  <CheckCircle2 size={12} /> Sudah
-                </button>
+                {!bulkMode && (
+                  <button
+                    onClick={() => ackNotif(n.key)}
+                    className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    <CheckCircle2 size={12} /> Sudah
+                  </button>
+                )}
               </div>
             ))}
           </CekSection>
@@ -118,18 +206,30 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
                 key={n.key}
                 className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-sky-500/30 rounded-lg"
               >
-                <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-300">{n.sku}</div>
-                  <div className="text-[11px] text-sky-400/80 mt-0.5">
-                    {n.qtyBefore} → {n.qtyAfter} (+{n.qtyChange})
+                <div className="flex items-center gap-2 min-w-0">
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(n.key)}
+                      onChange={() => toggleSelect(n.key)}
+                      className="accent-amber-500 flex-shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-300">{n.sku}</div>
+                    <div className="text-[11px] text-sky-400/80 mt-0.5">
+                      {n.qtyBefore} → {n.qtyAfter} (+{n.qtyChange})
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => ackNotif(n.key)}
-                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                >
-                  <CheckCircle2 size={12} /> Sudah diperbarui
-                </button>
+                {!bulkMode && (
+                  <button
+                    onClick={() => ackNotif(n.key)}
+                    className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    <CheckCircle2 size={12} /> Sudah diperbarui
+                  </button>
+                )}
               </div>
             ))}
           </CekSection>
@@ -146,16 +246,28 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
                 key={n.key}
                 className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-orange-500/30 rounded-lg"
               >
-                <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-300">{n.sku}</div>
-                  <div className="text-[11px] text-orange-400/80 mt-0.5">{n.detail}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(n.key)}
+                      onChange={() => toggleSelect(n.key)}
+                      className="accent-amber-500 flex-shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-300">{n.sku}</div>
+                    <div className="text-[11px] text-orange-400/80 mt-0.5">{n.detail}</div>
+                  </div>
                 </div>
-                <button
-                  onClick={() => ackNotif(n.key)}
-                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                >
-                  <CheckCircle2 size={12} /> Sudah
-                </button>
+                {!bulkMode && (
+                  <button
+                    onClick={() => ackNotif(n.key)}
+                    className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    <CheckCircle2 size={12} /> Sudah
+                  </button>
+                )}
               </div>
             ))}
           </CekSection>
@@ -172,18 +284,30 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
                 key={n.key}
                 className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-sky-500/30 rounded-lg"
               >
-                <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-300">{n.sku}</div>
-                  <div className="text-[11px] text-sky-400/80 mt-0.5">
-                    Rak {n.rakDari} → Rak {n.rakBaru}
+                <div className="flex items-center gap-2 min-w-0">
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(n.key)}
+                      onChange={() => toggleSelect(n.key)}
+                      className="accent-amber-500 flex-shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-300">{n.sku}</div>
+                    <div className="text-[11px] text-sky-400/80 mt-0.5">
+                      Rak {n.rakDari} → Rak {n.rakBaru}
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => ackNotif(n.key)}
-                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                >
-                  <CheckCircle2 size={12} /> Sudah
-                </button>
+                {!bulkMode && (
+                  <button
+                    onClick={() => ackNotif(n.key)}
+                    className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    <CheckCircle2 size={12} /> Sudah
+                  </button>
+                )}
               </div>
             ))}
           </CekSection>
@@ -200,16 +324,28 @@ function CekMarketplace({ notifTipis, notifTambah, notifRak, notifRakPindah, not
                 key={n.key}
                 className="flex items-center justify-between gap-2 px-4 py-2.5 bg-slate-900 border border-orange-500/30 rounded-lg"
               >
-                <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-300">Rak {n.rakCode}</div>
-                  <div className="text-[11px] text-orange-400/80 mt-0.5">{n.detail}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  {bulkMode && (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(n.key)}
+                      onChange={() => toggleSelect(n.key)}
+                      className="accent-amber-500 flex-shrink-0"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-300">Rak {n.rakCode}</div>
+                    <div className="text-[11px] text-orange-400/80 mt-0.5">{n.detail}</div>
+                  </div>
                 </div>
-                <button
-                  onClick={() => ackNotif(n.key)}
-                  className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                >
-                  <CheckCircle2 size={12} /> Sudah
-                </button>
+                {!bulkMode && (
+                  <button
+                    onClick={() => ackNotif(n.key)}
+                    className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                  >
+                    <CheckCircle2 size={12} /> Sudah
+                  </button>
+                )}
               </div>
             ))}
           </CekSection>

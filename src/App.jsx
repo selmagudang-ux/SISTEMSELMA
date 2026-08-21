@@ -153,12 +153,17 @@ function MainApp({ session, onLogout }) {
   // Konfirmasi notifikasi "Cek Marketplace" (stok tipis / stok bertambah /
   // rak berubah) — simpan key-nya sebagai "sudah dikonfirmasi". Kalau kena
   // duplikat (mis. sudah diklik dari sesi lain persis di saat yang sama),
-  // anggap sukses, cukup refresh datanya.
-  const ackNotif = async (key) => {
+  // anggap sukses, cukup refresh datanya. Terima satu key (string) atau
+  // banyak key sekaligus (array) — dipakai fitur "bulk aksi" khusus
+  // superadmin di halaman Cek Marketplace, dikirim jadi satu kali POST saja.
+  const ackNotif = async (keyOrKeys) => {
+    const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+    if (keys.length === 0) return;
     try {
-      await sb("marketplace_notif_ack", {
+      await sb("marketplace_notif_ack?on_conflict=notif_key", {
         method: "POST",
-        body: JSON.stringify({ notif_key: key }),
+        prefer: "return=representation,resolution=merge-duplicates",
+        body: JSON.stringify(keys.map((k) => ({ notif_key: k }))),
       });
       await loadAll();
     } catch (e) {
@@ -470,6 +475,7 @@ function MainApp({ session, onLogout }) {
                   notifRakPindah={notifRakPindah}
                   notifRakKosong={notifRakKosong}
                   ackNotif={ackNotif}
+                  session={session}
                 />
               )}
               {nav.menu === "grosir" && (
