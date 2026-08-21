@@ -950,7 +950,8 @@ export default function ModalRouter({
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div>
             Pesanan ini akan dihapus <span className="font-semibold">permanen</span> beserta seluruh riwayat
-            pembayarannya. Tindakan ini tidak bisa dibatalkan.
+            pembayarannya, termasuk saldo deposit yang tercatat dari pesanan ini (mis. kelebihan bayar atau
+            pembayaran yang dikembalikan saat pesanan dibatalkan). Tindakan ini tidak bisa dibatalkan.
             {skuTerpakai.length > 0 && (
               <div className="mt-1.5 text-red-200/90">
                 SKU yang dipakai di pesanan ini ({skuTerpakai.join(", ")}) akan lepas dari riwayat pesanan, jadi
@@ -972,13 +973,12 @@ export default function ModalRouter({
             onClick={() =>
               run(async () => {
                 // Urutan hapus mengikuti relasi foreign key ke grosir_pesanan.id:
-                // deposit yang tercatat lewat pesanan ini cuma dilepas referensinya
-                // (bukan dihapus) supaya saldo deposit pelanggan tetap utuh — itu
-                // uang beneran, bukan sekadar catatan pesanan.
-                await sb(`grosir_deposit?pesanan_id_terkait=eq.${p.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ pesanan_id_terkait: null }),
-                });
+                // semua baris deposit yang tercatat dari pesanan ini (kelebihan
+                // bayar, deposit yang dipakai buat bayar, atau pembayaran yang
+                // dikembalikan sebagai deposit saat dibatalkan) ikut dihapus
+                // permanen — sesuai permintaan, hapus pesanan = hapus juga jejak
+                // depositnya, bukan cuma dilepas referensinya.
+                await sb(`grosir_deposit?pesanan_id_terkait=eq.${p.id}`, { method: "DELETE" });
                 await sb(`grosir_pembayaran?pesanan_id=eq.${p.id}`, { method: "DELETE" });
                 await sb(`grosir_detail_pesanan?pesanan_id=eq.${p.id}`, { method: "DELETE" });
                 await sb(`grosir_pesanan?id=eq.${p.id}`, { method: "DELETE" });
@@ -1394,6 +1394,7 @@ export default function ModalRouter({
   if (modal.type === "grosir-batalkan-pesanan") {
     const p = modal.item;
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
+    const sudahDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
     return (
       <ModalShell title={`Batalkan Pesanan ${p.nomor_pesanan}`} onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
@@ -1401,6 +1402,12 @@ export default function ModalRouter({
           <div>
             Pesanan akan ditandai <span className="font-semibold">Batal</span>. Stok Data Barang yang terpotong
             dari pesanan ini akan dikembalikan otomatis. Item manual tidak terpengaruh (tidak ikut sistem stok).
+            {sudahDibayar > 0.0001 && (
+              <div className="mt-1.5 text-red-200/90">
+                Pesanan ini sudah dibayar {fmtRp(sudahDibayar)} — jumlah itu akan otomatis dijadikan saldo deposit
+                pelanggan (bukan hangus), karena pesanannya batal.
+              </div>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -1434,6 +1441,21 @@ export default function ModalRouter({
                       qty_change: Number(d.qty),
                       qty_after: stokBaru,
                       note: `Pesanan grosir ${p.nomor_pesanan} dibatalkan`,
+                    }),
+                  });
+                }
+                // Uang yang sudah terlanjur dibayar untuk pesanan ini (kalau ada)
+                // tidak hangus — otomatis dicatat sebagai saldo deposit pelanggan,
+                // karena pesanan Batal tidak lagi dihitung sebagai hutang/lunas.
+                if (sudahDibayar > 0.0001) {
+                  await sb("grosir_deposit", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                      pelanggan_id: p.pelanggan_id,
+                      jumlah: sudahDibayar,
+                      keterangan: `Pesanan ${p.nomor_pesanan} dibatalkan, pembayaran dikembalikan sebagai deposit`,
+                      pesanan_id_terkait: p.id,
                     }),
                   });
                 }
