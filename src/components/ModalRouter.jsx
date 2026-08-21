@@ -1644,37 +1644,34 @@ export default function ModalRouter({
             const sku = `${skuFields.bahan}${skuFields.peruntukan}${skuFields.kategori}-${skuFields.subkategori}-${skuFields.model}-${skuFields.warna}-${skuFields.ukuran}`;
             const jumlah = modal.item.jumlah || 1;
             const existing = skuMaster.find((s) => s.sku === sku);
-            let stokBaru;
+            // Pembuatan SKU baru ditolak kalau SKU-nya ternyata sudah ada di daftar
+            // (harusnya sudah dicegah di form, ini jaga-jaga terakhir). Untuk
+            // menambah stok ke SKU yang sudah ada, pakai jalur "SKU yang sudah ada"
+            // (onSubmitExisting), bukan "buat SKU baru".
             if (existing) {
-              stokBaru = existing.stok + jumlah;
-              // Sama seperti di atas — stok masuk lagi berarti SKU aktif lagi.
-              await sb(`sku_master?id=eq.${existing.id}`, {
-                method: "PATCH",
-                body: JSON.stringify({ stok: stokBaru, nonaktif: false }),
-              });
-            } else {
-              stokBaru = jumlah;
-              await sb("sku_master", {
-                method: "POST",
-                body: JSON.stringify({
-                  sku,
-                  bahan: skuFields.bahan,
-                  peruntukan: skuFields.peruntukan,
-                  kategori: skuFields.kategori,
-                  subkategori: skuFields.subkategori,
-                  model: skuFields.model,
-                  warna: skuFields.warna,
-                  ukuran: skuFields.ukuran,
-                  harga_asli: hargaAsli,
-                  harga_dasar: harga.hargaDasar,
-                  hpp: harga.hpp,
-                  grosir: harga.grosir,
-                  tengah: harga.tengah,
-                  ecer: harga.ecer,
-                  stok: jumlah,
-                }),
-              });
+              throw new Error(`SKU ${sku} sudah ada di daftar — pilih SKU ini di kolom "SKU yang sudah ada" untuk menambah stok.`);
             }
+            const stokBaru = jumlah;
+            await sb("sku_master", {
+              method: "POST",
+              body: JSON.stringify({
+                sku,
+                bahan: skuFields.bahan,
+                peruntukan: skuFields.peruntukan,
+                kategori: skuFields.kategori,
+                subkategori: skuFields.subkategori,
+                model: skuFields.model,
+                warna: skuFields.warna,
+                ukuran: skuFields.ukuran,
+                harga_asli: hargaAsli,
+                harga_dasar: harga.hargaDasar,
+                hpp: harga.hpp,
+                grosir: harga.grosir,
+                tengah: harga.tengah,
+                ecer: harga.ecer,
+                stok: jumlah,
+              }),
+            });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
               body: JSON.stringify({ sku, stage: "rak" }),
@@ -1684,10 +1681,10 @@ export default function ModalRouter({
               body: JSON.stringify({
                 sku,
                 type: "masuk",
-                qty_before: stokBaru - jumlah,
+                qty_before: 0,
                 qty_change: jumlah,
                 qty_after: stokBaru,
-                note: existing ? "SKU lama ditambah stok" : "SKU baru dibuat",
+                note: "SKU baru dibuat",
               }),
             });
           }, "SKU dibuat & stok tercatat")

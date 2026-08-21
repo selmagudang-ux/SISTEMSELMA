@@ -145,13 +145,22 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   }, [modelSuggestion, modelTouched]);
 
   const manualLengkap = grosirManual !== "" && tengahManual !== "" && ecerManual !== "";
-  const ready =
+  const fieldsLengkap =
     bahan && peruntukan && kategori && subkategori && model && warna && ukuran && hargaAsli &&
     (!hargaManual || manualLengkap);
-  const preview =
-    ready && settings
+
+  // Preview SKU dihitung begitu kombinasi kode sudah lengkap (belum perlu tunggu
+  // harga), supaya deteksi "SKU sudah ada" bisa langsung tampil ke user.
+  const skuKombinasi =
+    bahan && peruntukan && kategori && subkategori && model && warna && ukuran
       ? `${bahan}${peruntukan}${kategori}-${subkategori}-${model}-${warna}-${ukuran}`
       : null;
+  const skuSudahAda = skuKombinasi
+    ? (skuMaster || []).find((s) => s.sku === skuKombinasi)
+    : null;
+
+  const ready = fieldsLengkap && settings && !skuSudahAda;
+  const preview = fieldsLengkap && settings ? skuKombinasi : null;
 
   return (
     <ModalShell title={`Buat SKU — ${item.jumlah}x barang`} onClose={onClose}>
@@ -322,6 +331,17 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
               </Field>
             </div>
           </>
+        )}
+
+        {skuSudahAda && (
+          <div className="mb-3 bg-red-950/40 border border-red-900 rounded-lg px-3 py-2">
+            <div className="text-[11px] text-red-400">SKU ini sudah ada di daftar</div>
+            <div className="font-mono text-sm text-red-300">{skuKombinasi}</div>
+            <p className="text-[11px] text-red-400/80 mt-1.5">
+              Stok: {skuSudahAda.stok}. Kalau mau menambah stok barang ini, pilih SKU-nya di kolom "SKU yang sudah
+              ada" di atas — bukan lewat "buat SKU baru".
+            </p>
+          </div>
         )}
 
         {preview && (
