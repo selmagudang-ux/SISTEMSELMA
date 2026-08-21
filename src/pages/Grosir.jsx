@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal } from "../components/ui";
 import {
-  sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, pelangganDenganWa,
+  sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
 } from "../lib/api";
 
@@ -56,16 +56,24 @@ export default function Grosir({
 
 function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depositGrosir, setModal }) {
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState("semua"); // 'semua' | 'piutang' | 'deposit'
   const hutangMap = totalHutangPerPelanggan(pesananGrosir, pembayaranGrosir);
+  const depositMap = totalDepositPerPelanggan(depositGrosir);
+  const totalPiutang = Object.values(hutangMap).reduce((a, v) => a + v, 0);
+  const totalDepositSaya = Object.values(depositMap).reduce((a, v) => a + v, 0);
+
   const filtered = (pelangganGrosir || []).filter((p) => {
     const s = q.trim().toLowerCase();
-    if (!s) return true;
-    return (
+    const matchQ =
+      !s ||
       p.nama?.toLowerCase().includes(s) ||
       p.kode?.toLowerCase().includes(s) ||
       p.kota?.toLowerCase().includes(s) ||
-      p.wa?.toLowerCase().includes(s)
-    );
+      p.wa?.toLowerCase().includes(s);
+    if (!matchQ) return false;
+    if (filter === "piutang") return hutangMap[p.id] > 0;
+    if (filter === "deposit") return depositMap[p.id] > 0;
+    return true;
   });
 
   return (
@@ -83,18 +91,66 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
         }
       />
 
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari nama, kode, kota, atau WA…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+      <div className="grid grid-cols-2 gap-3 mb-4 max-w-lg">
+        <StatCard
+          label="Pelanggan hutang ke saya (piutang)"
+          value={fmtRp(totalPiutang)}
+          accent="text-red-400"
+          icon={Wallet}
+          iconColor="text-red-500"
+        />
+        <StatCard
+          label="Saya hutang ke pelanggan (deposit)"
+          value={fmtRp(totalDepositSaya)}
+          accent="text-emerald-400"
+          icon={Wallet}
+          iconColor="text-emerald-500"
         />
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[220px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari nama, kode, kota, atau WA…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          {[
+            { key: "semua", label: "Semua" },
+            { key: "piutang", label: "Berhutang ke saya" },
+            { key: "deposit", label: "Saya berhutang" },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium ${
+                filter === f.key
+                  ? "bg-amber-500 text-slate-950"
+                  : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {filtered.length === 0 ? (
-        <EmptyState label={q ? "Tidak ada pelanggan yang cocok." : "Belum ada pelanggan grosir."} />
+        <EmptyState
+          label={
+            q
+              ? "Tidak ada pelanggan yang cocok."
+              : filter === "piutang"
+              ? "Tidak ada pelanggan yang berhutang."
+              : filter === "deposit"
+              ? "Tidak ada pelanggan dengan saldo deposit."
+              : "Belum ada pelanggan grosir."
+          }
+        />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {filtered.map((p, i) => (
@@ -113,9 +169,10 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
                 <div className="text-[11px] text-slate-500 mt-0.5">
                   {[p.wa, p.kota].filter(Boolean).join(" · ") || "—"}
                 </div>
-                {hutangMap[p.id] > 0 && (
-                  <div className="mt-1">
-                    <Badge color="red">Hutang {fmtRp(hutangMap[p.id])}</Badge>
+                {(hutangMap[p.id] > 0 || depositMap[p.id] > 0) && (
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    {hutangMap[p.id] > 0 && <Badge color="red">Hutang ke saya {fmtRp(hutangMap[p.id])}</Badge>}
+                    {depositMap[p.id] > 0 && <Badge color="emerald">Saya hutang (deposit) {fmtRp(depositMap[p.id])}</Badge>}
                   </div>
                 )}
               </div>

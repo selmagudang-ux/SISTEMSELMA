@@ -375,6 +375,20 @@ export function totalHutangPerPelanggan(pesananList, pembayaranList) {
   return map;
 }
 
+// Peta {pelangganId: saldoDeposit} untuk semua pelanggan yang punya saldo deposit
+// positif — artinya TOKO yang berhutang ke pelanggan itu (kelebihan bayar/titipan
+// yang belum dipakai), kebalikan dari totalHutangPerPelanggan di atas.
+export function totalDepositPerPelanggan(depositList) {
+  const map = {};
+  (depositList || []).forEach((d) => {
+    map[d.pelanggan_id] = (map[d.pelanggan_id] || 0) + (Number(d.jumlah) || 0);
+  });
+  Object.keys(map).forEach((id) => {
+    if (map[id] <= 0.0001) delete map[id];
+  });
+  return map;
+}
+
 // =========================================================
 // GROSIR — LAPORAN HARIAN / BULANAN / TAHUNAN
 // Pola sama seperti helper Laporan Keuangan di bawah: dihitung dinamis dari
