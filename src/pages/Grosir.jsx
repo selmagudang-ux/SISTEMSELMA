@@ -95,16 +95,16 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
         <StatCard
           label="Pelanggan hutang ke saya (piutang)"
           value={fmtRp(totalPiutang)}
-          accent="text-red-400"
-          icon={Wallet}
-          iconColor="text-red-500"
-        />
-        <StatCard
-          label="Saya hutang ke pelanggan (deposit)"
-          value={fmtRp(totalDepositSaya)}
           accent="text-emerald-400"
           icon={Wallet}
           iconColor="text-emerald-500"
+        />
+        <StatCard
+          label="Saya hutang ke pelanggan (Hutang)"
+          value={fmtRp(totalDepositSaya)}
+          accent="text-red-400"
+          icon={Wallet}
+          iconColor="text-red-500"
         />
       </div>
 
@@ -171,8 +171,8 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
                 </div>
                 {(hutangMap[p.id] > 0 || depositMap[p.id] > 0) && (
                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                    {hutangMap[p.id] > 0 && <Badge color="red">Hutang ke saya {fmtRp(hutangMap[p.id])}</Badge>}
-                    {depositMap[p.id] > 0 && <Badge color="emerald">Saya hutang (deposit) {fmtRp(depositMap[p.id])}</Badge>}
+                    {hutangMap[p.id] > 0 && <Badge color="emerald">Hutang ke saya {fmtRp(hutangMap[p.id])}</Badge>}
+                    {depositMap[p.id] > 0 && <Badge color="red">Saya hutang (Hutang) {fmtRp(depositMap[p.id])}</Badge>}
                   </div>
                 )}
               </div>
