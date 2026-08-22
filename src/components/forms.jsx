@@ -173,18 +173,31 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
 // SEBELUM barangnya fisik tiba. Beda dari BarangMasukForm: di sini belum ada
 // SKU, belum ada barang fisik, cuma janji jumlah yang dipesan. Barunya nanti
 // dikonversi jadi Barang Masuk sedikit demi sedikit lewat KonfirmasiDatangForm.
+// Satu baris model dalam pesanan (dipakai berulang di PesananMasukForm) —
+// tiap model punya nama & jumlah pcs-nya sendiri, tidak digabung jadi satu
+// angka besar.
+function barisModel() {
+  return { nama: "", jumlah: 1 };
+}
+
 export function PesananMasukForm({ onClose, onSubmit, saving }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggalPesan, setTanggalPesan] = useState(today);
   const [supplier, setSupplier] = useState("");
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
-  const [jumlahModel, setJumlahModel] = useState(1);
-  const [jumlahPesan, setJumlahPesan] = useState(1);
+  const [models, setModels] = useState([barisModel()]);
   const [catatan, setCatatan] = useState("");
 
+  const updateModel = (idx, patch) =>
+    setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const tambahModel = () => setModels((rows) => [...rows, barisModel()]);
+  const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
+
+  const totalQty = models.reduce((sum, m) => sum + (Number(m.jumlah) || 0), 0);
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
-  const valid = jumlahModel >= 1 && jumlahPesan >= 1 && (jenis !== "Lainnya" || jenisLainnya.trim());
+  const valid =
+    models.length > 0 && models.every((m) => m.jumlah >= 1) && (jenis !== "Lainnya" || jenisLainnya.trim());
 
   return (
     <ModalShell title="Tambah Pesanan (Barang Datang)" onClose={onClose}>
@@ -216,26 +229,49 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
           />
         </Field>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Jumlah Model">
-          <input
-            type="number"
-            min="1"
-            className={inputClass}
-            value={jumlahModel}
-            onChange={(e) => setJumlahModel(Number(e.target.value))}
-          />
-        </Field>
-        <Field label="Jumlah Qty (pcs)">
-          <input
-            type="number"
-            min="1"
-            className={inputClass}
-            value={jumlahPesan}
-            onChange={(e) => setJumlahPesan(Number(e.target.value))}
-          />
-        </Field>
+
+      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model yang Dipesan</p>
+      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 mb-1">
+        {models.map((m, idx) => (
+          <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
+            <div className="flex-1 space-y-2">
+              <input
+                className={inputClass}
+                value={m.nama}
+                onChange={(e) => updateModel(idx, { nama: e.target.value })}
+                placeholder={`Nama/ciri model ${idx + 1} (opsional)`}
+              />
+              <input
+                type="number"
+                min="1"
+                className={inputClass}
+                value={m.jumlah}
+                onChange={(e) => updateModel(idx, { jumlah: Number(e.target.value) })}
+                placeholder="Jumlah pcs"
+              />
+            </div>
+            {models.length > 1 && (
+              <button
+                onClick={() => hapusModel(idx)}
+                className="text-slate-500 hover:text-red-400 mt-1"
+                title="Hapus model ini"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        ))}
       </div>
+      <button
+        onClick={tambahModel}
+        className="w-full mb-3 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
+      >
+        <Plus size={14} /> Tambah Model
+      </button>
+      <p className="text-[11px] text-slate-500 -mt-2 mb-3">
+        Total: {models.length} model / {totalQty}x pcs
+      </p>
+
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
@@ -251,8 +287,12 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
             tanggal_pesan: tanggalPesan,
             supplier: supplier.trim() || null,
             jenis: jenisFinal || null,
-            jumlah_model: jumlahModel,
-            jumlah_pesan: jumlahPesan,
+            jumlah_pesan: totalQty,
+            detail_model: models.map((m) => ({
+              nama: m.nama.trim() || null,
+              jumlah: m.jumlah,
+              diterima: 0,
+            })),
             catatan: catatan.trim() || null,
           })
         }
@@ -265,74 +305,72 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
 }
 
 // Form "Konfirmasi Datang" — dipanggil per pesanan aktif (menunggu/sebagian).
-// Default jumlah = sisa yang belum datang (kasus paling umum: datang
-// sekaligus), tapi bisa diubah lebih kecil kalau kirimannya bertahap/parsial.
-// Kalau diisi lebih besar dari sisa (supplier kirim lebih dari pesanan),
-// tidak diblokir — cukup diberi peringatan, karena di lapangan hal ini wajar
-// terjadi dan tetap harus bisa dicatat.
-export function KonfirmasiDatangForm({ pesanan, sisa, sisaModel, onClose, onSubmit, saving }) {
+// Setiap MODEL di dalam pesanan diisi/dikonfirmasi terpisah (bukan angka
+// gabungan) — default "datang sekarang" per model = sisa model itu (kasus
+// paling umum: datang sekaligus), tapi bisa diubah lebih kecil kalau
+// kirimannya bertahap/parsial per model. Kalau diisi lebih besar dari sisa
+// (supplier kirim lebih dari pesanan), tidak diblokir — cukup diberi
+// peringatan, karena di lapangan hal ini wajar terjadi dan tetap harus bisa
+// dicatat.
+export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onSubmit, saving }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
-  const [jumlahModel, setJumlahModel] = useState(sisaModel);
-  const [jumlah, setJumlah] = useState(sisa);
+  const [datang, setDatang] = useState(
+    detailModel.map((m) => Math.max(0, (m.jumlah || 0) - (m.diterima || 0)))
+  );
 
-  const lebihDariSisa = jumlah > sisa;
-  const modelLebihDariSisa = jumlahModel > sisaModel;
-  const valid = jumlah >= 1 && jumlahModel >= 1;
+  const updateDatang = (idx, v) => setDatang((rows) => rows.map((r, i) => (i === idx ? v : r)));
+
+  const totalDatang = datang.reduce((sum, v) => sum + (Number(v) || 0), 0);
+  const modelDatang = datang.filter((v) => Number(v) > 0).length;
+  const adaLebihDariSisa = detailModel.some((m, idx) => {
+    const sisa = Math.max(0, (m.jumlah || 0) - (m.diterima || 0));
+    return (Number(datang[idx]) || 0) > sisa;
+  });
+  const valid = totalDatang >= 1;
 
   return (
     <ModalShell title="Konfirmasi Barang Datang" onClose={onClose}>
-      <div className="rounded-lg border border-slate-800 px-3 py-2.5 mb-3 text-xs text-slate-400">
-        <div className="flex justify-between mb-1">
-          <span>Dipesan</span>
-          <span className="text-slate-200">
-            {pesanan.jumlah_model} model / {pesanan.jumlah_pesan}x
-          </span>
-        </div>
-        <div className="flex justify-between mb-1">
-          <span>Sudah datang</span>
-          <span className="text-slate-200">
-            {pesanan.jumlah_model_diterima || 0} model / {pesanan.jumlah_diterima || 0}x
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span>Sisa</span>
-          <span className="text-amber-400 font-semibold">
-            {sisaModel} model / {sisa}x
-          </span>
-        </div>
-      </div>
-
       <Field label="Tanggal Datang">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Jumlah Model Datang">
-          <input
-            type="number"
-            min="1"
-            className={inputClass}
-            value={jumlahModel}
-            onChange={(e) => setJumlahModel(Number(e.target.value))}
-          />
-        </Field>
-        <Field label="Jumlah Qty Datang">
-          <input
-            type="number"
-            min="1"
-            className={inputClass}
-            value={jumlah}
-            onChange={(e) => setJumlah(Number(e.target.value))}
-          />
-        </Field>
+
+      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Datang Sekarang per Model</p>
+      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 mb-2">
+        {detailModel.map((m, idx) => {
+          const sisa = Math.max(0, (m.jumlah || 0) - (m.diterima || 0));
+          const lebih = (Number(datang[idx]) || 0) > sisa;
+          return (
+            <div key={idx} className="rounded-lg border border-slate-800 px-3 py-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-slate-200 font-medium">{m.nama || `Model ${idx + 1}`}</span>
+                <span className="text-[11px] text-slate-500">
+                  {m.diterima || 0}/{m.jumlah}x{" "}
+                  <span className={sisa > 0 ? "text-amber-400" : "text-emerald-400"}>
+                    (sisa {sisa}x)
+                  </span>
+                </span>
+              </div>
+              <input
+                type="number"
+                min="0"
+                className={inputClass}
+                value={datang[idx]}
+                onChange={(e) => updateDatang(idx, Number(e.target.value))}
+              />
+              {lebih && (
+                <p className="text-[11px] text-amber-400 mt-1">
+                  Lebih besar dari sisa model ini ({sisa}x) — tetap bisa disimpan.
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
-      {(modelLebihDariSisa || lebihDariSisa) && (
-        <p className="text-[11px] text-amber-400 -mt-2 mb-3">
-          {modelLebihDariSisa && `Jumlah model ini lebih besar dari sisa model pesanan (${sisaModel} model). `}
-          {lebihDariSisa && `Jumlah qty ini lebih besar dari sisa qty pesanan (${sisa}x). `}
-          Tetap bisa disimpan kalau memang supplier mengirim lebih dari yang dipesan.
-        </p>
-      )}
+      <p className="text-[11px] text-slate-500 mb-3">
+        Total datang sekarang: {modelDatang} model / {totalDatang}x pcs
+      </p>
+
       <p className="text-[11px] text-slate-500 mb-3">
         Barang sejumlah ini akan langsung tercatat sebagai Barang Masuk dan lanjut ke alur pembuatan SKU seperti
         biasa. Kalau kirimannya belum genap, pesanan ini tetap muncul di daftar aktif untuk dikonfirmasi lagi
@@ -340,7 +378,16 @@ export function KonfirmasiDatangForm({ pesanan, sisa, sisaModel, onClose, onSubm
       </p>
       <button
         disabled={saving || !valid}
-        onClick={() => onSubmit({ tanggal, jumlah, jumlahModel })}
+        onClick={() =>
+          onSubmit({
+            tanggal,
+            jumlah: totalDatang,
+            detailModel: detailModel.map((m, idx) => ({
+              ...m,
+              diterima: (m.diterima || 0) + (Number(datang[idx]) || 0),
+            })),
+          })
+        }
         className="w-full mt-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Konfirmasi Datang"}

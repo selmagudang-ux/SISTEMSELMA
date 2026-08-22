@@ -360,6 +360,14 @@ export function statusPesananMasuk(p) {
   return "selesai";
 }
 
+// Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, diterima }].
+// Pesanan lama (sebelum fitur rincian per-model) belum punya detail_model,
+// jadi di-fallback jadi satu baris tanpa nama supaya UI tetap jalan.
+export function detailModelPesanan(p) {
+  if (Array.isArray(p.detail_model) && p.detail_model.length > 0) return p.detail_model;
+  return [{ nama: null, jumlah: p.jumlah_pesan || 0, diterima: p.jumlah_diterima || 0 }];
+}
+
 export function hitungStatusBayar(total, totalDibayar) {
   if (totalDibayar <= 0.0001) return "Belum Bayar";
   if (totalDibayar >= total - 0.0001) return "Lunas";

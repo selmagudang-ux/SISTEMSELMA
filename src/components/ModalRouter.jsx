@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../li
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
-  statusPesananMasuk,
+  statusPesananMasuk, detailModelPesanan,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
@@ -1784,7 +1784,7 @@ export default function ModalRouter({
           run(async () => {
             await sb("pesanan_masuk", {
               method: "POST",
-              body: JSON.stringify({ ...vals, jumlah_diterima: 0, jumlah_model_diterima: 0, dibatalkan: false }),
+              body: JSON.stringify({ ...vals, jumlah_diterima: 0, dibatalkan: false }),
             });
           }, "Pesanan dicatat")
         }
@@ -1794,16 +1794,13 @@ export default function ModalRouter({
 
   if (modal.type === "konfirmasi-datang") {
     const p = modal.item;
-    const sisa = p.jumlah_pesan - (p.jumlah_diterima || 0);
-    const sisaModel = p.jumlah_model - (p.jumlah_model_diterima || 0);
     return (
       <KonfirmasiDatangForm
         pesanan={p}
-        sisa={sisa}
-        sisaModel={sisaModel}
+        detailModel={detailModelPesanan(p)}
         onClose={close}
         saving={saving}
-        onSubmit={({ tanggal, jumlah, jumlahModel }) =>
+        onSubmit={({ tanggal, jumlah, detailModel }) =>
           run(async () => {
             // 1) Barang yang datang langsung jadi baris Barang Masuk baru,
             //    masuk alur SKU seperti biasa (stage "sku") — titik sambung
@@ -1814,28 +1811,27 @@ export default function ModalRouter({
             });
             // 2) Catat riwayat penerimaan ini (supaya kalau datangnya
             //    bertahap, tiap tahap kedatangan tetap terlacak per baris
-            //    Barang Masuk yang dihasilkannya).
+            //    Barang Masuk yang dihasilkannya) — termasuk rincian
+            //    per-model yang datang di tahap ini.
             await sb("pesanan_penerimaan", {
               method: "POST",
               body: JSON.stringify({
                 pesanan_id: p.id,
                 tanggal,
                 jumlah,
-                jumlah_model: jumlahModel,
                 item_id: itemBaru?.id || null,
               }),
             });
-            // 3) Update akumulasi jumlah_diterima & jumlah_model_diterima di
-            //    pesanan induknya — status (menunggu/sebagian/selesai) tetap
-            //    diturunkan dari qty di statusPesananMasuk(), tidak disimpan
-            //    manual; jumlah_model_diterima cuma info tambahan.
+            // 3) Update akumulasi jumlah_diterima & detail_model (rincian
+            //    per-model) di pesanan induknya — status
+            //    (menunggu/sebagian/selesai) tetap diturunkan dari total qty
+            //    di statusPesananMasuk(), tidak disimpan manual.
             const jumlahDiterimaBaru = (p.jumlah_diterima || 0) + jumlah;
-            const jumlahModelDiterimaBaru = (p.jumlah_model_diterima || 0) + jumlahModel;
             await sb(`pesanan_masuk?id=eq.${p.id}`, {
               method: "PATCH",
               body: JSON.stringify({
                 jumlah_diterima: jumlahDiterimaBaru,
-                jumlah_model_diterima: jumlahModelDiterimaBaru,
+                detail_model: detailModel,
               }),
             });
           }, "Barang datang dikonfirmasi — lanjut ke alur SKU")
@@ -1847,18 +1843,18 @@ export default function ModalRouter({
   if (modal.type === "batalkan-pesanan") {
     const p = modal.item;
     const sudahDatang = (p.jumlah_diterima || 0) > 0;
+    const jumlahModel = detailModelPesanan(p).length;
     return (
       <ModalShell title="Batalkan Pesanan" onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div>
-            Pesanan {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} ({p.jumlah_model} model
+            Pesanan {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} ({jumlahModel} model
             / {p.jumlah_pesan}x) akan ditandai batal dan hilang dari daftar aktif.
             {sudahDatang && (
               <div className="mt-1.5 text-red-200/90">
-                Barang yang sudah sempat dikonfirmasi datang ({p.jumlah_model_diterima || 0} model /{" "}
-                {p.jumlah_diterima}x, sudah tercatat sebagai Barang Masuk) TIDAK akan dihapus — hanya sisa pesanan
-                yang belum datang yang dibatalkan.
+                Barang yang sudah sempat dikonfirmasi datang ({p.jumlah_diterima}x, sudah tercatat sebagai Barang
+                Masuk) TIDAK akan dihapus — hanya sisa pesanan yang belum datang yang dibatalkan.
               </div>
             )}
           </div>
