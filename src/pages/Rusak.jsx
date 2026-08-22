@@ -24,9 +24,16 @@ export default function Rusak({ barangRusak, setModal }) {
         { key: "tanggal", label: "Tanggal" },
         { key: "sku", label: "SKU" },
         { key: "qty", label: "Qty Rusak" },
+        { key: "kode_bon", label: "Dari Bon" },
         { key: "catatan", label: "Catatan" },
       ],
-      list.map((r) => ({ tanggal: fmtTgl(r.created_at), sku: r.sku, qty: r.qty, catatan: r.catatan || "" }))
+      list.map((r) => ({
+        tanggal: fmtTgl(r.created_at),
+        sku: r.sku,
+        qty: r.qty,
+        kode_bon: r.kode_bon || "",
+        catatan: r.catatan || "",
+      }))
     );
   };
 
@@ -64,12 +71,13 @@ export default function Rusak({ barangRusak, setModal }) {
             <AlertTriangle size={13} /> Total {totalQty}x rusak dari {list.length} catatan
           </div>
           <div className="rounded-xl border border-slate-800 overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
+            <table className="w-full text-sm min-w-[760px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                   <th className="px-4 py-2.5">Tanggal</th>
                   <th className="px-4 py-2.5">SKU</th>
                   <th className="px-4 py-2.5">Qty Rusak</th>
+                  <th className="px-4 py-2.5">Dari Bon</th>
                   <th className="px-4 py-2.5">Catatan</th>
                   <th className="px-4 py-2.5"></th>
                 </tr>
@@ -80,6 +88,7 @@ export default function Rusak({ barangRusak, setModal }) {
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-400 text-xs">{fmtTgl(r.created_at)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{r.sku}</td>
                     <td className="px-4 py-2.5 text-red-400 font-semibold">{r.qty}x</td>
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-amber-400">{r.kode_bon || "—"}</td>
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{r.catatan || "—"}</td>
                     <td className="px-4 py-2.5 text-right">
                       <button

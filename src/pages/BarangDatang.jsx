@@ -24,7 +24,7 @@ function ringkasNamaModel(detail) {
   return joined.length > 42 ? joined.slice(0, 42) + "…" : joined;
 }
 
-function DetailModelPanel({ detail, colSpan, fotoBonUrl, onLihatFoto }) {
+function DetailModelPanel({ detail, colSpan, kodeBon, fotoBonUrl, onLihatFoto }) {
   return (
     <tr>
       <td colSpan={colSpan} className="bg-slate-900/50 px-4 py-3">
@@ -61,7 +61,9 @@ function DetailModelPanel({ detail, colSpan, fotoBonUrl, onLihatFoto }) {
           </table>
 
           <div className="shrink-0 w-32">
-            <div className="text-[10px] uppercase text-slate-500 mb-1.5">Foto Bon</div>
+            <div className="text-[10px] uppercase text-slate-500 mb-1.5">
+              Foto Bon <span className="normal-case text-amber-400 font-mono">{kodeBon || ""}</span>
+            </div>
             {fotoBonUrl ? (
               <button
                 onClick={() => onLihatFoto(fotoBonUrl)}
@@ -139,10 +141,11 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Belum ada barang datang yang dicatat." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[1060px]">
+          <table className="w-full text-sm min-w-[1150px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5"></th>
+                <th className="px-4 py-2.5">Kode Bon</th>
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">Supplier</th>
                 <th className="px-4 py-2.5">Jenis</th>
@@ -171,6 +174,9 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                         >
                           {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </button>
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className="font-mono text-[11px] text-amber-400">{p.kode_bon || "—"}</span>
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{formatTanggalID(p.tanggal_pesan)}</td>
                       <td className="px-4 py-2.5 text-slate-300">{p.supplier || "—"}</td>
@@ -223,7 +229,8 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                       <DetailModelPanel
                         key={`${p.id}-detail`}
                         detail={detail}
-                        colSpan={10}
+                        colSpan={11}
+                        kodeBon={p.kode_bon}
                         fotoBonUrl={p.foto_bon_url}
                         onLihatFoto={setFotoLightbox}
                       />

@@ -349,7 +349,7 @@ function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, keuanganTransaksi, saving, setSaving, reload, showToast, session,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, pesananMasuk, keuanganTransaksi, saving, setSaving, reload, showToast, session,
   quickAdvance,
   pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
@@ -1813,6 +1813,12 @@ export default function ModalRouter({
             //    jumlah_pesan/jumlah_diterima tetap dihitung dari qty datang
             //    (baik) saja — sama seperti kolom "Qty Datang" di halaman
             //    Riwayat Barang Datang, qty rusak tetap ditampilkan terpisah.
+            // Kode bon otomatis (BON-0001, BON-0002, ...) — dipakai untuk
+            // cocokkan riwayat di sistem dengan bon fisik dari supplier, dan
+            // ikut ditempel ke tiap item hasil transaksi ini supaya kalau ada
+            // yang rusak, menu "Rusak" bisa tahu itu dari bon yang mana.
+            const kodeBon = nextKode(pesananMasuk, "kode_bon", "BON-");
+
             const [pesanan] = await sb("pesanan_masuk", {
               method: "POST",
               body: JSON.stringify({
@@ -1824,6 +1830,7 @@ export default function ModalRouter({
                 dibatalkan: false,
                 catatan,
                 foto_bon_url: fotoBonUrl,
+                kode_bon: kodeBon,
                 detail_model: models.map((m) => ({
                   nama: m.nama,
                   jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
@@ -1852,6 +1859,7 @@ export default function ModalRouter({
                   alasan_rusak: m.alasanRusak || null,
                   harga: m.harga || null,
                   stage: "sku",
+                  kode_bon: kodeBon,
                 }),
               });
               await sb("pesanan_penerimaan", {
@@ -1995,6 +2003,7 @@ export default function ModalRouter({
                   tanggal: new Date().toISOString().slice(0, 10),
                   catatan: modal.item.alasan_rusak || null,
                   item_id: modal.item.id,
+                  kode_bon: modal.item.kode_bon || null,
                 }),
               });
             }
@@ -2086,6 +2095,7 @@ export default function ModalRouter({
                   tanggal: new Date().toISOString().slice(0, 10),
                   catatan: modal.item.alasan_rusak || null,
                   item_id: modal.item.id,
+                  kode_bon: modal.item.kode_bon || null,
                 }),
               });
             }
