@@ -1823,6 +1823,7 @@ export default function ModalRouter({
                 jumlah_diterima: totalDatang,
                 dibatalkan: false,
                 catatan,
+                foto_bon_url: fotoBonUrl,
                 detail_model: models.map((m) => ({
                   nama: m.nama,
                   jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle, Receipt, X } from "lucide-react";
 import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
 import { detailModelPesanan, fmtRp } from "../lib/api";
 
@@ -24,47 +24,91 @@ function ringkasNamaModel(detail) {
   return joined.length > 42 ? joined.slice(0, 42) + "…" : joined;
 }
 
-function DetailModelPanel({ detail, colSpan }) {
+function DetailModelPanel({ detail, colSpan, fotoBonUrl, onLihatFoto }) {
   return (
     <tr>
       <td colSpan={colSpan} className="bg-slate-900/50 px-4 py-3">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-left text-[10px] uppercase text-slate-500">
-              <th className="pb-1.5 pr-4">Model</th>
-              <th className="pb-1.5 pr-4">Qty Datang</th>
-              <th className="pb-1.5 pr-4">Qty Rusak</th>
-              <th className="pb-1.5 pr-4">Harga/pcs</th>
-              <th className="pb-1.5">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.map((m, idx) => (
-              <tr key={idx} className="border-t border-slate-800/60">
-                <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
-                <td className="py-1.5 pr-4 text-emerald-400">{m.jumlah}x</td>
-                <td className="py-1.5 pr-4">
-                  {Number(m.rusak) > 0 ? (
-                    <span className="text-red-400" title={m.alasan_rusak || ""}>
-                      {m.rusak}x{m.alasan_rusak ? ` — ${m.alasan_rusak}` : ""}
-                    </span>
-                  ) : (
-                    <span className="text-slate-600">—</span>
-                  )}
-                </td>
-                <td className="py-1.5 pr-4 text-slate-400">{m.harga ? fmtRp(m.harga) : "—"}</td>
-                <td className="py-1.5 text-slate-300">{m.harga ? fmtRp(nilaiModel(m)) : "—"}</td>
+        <div className="flex gap-4 items-start">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-slate-500">
+                <th className="pb-1.5 pr-4">Model</th>
+                <th className="pb-1.5 pr-4">Qty Datang</th>
+                <th className="pb-1.5 pr-4">Qty Rusak</th>
+                <th className="pb-1.5 pr-4">Harga/pcs</th>
+                <th className="pb-1.5">Subtotal</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {detail.map((m, idx) => (
+                <tr key={idx} className="border-t border-slate-800/60">
+                  <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
+                  <td className="py-1.5 pr-4 text-emerald-400">{m.jumlah}x</td>
+                  <td className="py-1.5 pr-4">
+                    {Number(m.rusak) > 0 ? (
+                      <span className="text-red-400" title={m.alasan_rusak || ""}>
+                        {m.rusak}x{m.alasan_rusak ? ` — ${m.alasan_rusak}` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-4 text-slate-400">{m.harga ? fmtRp(m.harga) : "—"}</td>
+                  <td className="py-1.5 text-slate-300">{m.harga ? fmtRp(nilaiModel(m)) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="shrink-0 w-32">
+            <div className="text-[10px] uppercase text-slate-500 mb-1.5">Foto Bon</div>
+            {fotoBonUrl ? (
+              <button
+                onClick={() => onLihatFoto(fotoBonUrl)}
+                className="block w-32 h-32 rounded-lg overflow-hidden border border-slate-700 hover:border-amber-500"
+                title="Lihat foto bon ukuran penuh"
+              >
+                <img src={fotoBonUrl} alt="Foto bon barang datang" className="w-full h-full object-cover" />
+              </button>
+            ) : (
+              <div className="w-32 h-32 rounded-lg border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
+                <Receipt size={20} />
+              </div>
+            )}
+          </div>
+        </div>
       </td>
     </tr>
   );
 }
 
+function FotoBonLightbox({ url, onClose }) {
+  if (!url) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+      onClick={onClose}
+    >
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-slate-300 hover:text-white bg-slate-900/80 rounded-full p-1.5"
+        title="Tutup"
+      >
+        <X size={18} />
+      </button>
+      <img
+        src={url}
+        alt="Foto bon barang datang"
+        className="max-w-full max-h-full rounded-lg border border-slate-700"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 export default function BarangDatang({ pesananMasuk, setModal }) {
   const [expanded, setExpanded] = useState(() => new Set());
+  const [fotoLightbox, setFotoLightbox] = useState(null);
   const toggle = (id) =>
     setExpanded((s) => {
       const next = new Set(s);
@@ -95,13 +139,14 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Belum ada barang datang yang dicatat." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[980px]">
+          <table className="w-full text-sm min-w-[1060px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5"></th>
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">Supplier</th>
                 <th className="px-4 py-2.5">Jenis</th>
+                <th className="px-4 py-2.5">Bon</th>
                 <th className="px-4 py-2.5">Model</th>
                 <th className="px-4 py-2.5">Qty Datang</th>
                 <th className="px-4 py-2.5">Qty Rusak</th>
@@ -132,6 +177,21 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                       <td className="px-4 py-2.5">
                         <Badge color={jenisColor(p.jenis)}>{p.jenis || "—"}</Badge>
                       </td>
+                      <td className="px-4 py-2.5">
+                        {p.foto_bon_url ? (
+                          <button
+                            onClick={() => setFotoLightbox(p.foto_bon_url)}
+                            className="block w-9 h-9 rounded-md overflow-hidden border border-slate-800 hover:border-amber-500"
+                            title="Lihat foto bon"
+                          >
+                            <img src={p.foto_bon_url} alt="Foto bon" className="w-full h-full object-cover" />
+                          </button>
+                        ) : (
+                          <span className="text-slate-700" title="Tidak ada foto bon">
+                            <Receipt size={16} />
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-slate-400">
                         <button onClick={() => toggle(p.id)} className="text-left hover:text-slate-200">
                           {detail.length} model
@@ -159,7 +219,15 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                         </button>
                       </td>
                     </tr>
-                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={9} />}
+                    {isOpen && (
+                      <DetailModelPanel
+                        key={`${p.id}-detail`}
+                        detail={detail}
+                        colSpan={10}
+                        fotoBonUrl={p.foto_bon_url}
+                        onLihatFoto={setFotoLightbox}
+                      />
+                    )}
                   </>
                 );
               })}
@@ -167,6 +235,8 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
           </table>
         </div>
       )}
+
+      <FotoBonLightbox url={fotoLightbox} onClose={() => setFotoLightbox(null)} />
     </div>
   );
 }
