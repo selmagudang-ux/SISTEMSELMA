@@ -1477,6 +1477,11 @@ export default function ModalRouter({
   if (modal.type === "detail-sku") {
     const s = modal.item;
     const kodeRak = rakForSku(s.sku, penempatan);
+    // Foto disimpan per-barang (items.foto_url), bukan di sku_master — jadi
+    // ambil dari barang dengan SKU ini yang paling baru diberi foto (kalau ada).
+    const fotoItem = (items || [])
+      .filter((i) => i.sku === s.sku && i.foto_url)
+      .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
     const rows = [
       ["Bahan", labelFor(master, "bahan", s.bahan)],
       ["Peruntukan", labelFor(master, "peruntukan", s.peruntukan)],
@@ -1489,6 +1494,14 @@ export default function ModalRouter({
     ];
     return (
       <ModalShell title={`Detail SKU — ${s.sku}`} onClose={close}>
+        {fotoItem?.foto_url && (
+          <img
+            src={fotoItem.foto_url}
+            alt={s.sku}
+            onClick={() => setModal({ type: "lihat-foto", item: fotoItem })}
+            className="w-full max-h-56 object-contain rounded-lg border border-slate-800 bg-slate-950 mb-3 cursor-zoom-in hover:opacity-90"
+          />
+        )}
         <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex items-center justify-between">
           <div>
             <div className="text-[11px] text-slate-500">SKU</div>

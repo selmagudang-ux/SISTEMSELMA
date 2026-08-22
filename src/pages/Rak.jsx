@@ -556,17 +556,21 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
                               const bentrokId = gandaLookup.get(`${sku}|${r.code}`);
                               const bentrok = !!bentrokId;
                               const idUntukPindah = bentrokId || penempatanId;
+                              const skuObj = (skuMaster || []).find((x) => x.sku === sku);
                               return (
                                 <div key={sku} className="group/item flex flex-col gap-0.5">
                                   <div className="flex items-start justify-between gap-1.5">
-                                    <span
-                                      className={`font-mono text-[10px] break-all flex items-center gap-1 ${
+                                    <button
+                                      type="button"
+                                      onClick={() => skuObj && setModal({ type: "detail-sku", item: skuObj })}
+                                      title="Lihat detail SKU"
+                                      className={`font-mono text-[10px] break-all flex items-center gap-1 text-left hover:underline ${
                                         bentrok ? "text-amber-300" : "text-slate-300"
                                       }`}
                                     >
                                       {bentrok && <AlertTriangle size={10} className="flex-shrink-0" />}
                                       {sku}
-                                    </span>
+                                    </button>
                                     <div className="flex items-center gap-1 shrink-0">
                                       <span className="text-[10px] text-slate-500 font-medium">{stok}x</span>
                                       {idUntukPindah && (
