@@ -5,8 +5,9 @@ import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganD
 import { rakForSku } from "../pages/Rak";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
-// tetap fleksibel untuk kasus di luar Pembelian & Retur.
-const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
+// tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya
+// dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
+export const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
 
 // Satu baris input barang masuk (dipakai berulang saat mode banyak-sekaligus).
 function baris(tanggal) {
@@ -163,6 +164,153 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Form "Tambah Pesanan" (Barang Datang) — catat PO/pesanan ke supplier
+// SEBELUM barangnya fisik tiba. Beda dari BarangMasukForm: di sini belum ada
+// SKU, belum ada barang fisik, cuma janji jumlah yang dipesan. Barunya nanti
+// dikonversi jadi Barang Masuk sedikit demi sedikit lewat KonfirmasiDatangForm.
+export function PesananMasukForm({ onClose, onSubmit, saving }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [tanggalPesan, setTanggalPesan] = useState(today);
+  const [supplier, setSupplier] = useState("");
+  const [jenis, setJenis] = useState("Pembelian");
+  const [jenisLainnya, setJenisLainnya] = useState("");
+  const [jumlahPesan, setJumlahPesan] = useState(1);
+  const [catatan, setCatatan] = useState("");
+
+  const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
+  const valid = jumlahPesan >= 1 && (jenis !== "Lainnya" || jenisLainnya.trim());
+
+  return (
+    <ModalShell title="Tambah Pesanan (Barang Datang)" onClose={onClose}>
+      <Field label="Tanggal Pesan">
+        <InputTanggal value={tanggalPesan} onChange={setTanggalPesan} />
+      </Field>
+      <Field label="Supplier (opsional)">
+        <input
+          className={inputClass}
+          value={supplier}
+          onChange={(e) => setSupplier(e.target.value)}
+          placeholder="Nama supplier/toko"
+        />
+      </Field>
+      <Field label="Jenis">
+        <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
+          {JENIS_BARANG_MASUK.map((j) => (
+            <option key={j} value={j}>{j}</option>
+          ))}
+        </select>
+      </Field>
+      {jenis === "Lainnya" && (
+        <Field label="Keterangan">
+          <input
+            className={inputClass}
+            value={jenisLainnya}
+            onChange={(e) => setJenisLainnya(e.target.value)}
+            placeholder="Contoh: Konsinyasi, Hadiah, dll"
+          />
+        </Field>
+      )}
+      <Field label="Jumlah Dipesan">
+        <input
+          type="number"
+          min="1"
+          className={inputClass}
+          value={jumlahPesan}
+          onChange={(e) => setJumlahPesan(Number(e.target.value))}
+        />
+      </Field>
+      <Field label="Catatan (opsional)">
+        <input
+          className={inputClass}
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          placeholder="Contoh: no. PO, estimasi tiba, dll"
+        />
+      </Field>
+      <button
+        disabled={saving || !valid}
+        onClick={() =>
+          onSubmit({
+            tanggal_pesan: tanggalPesan,
+            supplier: supplier.trim() || null,
+            jenis: jenisFinal || null,
+            jumlah_pesan: jumlahPesan,
+            catatan: catatan.trim() || null,
+          })
+        }
+        className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Pesanan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Form "Konfirmasi Datang" — dipanggil per pesanan aktif (menunggu/sebagian).
+// Default jumlah = sisa yang belum datang (kasus paling umum: datang
+// sekaligus), tapi bisa diubah lebih kecil kalau kirimannya bertahap/parsial.
+// Kalau diisi lebih besar dari sisa (supplier kirim lebih dari pesanan),
+// tidak diblokir — cukup diberi peringatan, karena di lapangan hal ini wajar
+// terjadi dan tetap harus bisa dicatat.
+export function KonfirmasiDatangForm({ pesanan, sisa, onClose, onSubmit, saving }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [tanggal, setTanggal] = useState(today);
+  const [jumlah, setJumlah] = useState(sisa);
+
+  const lebihDariSisa = jumlah > sisa;
+  const valid = jumlah >= 1;
+
+  return (
+    <ModalShell title="Konfirmasi Barang Datang" onClose={onClose}>
+      <div className="rounded-lg border border-slate-800 px-3 py-2.5 mb-3 text-xs text-slate-400">
+        <div className="flex justify-between mb-1">
+          <span>Dipesan</span>
+          <span className="text-slate-200">{pesanan.jumlah_pesan}x</span>
+        </div>
+        <div className="flex justify-between mb-1">
+          <span>Sudah datang</span>
+          <span className="text-slate-200">{pesanan.jumlah_diterima || 0}x</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Sisa</span>
+          <span className="text-amber-400 font-semibold">{sisa}x</span>
+        </div>
+      </div>
+
+      <Field label="Tanggal Datang">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+      <Field label="Jumlah Datang Sekarang">
+        <input
+          type="number"
+          min="1"
+          className={inputClass}
+          value={jumlah}
+          onChange={(e) => setJumlah(Number(e.target.value))}
+        />
+      </Field>
+      {lebihDariSisa && (
+        <p className="text-[11px] text-amber-400 -mt-2 mb-3">
+          Jumlah ini lebih besar dari sisa pesanan ({sisa}x) — tetap bisa disimpan kalau memang supplier
+          mengirim lebih dari yang dipesan.
+        </p>
+      )}
+      <p className="text-[11px] text-slate-500 mb-3">
+        Barang sejumlah ini akan langsung tercatat sebagai Barang Masuk dan lanjut ke alur pembuatan SKU seperti
+        biasa. Kalau kirimannya belum genap, pesanan ini tetap muncul di daftar aktif untuk dikonfirmasi lagi
+        nanti.
+      </p>
+      <button
+        disabled={saving || !valid}
+        onClick={() => onSubmit({ tanggal, jumlah })}
+        className="w-full mt-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Konfirmasi Datang"}
       </button>
     </ModalShell>
   );

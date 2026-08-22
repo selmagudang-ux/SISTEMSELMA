@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
-  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock,
+  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
@@ -18,6 +18,20 @@ export const STAGE_META = {
 // dari Alur Barang, yang menampilkan barang dari SEMUA tahap ke gudang/owner/
 // superadmin sekaligus). Tahap "selesai" tidak ada di sini karena tidak ada
 // lagi tahap berikutnya untuk dilanjutkan.
+// Status "Pesanan Masuk" (Barang Datang — tahap SEBELUM Barang Masuk, dipakai
+// untuk PO/pesanan ke supplier yang belum tentu tiba sekaligus). Beda dari
+// STAGE_META di atas: ini bukan tahap alur barang fisik, tapi status pemesanan.
+// - menunggu: belum ada barang yang datang sama sekali.
+// - sebagian: sudah ada yang datang, tapi belum genap sesuai jumlah_pesan.
+// - selesai : jumlah_diterima sudah >= jumlah_pesan.
+// - batal   : pesanan dibatalkan, tidak akan ditagih lagi ke alur Barang Masuk.
+export const PO_STATUS_META = {
+  menunggu: { label: "Menunggu", color: "amber" },
+  sebagian: { label: "Sebagian Datang", color: "sky" },
+  selesai: { label: "Selesai", color: "emerald" },
+  batal: { label: "Dibatalkan", color: "slate" },
+};
+
 export const STAGE_ROLE = {
   sku: "gudang",
   rak: "gudang",
@@ -72,6 +86,7 @@ export const NAV = [
   {
     key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
     children: [
+      { key: "barang-datang", label: "Barang Datang", icon: Truck },
       { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
       {
         key: "sku-harga", label: "SKU & Harga", icon: Tag,
@@ -289,10 +304,10 @@ export const ROLES = [
 export const ROLE_MENUS = {
   superadmin: [...ALL_MENU_KEYS, "barang-masuk"],
   owner: [...ALL_MENU_KEYS.filter((k) => k !== "pengaturan"), "barang-masuk"],
-  // Gudang: hanya menu di dalam grup "ADMIN GUDANG" (Alur Barang, SKU & Harga,
-  // Stok, Rak, Cetak Label) beserta semua sub-nya — default penuh karena tidak
-  // didaftarkan di ROLE_SUBMENUS.
-  gudang: ["data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"],
+  // Gudang: hanya menu di dalam grup "ADMIN GUDANG" (Barang Datang, Alur Barang,
+  // SKU & Harga, Stok, Rak, Cetak Label) beserta semua sub-nya — default penuh
+  // karena tidak didaftarkan di ROLE_SUBMENUS.
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma

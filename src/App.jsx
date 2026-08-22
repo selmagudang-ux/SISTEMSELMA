@@ -9,6 +9,7 @@ import ModalRouter from "./components/ModalRouter";
 import Login from "./pages/Login";
 
 import Dashboard from "./pages/Dashboard";
+import BarangDatang from "./pages/BarangDatang";
 import BarangMasuk from "./pages/BarangMasuk";
 import DataBarang from "./pages/DataBarang";
 import SkuHarga from "./pages/SkuHarga";
@@ -79,6 +80,7 @@ function MainApp({ session, onLogout }) {
   const [toast, setToast] = useState(null);
 
   const [items, setItems] = useState([]);
+  const [pesananMasuk, setPesananMasuk] = useState([]);
   const [skuMaster, setSkuMaster] = useState([]);
   const [rak, setRak] = useState([]);
   const [master, setMaster] = useState({});
@@ -179,8 +181,9 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes] = await Promise.all([
+      const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
+        sbAll("pesanan_masuk?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
         sbAll("rak?select=*&order=code"),
         sbAll("master_data?select=*&order=label"),
@@ -201,6 +204,7 @@ function MainApp({ session, onLogout }) {
         listKaryawan(),
       ]);
       setItems(itemsRes || []);
+      setPesananMasuk(pesananMasukRes || []);
       setSkuMaster(skuRes || []);
       setRak(rakRes || []);
       const grouped = {};
@@ -277,7 +281,15 @@ function MainApp({ session, onLogout }) {
   const cekMarketplaceCount =
     notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
 
+  // Pesanan Barang Datang yang masih aktif (belum genap datang & belum
+  // dibatalkan) — dipakai sebagai badge notif di sidebar, sama pola dengan
+  // badge tahap-tahap lain.
+  const pesananAktifCount = pesananMasuk.filter(
+    (p) => !p.dibatalkan && (p.jumlah_diterima || 0) < p.jumlah_pesan
+  ).length;
+
   const sidebarBadges = withParentBadges(NAV, {
+    "barang-datang": pesananAktifCount,
     "sku-harga.buat": stageCounts.sku,
     "rak.tempatkan": tanpaRakCount,
     "rak.gudang": sisaGudangList.length,
@@ -426,6 +438,9 @@ function MainApp({ session, onLogout }) {
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
                 />
+              )}
+              {nav.menu === "barang-datang" && (
+                <BarangDatang pesananMasuk={pesananMasuk} setModal={setModal} />
               )}
               {nav.menu === "barang-masuk" && (
                 <BarangMasuk items={items} setModal={setModal} />

@@ -5,10 +5,12 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../li
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
+  statusPesananMasuk,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
+  PesananMasukForm, KonfirmasiDatangForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -1761,6 +1763,118 @@ export default function ModalRouter({
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >
             <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // Barang Datang — pesanan/PO ke supplier SEBELUM barang fisik tiba.
+  // Tabel terpisah dari "items" (pesanan_masuk + pesanan_penerimaan),
+  // baru menyentuh "items" (jadi Barang Masuk beneran) begitu dikonfirmasi
+  // datang. Lihat statusPesananMasuk() di lib/api.js untuk arti status.
+  // ------------------------------------------------------------------
+  if (modal.type === "pesanan-masuk") {
+    return (
+      <PesananMasukForm
+        onClose={close}
+        saving={saving}
+        onSubmit={(vals) =>
+          run(async () => {
+            await sb("pesanan_masuk", {
+              method: "POST",
+              body: JSON.stringify({ ...vals, jumlah_diterima: 0, dibatalkan: false }),
+            });
+          }, "Pesanan dicatat")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "konfirmasi-datang") {
+    const p = modal.item;
+    const sisa = p.jumlah_pesan - (p.jumlah_diterima || 0);
+    return (
+      <KonfirmasiDatangForm
+        pesanan={p}
+        sisa={sisa}
+        onClose={close}
+        saving={saving}
+        onSubmit={({ tanggal, jumlah }) =>
+          run(async () => {
+            // 1) Barang yang datang langsung jadi baris Barang Masuk baru,
+            //    masuk alur SKU seperti biasa (stage "sku") — titik sambung
+            //    ke pipeline yang sudah ada, tidak ada logika baru di situ.
+            const [itemBaru] = await sb("items", {
+              method: "POST",
+              body: JSON.stringify({ tanggal, gudang: p.jenis, jumlah, stage: "sku" }),
+            });
+            // 2) Catat riwayat penerimaan ini (supaya kalau datangnya
+            //    bertahap, tiap tahap kedatangan tetap terlacak per baris
+            //    Barang Masuk yang dihasilkannya).
+            await sb("pesanan_penerimaan", {
+              method: "POST",
+              body: JSON.stringify({
+                pesanan_id: p.id,
+                tanggal,
+                jumlah,
+                item_id: itemBaru?.id || null,
+              }),
+            });
+            // 3) Update akumulasi jumlah_diterima di pesanan induknya — status
+            //    (menunggu/sebagian/selesai) diturunkan otomatis dari angka
+            //    ini di statusPesananMasuk(), tidak disimpan manual.
+            const jumlahDiterimaBaru = (p.jumlah_diterima || 0) + jumlah;
+            await sb(`pesanan_masuk?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ jumlah_diterima: jumlahDiterimaBaru }),
+            });
+          }, "Barang datang dikonfirmasi — lanjut ke alur SKU")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "batalkan-pesanan") {
+    const p = modal.item;
+    const sudahDatang = (p.jumlah_diterima || 0) > 0;
+    return (
+      <ModalShell title="Batalkan Pesanan" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Pesanan {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} ({p.jumlah_pesan}x)
+            akan ditandai batal dan hilang dari daftar aktif.
+            {sudahDatang && (
+              <div className="mt-1.5 text-red-200/90">
+                Barang yang sudah sempat dikonfirmasi datang ({p.jumlah_diterima}x, sudah tercatat sebagai Barang
+                Masuk) TIDAK akan dihapus — hanya sisa pesanan yang belum datang yang dibatalkan.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Tutup
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ dibatalkan: true }),
+                });
+              }, "Pesanan dibatalkan")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Batalkan
           </button>
         </div>
       </ModalShell>

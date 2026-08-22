@@ -350,6 +350,16 @@ export function sisaHutangPesanan(pesanan, pembayaranList) {
 //  Belum Bayar -> belum ada pembayaran sama sekali
 //  Sebagian    -> sudah dibayar sebagian, masih ada sisa
 //  Lunas       -> sisa <= 0
+// Status "Pesanan Masuk" (Barang Datang) diturunkan dari jumlah_diterima vs
+// jumlah_pesan — bukan disimpan manual oleh user, supaya selalu konsisten.
+// dibatalkan (kolom terpisah) menang atas hitungan angka.
+export function statusPesananMasuk(p) {
+  if (p.dibatalkan) return "batal";
+  if ((p.jumlah_diterima || 0) <= 0) return "menunggu";
+  if (p.jumlah_diterima < p.jumlah_pesan) return "sebagian";
+  return "selesai";
+}
+
 export function hitungStatusBayar(total, totalDibayar) {
   if (totalDibayar <= 0.0001) return "Belum Bayar";
   if (totalDibayar >= total - 0.0001) return "Lunas";
