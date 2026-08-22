@@ -365,7 +365,7 @@ export function statusPesananMasuk(p) {
 // jadi di-fallback jadi satu baris tanpa nama supaya UI tetap jalan.
 export function detailModelPesanan(p) {
   if (Array.isArray(p.detail_model) && p.detail_model.length > 0) return p.detail_model;
-  return [{ nama: null, jumlah: p.jumlah_pesan || 0, diterima: p.jumlah_diterima || 0 }];
+  return [{ nama: null, jumlah: p.jumlah_pesan || 0, harga: 0, diterima: p.jumlah_diterima || 0 }];
 }
 
 export function hitungStatusBayar(total, totalDibayar) {

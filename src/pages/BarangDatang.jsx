@@ -2,7 +2,12 @@ import { useState } from "react";
 import { Plus, PackageCheck, Ban, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
 import { PO_STATUS_META } from "../lib/constants";
-import { statusPesananMasuk, detailModelPesanan } from "../lib/api";
+import { statusPesananMasuk, detailModelPesanan, fmtRp } from "../lib/api";
+
+// Nilai (Rp) satu baris model = jumlah dipesan x harga/pcs-nya. Dipakai baik
+// di rincian per-model maupun ringkasan total per pesanan di tabel utama.
+const nilaiModel = (m) => (Number(m.jumlah) || 0) * (Number(m.harga) || 0);
+const totalNilaiPesanan = (detail) => detail.reduce((sum, m) => sum + nilaiModel(m), 0);
 
 // Warna badge jenis pesanan — sama seperti jenis di Barang Masuk (Pembelian/
 // Retur/Lainnya) supaya konsisten secara visual di seluruh sistem.
@@ -28,7 +33,9 @@ function DetailModelPanel({ detail, colSpan }) {
               <th className="pb-1.5 pr-4">Model</th>
               <th className="pb-1.5 pr-4">Dipesan</th>
               <th className="pb-1.5 pr-4">Diterima</th>
-              <th className="pb-1.5">Sisa</th>
+              <th className="pb-1.5 pr-4">Sisa</th>
+              <th className="pb-1.5 pr-4">Harga/pcs</th>
+              <th className="pb-1.5">Subtotal</th>
             </tr>
           </thead>
           <tbody>
@@ -39,7 +46,9 @@ function DetailModelPanel({ detail, colSpan }) {
                   <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
                   <td className="py-1.5 pr-4 text-slate-400">{m.jumlah}x</td>
                   <td className="py-1.5 pr-4 text-slate-400">{m.diterima || 0}x</td>
-                  <td className={`py-1.5 ${sisa > 0 ? "text-amber-400" : "text-emerald-400"}`}>{sisa}x</td>
+                  <td className={`py-1.5 pr-4 ${sisa > 0 ? "text-amber-400" : "text-emerald-400"}`}>{sisa}x</td>
+                  <td className="py-1.5 pr-4 text-slate-400">{m.harga ? fmtRp(m.harga) : "—"}</td>
+                  <td className="py-1.5 text-slate-300">{m.harga ? fmtRp(nilaiModel(m)) : "—"}</td>
                 </tr>
               );
             })}
@@ -83,7 +92,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Tidak ada pesanan yang sedang ditunggu." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto mb-6">
-          <table className="w-full text-sm min-w-[900px]">
+          <table className="w-full text-sm min-w-[1000px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5"></th>
@@ -93,6 +102,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                 <th className="px-4 py-2.5">Model</th>
                 <th className="px-4 py-2.5">Qty Dipesan</th>
                 <th className="px-4 py-2.5">Qty Datang</th>
+                <th className="px-4 py-2.5">Nilai</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
@@ -102,6 +112,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                 const status = statusPesananMasuk(p);
                 const meta = PO_STATUS_META[status];
                 const detail = detailModelPesanan(p);
+                const nilai = totalNilaiPesanan(detail);
                 const sisa = p.jumlah_pesan - (p.jumlah_diterima || 0);
                 const isOpen = expanded.has(p.id);
                 return (
@@ -131,6 +142,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                       <td className="px-4 py-2.5 text-slate-400">
                         {p.jumlah_diterima || 0}x <span className="text-slate-600">(sisa {sisa}x)</span>
                       </td>
+                      <td className="px-4 py-2.5 text-slate-300 whitespace-nowrap">{nilai ? fmtRp(nilai) : "—"}</td>
                       <td className="px-4 py-2.5">
                         <Badge color={meta.color}>{meta.label}</Badge>
                       </td>
@@ -149,7 +161,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                         </button>
                       </td>
                     </tr>
-                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={9} />}
+                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={10} />}
                   </>
                 );
               })}
@@ -163,7 +175,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Belum ada pesanan yang selesai atau dibatalkan." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[780px]">
+          <table className="w-full text-sm min-w-[880px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5"></th>
@@ -173,6 +185,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                 <th className="px-4 py-2.5">Model</th>
                 <th className="px-4 py-2.5">Qty Dipesan</th>
                 <th className="px-4 py-2.5">Qty Diterima</th>
+                <th className="px-4 py-2.5">Nilai</th>
                 <th className="px-4 py-2.5">Status</th>
               </tr>
             </thead>
@@ -180,6 +193,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
               {riwayat.map((p) => {
                 const meta = PO_STATUS_META[statusPesananMasuk(p)];
                 const detail = detailModelPesanan(p);
+                const nilai = totalNilaiPesanan(detail);
                 const isOpen = expanded.has(p.id);
                 return (
                   <>
@@ -206,11 +220,12 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                       </td>
                       <td className="px-4 py-2.5">{p.jumlah_pesan}x</td>
                       <td className="px-4 py-2.5">{p.jumlah_diterima || 0}x</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">{nilai ? fmtRp(nilai) : "—"}</td>
                       <td className="px-4 py-2.5">
                         <Badge color={meta.color}>{meta.label}</Badge>
                       </td>
                     </tr>
-                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={8} />}
+                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={9} />}
                   </>
                 );
               })}

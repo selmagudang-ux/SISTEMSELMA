@@ -177,7 +177,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
 // tiap model punya nama & jumlah pcs-nya sendiri, tidak digabung jadi satu
 // angka besar.
 function barisModel() {
-  return { nama: "", jumlah: 1 };
+  return { nama: "", jumlah: 1, harga: "" };
 }
 
 export function PesananMasukForm({ onClose, onSubmit, saving }) {
@@ -195,6 +195,7 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
   const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
 
   const totalQty = models.reduce((sum, m) => sum + (Number(m.jumlah) || 0), 0);
+  const totalNilai = models.reduce((sum, m) => sum + (Number(m.jumlah) || 0) * (Number(m.harga) || 0), 0);
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
   const valid =
     models.length > 0 && models.every((m) => m.jumlah >= 1) && (jenis !== "Lainnya" || jenisLainnya.trim());
@@ -241,14 +242,26 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
                 onChange={(e) => updateModel(idx, { nama: e.target.value })}
                 placeholder={`Nama/ciri model ${idx + 1} (opsional)`}
               />
-              <input
-                type="number"
-                min="1"
-                className={inputClass}
-                value={m.jumlah}
-                onChange={(e) => updateModel(idx, { jumlah: Number(e.target.value) })}
-                placeholder="Jumlah pcs"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  className={inputClass}
+                  value={m.jumlah}
+                  onChange={(e) => updateModel(idx, { jumlah: Number(e.target.value) })}
+                  placeholder="Jumlah pcs"
+                />
+                <InputRupiah
+                  value={m.harga}
+                  onChange={(v) => updateModel(idx, { harga: v })}
+                  placeholder="Harga/pcs"
+                />
+              </div>
+              {Number(m.jumlah) > 0 && Number(m.harga) > 0 && (
+                <p className="text-[11px] text-slate-500">
+                  Subtotal: {fmtRp((Number(m.jumlah) || 0) * (Number(m.harga) || 0))}
+                </p>
+              )}
             </div>
             {models.length > 1 && (
               <button
@@ -269,7 +282,7 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
         <Plus size={14} /> Tambah Model
       </button>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3">
-        Total: {models.length} model / {totalQty}x pcs
+        Total: {models.length} model / {totalQty}x pcs{totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
       </p>
 
       <Field label="Catatan (opsional)">
@@ -291,6 +304,7 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
             detail_model: models.map((m) => ({
               nama: m.nama.trim() || null,
               jumlah: m.jumlah,
+              harga: Number(m.harga) || 0,
               diterima: 0,
             })),
             catatan: catatan.trim() || null,
@@ -322,6 +336,10 @@ export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onSubmit, 
   const updateDatang = (idx, v) => setDatang((rows) => rows.map((r, i) => (i === idx ? v : r)));
 
   const totalDatang = datang.reduce((sum, v) => sum + (Number(v) || 0), 0);
+  const nilaiDatang = detailModel.reduce(
+    (sum, m, idx) => sum + (Number(datang[idx]) || 0) * (Number(m.harga) || 0),
+    0
+  );
   const modelDatang = datang.filter((v) => Number(v) > 0).length;
   const adaLebihDariSisa = detailModel.some((m, idx) => {
     const sisa = Math.max(0, (m.jumlah || 0) - (m.diterima || 0));
@@ -343,7 +361,12 @@ export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onSubmit, 
           return (
             <div key={idx} className="rounded-lg border border-slate-800 px-3 py-2.5">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-slate-200 font-medium">{m.nama || `Model ${idx + 1}`}</span>
+                <span className="text-xs text-slate-200 font-medium">
+                  {m.nama || `Model ${idx + 1}`}
+                  {Number(m.harga) > 0 && (
+                    <span className="text-slate-500 font-normal"> · {fmtRp(m.harga)}/pcs</span>
+                  )}
+                </span>
                 <span className="text-[11px] text-slate-500">
                   {m.diterima || 0}/{m.jumlah}x{" "}
                   <span className={sisa > 0 ? "text-amber-400" : "text-emerald-400"}>
@@ -369,6 +392,7 @@ export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onSubmit, 
       </div>
       <p className="text-[11px] text-slate-500 mb-3">
         Total datang sekarang: {modelDatang} model / {totalDatang}x pcs
+        {nilaiDatang > 0 ? ` · ${fmtRp(nilaiDatang)}` : ""}
       </p>
 
       <p className="text-[11px] text-slate-500 mb-3">
