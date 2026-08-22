@@ -9,6 +9,11 @@ import { detailModelPesanan, fmtRp } from "../lib/api";
 const nilaiModel = (m) => (Number(m.jumlah) || 0) * (Number(m.harga) || 0);
 const totalNilaiTransaksi = (detail) => detail.reduce((sum, m) => sum + nilaiModel(m), 0);
 const totalRusakTransaksi = (detail) => detail.reduce((sum, m) => sum + (Number(m.rusak) || 0), 0);
+// "Qty Datang" = TOTAL fisik yang datang dari supplier (barang bagus +
+// barang rusak dijumlah jadi satu angka) — bukan cuma yang baik saja.
+// Qty rusak tetap ditampilkan terpisah di kolom sendiri sebagai rincian.
+const qtyDatangModel = (m) => (Number(m.jumlah) || 0) + (Number(m.rusak) || 0);
+const totalQtyDatangTransaksi = (detail) => detail.reduce((sum, m) => sum + qtyDatangModel(m), 0);
 
 // Warna badge jenis barang datang — sama seperti jenis di Barang Masuk
 // (Pembelian/Retur/Lainnya) supaya konsisten secara visual di seluruh sistem.
@@ -43,7 +48,7 @@ function DetailModelPanel({ detail, colSpan, kodeBon, fotoBonUrl, onLihatFoto })
               {detail.map((m, idx) => (
                 <tr key={idx} className="border-t border-slate-800/60">
                   <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
-                  <td className="py-1.5 pr-4 text-emerald-400">{m.jumlah}x</td>
+                  <td className="py-1.5 pr-4 text-emerald-400">{qtyDatangModel(m)}x</td>
                   <td className="py-1.5 pr-4">
                     {Number(m.rusak) > 0 ? (
                       <span className="text-red-400" title={m.alasan_rusak || ""}>
@@ -204,7 +209,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                           <span className="block text-slate-600 text-[11px]">{ringkasNamaModel(detail)}</span>
                         </button>
                       </td>
-                      <td className="px-4 py-2.5 text-emerald-400">{p.jumlah_diterima || 0}x</td>
+                      <td className="px-4 py-2.5 text-emerald-400">{totalQtyDatangTransaksi(detail)}x</td>
                       <td className="px-4 py-2.5">
                         {rusak > 0 ? (
                           <span className="inline-flex items-center gap-1 text-red-400">
