@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, PackageCheck, Ban, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, PackageCheck, Ban, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
 import { PO_STATUS_META } from "../lib/constants";
 import { statusPesananMasuk, detailModelPesanan, fmtRp } from "../lib/api";
@@ -31,27 +31,24 @@ function DetailModelPanel({ detail, colSpan }) {
           <thead>
             <tr className="text-left text-[10px] uppercase text-slate-500">
               <th className="pb-1.5 pr-4">Model</th>
-              <th className="pb-1.5 pr-4">Dipesan</th>
-              <th className="pb-1.5 pr-4">Diterima</th>
-              <th className="pb-1.5 pr-4">Sisa</th>
+              <th className="pb-1.5 pr-4">Qty</th>
+              <th className="pb-1.5 pr-4">Status</th>
               <th className="pb-1.5 pr-4">Harga/pcs</th>
               <th className="pb-1.5">Subtotal</th>
             </tr>
           </thead>
           <tbody>
-            {detail.map((m, idx) => {
-              const sisa = Math.max(0, (m.jumlah || 0) - (m.diterima || 0));
-              return (
-                <tr key={idx} className="border-t border-slate-800/60">
-                  <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
-                  <td className="py-1.5 pr-4 text-slate-400">{m.jumlah}x</td>
-                  <td className="py-1.5 pr-4 text-slate-400">{m.diterima || 0}x</td>
-                  <td className={`py-1.5 pr-4 ${sisa > 0 ? "text-amber-400" : "text-emerald-400"}`}>{sisa}x</td>
-                  <td className="py-1.5 pr-4 text-slate-400">{m.harga ? fmtRp(m.harga) : "—"}</td>
-                  <td className="py-1.5 text-slate-300">{m.harga ? fmtRp(nilaiModel(m)) : "—"}</td>
-                </tr>
-              );
-            })}
+            {detail.map((m, idx) => (
+              <tr key={idx} className="border-t border-slate-800/60">
+                <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
+                <td className="py-1.5 pr-4 text-slate-400">{m.jumlah}x</td>
+                <td className={`py-1.5 pr-4 ${m.datang ? "text-emerald-400" : "text-amber-400"}`}>
+                  {m.datang ? "Sudah Datang" : "Menunggu"}
+                </td>
+                <td className="py-1.5 pr-4 text-slate-400">{m.harga ? fmtRp(m.harga) : "—"}</td>
+                <td className="py-1.5 text-slate-300">{m.harga ? fmtRp(nilaiModel(m)) : "—"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </td>
@@ -175,7 +172,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Belum ada pesanan yang selesai atau dibatalkan." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[880px]">
+          <table className="w-full text-sm min-w-[960px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5"></th>
@@ -187,6 +184,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                 <th className="px-4 py-2.5">Qty Diterima</th>
                 <th className="px-4 py-2.5">Nilai</th>
                 <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -224,8 +222,17 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                       <td className="px-4 py-2.5">
                         <Badge color={meta.color}>{meta.label}</Badge>
                       </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => setModal({ type: "hapus-pesanan-masuk", item: p })}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-red-400"
+                          title="Hapus riwayat pesanan ini"
+                        >
+                          <Trash2 size={13} /> Hapus
+                        </button>
+                      </td>
                     </tr>
-                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={9} />}
+                    {isOpen && <DetailModelPanel key={`${p.id}-detail`} detail={detail} colSpan={10} />}
                   </>
                 );
               })}

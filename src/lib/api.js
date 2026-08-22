@@ -360,12 +360,26 @@ export function statusPesananMasuk(p) {
   return "selesai";
 }
 
-// Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, diterima }].
-// Pesanan lama (sebelum fitur rincian per-model) belum punya detail_model,
-// jadi di-fallback jadi satu baris tanpa nama supaya UI tetap jalan.
+// Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, harga, datang }].
+// Satu model cuma punya SATU angka qty (bukan qty-dipesan & qty-diterima
+// terpisah) — statusnya cukup boolean "datang" (sudah/belum), karena tiap
+// model dikonfirmasi datang sekaligus penuh sesuai qty pesanannya, satu-satu
+// per model (lihat KonfirmasiDatangForm), bukan dicicil per angka.
+// Pesanan lama (sebelum fitur rincian per-model, atau dari format lama yang
+// masih pakai angka "diterima") tetap didukung — "datang" diturunkan dari
+// diterima >= jumlah kalau field "datang"-nya sendiri belum ada.
 export function detailModelPesanan(p) {
-  if (Array.isArray(p.detail_model) && p.detail_model.length > 0) return p.detail_model;
-  return [{ nama: null, jumlah: p.jumlah_pesan || 0, harga: 0, diterima: p.jumlah_diterima || 0 }];
+  const raw =
+    Array.isArray(p.detail_model) && p.detail_model.length > 0
+      ? p.detail_model
+      : [{ nama: null, jumlah: p.jumlah_pesan || 0, harga: 0, diterima: p.jumlah_diterima || 0 }];
+  return raw.map((m) => ({
+    ...m,
+    datang:
+      typeof m.datang === "boolean"
+        ? m.datang
+        : (Number(m.jumlah) || 0) > 0 && (Number(m.diterima) || 0) >= (Number(m.jumlah) || 0),
+  }));
 }
 
 export function hitungStatusBayar(total, totalDibayar) {

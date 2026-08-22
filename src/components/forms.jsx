@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -305,7 +305,7 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
               nama: m.nama.trim() || null,
               jumlah: m.jumlah,
               harga: Number(m.harga) || 0,
-              diterima: 0,
+              datang: false,
             })),
             catatan: catatan.trim() || null,
           })
@@ -319,33 +319,44 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
 }
 
 // Form "Konfirmasi Datang" — dipanggil per pesanan aktif (menunggu/sebagian).
-// Setiap MODEL di dalam pesanan diisi/dikonfirmasi terpisah (bukan angka
-// gabungan) — default "datang sekarang" per model = sisa model itu (kasus
-// paling umum: datang sekaligus), tapi bisa diubah lebih kecil kalau
-// kirimannya bertahap/parsial per model. Kalau diisi lebih besar dari sisa
-// (supplier kirim lebih dari pesanan), tidak diblokir — cukup diberi
-// peringatan, karena di lapangan hal ini wajar terjadi dan tetap harus bisa
-// dicatat.
-export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onSubmit, saving }) {
+// Setiap MODEL di dalam pesanan dikonfirmasi SATU-SATU lewat tombolnya
+// sendiri-sendiri (bukan diisi angka gabungan lalu disimpan sekaligus) —
+// begitu satu model diklik, model itu langsung masuk sebagai baris Barang
+// Masuk & alur SKU-nya sendiri, terpisah dari model lain di pesanan yang
+// sama. Qty per model cuma satu angka (qty pesanan itu sendiri) — begitu
+// dikonfirmasi datang, otomatis penuh sesuai qty-nya, tidak ada input qty
+// datang yang terpisah lagi.
+export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onConfirmModel, saving }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
-  const [datang, setDatang] = useState(
-    detailModel.map((m) => Math.max(0, (m.jumlah || 0) - (m.diterima || 0)))
-  );
+  const [fotoBon, setFotoBon] = useState(null);
+  const [fotoBonPreview, setFotoBonPreview] = useState(null);
+  const [detail, setDetail] = useState(detailModel);
+  const [busyIdx, setBusyIdx] = useState(null);
 
-  const updateDatang = (idx, v) => setDatang((rows) => rows.map((r, i) => (i === idx ? v : r)));
+  const handleFotoBon = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFotoBon(f);
+    setFotoBonPreview(URL.createObjectURL(f));
+  };
 
-  const totalDatang = datang.reduce((sum, v) => sum + (Number(v) || 0), 0);
-  const nilaiDatang = detailModel.reduce(
-    (sum, m, idx) => sum + (Number(datang[idx]) || 0) * (Number(m.harga) || 0),
-    0
-  );
-  const modelDatang = datang.filter((v) => Number(v) > 0).length;
-  const adaLebihDariSisa = detailModel.some((m, idx) => {
-    const sisa = Math.max(0, (m.jumlah || 0) - (m.diterima || 0));
-    return (Number(datang[idx]) || 0) > sisa;
-  });
-  const valid = totalDatang >= 1;
+  const handleConfirm = async (idx) => {
+    setBusyIdx(idx);
+    try {
+      await onConfirmModel({ tanggal, modelIndex: idx, fotoBon, currentDetail: detail });
+      setDetail((rows) => rows.map((r, i) => (i === idx ? { ...r, datang: true } : r)));
+    } catch {
+      // pesan error sudah ditampilkan lewat toast di ModalRouter — di sini
+      // cukup jangan tandai model ini "sudah datang".
+    } finally {
+      setBusyIdx(null);
+    }
+  };
+
+  const belum = detail.map((m, idx) => ({ ...m, idx })).filter((m) => !m.datang);
+  const sudah = detail.map((m, idx) => ({ ...m, idx })).filter((m) => m.datang);
+  const semuaSudahDatang = detail.length > 0 && belum.length === 0;
 
   return (
     <ModalShell title="Konfirmasi Barang Datang" onClose={onClose}>
@@ -353,68 +364,75 @@ export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onSubmit, 
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
 
-      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Datang Sekarang per Model</p>
-      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 mb-2">
-        {detailModel.map((m, idx) => {
-          const sisa = Math.max(0, (m.jumlah || 0) - (m.diterima || 0));
-          const lebih = (Number(datang[idx]) || 0) > sisa;
-          return (
-            <div key={idx} className="rounded-lg border border-slate-800 px-3 py-2.5">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs text-slate-200 font-medium">
-                  {m.nama || `Model ${idx + 1}`}
-                  {Number(m.harga) > 0 && (
-                    <span className="text-slate-500 font-normal"> · {fmtRp(m.harga)}/pcs</span>
-                  )}
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  {m.diterima || 0}/{m.jumlah}x{" "}
-                  <span className={sisa > 0 ? "text-amber-400" : "text-emerald-400"}>
-                    (sisa {sisa}x)
-                  </span>
-                </span>
-              </div>
-              <input
-                type="number"
-                min="0"
-                className={inputClass}
-                value={datang[idx]}
-                onChange={(e) => updateDatang(idx, Number(e.target.value))}
-              />
-              {lebih && (
-                <p className="text-[11px] text-amber-400 mt-1">
-                  Lebih besar dari sisa model ini ({sisa}x) — tetap bisa disimpan.
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <p className="text-[11px] text-slate-500 mb-3">
-        Total datang sekarang: {modelDatang} model / {totalDatang}x pcs
-        {nilaiDatang > 0 ? ` · ${fmtRp(nilaiDatang)}` : ""}
+      <Field label="Foto Bon/Nota (opsional)">
+        <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
+      </Field>
+      {fotoBonPreview && (
+        <div className="mb-3">
+          <img
+            src={fotoBonPreview}
+            alt="Preview bon/nota"
+            className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950"
+          />
+        </div>
+      )}
+
+      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">
+        Konfirmasi per Model — klik satu-satu begitu barangnya benar-benar sudah di tangan
       </p>
+      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 mb-2">
+        {detail.length === 0 && <p className="text-xs text-slate-500">Tidak ada model di pesanan ini.</p>}
+        {belum.map((m) => (
+          <div
+            key={m.idx}
+            className="rounded-lg border border-slate-800 px-3 py-2.5 flex items-center justify-between gap-3"
+          >
+            <div>
+              <p className="text-xs text-slate-200 font-medium">{m.nama || `Model ${m.idx + 1}`}</p>
+              <p className="text-[11px] text-slate-500">
+                {m.jumlah}x{Number(m.harga) > 0 ? ` · ${fmtRp(m.harga)}/pcs` : ""}
+              </p>
+            </div>
+            <button
+              disabled={saving && busyIdx === m.idx}
+              onClick={() => handleConfirm(m.idx)}
+              className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 rounded-lg px-2.5 py-1.5 disabled:opacity-50"
+            >
+              <PackageCheck size={13} /> {busyIdx === m.idx ? "Menyimpan…" : "Konfirmasi Datang"}
+            </button>
+          </div>
+        ))}
+        {sudah.map((m) => (
+          <div
+            key={m.idx}
+            className="rounded-lg border border-slate-800/60 px-3 py-2.5 flex items-center justify-between gap-3 opacity-60"
+          >
+            <div>
+              <p className="text-xs text-slate-400 font-medium">{m.nama || `Model ${m.idx + 1}`}</p>
+              <p className="text-[11px] text-slate-600">
+                {m.jumlah}x{Number(m.harga) > 0 ? ` · ${fmtRp(m.harga)}/pcs` : ""}
+              </p>
+            </div>
+            <span className="text-[11px] font-semibold text-emerald-500 shrink-0">✓ Sudah Datang</span>
+          </div>
+        ))}
+      </div>
 
       <p className="text-[11px] text-slate-500 mb-3">
-        Barang sejumlah ini akan langsung tercatat sebagai Barang Masuk dan lanjut ke alur pembuatan SKU seperti
-        biasa. Kalau kirimannya belum genap, pesanan ini tetap muncul di daftar aktif untuk dikonfirmasi lagi
-        nanti.
+        Tiap model yang dikonfirmasi langsung tercatat sebagai baris Barang Masuk tersendiri dan lanjut ke alur
+        pembuatan SKU-nya masing-masing — model lain di pesanan yang sama tidak ikut tercampur.
       </p>
+
       <button
-        disabled={saving || !valid}
-        onClick={() =>
-          onSubmit({
-            tanggal,
-            jumlah: totalDatang,
-            detailModel: detailModel.map((m, idx) => ({
-              ...m,
-              diterima: (m.diterima || 0) + (Number(datang[idx]) || 0),
-            })),
-          })
+        onClick={onClose}
+        disabled={saving && busyIdx !== null}
+        className={
+          semuaSudahDatang
+            ? "w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm py-2.5 rounded-lg disabled:opacity-50"
+            : "w-full border border-slate-800 text-slate-300 hover:border-slate-700 text-sm py-2.5 rounded-lg disabled:opacity-50"
         }
-        className="w-full mt-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
-        {saving ? "Menyimpan…" : "Konfirmasi Datang"}
+        {semuaSudahDatang ? "Semua model sudah datang — Tutup" : "Tutup"}
       </button>
     </ModalShell>
   );
