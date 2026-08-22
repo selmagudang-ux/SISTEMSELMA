@@ -390,7 +390,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [modelTouched, setModelTouched] = useState(false);
   const [warna, setWarna] = useState("");
   const [ukuran, setUkuran] = useState("");
-  const [hargaAsli, setHargaAsli] = useState("");
+  const [hargaAsli, setHargaAsli] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
 
   // Khusus superadmin: opsi ketik sendiri harga Grosir/Tengah/Ecer, tanpa
   // ikut rumus calcHarga otomatis. Role lain tidak lihat opsi ini sama sekali.
@@ -606,6 +606,11 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
         </Field>
         <Field label="Harga Asli (Rp)">
           <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
+          {Number(item?.harga) > 0 && (
+            <p className="text-[11px] text-slate-500 mt-1">
+              Otomatis terisi dari harga/pcs saat Input Barang Datang — ubah di sini kalau perlu.
+            </p>
+          )}
         </Field>
 
         {isSuperadmin && (

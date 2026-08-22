@@ -1830,7 +1830,7 @@ export default function ModalRouter({
               if (m.jumlahDatang <= 0) continue;
               const [itemBaru] = await sb("items", {
                 method: "POST",
-                body: JSON.stringify({ tanggal, gudang: jenis, jumlah: m.jumlahDatang, stage: "sku" }),
+                body: JSON.stringify({ tanggal, gudang: jenis, jumlah: m.jumlahDatang, harga: m.harga || null, stage: "sku" }),
               });
               await sb("pesanan_penerimaan", {
                 method: "POST",
