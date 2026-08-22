@@ -33,14 +33,16 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Tidak ada pesanan yang sedang ditunggu." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto mb-6">
-          <table className="w-full text-sm min-w-[720px]">
+          <table className="w-full text-sm min-w-[880px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5">Tanggal Pesan</th>
                 <th className="px-4 py-2.5">Supplier</th>
                 <th className="px-4 py-2.5">Jenis</th>
-                <th className="px-4 py-2.5">Dipesan</th>
-                <th className="px-4 py-2.5">Sudah Datang</th>
+                <th className="px-4 py-2.5">Model Dipesan</th>
+                <th className="px-4 py-2.5">Model Datang</th>
+                <th className="px-4 py-2.5">Qty Dipesan</th>
+                <th className="px-4 py-2.5">Qty Datang</th>
                 <th className="px-4 py-2.5">Status</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
@@ -50,12 +52,17 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                 const status = statusPesananMasuk(p);
                 const meta = PO_STATUS_META[status];
                 const sisa = p.jumlah_pesan - (p.jumlah_diterima || 0);
+                const sisaModel = p.jumlah_model - (p.jumlah_model_diterima || 0);
                 return (
                   <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{formatTanggalID(p.tanggal_pesan)}</td>
                     <td className="px-4 py-2.5 text-slate-300">{p.supplier || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge color={jenisColor(p.jenis)}>{p.jenis || "—"}</Badge>
+                    </td>
+                    <td className="px-4 py-2.5">{p.jumlah_model} model</td>
+                    <td className="px-4 py-2.5 text-slate-400">
+                      {p.jumlah_model_diterima || 0} model <span className="text-slate-600">(sisa {sisaModel})</span>
                     </td>
                     <td className="px-4 py-2.5">{p.jumlah_pesan}x</td>
                     <td className="px-4 py-2.5 text-slate-400">
@@ -91,14 +98,16 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
         <EmptyState label="Belum ada pesanan yang selesai atau dibatalkan." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+          <table className="w-full text-sm min-w-[760px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5">Tanggal Pesan</th>
                 <th className="px-4 py-2.5">Supplier</th>
                 <th className="px-4 py-2.5">Jenis</th>
-                <th className="px-4 py-2.5">Dipesan</th>
-                <th className="px-4 py-2.5">Diterima</th>
+                <th className="px-4 py-2.5">Model Dipesan</th>
+                <th className="px-4 py-2.5">Model Diterima</th>
+                <th className="px-4 py-2.5">Qty Dipesan</th>
+                <th className="px-4 py-2.5">Qty Diterima</th>
                 <th className="px-4 py-2.5">Status</th>
               </tr>
             </thead>
@@ -112,6 +121,8 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                     <td className="px-4 py-2.5">
                       <Badge color={jenisColor(p.jenis)}>{p.jenis || "—"}</Badge>
                     </td>
+                    <td className="px-4 py-2.5">{p.jumlah_model} model</td>
+                    <td className="px-4 py-2.5">{p.jumlah_model_diterima || 0} model</td>
                     <td className="px-4 py-2.5">{p.jumlah_pesan}x</td>
                     <td className="px-4 py-2.5">{p.jumlah_diterima || 0}x</td>
                     <td className="px-4 py-2.5">

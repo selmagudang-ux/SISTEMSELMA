@@ -179,11 +179,12 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
   const [supplier, setSupplier] = useState("");
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
+  const [jumlahModel, setJumlahModel] = useState(1);
   const [jumlahPesan, setJumlahPesan] = useState(1);
   const [catatan, setCatatan] = useState("");
 
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
-  const valid = jumlahPesan >= 1 && (jenis !== "Lainnya" || jenisLainnya.trim());
+  const valid = jumlahModel >= 1 && jumlahPesan >= 1 && (jenis !== "Lainnya" || jenisLainnya.trim());
 
   return (
     <ModalShell title="Tambah Pesanan (Barang Datang)" onClose={onClose}>
@@ -215,15 +216,26 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
           />
         </Field>
       )}
-      <Field label="Jumlah Dipesan">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlahPesan}
-          onChange={(e) => setJumlahPesan(Number(e.target.value))}
-        />
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Jumlah Model">
+          <input
+            type="number"
+            min="1"
+            className={inputClass}
+            value={jumlahModel}
+            onChange={(e) => setJumlahModel(Number(e.target.value))}
+          />
+        </Field>
+        <Field label="Jumlah Qty (pcs)">
+          <input
+            type="number"
+            min="1"
+            className={inputClass}
+            value={jumlahPesan}
+            onChange={(e) => setJumlahPesan(Number(e.target.value))}
+          />
+        </Field>
+      </div>
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
@@ -239,6 +251,7 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
             tanggal_pesan: tanggalPesan,
             supplier: supplier.trim() || null,
             jenis: jenisFinal || null,
+            jumlah_model: jumlahModel,
             jumlah_pesan: jumlahPesan,
             catatan: catatan.trim() || null,
           })
@@ -257,47 +270,67 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
 // Kalau diisi lebih besar dari sisa (supplier kirim lebih dari pesanan),
 // tidak diblokir — cukup diberi peringatan, karena di lapangan hal ini wajar
 // terjadi dan tetap harus bisa dicatat.
-export function KonfirmasiDatangForm({ pesanan, sisa, onClose, onSubmit, saving }) {
+export function KonfirmasiDatangForm({ pesanan, sisa, sisaModel, onClose, onSubmit, saving }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
+  const [jumlahModel, setJumlahModel] = useState(sisaModel);
   const [jumlah, setJumlah] = useState(sisa);
 
   const lebihDariSisa = jumlah > sisa;
-  const valid = jumlah >= 1;
+  const modelLebihDariSisa = jumlahModel > sisaModel;
+  const valid = jumlah >= 1 && jumlahModel >= 1;
 
   return (
     <ModalShell title="Konfirmasi Barang Datang" onClose={onClose}>
       <div className="rounded-lg border border-slate-800 px-3 py-2.5 mb-3 text-xs text-slate-400">
         <div className="flex justify-between mb-1">
           <span>Dipesan</span>
-          <span className="text-slate-200">{pesanan.jumlah_pesan}x</span>
+          <span className="text-slate-200">
+            {pesanan.jumlah_model} model / {pesanan.jumlah_pesan}x
+          </span>
         </div>
         <div className="flex justify-between mb-1">
           <span>Sudah datang</span>
-          <span className="text-slate-200">{pesanan.jumlah_diterima || 0}x</span>
+          <span className="text-slate-200">
+            {pesanan.jumlah_model_diterima || 0} model / {pesanan.jumlah_diterima || 0}x
+          </span>
         </div>
         <div className="flex justify-between">
           <span>Sisa</span>
-          <span className="text-amber-400 font-semibold">{sisa}x</span>
+          <span className="text-amber-400 font-semibold">
+            {sisaModel} model / {sisa}x
+          </span>
         </div>
       </div>
 
       <Field label="Tanggal Datang">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
-      <Field label="Jumlah Datang Sekarang">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlah}
-          onChange={(e) => setJumlah(Number(e.target.value))}
-        />
-      </Field>
-      {lebihDariSisa && (
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Jumlah Model Datang">
+          <input
+            type="number"
+            min="1"
+            className={inputClass}
+            value={jumlahModel}
+            onChange={(e) => setJumlahModel(Number(e.target.value))}
+          />
+        </Field>
+        <Field label="Jumlah Qty Datang">
+          <input
+            type="number"
+            min="1"
+            className={inputClass}
+            value={jumlah}
+            onChange={(e) => setJumlah(Number(e.target.value))}
+          />
+        </Field>
+      </div>
+      {(modelLebihDariSisa || lebihDariSisa) && (
         <p className="text-[11px] text-amber-400 -mt-2 mb-3">
-          Jumlah ini lebih besar dari sisa pesanan ({sisa}x) — tetap bisa disimpan kalau memang supplier
-          mengirim lebih dari yang dipesan.
+          {modelLebihDariSisa && `Jumlah model ini lebih besar dari sisa model pesanan (${sisaModel} model). `}
+          {lebihDariSisa && `Jumlah qty ini lebih besar dari sisa qty pesanan (${sisa}x). `}
+          Tetap bisa disimpan kalau memang supplier mengirim lebih dari yang dipesan.
         </p>
       )}
       <p className="text-[11px] text-slate-500 mb-3">
@@ -307,7 +340,7 @@ export function KonfirmasiDatangForm({ pesanan, sisa, onClose, onSubmit, saving 
       </p>
       <button
         disabled={saving || !valid}
-        onClick={() => onSubmit({ tanggal, jumlah })}
+        onClick={() => onSubmit({ tanggal, jumlah, jumlahModel })}
         className="w-full mt-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Konfirmasi Datang"}
