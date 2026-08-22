@@ -171,12 +171,13 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
 
 // Form "Input Barang Datang" — SATU LANGKAH: dicatat begitu barang fisik
 // sudah di tangan (bukan janji pesanan dulu baru dikonfirmasi belakangan).
-// Tiap model punya qty datang (baik) & qty rusak (dengan alasan) terpisah —
-// qty rusak tidak boleh lebih dari qty datang. SEMUA jumlah (datang + rusak)
+// Tiap model: "Qty Datang" = TOTAL fisik yang diterima (baik + rusak jadi
+// satu angka), "Qty Rusak" = berapa dari total itu yang rusak (subset dari
+// Qty Datang, jadi tidak boleh lebih besar). SELURUH Qty Datang (totalnya)
 // ikut masuk ke alur barang (items, tahap "sku") supaya bisa lanjut dibuatkan
 // SKU seperti biasa. Begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"),
-// qty rusak otomatis dipisah: qty final (datang - rusak) yang masuk stok/rak,
-// dan qty rusak tercatat ke menu "Rusak" (SKU + qty rusak).
+// qty rusak otomatis dipisah: qty final (Qty Datang - Qty Rusak) yang masuk
+// stok/rak, dan qty rusak tercatat ke menu "Rusak" (SKU + qty rusak).
 // Satu baris model dalam input barang datang (dipakai berulang di
 // BarangDatangForm).
 function barisBarangDatang() {
@@ -206,16 +207,23 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   const tambahModel = () => setModels((rows) => [...rows, barisBarangDatang()]);
   const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
 
+  // totalDatang = total fisik yang diterima (sudah termasuk rusak, karena
+  // Qty Datang sekarang memang diisi sebagai TOTAL, bukan cuma yang baik).
   const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
   const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
-  const totalNilai = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0), 0);
+  // Nilai (Rp) cuma dihitung dari qty BAIK (Qty Datang - Qty Rusak) — rusak
+  // dianggap klaim ke supplier, bukan barang yang dibeli/masuk stok.
+  const totalNilai = models.reduce(
+    (sum, m) => sum + Math.max((Number(m.jumlahDatang) || 0) - (Number(m.jumlahRusak) || 0), 0) * (Number(m.harga) || 0),
+    0
+  );
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
   // Qty rusak tidak boleh lebih besar dari qty datang di baris yang sama —
   // rusak itu bagian DARI yang datang, jadi maksimal ya sebanyak yang datang.
   const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
   const valid =
     models.length > 0 &&
-    models.every((m) => (Number(m.jumlahDatang) || 0) + (Number(m.jumlahRusak) || 0) >= 1) &&
+    models.every((m) => (Number(m.jumlahDatang) || 0) >= 1) &&
     models.every((m) => !rusakMelebihiDatang(m)) &&
     (jenis !== "Lainnya" || jenisLainnya.trim());
 
@@ -267,7 +275,10 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
       <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang</p>
       <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1 mb-1">
         {models.map((m, idx) => {
-          const totalQtyBaris = (Number(m.jumlahDatang) || 0) + (Number(m.jumlahRusak) || 0);
+          // Qty Datang = TOTAL fisik baris ini (baik + rusak jadi satu angka).
+          // Qty baik yang bakal masuk stok = Qty Datang - Qty Rusak.
+          const totalQtyBaris = Number(m.jumlahDatang) || 0;
+          const qtyBaikBaris = Math.max(totalQtyBaris - (Number(m.jumlahRusak) || 0), 0);
           return (
             <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
               <div className="flex-1 space-y-2">
@@ -278,7 +289,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
                   placeholder={`Kode/nama model ${idx + 1} (opsional)`}
                 />
                 <div className="flex gap-2">
-                  <Field label="Qty Datang">
+                  <Field label="Qty Datang (total)">
                     <input
                       type="number"
                       min="0"
@@ -297,6 +308,9 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
                     />
                   </Field>
                 </div>
+                <p className="text-[11px] text-slate-500 -mt-1">
+                  Isi Qty Datang dengan TOTAL fisik yang diterima (baik + rusak jadi satu angka).
+                </p>
                 {rusakMelebihiDatang(m) && (
                   <p className="text-[11px] text-red-400">Qty rusak tidak boleh lebih dari qty datang.</p>
                 )}
@@ -315,9 +329,8 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
                 />
                 <p className="text-[11px] text-slate-500">
                   Total qty baris ini: {totalQtyBaris}x
-                  {Number(m.jumlahDatang) > 0 && Number(m.harga) > 0
-                    ? ` · Nilai ${fmtRp((Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0))}`
-                    : ""}
+                  {Number(m.jumlahRusak) > 0 ? ` (baik: ${qtyBaikBaris}x, rusak: ${m.jumlahRusak}x)` : ""}
+                  {qtyBaikBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(qtyBaikBaris * (Number(m.harga) || 0))}` : ""}
                 </p>
               </div>
               {models.length > 1 && (

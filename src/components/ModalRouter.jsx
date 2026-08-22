@@ -1800,7 +1800,12 @@ export default function ModalRouter({
               fotoBonUrl = await sbUploadFoto(fotoBon, path);
             }
 
-            const totalDatang = models.reduce((sum, m) => sum + m.jumlahDatang, 0);
+            // m.jumlahDatang = TOTAL fisik baris ini (baik + rusak jadi satu
+            // angka, diisi begitu di form). Qty baik = total - rusak.
+            const totalDatang = models.reduce(
+              (sum, m) => sum + Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+              0
+            );
 
             // 1) Simpan header transaksi barang datang, langsung dengan
             //    jumlah_diterima = jumlah_pesan (selalu "selesai", karena
@@ -1820,7 +1825,7 @@ export default function ModalRouter({
                 catatan,
                 detail_model: models.map((m) => ({
                   nama: m.nama,
-                  jumlah: m.jumlahDatang,
+                  jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
                   rusak: m.jumlahRusak,
                   alasan_rusak: m.alasanRusak,
                   harga: m.harga,
@@ -1829,13 +1834,12 @@ export default function ModalRouter({
               }),
             });
 
-            // 2) Tiap model dengan total qty (datang + rusak) > 0 langsung
-            //    jadi baris Barang Masuk tersendiri (stage "sku") & lanjut
-            //    alur SKU-nya sendiri-sendiri — jumlah item = TOTAL (bukan
-            //    cuma qty datang yang baik), supaya qty rusaknya ikut
-            //    terbawa sampai SKU-nya ketahuan.
+            // 2) Tiap model dengan Qty Datang (TOTAL, sudah termasuk rusak) > 0
+            //    langsung jadi baris Barang Masuk tersendiri (stage "sku") &
+            //    lanjut alur SKU-nya sendiri-sendiri — jumlah item = TOTAL,
+            //    supaya qty rusaknya ikut terbawa sampai SKU-nya ketahuan.
             for (const m of models) {
-              const totalQtyModel = m.jumlahDatang + m.jumlahRusak;
+              const totalQtyModel = m.jumlahDatang;
               if (totalQtyModel <= 0) continue;
               const [itemBaru] = await sb("items", {
                 method: "POST",
