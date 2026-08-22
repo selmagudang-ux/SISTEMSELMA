@@ -494,7 +494,7 @@ function MainApp({ session, onLogout }) {
               )}
               {nav.menu === "grosir" && (
                 <Grosir
-                  sub={nav.sub || "pesanan"}
+                  sub={nav.sub || "semua-pesanan"}
                   pelangganGrosir={pelangganGrosir}
                   tokoGrosir={tokoGrosir}
                   produkManualGrosir={produkManualGrosir}

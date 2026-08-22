@@ -14,7 +14,7 @@ import {
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
-import { EditPesananForm } from "../pages/Grosir";
+import { EditPesananForm, BuatPesanan } from "../pages/Grosir";
 import { NotaPesananModal, LabelPengirimanModal } from "../pages/NotaGrosir";
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
@@ -1025,6 +1025,25 @@ export default function ModalRouter({
         pelanggan={pelanggan}
         toko={toko}
         detailItems={detailItems}
+        onClose={close}
+      />
+    );
+  }
+
+  // Buat Pesanan Grosir — sekarang dibuka sebagai modal (tombol "+ Buat
+  // Pesanan" di halaman Semua Pesanan), bukan halaman tersendiri di sidebar.
+  // Komponennya sendiri (BuatPesanan di pages/Grosir.jsx) sudah menangani
+  // penyimpanan ke Supabase-nya sendiri (pola lama, konsisten dengan
+  // sebelumnya saat masih jadi halaman) — di sini cuma diteruskan saja.
+  if (modal.type === "grosir-buat-pesanan") {
+    return (
+      <BuatPesanan
+        pelangganGrosir={pelangganGrosir}
+        tokoGrosir={tokoGrosir}
+        produkManualGrosir={produkManualGrosir}
+        skuMaster={skuMaster}
+        reload={reload}
+        showToast={showToast}
         onClose={close}
       />
     );

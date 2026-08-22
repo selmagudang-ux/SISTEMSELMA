@@ -42,14 +42,15 @@ export default function Grosir({
         pembayaranGrosir={pembayaranGrosir}
       />
     );
+  // Fallback (sub tidak dikenali/kosong) — tampilkan daftar pesanan; "Buat
+  // Pesanan" sekarang diakses lewat tombol "+ Buat Pesanan" di halaman ini
+  // (buka sebagai form/modal), bukan halaman tersendiri di sidebar lagi.
   return (
-    <BuatPesanan
+    <SemuaPesanan
+      pesananGrosir={pesananGrosir}
       pelangganGrosir={pelangganGrosir}
-      tokoGrosir={tokoGrosir}
-      produkManualGrosir={produkManualGrosir}
-      skuMaster={skuMaster}
-      reload={reload}
-      showToast={showToast}
+      pembayaranGrosir={pembayaranGrosir}
+      setModal={setModal}
     />
   );
 }
@@ -221,6 +222,14 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setMod
       <PageHeader
         title="Semua Pesanan"
         description="Riwayat pesanan grosir. Klik salah satu untuk lihat detail item."
+        action={
+          <button
+            onClick={() => setModal({ type: "grosir-buat-pesanan" })}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+          >
+            <Plus size={14} /> Buat Pesanan
+          </button>
+        }
       />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -778,7 +787,8 @@ export const newItemRow = (sumberProduk) => ({
   stokTersedia: null, // null = tidak relevan (item manual)
 });
 
-function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, reload, showToast }) {
+export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, reload, showToast, onClose }) {
+  const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [pelangganId, setPelangganId] = useState("");
   const [pelangganNamaBaru, setPelangganNamaBaru] = useState(""); // dipakai kalau pelanggan belum ada di daftar
   const [pelangganWaBaru, setPelangganWaBaru] = useState("");
@@ -864,6 +874,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
     !saving;
 
   const resetForm = () => {
+    setTanggal(new Date().toISOString().slice(0, 10));
     setPelangganId("");
     setPelangganNamaBaru("");
     setPelangganWaBaru("");
@@ -924,6 +935,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
         method: "POST",
         body: JSON.stringify({
           nomor_pesanan: nomorPesanan,
+          tanggal,
           pelanggan_id: pelangganIdFinal,
           toko_id: tokoId || null,
           status_bayar: statusBayar,
@@ -1009,6 +1021,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
       await reload();
       showToast(`Pesanan ${nomorPesanan} tersimpan, stok diperbarui`);
       resetForm();
+      onClose();
     } catch (e) {
       showToast(e.message || "Gagal menyimpan pesanan", "err");
     } finally {
@@ -1017,13 +1030,12 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
   };
 
   return (
-    <div>
-      <PageHeader
-        title="Buat Pesanan Grosir"
-        description="Pilih pelanggan yang sudah ada atau ketik nama baru langsung, tambahkan barang dari Data Barang atau input manual, lalu simpan. Stok Data Barang otomatis berkurang saat pesanan disimpan."
-      />
+    <ModalShell title="Buat Pesanan Grosir" onClose={onClose}>
+      <Field label="Tanggal">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
 
-      <div className="grid sm:grid-cols-2 gap-3 mb-4 max-w-2xl">
+      <div className="grid sm:grid-cols-2 gap-3 mb-4">
         <Field label="Pelanggan *">
           <SearchableSelect
             value={pelangganId}
@@ -1130,7 +1142,7 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
       </div>
 
       {rows.length > 0 && (
-        <div className="max-w-2xl">
+        <div>
           <div className="grid sm:grid-cols-2 gap-3 mb-4">
             <Field label="Status Bayar">
               <select
@@ -1162,16 +1174,25 @@ function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaste
             <span className="text-lg font-bold text-amber-400">{fmtRp(total)}</span>
           </div>
 
-          <button
-            disabled={!canSubmit}
-            onClick={submit}
-            className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-3 rounded-lg"
-          >
-            <ShoppingCart size={16} /> {saving ? "Menyimpan…" : "Simpan Pesanan"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              disabled={saving}
+              className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+            >
+              Batal
+            </button>
+            <button
+              disabled={!canSubmit}
+              onClick={submit}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
+            >
+              <ShoppingCart size={16} /> {saving ? "Menyimpan…" : "Simpan Pesanan"}
+            </button>
+          </div>
         </div>
       )}
-    </div>
+    </ModalShell>
   );
 }
 
