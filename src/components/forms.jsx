@@ -169,51 +169,77 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   );
 }
 
-// Form "Tambah Pesanan" (Barang Datang) — catat PO/pesanan ke supplier
-// SEBELUM barangnya fisik tiba. Beda dari BarangMasukForm: di sini belum ada
-// SKU, belum ada barang fisik, cuma janji jumlah yang dipesan. Barunya nanti
-// dikonversi jadi Barang Masuk sedikit demi sedikit lewat KonfirmasiDatangForm.
-// Satu baris model dalam pesanan (dipakai berulang di PesananMasukForm) —
-// tiap model punya nama & jumlah pcs-nya sendiri, tidak digabung jadi satu
-// angka besar.
-function barisModel() {
-  return { nama: "", jumlah: 1, harga: "" };
+// Form "Input Barang Datang" — SATU LANGKAH: dicatat begitu barang fisik
+// sudah di tangan (bukan janji pesanan dulu baru dikonfirmasi belakangan).
+// Tiap model punya qty datang (baik) & qty rusak (dengan alasan) terpisah —
+// yang lanjut ke alur SKU cuma qty datang yang baik; qty rusak cuma
+// tercatat sebagai riwayat/bukti klaim ke supplier, tidak masuk stok.
+// Satu baris model dalam input barang datang (dipakai berulang di
+// BarangDatangForm).
+function barisBarangDatang() {
+  return { nama: "", jumlahDatang: 1, jumlahRusak: 0, alasanRusak: "", harga: "" };
 }
 
-export function PesananMasukForm({ onClose, onSubmit, saving }) {
+export function BarangDatangForm({ onClose, onSubmit, saving }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [tanggalPesan, setTanggalPesan] = useState(today);
+  const [tanggal, setTanggal] = useState(today);
+  const [fotoBon, setFotoBon] = useState(null);
+  const [fotoBonPreview, setFotoBonPreview] = useState(null);
   const [supplier, setSupplier] = useState("");
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
-  const [models, setModels] = useState([barisModel()]);
+  const [models, setModels] = useState([barisBarangDatang()]);
   const [catatan, setCatatan] = useState("");
+
+  const handleFotoBon = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFotoBon(f);
+    setFotoBonPreview(URL.createObjectURL(f));
+  };
 
   const updateModel = (idx, patch) =>
     setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
-  const tambahModel = () => setModels((rows) => [...rows, barisModel()]);
+  const tambahModel = () => setModels((rows) => [...rows, barisBarangDatang()]);
   const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
 
-  const totalQty = models.reduce((sum, m) => sum + (Number(m.jumlah) || 0), 0);
-  const totalNilai = models.reduce((sum, m) => sum + (Number(m.jumlah) || 0) * (Number(m.harga) || 0), 0);
+  const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+  const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
+  const totalNilai = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0), 0);
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
   const valid =
-    models.length > 0 && models.every((m) => m.jumlah >= 1) && (jenis !== "Lainnya" || jenisLainnya.trim());
+    models.length > 0 &&
+    models.every((m) => (Number(m.jumlahDatang) || 0) + (Number(m.jumlahRusak) || 0) >= 1) &&
+    (jenis !== "Lainnya" || jenisLainnya.trim());
 
   return (
-    <ModalShell title="Tambah Pesanan (Barang Datang)" onClose={onClose}>
-      <Field label="Tanggal Pesan">
-        <InputTanggal value={tanggalPesan} onChange={setTanggalPesan} />
+    <ModalShell title="Input Barang Datang" onClose={onClose}>
+      <Field label="Tanggal">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
-      <Field label="Supplier (opsional)">
+
+      <Field label="Foto Bon (opsional)">
+        <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
+      </Field>
+      {fotoBonPreview && (
+        <div className="mb-3">
+          <img
+            src={fotoBonPreview}
+            alt="Preview bon/nota"
+            className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950"
+          />
+        </div>
+      )}
+
+      <Field label="Supplier/Distributor (opsional)">
         <input
           className={inputClass}
           value={supplier}
           onChange={(e) => setSupplier(e.target.value)}
-          placeholder="Nama supplier/toko"
+          placeholder="Nama supplier/distributor"
         />
       </Field>
-      <Field label="Jenis">
+      <Field label="Jenis Barang Datang">
         <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
           {JENIS_BARANG_MASUK.map((j) => (
             <option key={j} value={j}>{j}</option>
@@ -231,49 +257,71 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
         </Field>
       )}
 
-      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model yang Dipesan</p>
-      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 mb-1">
-        {models.map((m, idx) => (
-          <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
-            <div className="flex-1 space-y-2">
-              <input
-                className={inputClass}
-                value={m.nama}
-                onChange={(e) => updateModel(idx, { nama: e.target.value })}
-                placeholder={`Nama/ciri model ${idx + 1} (opsional)`}
-              />
-              <div className="flex gap-2">
+      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang</p>
+      <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1 mb-1">
+        {models.map((m, idx) => {
+          const totalQtyBaris = (Number(m.jumlahDatang) || 0) + (Number(m.jumlahRusak) || 0);
+          return (
+            <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
+              <div className="flex-1 space-y-2">
                 <input
-                  type="number"
-                  min="1"
                   className={inputClass}
-                  value={m.jumlah}
-                  onChange={(e) => updateModel(idx, { jumlah: Number(e.target.value) })}
-                  placeholder="Jumlah pcs"
+                  value={m.nama}
+                  onChange={(e) => updateModel(idx, { nama: e.target.value })}
+                  placeholder={`Kode/nama model ${idx + 1} (opsional)`}
                 />
+                <div className="flex gap-2">
+                  <Field label="Qty Datang">
+                    <input
+                      type="number"
+                      min="0"
+                      className={inputClass}
+                      value={m.jumlahDatang}
+                      onChange={(e) => updateModel(idx, { jumlahDatang: Number(e.target.value) })}
+                    />
+                  </Field>
+                  <Field label="Qty Rusak">
+                    <input
+                      type="number"
+                      min="0"
+                      className={inputClass}
+                      value={m.jumlahRusak}
+                      onChange={(e) => updateModel(idx, { jumlahRusak: Number(e.target.value) })}
+                    />
+                  </Field>
+                </div>
+                {Number(m.jumlahRusak) > 0 && (
+                  <input
+                    className={inputClass}
+                    value={m.alasanRusak}
+                    onChange={(e) => updateModel(idx, { alasanRusak: e.target.value })}
+                    placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
+                  />
+                )}
                 <InputRupiah
                   value={m.harga}
                   onChange={(v) => updateModel(idx, { harga: v })}
                   placeholder="Harga/pcs"
                 />
-              </div>
-              {Number(m.jumlah) > 0 && Number(m.harga) > 0 && (
                 <p className="text-[11px] text-slate-500">
-                  Subtotal: {fmtRp((Number(m.jumlah) || 0) * (Number(m.harga) || 0))}
+                  Total qty baris ini: {totalQtyBaris}x
+                  {Number(m.jumlahDatang) > 0 && Number(m.harga) > 0
+                    ? ` · Nilai ${fmtRp((Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0))}`
+                    : ""}
                 </p>
+              </div>
+              {models.length > 1 && (
+                <button
+                  onClick={() => hapusModel(idx)}
+                  className="text-slate-500 hover:text-red-400 mt-1"
+                  title="Hapus model ini"
+                >
+                  <X size={14} />
+                </button>
               )}
             </div>
-            {models.length > 1 && (
-              <button
-                onClick={() => hapusModel(idx)}
-                className="text-slate-500 hover:text-red-400 mt-1"
-                title="Hapus model ini"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
       <button
         onClick={tambahModel}
@@ -282,7 +330,9 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
         <Plus size={14} /> Tambah Model
       </button>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3">
-        Total: {models.length} model / {totalQty}x pcs{totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
+        Total: {models.length} model / {totalDatang}x datang
+        {totalRusak > 0 ? ` · ${totalRusak}x rusak` : ""}
+        {totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
       </p>
 
       <Field label="Catatan (opsional)">
@@ -290,149 +340,30 @@ export function PesananMasukForm({ onClose, onSubmit, saving }) {
           className={inputClass}
           value={catatan}
           onChange={(e) => setCatatan(e.target.value)}
-          placeholder="Contoh: no. PO, estimasi tiba, dll"
+          placeholder="Contoh: no. bon, keterangan tambahan, dll"
         />
       </Field>
       <button
         disabled={saving || !valid}
         onClick={() =>
           onSubmit({
-            tanggal_pesan: tanggalPesan,
+            tanggal,
+            fotoBon,
             supplier: supplier.trim() || null,
             jenis: jenisFinal || null,
-            jumlah_pesan: totalQty,
-            detail_model: models.map((m) => ({
+            models: models.map((m) => ({
               nama: m.nama.trim() || null,
-              jumlah: m.jumlah,
+              jumlahDatang: Number(m.jumlahDatang) || 0,
+              jumlahRusak: Number(m.jumlahRusak) || 0,
+              alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
               harga: Number(m.harga) || 0,
-              datang: false,
             })),
             catatan: catatan.trim() || null,
           })
         }
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
-        {saving ? "Menyimpan…" : "Simpan Pesanan"}
-      </button>
-    </ModalShell>
-  );
-}
-
-// Form "Konfirmasi Datang" — dipanggil per pesanan aktif (menunggu/sebagian).
-// Setiap MODEL di dalam pesanan dikonfirmasi SATU-SATU lewat tombolnya
-// sendiri-sendiri (bukan diisi angka gabungan lalu disimpan sekaligus) —
-// begitu satu model diklik, model itu langsung masuk sebagai baris Barang
-// Masuk & alur SKU-nya sendiri, terpisah dari model lain di pesanan yang
-// sama. Qty per model cuma satu angka (qty pesanan itu sendiri) — begitu
-// dikonfirmasi datang, otomatis penuh sesuai qty-nya, tidak ada input qty
-// datang yang terpisah lagi.
-export function KonfirmasiDatangForm({ pesanan, detailModel, onClose, onConfirmModel, saving }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [tanggal, setTanggal] = useState(today);
-  const [fotoBon, setFotoBon] = useState(null);
-  const [fotoBonPreview, setFotoBonPreview] = useState(null);
-  const [detail, setDetail] = useState(detailModel);
-  const [busyIdx, setBusyIdx] = useState(null);
-
-  const handleFotoBon = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFotoBon(f);
-    setFotoBonPreview(URL.createObjectURL(f));
-  };
-
-  const handleConfirm = async (idx) => {
-    setBusyIdx(idx);
-    try {
-      await onConfirmModel({ tanggal, modelIndex: idx, fotoBon, currentDetail: detail });
-      setDetail((rows) => rows.map((r, i) => (i === idx ? { ...r, datang: true } : r)));
-    } catch {
-      // pesan error sudah ditampilkan lewat toast di ModalRouter — di sini
-      // cukup jangan tandai model ini "sudah datang".
-    } finally {
-      setBusyIdx(null);
-    }
-  };
-
-  const belum = detail.map((m, idx) => ({ ...m, idx })).filter((m) => !m.datang);
-  const sudah = detail.map((m, idx) => ({ ...m, idx })).filter((m) => m.datang);
-  const semuaSudahDatang = detail.length > 0 && belum.length === 0;
-
-  return (
-    <ModalShell title="Konfirmasi Barang Datang" onClose={onClose}>
-      <Field label="Tanggal Datang">
-        <InputTanggal value={tanggal} onChange={setTanggal} />
-      </Field>
-
-      <Field label="Foto Bon/Nota (opsional)">
-        <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
-      </Field>
-      {fotoBonPreview && (
-        <div className="mb-3">
-          <img
-            src={fotoBonPreview}
-            alt="Preview bon/nota"
-            className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950"
-          />
-        </div>
-      )}
-
-      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">
-        Konfirmasi per Model — klik satu-satu begitu barangnya benar-benar sudah di tangan
-      </p>
-      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 mb-2">
-        {detail.length === 0 && <p className="text-xs text-slate-500">Tidak ada model di pesanan ini.</p>}
-        {belum.map((m) => (
-          <div
-            key={m.idx}
-            className="rounded-lg border border-slate-800 px-3 py-2.5 flex items-center justify-between gap-3"
-          >
-            <div>
-              <p className="text-xs text-slate-200 font-medium">{m.nama || `Model ${m.idx + 1}`}</p>
-              <p className="text-[11px] text-slate-500">
-                {m.jumlah}x{Number(m.harga) > 0 ? ` · ${fmtRp(m.harga)}/pcs` : ""}
-              </p>
-            </div>
-            <button
-              disabled={saving && busyIdx === m.idx}
-              onClick={() => handleConfirm(m.idx)}
-              className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 border border-emerald-500/40 hover:border-emerald-400 rounded-lg px-2.5 py-1.5 disabled:opacity-50"
-            >
-              <PackageCheck size={13} /> {busyIdx === m.idx ? "Menyimpan…" : "Konfirmasi Datang"}
-            </button>
-          </div>
-        ))}
-        {sudah.map((m) => (
-          <div
-            key={m.idx}
-            className="rounded-lg border border-slate-800/60 px-3 py-2.5 flex items-center justify-between gap-3 opacity-60"
-          >
-            <div>
-              <p className="text-xs text-slate-400 font-medium">{m.nama || `Model ${m.idx + 1}`}</p>
-              <p className="text-[11px] text-slate-600">
-                {m.jumlah}x{Number(m.harga) > 0 ? ` · ${fmtRp(m.harga)}/pcs` : ""}
-              </p>
-            </div>
-            <span className="text-[11px] font-semibold text-emerald-500 shrink-0">✓ Sudah Datang</span>
-          </div>
-        ))}
-      </div>
-
-      <p className="text-[11px] text-slate-500 mb-3">
-        Tiap model yang dikonfirmasi langsung tercatat sebagai baris Barang Masuk tersendiri dan lanjut ke alur
-        pembuatan SKU-nya masing-masing — model lain di pesanan yang sama tidak ikut tercampur.
-      </p>
-
-      <button
-        onClick={onClose}
-        disabled={saving && busyIdx !== null}
-        className={
-          semuaSudahDatang
-            ? "w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm py-2.5 rounded-lg disabled:opacity-50"
-            : "w-full border border-slate-800 text-slate-300 hover:border-slate-700 text-sm py-2.5 rounded-lg disabled:opacity-50"
-        }
-      >
-        {semuaSudahDatang ? "Semua model sudah datang — Tutup" : "Tutup"}
+        {saving ? "Menyimpan…" : "Simpan & Lanjut ke Alur Barang"}
       </button>
     </ModalShell>
   );

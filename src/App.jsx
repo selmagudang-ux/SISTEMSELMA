@@ -281,15 +281,7 @@ function MainApp({ session, onLogout }) {
   const cekMarketplaceCount =
     notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
 
-  // Pesanan Barang Datang yang masih aktif (belum genap datang & belum
-  // dibatalkan) — dipakai sebagai badge notif di sidebar, sama pola dengan
-  // badge tahap-tahap lain.
-  const pesananAktifCount = pesananMasuk.filter(
-    (p) => !p.dibatalkan && (p.jumlah_diterima || 0) < p.jumlah_pesan
-  ).length;
-
   const sidebarBadges = withParentBadges(NAV, {
-    "barang-datang": pesananAktifCount,
     "sku-harga.buat": stageCounts.sku,
     "rak.tempatkan": tanpaRakCount,
     "rak.gudang": sisaGudangList.length,

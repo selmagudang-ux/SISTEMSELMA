@@ -5,12 +5,12 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../li
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
-  statusPesananMasuk, detailModelPesanan,
+  detailModelPesanan,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
-  PesananMasukForm, KonfirmasiDatangForm,
+  BarangDatangForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -1770,164 +1770,100 @@ export default function ModalRouter({
   }
 
   // ------------------------------------------------------------------
-  // Barang Datang — pesanan/PO ke supplier SEBELUM barang fisik tiba.
-  // Tabel terpisah dari "items" (pesanan_masuk + pesanan_penerimaan),
-  // baru menyentuh "items" (jadi Barang Masuk beneran) begitu dikonfirmasi
-  // datang. Lihat statusPesananMasuk() di lib/api.js untuk arti status.
+  // Barang Datang — SATU LANGKAH: dicatat begitu barang fisik sudah di
+  // tangan (tanggal, foto bon, supplier, jenis, per-model qty datang/qty
+  // rusak+alasan/harga). Header transaksinya tetap disimpan di tabel
+  // "pesanan_masuk" (nama tabel lama dipertahankan supaya tidak perlu
+  // migrasi skema — cukup dipakai sebagai "riwayat barang datang"), tapi
+  // TIDAK ADA lagi status menunggu/sebagian: begitu simpan, qty datang tiap
+  // model langsung jadi baris "items" (Barang Masuk, stage "sku") & masuk
+  // alur SKU seperti biasa. Qty rusak TIDAK ikut masuk stok — cuma tercatat
+  // di detail_model sebagai bukti/riwayat klaim ke supplier.
   // ------------------------------------------------------------------
-  if (modal.type === "pesanan-masuk") {
+  if (modal.type === "barang-datang") {
     return (
-      <PesananMasukForm
+      <BarangDatangForm
         onClose={close}
         saving={saving}
-        onSubmit={(vals) =>
+        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan }) =>
           run(async () => {
-            await sb("pesanan_masuk", {
-              method: "POST",
-              body: JSON.stringify({ ...vals, jumlah_diterima: 0, dibatalkan: false }),
-            });
-          }, "Pesanan dicatat")
-        }
-      />
-    );
-  }
-
-  if (modal.type === "konfirmasi-datang") {
-    const p = modal.item;
-
-    // Konfirmasi per-model — SENGAJA TIDAK pakai run() (yang otomatis
-    // menutup modal & reload di akhir), karena satu sesi "Konfirmasi
-    // Datang" bisa mengonfirmasi beberapa model satu-satu tanpa modalnya
-    // tertutup di antara tiap klik. currentDetail dikirim balik dari form
-    // (state lokalnya di sana) supaya akumulasi jumlah_diterima & status
-    // "datang" per model selalu dihitung dari data terbaru dalam sesi ini,
-    // bukan dari `p` yang sudah basi begitu model pertama dikonfirmasi.
-    const confirmModel = async ({ tanggal, modelIndex, fotoBon, currentDetail }) => {
-      const m = currentDetail[modelIndex];
-      if (!m || m.datang) return;
-      setSaving(true);
-      try {
-        // Foto bon/nota (opsional) — satu foto dipakai untuk tiap model yang
-        // dikonfirmasi dalam sesi yang sama, disimpan per baris penerimaan.
-        let fotoBonUrl = null;
-        if (fotoBon) {
-          const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
-          const path = `bon-${p.id}-${modelIndex}-${Date.now()}.${ext}`;
-          fotoBonUrl = await sbUploadFoto(fotoBon, path);
-        }
-        // 1) Model ini SENDIRI langsung jadi satu baris Barang Masuk baru,
-        //    masuk alur SKU-nya sendiri (stage "sku") — TIDAK digabung
-        //    dengan model lain di pesanan yang sama, supaya tiap model
-        //    tetap terlacak sebagai barang tersendiri di pipeline.
-        const [itemBaru] = await sb("items", {
-          method: "POST",
-          body: JSON.stringify({ tanggal, gudang: p.jenis, jumlah: m.jumlah, stage: "sku" }),
-        });
-        // 2) Catat riwayat penerimaan model ini, termasuk foto bon kalau ada.
-        await sb("pesanan_penerimaan", {
-          method: "POST",
-          body: JSON.stringify({
-            pesanan_id: p.id,
-            tanggal,
-            jumlah: m.jumlah,
-            item_id: itemBaru?.id || null,
-            foto_bon_url: fotoBonUrl,
-          }),
-        });
-        // 3) Tandai model ini "sudah datang" di detail_model, & hitung ulang
-        //    jumlah_diterima dari total qty model yang sudah datang — status
-        //    (menunggu/sebagian/selesai) tetap diturunkan otomatis lewat
-        //    statusPesananMasuk(), tidak disimpan manual.
-        const detailBaru = currentDetail.map((d, i) => (i === modelIndex ? { ...d, datang: true } : d));
-        const jumlahDiterimaBaru = detailBaru
-          .filter((d) => d.datang)
-          .reduce((sum, d) => sum + (Number(d.jumlah) || 0), 0);
-        await sb(`pesanan_masuk?id=eq.${p.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ jumlah_diterima: jumlahDiterimaBaru, detail_model: detailBaru }),
-        });
-        await reload();
-        showToast(`${m.nama || "Model"} dikonfirmasi datang — lanjut ke alur SKU`);
-      } catch (e) {
-        showToast(e.message || "Gagal menyimpan", "err");
-        throw e;
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    return (
-      <KonfirmasiDatangForm
-        pesanan={p}
-        detailModel={detailModelPesanan(p)}
-        onClose={close}
-        saving={saving}
-        onConfirmModel={confirmModel}
-      />
-    );
-  }
-
-  if (modal.type === "batalkan-pesanan") {
-    const p = modal.item;
-    const sudahDatang = (p.jumlah_diterima || 0) > 0;
-    const jumlahModel = detailModelPesanan(p).length;
-    return (
-      <ModalShell title="Batalkan Pesanan" onClose={close}>
-        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
-          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-          <div>
-            Pesanan {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} ({jumlahModel} model
-            / {p.jumlah_pesan}x) akan ditandai batal dan hilang dari daftar aktif.
-            {sudahDatang && (
-              <div className="mt-1.5 text-red-200/90">
-                Barang yang sudah sempat dikonfirmasi datang ({p.jumlah_diterima}x, sudah tercatat sebagai Barang
-                Masuk) TIDAK akan dihapus — hanya sisa pesanan yang belum datang yang dibatalkan.
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={close}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
-          >
-            Tutup
-          </button>
-          <button
-            disabled={saving}
-            onClick={() =>
-              run(async () => {
-                await sb(`pesanan_masuk?id=eq.${p.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ dibatalkan: true }),
-                });
-              }, "Pesanan dibatalkan")
+            // Foto bon (opsional) — satu foto untuk seluruh transaksi ini,
+            // dipakai di tiap baris penerimaan per model.
+            let fotoBonUrl = null;
+            if (fotoBon) {
+              const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
+              const path = `bon-${Date.now()}.${ext}`;
+              fotoBonUrl = await sbUploadFoto(fotoBon, path);
             }
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
-          >
-            <Trash2 size={14} /> Ya, Batalkan
-          </button>
-        </div>
-      </ModalShell>
+
+            const totalDatang = models.reduce((sum, m) => sum + m.jumlahDatang, 0);
+
+            // 1) Simpan header transaksi barang datang, langsung dengan
+            //    jumlah_diterima = jumlah_pesan (selalu "selesai", karena
+            //    memang dicatat saat barang sudah di tangan, bukan janji).
+            const [pesanan] = await sb("pesanan_masuk", {
+              method: "POST",
+              body: JSON.stringify({
+                tanggal_pesan: tanggal,
+                supplier,
+                jenis,
+                jumlah_pesan: totalDatang,
+                jumlah_diterima: totalDatang,
+                dibatalkan: false,
+                catatan,
+                detail_model: models.map((m) => ({
+                  nama: m.nama,
+                  jumlah: m.jumlahDatang,
+                  rusak: m.jumlahRusak,
+                  alasan_rusak: m.alasanRusak,
+                  harga: m.harga,
+                  datang: true,
+                })),
+              }),
+            });
+
+            // 2) Tiap model dengan qty datang > 0 langsung jadi baris Barang
+            //    Masuk tersendiri (stage "sku") & lanjut alur SKU-nya
+            //    sendiri-sendiri, sama seperti model lain di transaksi yang
+            //    sama tidak tercampur.
+            for (const m of models) {
+              if (m.jumlahDatang <= 0) continue;
+              const [itemBaru] = await sb("items", {
+                method: "POST",
+                body: JSON.stringify({ tanggal, gudang: jenis, jumlah: m.jumlahDatang, stage: "sku" }),
+              });
+              await sb("pesanan_penerimaan", {
+                method: "POST",
+                body: JSON.stringify({
+                  pesanan_id: pesanan?.id || null,
+                  tanggal,
+                  jumlah: m.jumlahDatang,
+                  item_id: itemBaru?.id || null,
+                  foto_bon_url: fotoBonUrl,
+                }),
+              });
+            }
+          }, "Barang datang dicatat — lanjut ke alur SKU")
+        }
+      />
     );
   }
 
-  // Hapus baris Riwayat (pesanan selesai/batal) di Barang Datang. Ini cuma
-  // menghapus CATATAN pesanannya — barang yang sudah tercatat sebagai Barang
-  // Masuk/SKU (lewat pesanan_penerimaan) TIDAK ikut terhapus/dibatalkan.
+  // Hapus satu baris Riwayat Barang Datang. Ini cuma menghapus CATATAN
+  // transaksinya — barang yang sudah tercatat sebagai Barang Masuk/SKU
+  // (lewat pesanan_penerimaan) TIDAK ikut terhapus.
   if (modal.type === "hapus-pesanan-masuk") {
     const p = modal.item;
     const jumlahModel = detailModelPesanan(p).length;
     return (
-      <ModalShell title="Hapus Riwayat Pesanan" onClose={close}>
+      <ModalShell title="Hapus Riwayat Barang Datang" onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div>
-            Riwayat pesanan {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} (
+            Riwayat barang datang {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} (
             {jumlahModel} model / {p.jumlah_pesan}x) akan dihapus permanen dan hilang dari daftar.
             <div className="mt-1.5 text-red-200/90">
-              Barang yang sudah sempat dikonfirmasi datang tetap tercatat sebagai Barang Masuk & lanjut ke alur
+              Barang yang sudah tercatat tetap tercatat sebagai Barang Masuk & lanjut ke alur
               SKU seperti biasa — yang dihapus cuma catatan pesanannya di sini.
             </div>
           </div>
