@@ -445,7 +445,7 @@ function MainApp({ session, onLogout }) {
                 <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
               )}
               {nav.menu === "rusak" && (
-                <Rusak barangRusak={barangRusak} setModal={setModal} />
+                <Rusak barangRusak={barangRusak} pesananMasuk={pesananMasuk} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga

@@ -1,15 +1,105 @@
 import { useState } from "react";
-import { Search, Download, Trash2, AlertTriangle } from "lucide-react";
-import { PageHeader, EmptyState } from "../components/ui";
-import { downloadCsv, fmtTgl } from "../lib/api";
+import { Search, Download, Trash2, AlertTriangle, X, Receipt } from "lucide-react";
+import { PageHeader, EmptyState, formatTanggalID } from "../components/ui";
+import { downloadCsv, fmtTgl, detailModelPesanan, fmtRp } from "../lib/api";
+
+// Modal rincian bon — dibuka saat kode bon di kolom "Dari Bon" diklik.
+// Menampilkan foto bon fisiknya beserta rincian tiap model yang ada di
+// transaksi barang datang itu, supaya gampang dicocokkan dengan catatan
+// rusak yang sedang dilihat.
+function DetailBonModal({ pesanan, kodeBon, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 sticky top-0 bg-slate-900">
+          <h3 className="font-semibold text-sm font-mono text-amber-400">{kodeBon}</h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-white">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5">
+          {!pesanan ? (
+            <div className="text-sm text-slate-500">
+              Riwayat transaksi Barang Datang untuk bon ini tidak ditemukan (mungkin catatan lama sebelum kode bon
+              dipakai, atau sudah dihapus).
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-[10px] uppercase text-slate-500">Tanggal</div>
+                    <div className="text-slate-300">{formatTanggalID(pesanan.tanggal_pesan)}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase text-slate-500">Supplier</div>
+                    <div className="text-slate-300">{pesanan.supplier || "—"}</div>
+                  </div>
+                </div>
+
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-[10px] uppercase text-slate-500">
+                      <th className="pb-1.5 pr-4">Model</th>
+                      <th className="pb-1.5 pr-4">Qty Rusak</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detailModelPesanan(pesanan).map((m, idx) => (
+                      <tr key={idx} className="border-t border-slate-800/60">
+                        <td className="py-1.5 pr-4 text-slate-300">{m.nama || `Model ${idx + 1}`}</td>
+                        <td className="py-1.5 pr-4">
+                          {Number(m.rusak) > 0 ? (
+                            <span className="text-red-400" title={m.alasan_rusak || ""}>
+                              {m.rusak}x{m.alasan_rusak ? ` — ${m.alasan_rusak}` : ""}
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}                  </tbody>
+                </table>
+              </div>
+
+              <div className="shrink-0 sm:w-40">
+                <div className="text-[10px] uppercase text-slate-500 mb-1.5">Foto Bon</div>
+                {pesanan.foto_bon_url ? (
+                  <a
+                    href={pesanan.foto_bon_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block w-full sm:w-40 h-40 rounded-lg overflow-hidden border border-slate-700 hover:border-amber-500"
+                    title="Buka foto ukuran penuh"
+                  >
+                    <img src={pesanan.foto_bon_url} alt="Foto bon" className="w-full h-full object-cover" />
+                  </a>
+                ) : (
+                  <div className="w-full sm:w-40 h-40 rounded-lg border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
+                    <Receipt size={20} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Halaman "Rusak" — daftar barang yang rusak, otomatis tercatat di sini
 // begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"): qty rusak yang sudah
 // dicatat sejak Barang Datang baru resmi punya SKU setelah tahap ini, jadi
 // baru muncul di menu ini begitu SKU sudah diketahui. Qty rusak TIDAK pernah
 // ikut masuk stok — ini murni catatan/riwayat.
-export default function Rusak({ barangRusak, setModal }) {
+export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
   const [q, setQ] = useState("");
+  const [detailBon, setDetailBon] = useState(null);
 
   const list = [...(barangRusak || [])]
     .filter((r) => (r.sku || "").toLowerCase().includes(q.toLowerCase()))
@@ -88,7 +178,19 @@ export default function Rusak({ barangRusak, setModal }) {
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-400 text-xs">{fmtTgl(r.created_at)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{r.sku}</td>
                     <td className="px-4 py-2.5 text-red-400 font-semibold">{r.qty}x</td>
-                    <td className="px-4 py-2.5 font-mono text-[11px] text-amber-400">{r.kode_bon || "—"}</td>
+                    <td className="px-4 py-2.5 font-mono text-[11px]">
+                      {r.kode_bon ? (
+                        <button
+                          onClick={() => setDetailBon(r.kode_bon)}
+                          className="text-amber-400 hover:text-amber-300 hover:underline"
+                          title="Lihat rincian bon ini"
+                        >
+                          {r.kode_bon}
+                        </button>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{r.catatan || "—"}</td>
                     <td className="px-4 py-2.5 text-right">
                       <button
@@ -105,6 +207,14 @@ export default function Rusak({ barangRusak, setModal }) {
             </table>
           </div>
         </>
+      )}
+
+      {detailBon && (
+        <DetailBonModal
+          kodeBon={detailBon}
+          pesanan={(pesananMasuk || []).find((p) => p.kode_bon === detailBon) || null}
+          onClose={() => setDetailBon(null)}
+        />
       )}
     </div>
   );
