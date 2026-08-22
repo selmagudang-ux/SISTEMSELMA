@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import BarangDatang from "./pages/BarangDatang";
 import BarangMasuk from "./pages/BarangMasuk";
 import DataBarang from "./pages/DataBarang";
+import Rusak from "./pages/Rusak";
 import SkuHarga from "./pages/SkuHarga";
 import Stok from "./pages/Stok";
 import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from "./pages/Rak";
@@ -88,6 +89,7 @@ function MainApp({ session, onLogout }) {
   const [penempatan, setPenempatan] = useState([]);
   const [stockHistory, setStockHistory] = useState([]);
   const [rakEvents, setRakEvents] = useState([]);
+  const [barangRusak, setBarangRusak] = useState([]);
   const [marketplaceNotifAck, setMarketplaceNotifAck] = useState([]);
   const [pelangganGrosir, setPelangganGrosir] = useState([]);
   const [tokoGrosir, setTokoGrosir] = useState([]);
@@ -181,7 +183,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes] = await Promise.all([
+      const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
         sbAll("pesanan_masuk?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
@@ -191,6 +193,7 @@ function MainApp({ session, onLogout }) {
         sbAll("penempatan?select=*&order=created_at.desc"),
         sbAll("stock_history?select=*&order=created_at.desc"),
         sbAll("rak_events?select=*&order=created_at.desc"),
+        sbAll("barang_rusak?select=*&order=created_at.desc"),
         sbAll("marketplace_notif_ack?select=*"),
         sbAll("grosir_pelanggan?select=*&order=nama"),
         sbAll("grosir_toko?select=*&order=nama_toko"),
@@ -217,6 +220,7 @@ function MainApp({ session, onLogout }) {
       setPenempatan(penempatanRes || []);
       setStockHistory(historyRes || []);
       setRakEvents(rakEventsRes || []);
+      setBarangRusak(barangRusakRes || []);
       setMarketplaceNotifAck(notifAckRes || []);
       setPelangganGrosir(pelangganRes || []);
       setTokoGrosir(tokoRes || []);
@@ -439,6 +443,9 @@ function MainApp({ session, onLogout }) {
               )}
               {nav.menu === "data-barang" && (
                 <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
+              )}
+              {nav.menu === "rusak" && (
+                <Rusak barangRusak={barangRusak} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga

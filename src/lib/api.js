@@ -174,7 +174,7 @@ export function buildSkuCode(f) {
 // bebas (bukan foreign key ber-id) — semuanya perlu ikut di-update kalau ada
 // SKU yang berubah kodenya, termasuk data histori (stock_history, rak_events,
 // grosir_detail_pesanan) supaya laporan lama tetap nyambung ke SKU yang benar.
-const SKU_TEXT_TABLES = ["items", "stock_history", "penempatan", "rak_events", "grosir_detail_pesanan"];
+const SKU_TEXT_TABLES = ["items", "stock_history", "penempatan", "rak_events", "grosir_detail_pesanan", "barang_rusak"];
 
 async function renameSkuEverywhere(oldSku, newSku) {
   for (const table of SKU_TEXT_TABLES) {

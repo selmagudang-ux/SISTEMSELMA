@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
-  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck,
+  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, AlertTriangle,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
@@ -96,6 +96,11 @@ export const NAV = [
           { key: "kategori", label: "Master Data" },
         ],
       },
+      // Menu baru: daftar barang rusak yang dipisahkan otomatis begitu SKU
+      // dibuat (lihat ModalRouter "buat-sku") — qty rusak yang sudah dicatat
+      // sejak Barang Datang baru resmi tercatat di sini setelah SKU-nya
+      // diketahui, karena sebelum itu belum ada SKU untuk dilekatkan.
+      { key: "rusak", label: "Rusak", icon: AlertTriangle },
       {
         key: "stok", label: "Stok", icon: BarChart3,
         children: [
@@ -307,7 +312,7 @@ export const ROLE_MENUS = {
   // Gudang: hanya menu di dalam grup "ADMIN GUDANG" (Barang Datang, Alur Barang,
   // SKU & Harga, Stok, Rak, Cetak Label) beserta semua sub-nya — default penuh
   // karena tidak didaftarkan di ROLE_SUBMENUS.
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "rusak", "stok", "rak", "cetak-label", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma

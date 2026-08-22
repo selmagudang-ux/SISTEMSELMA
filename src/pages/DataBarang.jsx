@@ -120,7 +120,12 @@ export default function DataBarang({ items, penempatan, setModal }) {
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{i.tanggal}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
-                    <td className="px-4 py-2.5">{i.jumlah}x</td>
+                    <td className="px-4 py-2.5">
+                      {i.jumlah}x
+                      {i.jumlah_rusak > 0 && i.stage === "sku" && (
+                        <span className="block text-[10px] text-red-400">termasuk {i.jumlah_rusak}x rusak</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5">
                       {i.gudang ? <Badge color={jenisColor(i.gudang)}>{i.gudang}</Badge> : <span className="text-slate-600">—</span>}
                     </td>

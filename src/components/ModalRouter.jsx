@@ -27,6 +27,7 @@ function DetailItemModal({ item, setModal, saving, run, showToast, close, sessio
     ["Tanggal masuk", item.tanggal],
     ["Jenis", item.gudang || "—"],
     ["Jumlah", `${item.jumlah}x`],
+    ...(item.jumlah_rusak > 0 && item.stage === "sku" ? [["Termasuk Rusak", `${item.jumlah_rusak}x`]] : []),
     ["SKU", item.sku || "Belum ada"],
     ["Rak", item.rak_code || "Belum ditempatkan"],
   ];
@@ -1775,10 +1776,13 @@ export default function ModalRouter({
   // rusak+alasan/harga). Header transaksinya tetap disimpan di tabel
   // "pesanan_masuk" (nama tabel lama dipertahankan supaya tidak perlu
   // migrasi skema — cukup dipakai sebagai "riwayat barang datang"), tapi
-  // TIDAK ADA lagi status menunggu/sebagian: begitu simpan, qty datang tiap
-  // model langsung jadi baris "items" (Barang Masuk, stage "sku") & masuk
-  // alur SKU seperti biasa. Qty rusak TIDAK ikut masuk stok — cuma tercatat
-  // di detail_model sebagai bukti/riwayat klaim ke supplier.
+  // TIDAK ADA lagi status menunggu/sebagian: begitu simpan, SEMUA jumlah
+  // (qty datang + qty rusak) tiap model langsung jadi SATU baris "items"
+  // (Barang Masuk, stage "sku") & masuk alur SKU seperti biasa — qty
+  // rusaknya ikut terbawa di item itu sendiri (jumlah_rusak/alasan_rusak),
+  // BELUM dipisah ke stok dulu karena SKU-nya belum ada. Begitu SKU dibuat
+  // (lihat blok "buat-sku" di bawah), baru qty final (datang - rusak) yang
+  // masuk stok/rak, dan qty rusaknya tercatat ke menu "Rusak".
   // ------------------------------------------------------------------
   if (modal.type === "barang-datang") {
     return (
@@ -1801,6 +1805,9 @@ export default function ModalRouter({
             // 1) Simpan header transaksi barang datang, langsung dengan
             //    jumlah_diterima = jumlah_pesan (selalu "selesai", karena
             //    memang dicatat saat barang sudah di tangan, bukan janji).
+            //    jumlah_pesan/jumlah_diterima tetap dihitung dari qty datang
+            //    (baik) saja — sama seperti kolom "Qty Datang" di halaman
+            //    Riwayat Barang Datang, qty rusak tetap ditampilkan terpisah.
             const [pesanan] = await sb("pesanan_masuk", {
               method: "POST",
               body: JSON.stringify({
@@ -1822,22 +1829,32 @@ export default function ModalRouter({
               }),
             });
 
-            // 2) Tiap model dengan qty datang > 0 langsung jadi baris Barang
-            //    Masuk tersendiri (stage "sku") & lanjut alur SKU-nya
-            //    sendiri-sendiri, sama seperti model lain di transaksi yang
-            //    sama tidak tercampur.
+            // 2) Tiap model dengan total qty (datang + rusak) > 0 langsung
+            //    jadi baris Barang Masuk tersendiri (stage "sku") & lanjut
+            //    alur SKU-nya sendiri-sendiri — jumlah item = TOTAL (bukan
+            //    cuma qty datang yang baik), supaya qty rusaknya ikut
+            //    terbawa sampai SKU-nya ketahuan.
             for (const m of models) {
-              if (m.jumlahDatang <= 0) continue;
+              const totalQtyModel = m.jumlahDatang + m.jumlahRusak;
+              if (totalQtyModel <= 0) continue;
               const [itemBaru] = await sb("items", {
                 method: "POST",
-                body: JSON.stringify({ tanggal, gudang: jenis, jumlah: m.jumlahDatang, harga: m.harga || null, stage: "sku" }),
+                body: JSON.stringify({
+                  tanggal,
+                  gudang: jenis,
+                  jumlah: totalQtyModel,
+                  jumlah_rusak: m.jumlahRusak || 0,
+                  alasan_rusak: m.alasanRusak || null,
+                  harga: m.harga || null,
+                  stage: "sku",
+                }),
               });
               await sb("pesanan_penerimaan", {
                 method: "POST",
                 body: JSON.stringify({
                   pesanan_id: pesanan?.id || null,
                   tanggal,
-                  jumlah: m.jumlahDatang,
+                  jumlah: totalQtyModel,
                   item_id: itemBaru?.id || null,
                   foto_bon_url: fotoBonUrl,
                 }),
@@ -1929,7 +1946,12 @@ export default function ModalRouter({
         session={session}
         onSubmitExisting={(selectedSku, hargaAsliBaru) =>
           run(async () => {
-            const jumlah = modal.item.jumlah || 1;
+            // Qty rusak (kalau ada) sudah terbawa di item ini sejak Barang
+            // Datang — yang masuk stok cuma qty final (total - rusak); qty
+            // rusaknya sendiri dipisah ke tabel/menu "Rusak" di bawah, TIDAK
+            // ikut stok.
+            const jumlahRusak = modal.item.jumlah_rusak || 0;
+            const jumlah = Math.max((modal.item.jumlah || 0) - jumlahRusak, 0) || 1;
             const stokBaru = selectedSku.stok + jumlah;
             // Stok ditambah = SKU dianggap dipakai lagi, jadi otomatis aktifkan
             // kembali kalau sebelumnya sempat dinonaktifkan (mis. bekas dihapus).
@@ -1946,7 +1968,7 @@ export default function ModalRouter({
             });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ sku: selectedSku.sku, stage: "rak" }),
+              body: JSON.stringify({ sku: selectedSku.sku, stage: "rak", jumlah }),
             });
             await sb("stock_history", {
               method: "POST",
@@ -1959,6 +1981,18 @@ export default function ModalRouter({
                 note: "Ditambahkan ke SKU yang sudah ada",
               }),
             });
+            if (jumlahRusak > 0) {
+              await sb("barang_rusak", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku: selectedSku.sku,
+                  qty: jumlahRusak,
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  catatan: modal.item.alasan_rusak || null,
+                  item_id: modal.item.id,
+                }),
+              });
+            }
           }, "Stok ditambahkan ke SKU")
         }
         onSubmitNew={(skuFields, hargaAsli, hargaManual) =>
@@ -1988,7 +2022,12 @@ export default function ModalRouter({
               ? { ...hargaOtomatis, grosir: hargaManual.grosir, tengah: hargaManual.tengah, ecer: hargaManual.ecer }
               : hargaOtomatis;
             const sku = `${skuFields.bahan}${skuFields.peruntukan}${skuFields.kategori}-${skuFields.subkategori}-${skuFields.model}-${skuFields.warna}-${skuFields.ukuran}`;
-            const jumlah = modal.item.jumlah || 1;
+            // Qty rusak (kalau ada) sudah terbawa di item ini sejak Barang
+            // Datang — yang masuk stok cuma qty final (total - rusak); qty
+            // rusaknya sendiri dipisah ke tabel/menu "Rusak" di bawah, TIDAK
+            // ikut stok.
+            const jumlahRusak = modal.item.jumlah_rusak || 0;
+            const jumlah = Math.max((modal.item.jumlah || 0) - jumlahRusak, 0) || 1;
             const existing = skuMaster.find((s) => s.sku === sku);
             // Pembuatan SKU baru ditolak kalau SKU-nya ternyata sudah ada di daftar
             // (harusnya sudah dicegah di form, ini jaga-jaga terakhir). Untuk
@@ -2020,7 +2059,7 @@ export default function ModalRouter({
             });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ sku, stage: "rak" }),
+              body: JSON.stringify({ sku, stage: "rak", jumlah }),
             });
             await sb("stock_history", {
               method: "POST",
@@ -2033,9 +2072,59 @@ export default function ModalRouter({
                 note: "SKU baru dibuat",
               }),
             });
+            if (jumlahRusak > 0) {
+              await sb("barang_rusak", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku,
+                  qty: jumlahRusak,
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  catatan: modal.item.alasan_rusak || null,
+                  item_id: modal.item.id,
+                }),
+              });
+            }
           }, "SKU dibuat & stok tercatat")
         }
       />
+    );
+  }
+
+  // Hapus satu baris catatan di menu "Rusak". Ini cuma menghapus catatan
+  // riwayatnya saja — TIDAK mengubah stok (qty rusak memang dari awal tidak
+  // pernah ikut masuk stok, jadi tidak ada apa-apa yang perlu dikoreksi balik).
+  if (modal.type === "hapus-barang-rusak") {
+    const r = modal.item;
+    return (
+      <ModalShell title="Hapus Catatan Rusak" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Catatan rusak SKU <span className="font-mono">{r.sku}</span> ({r.qty}x) akan dihapus permanen. Tindakan
+            ini tidak mengubah stok — cuma menghapus riwayat catatannya.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`barang_rusak?id=eq.${r.id}`, { method: "DELETE" });
+              }, "Catatan rusak dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 

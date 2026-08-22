@@ -172,8 +172,11 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
 // Form "Input Barang Datang" — SATU LANGKAH: dicatat begitu barang fisik
 // sudah di tangan (bukan janji pesanan dulu baru dikonfirmasi belakangan).
 // Tiap model punya qty datang (baik) & qty rusak (dengan alasan) terpisah —
-// yang lanjut ke alur SKU cuma qty datang yang baik; qty rusak cuma
-// tercatat sebagai riwayat/bukti klaim ke supplier, tidak masuk stok.
+// qty rusak tidak boleh lebih dari qty datang. SEMUA jumlah (datang + rusak)
+// ikut masuk ke alur barang (items, tahap "sku") supaya bisa lanjut dibuatkan
+// SKU seperti biasa. Begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"),
+// qty rusak otomatis dipisah: qty final (datang - rusak) yang masuk stok/rak,
+// dan qty rusak tercatat ke menu "Rusak" (SKU + qty rusak).
 // Satu baris model dalam input barang datang (dipakai berulang di
 // BarangDatangForm).
 function barisBarangDatang() {
@@ -207,9 +210,13 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
   const totalNilai = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0), 0);
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
+  // Qty rusak tidak boleh lebih besar dari qty datang di baris yang sama —
+  // rusak itu bagian DARI yang datang, jadi maksimal ya sebanyak yang datang.
+  const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
   const valid =
     models.length > 0 &&
     models.every((m) => (Number(m.jumlahDatang) || 0) + (Number(m.jumlahRusak) || 0) >= 1) &&
+    models.every((m) => !rusakMelebihiDatang(m)) &&
     (jenis !== "Lainnya" || jenisLainnya.trim());
 
   return (
@@ -284,12 +291,15 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
                     <input
                       type="number"
                       min="0"
-                      className={inputClass}
+                      className={`${inputClass} ${rusakMelebihiDatang(m) ? "border-red-500" : ""}`}
                       value={m.jumlahRusak}
                       onChange={(e) => updateModel(idx, { jumlahRusak: Number(e.target.value) })}
                     />
                   </Field>
                 </div>
+                {rusakMelebihiDatang(m) && (
+                  <p className="text-[11px] text-red-400">Qty rusak tidak boleh lebih dari qty datang.</p>
+                )}
                 {Number(m.jumlahRusak) > 0 && (
                   <input
                     className={inputClass}
@@ -477,11 +487,31 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const ready = fieldsLengkap && settings && !skuSudahAda;
   const preview = fieldsLengkap && settings ? skuKombinasi : null;
 
+  // Qty rusak (kalau ada) sudah dicatat sejak Barang Datang dan ikut terbawa
+  // di item ini — begitu SKU dibuat/dipilih di sini, qty final yang masuk
+  // stok/rak = qty total dikurangi qty rusak. Qty rusaknya sendiri akan
+  // tercatat ke menu Rusak (lihat ModalRouter "buat-sku"), bukan ikut stok.
+  const jumlahRusak = Number(item.jumlah_rusak) || 0;
+  const jumlahFinal = Math.max((Number(item.jumlah) || 0) - jumlahRusak, 0);
+
   return (
-    <ModalShell title={`Buat SKU — ${item.jumlah}x barang`} onClose={onClose}>
+    <ModalShell title={`Buat SKU — ${jumlahFinal}x barang`} onClose={onClose}>
       <p className="text-xs text-slate-500 mb-3">
         Pilih SKU yang sudah ada untuk menambah stok, atau isi bagian "buat SKU baru" di bawah kalau belum ada.
       </p>
+
+      {jumlahRusak > 0 && (
+        <div className="mb-3 bg-red-950/40 border border-red-900 rounded-lg px-3 py-2">
+          <div className="text-[11px] text-red-400">Ada qty rusak dari Barang Datang</div>
+          <div className="font-mono text-sm text-red-300">
+            {item.jumlah}x total − {jumlahRusak}x rusak = {jumlahFinal}x masuk stok
+          </div>
+          <p className="text-[11px] text-red-400/80 mt-1.5">
+            {jumlahRusak}x rusak ini akan otomatis tercatat ke menu "Rusak" untuk SKU ini, tidak ikut masuk stok/rak.
+            {item.alasan_rusak ? ` Alasan: ${item.alasan_rusak}.` : ""}
+          </p>
+        </div>
+      )}
 
       <Field label="SKU yang sudah ada (opsional)">
         <SearchableSelect
@@ -500,7 +530,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
             <div className="text-[11px] text-slate-500">Stok setelah ditambah</div>
             <div className="font-mono text-sm text-amber-400">
-              {selected.stok} + {item.jumlah} = {selected.stok + item.jumlah}
+              {selected.stok} + {jumlahFinal} = {selected.stok + jumlahFinal}
             </div>
             <div className="text-[11px] text-slate-500 mt-2">Harga asli SKU ini saat ini</div>
             <div className="font-mono text-sm text-slate-300">{fmtRp(selected.harga_asli)}</div>
