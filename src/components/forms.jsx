@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
-import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
 import { rakForSku } from "../pages/Rak";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
@@ -2312,14 +2311,19 @@ export function EditRakForm({ rak, onClose, onSubmit, saving }) {
 }
 
 // Form "Ajukan Order" dari Dashboard > Barang Menipis — gudang mengajukan
-// satu SKU sekaligus jumlah yang mau di-restock ke owner. jumlah WAJIB
-// minimal AMBANG_MENIPIS_RESTOCK pcs (lihat lib/constants.js) — ini aturan
-// dari user: baru boleh diajukan kalau jumlahnya minimal segitu.
+// satu SKU sekaligus jumlah yang mau di-restock ke owner. Ambang 12pcs
+// (AMBANG_MENIPIS_RESTOCK, lihat lib/constants.js) itu syarat STOK supaya
+// SKU dianggap "menipis" dan muncul di daftar ini — bukan syarat jumlah
+// yang diajukan. Jumlah order bebas ditentukan gudang, asal > 0.
 export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
-  const [jumlah, setJumlah] = useState(String(AMBANG_MENIPIS_RESTOCK));
+  // Catatan: AMBANG_MENIPIS_RESTOCK (12) itu ambang "stok menipis" yang
+  // menentukan SKU mana yang tampil di daftar ini (lihat Dashboard.jsx) —
+  // BUKAN syarat minimal jumlah yang boleh diajukan ke owner. Jumlah order
+  // bebas ditentukan gudang, asal angka valid dan lebih dari 0.
+  const [jumlah, setJumlah] = useState("");
   const [catatan, setCatatan] = useState("");
 
-  const valid = Number(jumlah) >= AMBANG_MENIPIS_RESTOCK;
+  const valid = jumlah !== "" && Number(jumlah) > 0;
 
   return (
     <ModalShell title="Ajukan Order ke Owner" onClose={onClose}>
@@ -2330,12 +2334,13 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
         <div className="font-mono text-sm text-amber-400">{sku?.stok || 0}</div>
       </div>
 
-      <Field label={`Jumlah yang diajukan (minimal ${AMBANG_MENIPIS_RESTOCK}pcs)`}>
+      <Field label="Jumlah yang diajukan">
         <input
           type="text"
           inputMode="numeric"
           className={inputClass}
           value={jumlah}
+          placeholder="0"
           // Sengaja pakai type="text" + saring manual (bukan type="number"):
           // input type="number" bawaan browser masih bisa kebobolan karakter
           // non-angka (mis. "e" untuk notasi eksponen, atau paste teks) yang
@@ -2354,9 +2359,7 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
           <p className="text-[11px] text-amber-400 mt-1.5">Jumlah wajib diisi angka.</p>
         ) : (
           !valid && (
-            <p className="text-[11px] text-amber-400 mt-1.5">
-              Order minimal {AMBANG_MENIPIS_RESTOCK}pcs per SKU.
-            </p>
+            <p className="text-[11px] text-amber-400 mt-1.5">Jumlah harus lebih dari 0.</p>
           )
         )}
       </Field>
