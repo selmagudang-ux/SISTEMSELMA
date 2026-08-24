@@ -314,10 +314,13 @@ export const ROLES = [
 export const ROLE_MENUS = {
   superadmin: [...ALL_MENU_KEYS, "barang-masuk"],
   owner: [...ALL_MENU_KEYS.filter((k) => k !== "pengaturan"), "barang-masuk"],
-  // Gudang: hanya menu di dalam grup "ADMIN GUDANG" (Barang Datang, Alur Barang,
-  // SKU & Harga, Stok, Rak, Cetak Label) beserta semua sub-nya — default penuh
-  // karena tidak didaftarkan di ROLE_SUBMENUS.
-  gudang: ["barang-datang", "data-barang", "sku-harga", "rusak", "stok", "rak", "cetak-label", "barang-masuk"],
+  // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
+  // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
+  // di ROLE_SUBMENUS — PLUS "dashboard", khusus supaya gudang bisa buka tab
+  // "Barang Menipis" untuk mengajukan restock ke owner. Landing page login
+  // tetap ke "barang-datang" seperti biasa (lihat App.jsx), bukan ke
+  // dashboard, walau sekarang diizinkan mengaksesnya lewat sidebar.
+  gudang: ["barang-datang", "data-barang", "sku-harga", "rusak", "stok", "rak", "cetak-label", "dashboard", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma

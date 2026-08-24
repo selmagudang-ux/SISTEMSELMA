@@ -31,6 +31,15 @@ const TABS = [
   { key: "absensi", label: "Dashboard Absensi", icon: Clock },
 ];
 
+// Role gudang cuma diberi akses ke menu "dashboard" supaya bisa buka tab
+// "Barang Menipis" (ajukan restock) — tab Grosir/Keuangan/Absensi bukan
+// urusan gudang, jadi disembunyikan untuk role itu. Role lain yang memang
+// sudah dapat akses "dashboard" (superadmin/owner) tetap lihat semua tab.
+function tabsUntukRole(role) {
+  if (role === "gudang") return TABS.filter((t) => t.key === "gudang" || t.key === "menipis");
+  return TABS;
+}
+
 function awalBulanIni() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -72,7 +81,8 @@ export default function Dashboard({
   pengajuanRestock = [],
   session,
 }) {
-  const [tab, setTab] = useState("gudang");
+  const [tab, setTab] = useState(session?.role === "gudang" ? "menipis" : "gudang");
+  const tabsTampil = tabsUntukRole(session?.role);
 
   return (
     <div>
@@ -92,7 +102,7 @@ export default function Dashboard({
       />
 
       <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-2xl overflow-x-auto">
-        {TABS.map((t) => {
+        {tabsTampil.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
           return (

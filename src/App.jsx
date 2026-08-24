@@ -67,12 +67,17 @@ function MainApp({ session, onLogout }) {
   // Menu terakhir disimpan di sessionStorage supaya begitu halaman di-reload
   // (lihat fungsi navigate di bawah), tampilan langsung kembali ke menu yang
   // baru saja diklik, bukan balik lagi ke dashboard.
+  // Landing awal login pakai "dashboard" HANYA untuk role yang dashboard-nya
+  // memang halaman utama (superadmin/owner). Role operasional seperti gudang
+  // sekarang juga diizinkan buka "dashboard" (untuk tab Barang Menipis), tapi
+  // tetap landing ke halaman kerja masing-masing (allowed[0]) seperti semula.
+  const landingKeDashboard = allowed.includes("dashboard") && ["superadmin", "owner"].includes(session.role);
   const [nav, setNav] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");
       if (saved && allowed.includes(saved.menu)) return saved;
     } catch {}
-    return { menu: allowed.includes("dashboard") ? "dashboard" : allowed[0], sub: null };
+    return { menu: landingKeDashboard ? "dashboard" : allowed[0], sub: null };
   });
   const [mobileOpen, setMobileOpen] = useState(false);
 
