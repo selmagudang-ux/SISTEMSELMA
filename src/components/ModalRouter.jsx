@@ -379,7 +379,7 @@ export default function ModalRouter({
         sku={s}
         onClose={close}
         saving={saving}
-        onSubmit={(jumlah, catatan) =>
+        onSubmit={(catatan) =>
           run(async () => {
             await sb("pengajuan_restock", {
               method: "POST",
@@ -387,7 +387,6 @@ export default function ModalRouter({
                 sku_id: s.id,
                 sku: s.sku,
                 stok_saat_ajuan: s.stok || 0,
-                jumlah_diajukan: jumlah,
                 catatan,
                 status: "menunggu",
                 dibuat_oleh_id: session?.id || null,

@@ -2311,19 +2311,13 @@ export function EditRakForm({ rak, onClose, onSubmit, saving }) {
 }
 
 // Form "Ajukan Order" dari Dashboard > Barang Menipis — gudang mengajukan
-// satu SKU sekaligus jumlah yang mau di-restock ke owner. Ambang 12pcs
-// (AMBANG_MENIPIS_RESTOCK, lihat lib/constants.js) itu syarat STOK supaya
-// SKU dianggap "menipis" dan muncul di daftar ini — bukan syarat jumlah
-// yang diajukan. Jumlah order bebas ditentukan gudang, asal > 0.
+// satu SKU sekaligus ke owner untuk SKU yang stoknya sudah turun sampai
+// AMBANG_MENIPIS_RESTOCK (lihat lib/constants.js). Tidak ada input jumlah —
+// gudang cuma memberi tahu SKU mana yang perlu di-restock beserta catatan
+// opsional; owner yang menentukan tindak lanjutnya (mis. bikin PO manual
+// lewat alur Pesan Barang yang sudah ada).
 export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
-  // Catatan: AMBANG_MENIPIS_RESTOCK (12) itu ambang "stok menipis" yang
-  // menentukan SKU mana yang tampil di daftar ini (lihat Dashboard.jsx) —
-  // BUKAN syarat minimal jumlah yang boleh diajukan ke owner. Jumlah order
-  // bebas ditentukan gudang, asal angka valid dan lebih dari 0.
-  const [jumlah, setJumlah] = useState("");
   const [catatan, setCatatan] = useState("");
-
-  const valid = jumlah !== "" && Number(jumlah) > 0;
 
   return (
     <ModalShell title="Ajukan Order ke Owner" onClose={onClose}>
@@ -2333,36 +2327,6 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
         <div className="text-[11px] text-slate-500 mt-2">Stok saat ini</div>
         <div className="font-mono text-sm text-amber-400">{sku?.stok || 0}</div>
       </div>
-
-      <Field label="Jumlah yang diajukan">
-        <input
-          type="text"
-          inputMode="numeric"
-          className={inputClass}
-          value={jumlah}
-          placeholder="0"
-          // Sengaja pakai type="text" + saring manual (bukan type="number"):
-          // input type="number" bawaan browser masih bisa kebobolan karakter
-          // non-angka (mis. "e" untuk notasi eksponen, atau paste teks) yang
-          // membuat nilainya jadi NaN / format tidak sesuai tanpa disadari
-          // user. Dengan disaring manual, huruf/simbol otomatis tidak akan
-          // pernah masuk ke field ini — konsisten dengan pola InputRupiah.
-          onChange={(e) => setJumlah(e.target.value.replace(/\D/g, ""))}
-          onPaste={(e) => {
-            e.preventDefault();
-            const digitsOnly = (e.clipboardData.getData("text") || "").replace(/\D/g, "");
-            if (digitsOnly) setJumlah(digitsOnly);
-          }}
-          autoFocus
-        />
-        {jumlah === "" ? (
-          <p className="text-[11px] text-amber-400 mt-1.5">Jumlah wajib diisi angka.</p>
-        ) : (
-          !valid && (
-            <p className="text-[11px] text-amber-400 mt-1.5">Jumlah harus lebih dari 0.</p>
-          )
-        )}
-      </Field>
 
       <Field label="Catatan (opsional)">
         <input
@@ -2374,8 +2338,8 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
       </Field>
 
       <button
-        disabled={saving || !valid}
-        onClick={() => onSubmit(Number(jumlah), catatan.trim() || null)}
+        disabled={saving}
+        onClick={() => onSubmit(catatan.trim() || null)}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Mengirim…" : "Ajukan ke Owner"}
@@ -2400,15 +2364,9 @@ export function ResponPengajuanForm({ pengajuan: p, onClose, onSubmitSetujui, on
           <div className="text-[11px] text-slate-500">SKU</div>
           <div className="font-mono text-sm text-slate-200">{p.sku}</div>
         </div>
-        <div className="flex gap-6">
-          <div>
-            <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
-            <div className="font-mono text-sm text-slate-300">{p.stok_saat_ajuan}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-500">Jumlah diajukan</div>
-            <div className="font-mono text-sm text-amber-400">{p.jumlah_diajukan}</div>
-          </div>
+        <div>
+          <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
+          <div className="font-mono text-sm text-slate-300">{p.stok_saat_ajuan}</div>
         </div>
         <div className="text-[11px] text-slate-500">
           Diajukan oleh <span className="text-slate-300">{p.dibuat_oleh_nama || "—"}</span>

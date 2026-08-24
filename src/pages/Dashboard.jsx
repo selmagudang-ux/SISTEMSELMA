@@ -349,7 +349,7 @@ function DashboardMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
                   <div className="min-w-0">
                     <div className="font-mono text-xs text-slate-200 truncate">{p.sku}</div>
                     <div className="text-[11px] text-slate-500 mt-0.5">
-                      Diajukan {p.jumlah_diajukan}x oleh {p.dibuat_oleh_nama || "—"} · stok saat itu{" "}
+                      Diajukan oleh {p.dibuat_oleh_nama || "—"} · stok saat itu{" "}
                       {p.stok_saat_ajuan}
                       {p.catatan ? ` · "${p.catatan}"` : ""}
                     </div>
@@ -424,7 +424,7 @@ function DashboardMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
                 <div className="min-w-0">
                   <div className="font-mono text-xs text-slate-300 truncate">{p.sku}</div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
-                    {p.jumlah_diajukan}x oleh {p.dibuat_oleh_nama || "—"}
+                    Diajukan oleh {p.dibuat_oleh_nama || "—"}
                     {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
                   </div>
                 </div>
