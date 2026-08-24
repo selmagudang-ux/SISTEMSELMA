@@ -1,33 +1,81 @@
-import { ImageOff, RotateCcw } from "lucide-react";
+import { useState } from "react";
+import { ImageOff, RotateCcw, Camera } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
+
+// Dua tab: "Foto Baru" (barang yang belum pernah difoto sama sekali) dan
+// "Foto Ulang" (barang yang sudah pernah difoto tapi ditarik balik ke sini
+// karena ada perubahan — harga SKU baru diganti, atau alasan lain — lihat
+// tandaiPerluFotoUlang di lib/api.js untuk pemicu "harga berubah"). Sebelum
+// ini dua-duanya dicampur dalam satu grid dengan badge "Harga berubah";
+// sekarang dipisah jadi dua tab supaya admin bisa fokus kerjakan satu per
+// satu dan langsung kelihatan berapa banyak yang perlu difoto ulang.
+const TABS = [
+  { key: "baru", label: "Foto Baru", icon: Camera },
+  { key: "ulang", label: "Foto Ulang", icon: RotateCcw },
+];
 
 export default function FotoProduk({ items, setModal }) {
   const list = items.filter((i) => i.stage === "verifikasi");
-  // Barang yang ditarik balik ke sini gara-gara harga SKU-nya baru saja
-  // diganti (lihat tandaiPerluFotoUlang di lib/api.js) — fotonya masih foto
-  // lama dan wajib difoto ulang karena harga di foto sudah tidak akurat.
-  const perluFotoUlang = list.filter((i) => i.perlu_foto_ulang);
+  // Barang yang ditarik balik ke sini gara-gara ada perubahan (mis. harga
+  // SKU-nya baru saja diganti — lihat tandaiPerluFotoUlang di lib/api.js)
+  // — fotonya masih foto lama dan wajib difoto ulang karena sudah tidak
+  // akurat lagi (harga, atau perubahan lain).
+  const fotoBaru = list.filter((i) => !i.perlu_foto_ulang);
+  const fotoUlang = list.filter((i) => i.perlu_foto_ulang);
+
+  const [tab, setTab] = useState("baru");
+  const activeList = tab === "ulang" ? fotoUlang : fotoBaru;
 
   return (
     <div>
       <PageHeader
         title="Pemotretan"
-        description="Barang yang siap difoto dan diverifikasi kecocokannya dengan SKU."
+        description={
+          tab === "ulang"
+            ? "Barang yang sudah pernah difoto tapi perlu difoto ulang karena ada perubahan (mis. harga)."
+            : "Barang yang belum pernah difoto dan siap difoto pertama kali."
+        }
       />
-      {perluFotoUlang.length > 0 && (
-        <div className="mb-4 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5 text-xs text-amber-300">
-          <RotateCcw size={15} className="shrink-0" />
-          <span>
-            <span className="font-semibold">{perluFotoUlang.length} barang</span> harganya baru saja diganti dan
-            wajib difoto ulang (ditandai <span className="font-semibold">"Harga berubah"</span> di bawah).
-          </span>
-        </div>
-      )}
-      {list.length === 0 ? (
-        <EmptyState label="Tidak ada barang yang menunggu pemotretan." />
+
+      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-sm">
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.key;
+          const count = t.key === "ulang" ? fotoUlang.length : fotoBaru.length;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-md transition ${
+                active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Icon size={13} /> {t.label}
+              {count > 0 && (
+                <span
+                  className={`text-[10px] font-semibold px-1.5 rounded-full ${
+                    active ? "bg-slate-950/20" : "bg-slate-800"
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeList.length === 0 ? (
+        <EmptyState
+          label={
+            tab === "ulang"
+              ? "Tidak ada barang yang perlu difoto ulang."
+              : "Tidak ada barang baru yang menunggu pemotretan."
+          }
+        />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {list.map((item) => (
+          {activeList.map((item) => (
             <div
               key={item.id}
               className={`bg-slate-900 border rounded-lg p-3 relative ${
