@@ -583,6 +583,62 @@ export function saldoPerRekening(transaksi, rekeningList) {
   return Object.values(map);
 }
 
+// =========================================================
+// SALDO AWAL PER BULAN — override manual per rekening per bulan.
+// Disimpan di master_data dengan tipe "saldo_awal" (pola sama seperti
+// rekening/kategori_masuk/kategori_keluar): kode = "YYYY-MM-<KODE_REKENING>",
+// label = jumlah (disimpan sebagai teks angka polos, bukan format rupiah).
+// Kalau tidak ada baris override untuk kombinasi bulan+rekening itu, saldo
+// awal dihitung OTOMATIS = akumulasi seluruh transaksi SEBELUM tanggal 1
+// bulan tsb, jadi otomatis nyambung dari saldo akhir bulan sebelumnya tanpa
+// perlu disalin manual tiap ganti bulan.
+// =========================================================
+
+export function kodeSaldoAwal(tahun, bulan, rekeningKode) {
+  return `${tahun}-${String(bulan).padStart(2, "0")}-${rekeningKode}`;
+}
+
+// Saldo awal SATU rekening di bulan tertentu.
+// -> { jumlah, manual, id }
+//    manual=true  : nilainya override tersimpan (id = id baris master_data,
+//                    dipakai buat PATCH waktu edit / DELETE waktu reset).
+//    manual=false : otomatis, dihitung dari akumulasi transaksi.
+export function saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, rekeningKode) {
+  const kode = kodeSaldoAwal(tahun, bulan, rekeningKode);
+  const override = (saldoAwalList || []).find((m) => m.kode === kode);
+  if (override) return { jumlah: Number(override.label) || 0, manual: true, id: override.id };
+  const batasAwal = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
+  const sebelum = (transaksi || []).filter((t) => t.tanggal < batasAwal);
+  const [hasil] = saldoPerRekening(sebelum, [{ kode: rekeningKode, label: rekeningKode }]);
+  return { jumlah: hasil?.saldo || 0, manual: false, id: null };
+}
+
+// Saldo awal SEMUA rekening buat satu bulan sekaligus — dipakai halaman
+// Laporan Keuangan. rekeningList = master.rekening (daftar { kode, label }).
+export function saldoAwalBulan(transaksi, rekeningList, saldoAwalList, tahun, bulan) {
+  return (rekeningList || []).map((r) => ({
+    kode: r.kode,
+    label: r.label,
+    ...saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, r.kode),
+  }));
+}
+
+// Saldo akhir SATU rekening di bulan tertentu = saldo awal bulan itu +
+// mutasi bersih (masuk - keluar +/- transfer) SELAMA bulan itu saja. Berguna
+// buat preview "kalau saldo awal diubah jadi segini, saldo akhirnya jadi
+// segini" — saldo bulan berikutnya otomatis ikut nyambung lewat hitungan
+// akumulasi di saldoAwalRekening() di atas, tidak perlu disimpan terpisah.
+export function saldoAkhirRekening(transaksi, saldoAwalList, tahun, bulan, rekeningKode) {
+  const { jumlah: awal } = saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, rekeningKode);
+  const bulanStr = String(bulan).padStart(2, "0");
+  const awalIso = `${tahun}-${bulanStr}-01`;
+  const hariTerakhir = new Date(tahun, bulan, 0).getDate();
+  const akhirIso = `${tahun}-${bulanStr}-${String(hariTerakhir).padStart(2, "0")}`;
+  const bulanIni = (transaksi || []).filter((t) => t.tanggal >= awalIso && t.tanggal <= akhirIso);
+  const [hasil] = saldoPerRekening(bulanIni, [{ kode: rekeningKode, label: rekeningKode }]);
+  return awal + (hasil?.saldo || 0);
+}
+
 const BULAN_PENDEK = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 
 // Awal minggu (Senin) dari sebuah tanggal ISO "YYYY-MM-DD", dikembalikan sebagai

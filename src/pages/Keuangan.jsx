@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
   ringkasanKeuangan,
   saldoPerRekening,
+  saldoAwalBulan,
+  kodeSaldoAwal,
   arusKasPerPeriode,
   breakdownPengeluaranKategori,
   laporanBulananData,
@@ -88,7 +90,7 @@ export default function Keuangan({ sub, keuanganTransaksi = [], master = {}, rel
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
   }
   if (sub === "laporan") {
-    return <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} showToast={showToast} />;
+    return <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
   }
   if (sub === "log") {
     return <LogKeterangan keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
@@ -740,10 +742,157 @@ function LogKeterangan({ keuanganTransaksi, master, reload, showToast }) {
 }
 
 // Halaman "Laporan Keuangan" — ringkasan, grafik arus kas, breakdown
+const BULAN_LABEL_PANJANG = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+// Panel "Saldo Awal Bulan" — saldo awal per rekening utk bulan yang dipilih.
+// Default OTOMATIS = nyambung dari akumulasi saldo transaksi sebelum bulan
+// itu (jadi otomatis = saldo akhir bulan sebelumnya), tapi tiap rekening bisa
+// dioverride manual sendiri-sendiri (mis. saat mulai pakai sistem di tengah
+// tahun, atau ada koreksi/penyesuaian kas). Override tersimpan di master_data
+// tipe "saldo_awal" — lihat saldoAwalBulan() di lib/api.js.
+function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload, showToast }) {
+  const now = new Date();
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [editKode, setEditKode] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  if (rekeningList.length === 0) return null;
+
+  const data = saldoAwalBulan(keuanganTransaksi, rekeningList, saldoAwalList, tahun, bulan);
+
+  const startEdit = (r) => {
+    setEditKode(r.kode);
+    setEditValue(String(r.jumlah));
+  };
+  const cancelEdit = () => {
+    setEditKode(null);
+    setEditValue("");
+  };
+
+  const simpanOverride = async (r) => {
+    const nilai = Number(editValue);
+    if (Number.isNaN(nilai)) {
+      showToast("Jumlah tidak valid", "err");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (r.manual && r.id) {
+        await sb(`master_data?id=eq.${r.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ label: String(nilai) }),
+        });
+      } else {
+        await sb("master_data", {
+          method: "POST",
+          body: JSON.stringify({ tipe: "saldo_awal", kode: kodeSaldoAwal(tahun, bulan, r.kode), label: String(nilai) }),
+        });
+      }
+      await reload();
+      cancelEdit();
+      showToast("Saldo awal disimpan");
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetOtomatis = async (r) => {
+    if (!r.id) return;
+    setSaving(true);
+    try {
+      await sb(`master_data?id=eq.${r.id}`, { method: "DELETE" });
+      await reload();
+      showToast("Dikembalikan ke otomatis");
+    } catch (e) {
+      showToast(e.message || "Gagal menghapus", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-5">
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="text-xs text-slate-400">Saldo Awal Bulan (otomatis nyambung dari bulan sebelumnya, bisa diedit manual)</div>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={bulan}
+            onChange={(e) => setBulan(Number(e.target.value))}
+            className={`${inputClass} w-auto text-xs py-1`}
+          >
+            {BULAN_LABEL_PANJANG.map((l, i) => (
+              <option key={l} value={i + 1}>{l}</option>
+            ))}
+          </select>
+          <select
+            value={tahun}
+            onChange={(e) => setTahun(Number(e.target.value))}
+            className={`${inputClass} w-auto text-xs py-1`}
+          >
+            {Array.from({ length: 6 }, (_, i) => now.getFullYear() - 4 + i).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        {data.map((r) => (
+          <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
+            <div className="flex items-center justify-between gap-1.5 mb-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+                <Landmark size={12} className="flex-shrink-0" /> <span className="truncate">{r.label}</span>
+              </div>
+              <Badge color={r.manual ? "amber" : "slate"}>{r.manual ? "Manual" : "Otomatis"}</Badge>
+            </div>
+            {editKode === r.kode ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  className={`${inputClass} text-sm py-1`}
+                />
+                <button onClick={() => simpanOverride(r)} disabled={saving} className="text-emerald-400 hover:text-emerald-300 p-1 flex-shrink-0">
+                  <Check size={14} />
+                </button>
+                <button onClick={cancelEdit} className="text-slate-500 hover:text-slate-300 p-1 flex-shrink-0">
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-1">
+                <div className="text-base font-semibold text-slate-100">{fmtRp(r.jumlah)}</div>
+                <div className="flex items-center gap-0.5 flex-shrink-0">
+                  <button onClick={() => startEdit(r)} className="text-slate-500 hover:text-slate-300 p-1" title="Edit saldo awal">
+                    <Pencil size={12} />
+                  </button>
+                  {r.manual && (
+                    <button onClick={() => resetOtomatis(r)} className="text-slate-500 hover:text-slate-300 p-1" title="Pakai otomatis">
+                      <RotateCcw size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
 // narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
 // ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
-function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
+function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
@@ -831,6 +980,14 @@ function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
           iconColor={saldo >= 0 ? "text-emerald-500" : "text-red-500"}
         />
       </div>
+
+      <SaldoAwalBulan
+        keuanganTransaksi={keuanganTransaksi}
+        rekeningList={rekeningList}
+        saldoAwalList={master.saldo_awal || []}
+        reload={reload}
+        showToast={showToast}
+      />
 
       {rekeningList.length > 0 && (
         <div className="mb-5">
