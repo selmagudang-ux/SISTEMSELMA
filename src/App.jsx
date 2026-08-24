@@ -101,6 +101,7 @@ function MainApp({ session, onLogout }) {
   const [keuanganTransaksi, setKeuanganTransaksi] = useState([]);
   const [absensiRows, setAbsensiRows] = useState([]);
   const [karyawanList, setKaryawanList] = useState([]);
+  const [pengajuanRestock, setPengajuanRestock] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
   const [saving, setSaving] = useState(false);
@@ -183,7 +184,7 @@ function MainApp({ session, onLogout }) {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes] = await Promise.all([
+      const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes, pengajuanRestockRes] = await Promise.all([
         sbAll("items?select=*&order=created_at.desc"),
         sbAll("pesanan_masuk?select=*&order=created_at.desc"),
         sbAll("sku_master?select=*&order=created_at.desc"),
@@ -205,6 +206,7 @@ function MainApp({ session, onLogout }) {
         sbAll("keuangan_transaksi?select=*&order=tanggal.desc"),
         listAbsensi(),
         listKaryawan(),
+        sbAll("pengajuan_restock?select=*&order=created_at.desc"),
       ]);
       setItems(itemsRes || []);
       setPesananMasuk(pesananMasukRes || []);
@@ -232,6 +234,7 @@ function MainApp({ session, onLogout }) {
       setKeuanganTransaksi(keuanganRes || []);
       setAbsensiRows(absensiRes || []);
       setKaryawanList(karyawanRes || []);
+      setPengajuanRestock(pengajuanRestockRes || []);
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -433,6 +436,9 @@ function MainApp({ session, onLogout }) {
                   master={master}
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
+                  skuMaster={skuMasterGrosir}
+                  pengajuanRestock={pengajuanRestock}
+                  session={session}
                 />
               )}
               {nav.menu === "barang-datang" && (

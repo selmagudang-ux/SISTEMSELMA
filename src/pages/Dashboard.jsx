@@ -2,9 +2,9 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3,
+  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, AlertTriangle,
 } from "lucide-react";
-import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
+import { STAGE_ORDER, STAGE_META, COLOR, AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
 import {
   fmtRp,
   sisaHutangPesanan,
@@ -25,6 +25,7 @@ import { GrafikArusKas, BreakdownPengeluaran, LaporanLabaRugi } from "./Keuangan
 // sama seperti halaman Laporan), bukan menu terpisah di sidebar.
 const TABS = [
   { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
+  { key: "menipis", label: "Barang Menipis", icon: AlertTriangle },
   { key: "grosir", label: "Dashboard Grosir", icon: Store },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
   { key: "absensi", label: "Dashboard Absensi", icon: Clock },
@@ -67,6 +68,9 @@ export default function Dashboard({
   master = {},
   absensiRows = [],
   karyawanList = [],
+  skuMaster = [],
+  pengajuanRestock = [],
+  session,
 }) {
   const [tab, setTab] = useState("gudang");
 
@@ -81,11 +85,13 @@ export default function Dashboard({
             ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
+            : tab === "menipis"
+            ? "SKU dengan stok menipis, dan pengajuan order dari gudang ke owner."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
         }
       />
 
-      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-md">
+      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-2xl overflow-x-auto">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
@@ -112,6 +118,13 @@ export default function Dashboard({
           rakKosong={rakKosong}
           items={items}
           onNavigate={onNavigate}
+          setModal={setModal}
+        />
+      ) : tab === "menipis" ? (
+        <DashboardMenipis
+          skuMaster={skuMaster}
+          pengajuanRestock={pengajuanRestock}
+          session={session}
           setModal={setModal}
         />
       ) : tab === "grosir" ? (
@@ -292,6 +305,137 @@ function DashboardGudang({ stageCounts, skuCount, totalStok, rakCount, rakKosong
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+// Dashboard "Barang Menipis" (baru) — gudang mengajukan order restock ke
+// owner untuk SKU yang stoknya sudah turun sampai AMBANG_MENIPIS_RESTOCK
+// pcs, owner meninjau (Setujui/Tolak) langsung dari sini. Menyetujui TIDAK
+// otomatis membuat Pesan Barang (PO) — cuma menandai status "disetujui"
+// (arahan user: mirip badge "Habis" di Katalog, sekadar penanda, bukan alur
+// otomatis) — gudang yang nanti bikin PO manual lewat Pesan Barang kalau
+// mau ditindaklanjuti.
+function DashboardMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
+  const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
+  const bisaSetujui = ["owner", "superadmin"].includes(session?.role);
+
+  const menipis = (skuMaster || [])
+    .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
+    .sort((a, b) => (a.stok || 0) - (b.stok || 0));
+
+  const menunggu = [...(pengajuanRestock || [])]
+    .filter((p) => p.status === "menunggu")
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const riwayat = [...(pengajuanRestock || [])]
+    .filter((p) => p.status !== "menunggu")
+    .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at))
+    .slice(0, 10);
+
+  // SKU yang sudah punya pengajuan menunggu — supaya tidak diajukan dobel.
+  const skuSudahDiajukan = new Set(menunggu.map((p) => p.sku));
+
+  return (
+    <div>
+      {menunggu.length > 0 && (
+        <div className="mb-6">
+          <div className="text-xs font-semibold text-slate-400 mb-2">
+            Menunggu Persetujuan{!bisaSetujui && " (diajukan tim gudang)"}
+          </div>
+          <div className="rounded-xl border border-slate-800 overflow-hidden">
+            {menunggu.map((p, i) => (
+              <div key={p.id} className={`px-4 py-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs text-slate-200 truncate">{p.sku}</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Diajukan {p.jumlah_diajukan}x oleh {p.dibuat_oleh_nama || "—"} · stok saat itu{" "}
+                      {p.stok_saat_ajuan}
+                      {p.catatan ? ` · "${p.catatan}"` : ""}
+                    </div>
+                  </div>
+                  {bisaSetujui ? (
+                    <button
+                      onClick={() => setModal({ type: "respon-pengajuan-restock", item: p })}
+                      className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md border border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                    >
+                      Tinjau
+                    </button>
+                  ) : (
+                    <Badge color="amber">Menunggu</Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-xs font-semibold text-slate-400 mb-2">
+        Stok Menipis (≤ {AMBANG_MENIPIS_RESTOCK}pcs)
+      </div>
+      {menipis.length === 0 ? (
+        <div className="mb-6">
+          <EmptyState label="Tidak ada SKU dengan stok menipis." />
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+          {menipis.map((s, i) => {
+            const sudahDiajukan = skuSudahDiajukan.has(s.sku);
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-xs text-slate-200 truncate">{s.sku}</div>
+                  <div className="text-[11px] mt-0.5">
+                    {s.stok <= 0 ? (
+                      <span className="text-red-400 font-medium">Habis</span>
+                    ) : (
+                      <span className="text-amber-400 font-medium">Sisa {s.stok}</span>
+                    )}
+                  </div>
+                </div>
+                {bisaAjukan && (
+                  <button
+                    disabled={sudahDiajukan}
+                    onClick={() => setModal({ type: "ajukan-restock", item: s })}
+                    className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    {sudahDiajukan ? "Sudah diajukan" : "Ajukan Order →"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {riwayat.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-slate-400 mb-2">Riwayat Pengajuan Terakhir</div>
+          <div className="rounded-xl border border-slate-800 overflow-hidden">
+            {riwayat.map((p, i) => (
+              <div
+                key={p.id}
+                className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-xs text-slate-300 truncate">{p.sku}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {p.jumlah_diajukan}x oleh {p.dibuat_oleh_nama || "—"}
+                    {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
+                  </div>
+                </div>
+                <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
+                  {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import {
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
-  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm,
+  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, AjukanRestockForm, ResponPengajuanForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -371,6 +371,70 @@ export default function ModalRouter({
       setSaving(false);
     }
   };
+
+  if (modal.type === "ajukan-restock") {
+    const s = modal.item;
+    return (
+      <AjukanRestockForm
+        sku={s}
+        onClose={close}
+        saving={saving}
+        onSubmit={(jumlah, catatan) =>
+          run(async () => {
+            await sb("pengajuan_restock", {
+              method: "POST",
+              body: JSON.stringify({
+                sku_id: s.id,
+                sku: s.sku,
+                stok_saat_ajuan: s.stok || 0,
+                jumlah_diajukan: jumlah,
+                catatan,
+                status: "menunggu",
+                dibuat_oleh_id: session?.id || null,
+                dibuat_oleh_nama: session?.nama || session?.username || null,
+              }),
+            });
+          }, "Pengajuan restock terkirim ke owner")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "respon-pengajuan-restock") {
+    const p = modal.item;
+    return (
+      <ResponPengajuanForm
+        pengajuan={p}
+        onClose={close}
+        saving={saving}
+        onSubmitSetujui={() =>
+          run(async () => {
+            await sb(`pengajuan_restock?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: "disetujui",
+                direspon_oleh_nama: session?.nama || session?.username || null,
+                direspon_pada: new Date().toISOString(),
+              }),
+            });
+          }, "Pengajuan disetujui")
+        }
+        onSubmitTolak={(catatanOwner) =>
+          run(async () => {
+            await sb(`pengajuan_restock?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: "ditolak",
+                catatan_owner: catatanOwner || null,
+                direspon_oleh_nama: session?.nama || session?.username || null,
+                direspon_pada: new Date().toISOString(),
+              }),
+            });
+          }, "Pengajuan ditolak")
+        }
+      />
+    );
+  }
 
   if (modal.type === "ganti-password") {
     return (

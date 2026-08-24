@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
+import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
 import { rakForSku } from "../pages/Rak";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
@@ -2306,6 +2307,146 @@ export function EditRakForm({ rak, onClose, onSubmit, saving }) {
       >
         {saving ? "Menyimpan…" : "Simpan Perubahan"}
       </button>
+    </ModalShell>
+  );
+}
+
+// Form "Ajukan Order" dari Dashboard > Barang Menipis — gudang mengajukan
+// satu SKU sekaligus jumlah yang mau di-restock ke owner. jumlah WAJIB
+// minimal AMBANG_MENIPIS_RESTOCK pcs (lihat lib/constants.js) — ini aturan
+// dari user: baru boleh diajukan kalau jumlahnya minimal segitu.
+export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
+  const [jumlah, setJumlah] = useState(String(AMBANG_MENIPIS_RESTOCK));
+  const [catatan, setCatatan] = useState("");
+
+  const valid = Number(jumlah) >= AMBANG_MENIPIS_RESTOCK;
+
+  return (
+    <ModalShell title="Ajukan Order ke Owner" onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">SKU</div>
+        <div className="font-mono text-sm text-slate-200">{sku?.sku}</div>
+        <div className="text-[11px] text-slate-500 mt-2">Stok saat ini</div>
+        <div className="font-mono text-sm text-amber-400">{sku?.stok || 0}</div>
+      </div>
+
+      <Field label={`Jumlah yang diajukan (minimal ${AMBANG_MENIPIS_RESTOCK}pcs)`}>
+        <input
+          type="number"
+          className={inputClass}
+          value={jumlah}
+          onChange={(e) => setJumlah(e.target.value)}
+          min={AMBANG_MENIPIS_RESTOCK}
+          autoFocus
+        />
+        {!valid && jumlah !== "" && (
+          <p className="text-[11px] text-amber-400 mt-1.5">
+            Order minimal {AMBANG_MENIPIS_RESTOCK}pcs per SKU.
+          </p>
+        )}
+      </Field>
+
+      <Field label="Catatan (opsional)">
+        <input
+          className={inputClass}
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          placeholder="Contoh: laris di grosir, supplier langganan, dll"
+        />
+      </Field>
+
+      <button
+        disabled={saving || !valid}
+        onClick={() => onSubmit(Number(jumlah), catatan.trim() || null)}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Mengirim…" : "Ajukan ke Owner"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Form tinjau pengajuan restock — dipakai owner/superadmin untuk
+// Setujui/Tolak. Sesuai arahan user: menyetujui TIDAK otomatis membuat
+// Pesan Barang (PO) baru — cuma menandai status "disetujui" (mirip badge
+// "Habis" di Katalog/Master Barang), gudang yang nanti bikin PO manual
+// lewat alur Pesan Barang yang sudah ada kalau memang mau ditindaklanjuti.
+export function ResponPengajuanForm({ pengajuan: p, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
+  const [mauTolak, setMauTolak] = useState(false);
+  const [catatanOwner, setCatatanOwner] = useState("");
+
+  return (
+    <ModalShell title="Tinjau Pengajuan Restock" onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 space-y-1.5">
+        <div>
+          <div className="text-[11px] text-slate-500">SKU</div>
+          <div className="font-mono text-sm text-slate-200">{p.sku}</div>
+        </div>
+        <div className="flex gap-6">
+          <div>
+            <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
+            <div className="font-mono text-sm text-slate-300">{p.stok_saat_ajuan}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500">Jumlah diajukan</div>
+            <div className="font-mono text-sm text-amber-400">{p.jumlah_diajukan}</div>
+          </div>
+        </div>
+        <div className="text-[11px] text-slate-500">
+          Diajukan oleh <span className="text-slate-300">{p.dibuat_oleh_nama || "—"}</span>
+        </div>
+        {p.catatan && (
+          <div className="text-[11px] text-slate-500">
+            Catatan: <span className="text-slate-300">{p.catatan}</span>
+          </div>
+        )}
+      </div>
+
+      {mauTolak ? (
+        <>
+          <Field label="Alasan ditolak (opsional)">
+            <input
+              className={inputClass}
+              value={catatanOwner}
+              onChange={(e) => setCatatanOwner(e.target.value)}
+              placeholder="Contoh: stok masih cukup, tunggu bulan depan, dll"
+              autoFocus
+            />
+          </Field>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMauTolak(false)}
+              className="flex-1 border border-slate-800 text-slate-300 text-sm py-2.5 rounded-lg"
+            >
+              Batal
+            </button>
+            <button
+              disabled={saving}
+              onClick={() => onSubmitTolak(catatanOwner)}
+              className="flex-1 bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {saving ? "Menyimpan…" : "Konfirmasi Tolak"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="flex gap-2">
+          <button
+            disabled={saving}
+            onClick={() => setMauTolak(true)}
+            className="flex-1 border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:opacity-50 text-sm font-medium py-2.5 rounded-lg"
+          >
+            Tolak
+          </button>
+          <button
+            disabled={saving}
+            onClick={onSubmitSetujui}
+            className="flex-1 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+          >
+            {saving ? "Menyimpan…" : "Setujui"}
+          </button>
+        </div>
+      )}
     </ModalShell>
   );
 }

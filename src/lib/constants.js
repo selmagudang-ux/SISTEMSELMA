@@ -39,6 +39,12 @@ export const STAGE_ROLE = {
   marketplace: "marketplace",
 };
 
+// Ambang batas "Barang Menipis" (Dashboard) — SKU dianggap layak diajukan
+// restock begitu stoknya turun sampai titik ini (≤), dan jumlah yang
+// diajukan gudang ke owner pun minimal segini juga (lihat AjukanRestockForm
+// & DashboardMenipis).
+export const AMBANG_MENIPIS_RESTOCK = 12;
+
 // Owner & superadmin selalu boleh melanjutkan tahap apa pun, role lain hanya
 // boleh untuk tahap yang jadi "tugas"-nya sendiri (lihat STAGE_ROLE di atas).
 export function canAdvanceStage(role, stage) {
