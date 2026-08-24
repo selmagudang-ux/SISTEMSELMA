@@ -2332,17 +2332,32 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
 
       <Field label={`Jumlah yang diajukan (minimal ${AMBANG_MENIPIS_RESTOCK}pcs)`}>
         <input
-          type="number"
+          type="text"
+          inputMode="numeric"
           className={inputClass}
           value={jumlah}
-          onChange={(e) => setJumlah(e.target.value)}
-          min={AMBANG_MENIPIS_RESTOCK}
+          // Sengaja pakai type="text" + saring manual (bukan type="number"):
+          // input type="number" bawaan browser masih bisa kebobolan karakter
+          // non-angka (mis. "e" untuk notasi eksponen, atau paste teks) yang
+          // membuat nilainya jadi NaN / format tidak sesuai tanpa disadari
+          // user. Dengan disaring manual, huruf/simbol otomatis tidak akan
+          // pernah masuk ke field ini — konsisten dengan pola InputRupiah.
+          onChange={(e) => setJumlah(e.target.value.replace(/\D/g, ""))}
+          onPaste={(e) => {
+            e.preventDefault();
+            const digitsOnly = (e.clipboardData.getData("text") || "").replace(/\D/g, "");
+            if (digitsOnly) setJumlah(digitsOnly);
+          }}
           autoFocus
         />
-        {!valid && jumlah !== "" && (
-          <p className="text-[11px] text-amber-400 mt-1.5">
-            Order minimal {AMBANG_MENIPIS_RESTOCK}pcs per SKU.
-          </p>
+        {jumlah === "" ? (
+          <p className="text-[11px] text-amber-400 mt-1.5">Jumlah wajib diisi angka.</p>
+        ) : (
+          !valid && (
+            <p className="text-[11px] text-amber-400 mt-1.5">
+              Order minimal {AMBANG_MENIPIS_RESTOCK}pcs per SKU.
+            </p>
+          )
         )}
       </Field>
 
