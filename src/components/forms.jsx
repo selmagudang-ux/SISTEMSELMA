@@ -736,7 +736,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
 export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, saving, session }) {
   const isSuperadmin = session?.role === "superadmin";
   const [selectedId, setSelectedId] = useState("");
-  const [hargaBaru, setHargaBaru] = useState("");
+  const [hargaBaru, setHargaBaru] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
 
   const selected = skuMaster.find((s) => String(s.id) === String(selectedId)) || null;
   const skuOptions = skuMaster.map((s) => ({ value: s.id, label: `${s.sku} · stok ${s.stok}` }));
@@ -867,7 +867,12 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           value={selectedId}
           onChange={(id) => {
             setSelectedId(id);
-            setHargaBaru("");
+            // Auto-isi dari harga bon (item.harga, hasil input di Konfirmasi
+            // Datang) — user tinggal cek/koreksi, tidak perlu ketik ulang.
+            // Kalau kebetulan sama dengan harga lama SKU, tetap aman: saat
+            // submit dianggap "tidak berubah" (lihat kondisi di tombol
+            // simpan di bawah).
+            setHargaBaru(Number(item?.harga) > 0 ? String(item.harga) : "");
           }}
           options={skuOptions}
           placeholder="Cari kode SKU…"
@@ -881,11 +886,11 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
             <div className="font-mono text-sm text-amber-400">
               {selected.stok} + {jumlahFinal} = {selected.stok + jumlahFinal}
             </div>
-            <div className="text-[11px] text-slate-500 mt-2">Harga asli SKU ini saat ini</div>
+            <div className="text-[11px] text-slate-500 mt-2">Harga asli SKU ini saat ini (data lama di sistem)</div>
             <div className="font-mono text-sm text-slate-300">{fmtRp(selected.harga_asli)}</div>
           </div>
 
-          <Field label="Harga Asli barang ini (kosongkan kalau sama)">
+          <Field label="Harga Asli barang ini (dari bon barang datang — kosongkan kalau sama)">
             <input
               type="number"
               className={inputClass}
@@ -893,6 +898,11 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
               onChange={(e) => setHargaBaru(e.target.value)}
               placeholder={`${selected.harga_asli}`}
             />
+            {Number(item?.harga) > 0 && (
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                Otomatis terisi dari harga/pcs saat Input Barang Datang — ubah/kosongkan di sini kalau perlu.
+              </p>
+            )}
             {hargaBaru && Number(hargaBaru) !== selected.harga_asli && (
               <p className="text-[11px] text-amber-400 mt-1.5">
                 Harga beda dari harga lama — nanti di Master Barang akan muncul pilihan mau pakai harga lama atau
