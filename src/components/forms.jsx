@@ -392,6 +392,342 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   );
 }
 
+// Form "Pesan Barang" — dicatat begitu ORDER ke supplier dibuat, bukan pas
+// barangnya sudah sampai. Sengaja TIDAK minta rincian model/qty karena pada
+// prakteknya itu baru ketahuan begitu barang dibuka fisiknya — saat pesan,
+// yang biasanya sudah pasti cuma toko & harga kesepakatan. Rincian model,
+// qty, dan foto bon diisi belakangan lewat "Konfirmasi Datang" (dibuka dari
+// baris pesanan ini di halaman Barang Datang) begitu barangnya benar-benar
+// di tangan — supaya riwayat toko/harga/kodenya tetap satu, nyambung dari
+// pesan sampai datang, bukan dua catatan terpisah yang tidak berhubungan.
+export function PesanBarangForm({ onClose, onSubmit, saving }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [tanggal, setTanggal] = useState(today);
+  const [supplier, setSupplier] = useState("");
+  const [jenis, setJenis] = useState("Pembelian");
+  const [jenisLainnya, setJenisLainnya] = useState("");
+  const [harga, setHarga] = useState("");
+  const [catatan, setCatatan] = useState("");
+
+  const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
+  const valid = supplier.trim() && (jenis !== "Lainnya" || jenisLainnya.trim());
+
+  return (
+    <ModalShell title="Pesan Barang ke Supplier" onClose={onClose}>
+      <p className="text-[11px] text-slate-500 -mt-1 mb-3">
+        Dicatat begitu order dibuat — biasanya baru tahu toko &amp; harganya dulu. Rincian model
+        &amp; qty diisi belakangan lewat "Konfirmasi Datang" begitu barangnya benar-benar sampai.
+      </p>
+      <Field label="Tanggal Pesan">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+      <Field label="Toko/Supplier">
+        <input
+          className={inputClass}
+          value={supplier}
+          onChange={(e) => setSupplier(e.target.value)}
+          placeholder="Nama toko/supplier"
+          autoFocus
+        />
+      </Field>
+      <Field label="Jenis">
+        <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
+          {JENIS_BARANG_MASUK.map((j) => (
+            <option key={j} value={j}>{j}</option>
+          ))}
+        </select>
+      </Field>
+      {jenis === "Lainnya" && (
+        <Field label="Keterangan">
+          <input
+            className={inputClass}
+            value={jenisLainnya}
+            onChange={(e) => setJenisLainnya(e.target.value)}
+            placeholder="Contoh: Konsinyasi, Hadiah, dll"
+          />
+        </Field>
+      )}
+      <Field label="Total Harga Kesepakatan (opsional)">
+        <InputRupiah value={harga} onChange={setHarga} placeholder="Total nilai pesanan (bukan harga per pcs)" />
+      </Field>
+      <p className="text-[11px] text-slate-500 -mt-2 mb-3">
+        Ini TOTAL nilai/nota yang disepakati untuk seluruh pesanan — bukan harga per pcs, karena
+        model &amp; qty per model memang belum ketahuan sekarang. Harga per pcs tiap model diisi
+        nanti pas "Konfirmasi Datang", setelah rinciannya jelas.
+      </p>
+      <Field label="Catatan (opsional)">
+        <input
+          className={inputClass}
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          placeholder="Contoh: perkiraan qty, model yang dipesan, dll"
+        />
+      </Field>
+      <button
+        disabled={saving || !valid}
+        onClick={() =>
+          onSubmit({
+            tanggal,
+            supplier: supplier.trim(),
+            jenis: jenisFinal || null,
+            totalHarga: Number(harga) || 0,
+            catatan: catatan.trim() || null,
+          })
+        }
+        className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Pesanan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Form "Konfirmasi Datang" — dibuka dari baris pesanan (dibuat lewat
+// PesanBarangForm di atas) yang statusnya masih Menunggu/Sebagian Datang.
+// Isi rincian model & qty yang SEBENARNYA datang di sini, persis pola
+// BarangDatangForm — bedanya, submit-nya meng-UPDATE baris pesanan yang SAMA
+// (bukan bikin baris baru), supaya kode/toko/riwayatnya tetap satu dari pesan
+// sampai datang. Total harga kesepakatan waktu pesan ditampilkan sebagai info
+// di atas (BUKAN harga per pcs — itu memang beda satuan), jadi harga per pcs
+// tiap model tetap harus diisi manual di sini setelah rinciannya jelas.
+export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
+  const today = new Date().toISOString().slice(0, 10);
+  // harga_kesepakatan = kolom baru (persisten, tidak hilang setelah konfirmasi).
+  // Fallback ke detail_model[0].harga_total_pesan untuk pesanan lama yang
+  // dibuat sebelum kolom ini ada.
+  const totalHargaAwal = Number(pesanan?.harga_kesepakatan ?? pesanan?.detail_model?.[0]?.harga_total_pesan) || 0;
+  const [tanggal, setTanggal] = useState(today);
+  const [fotoBon, setFotoBon] = useState(null);
+  const [fotoBonPreview, setFotoBonPreview] = useState(null);
+  const [models, setModels] = useState([barisBarangDatang()]);
+  const [catatan, setCatatan] = useState(pesanan?.catatan || "");
+  const [keteranganSelisih, setKeteranganSelisih] = useState(pesanan?.keterangan_selisih || "");
+
+  const handleFotoBon = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFotoBon(f);
+    setFotoBonPreview(URL.createObjectURL(f));
+  };
+
+  const updateModel = (idx, patch) =>
+    setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const tambahModel = () => setModels((rows) => [...rows, barisBarangDatang()]);
+  const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
+
+  const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+  const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
+  const totalNilai = models.reduce(
+    (sum, m) => sum + Math.max((Number(m.jumlahDatang) || 0) - (Number(m.jumlahRusak) || 0), 0) * (Number(m.harga) || 0),
+    0
+  );
+  // Selisih antara total harga kesepakatan (waktu pesan) dan total harga
+  // barang yang benar-benar datang (qty baik x harga/pcs, diisi di atas).
+  // Cuma relevan kalau ada harga kesepakatan tercatat (totalHargaAwal > 0).
+  const adaKesepakatan = totalHargaAwal > 0;
+  const selisih = adaKesepakatan ? totalNilai - totalHargaAwal : 0;
+  const adaSelisih = adaKesepakatan && selisih !== 0;
+  const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
+  const valid =
+    models.length > 0 &&
+    models.every((m) => (Number(m.jumlahDatang) || 0) >= 1) &&
+    models.every((m) => !rusakMelebihiDatang(m)) &&
+    // Kalau harga kesepakatan & harga barang datang tidak sama persis,
+    // wajib isi keterangan (alasan kurang/lebihnya) sebelum bisa disimpan.
+    (!adaSelisih || keteranganSelisih.trim() !== "");
+
+  return (
+    <ModalShell title={`Konfirmasi Datang — ${pesanan?.kode_bon || ""}`} onClose={onClose}>
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2.5 mb-3 text-[11px] text-slate-400 space-y-0.5">
+        <div>
+          Toko/Supplier: <span className="text-slate-200 font-medium">{pesanan?.supplier || "—"}</span>
+        </div>
+        <div>Tanggal pesan: <span className="text-slate-300">{pesanan?.tanggal_pesan || "—"}</span></div>
+        {totalHargaAwal > 0 && (
+          <div>
+            Total harga kesepakatan: <span className="text-slate-300">{fmtRp(totalHargaAwal)}</span>
+            <span className="text-slate-600"> (total, bukan per pcs — isi harga per pcs tiap model di bawah)</span>
+          </div>
+        )}
+        {pesanan?.catatan && <div>Catatan awal: <span className="text-slate-300">{pesanan.catatan}</span></div>}
+      </div>
+
+      {adaKesepakatan && (
+        <div
+          className={`rounded-lg border px-3 py-2.5 mb-3 text-[11px] space-y-1 ${
+            adaSelisih ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/30 bg-emerald-500/5"
+          }`}
+        >
+          <div className="flex justify-between text-slate-400">
+            <span>Total harga kesepakatan</span>
+            <span className="text-slate-300 font-medium">{fmtRp(totalHargaAwal)}</span>
+          </div>
+          <div className="flex justify-between text-slate-400">
+            <span>Total harga barang datang</span>
+            <span className="text-slate-300 font-medium">{fmtRp(totalNilai)}</span>
+          </div>
+          {adaSelisih ? (
+            <div className={`flex justify-between font-semibold ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
+              <span>{selisih < 0 ? "Kurang dari kesepakatan" : "Lebih dari kesepakatan"}</span>
+              <span>{fmtRp(Math.abs(selisih))}</span>
+            </div>
+          ) : (
+            <div className="text-emerald-400 font-semibold">Sesuai kesepakatan</div>
+          )}
+        </div>
+      )}
+
+      <Field label="Tanggal Barang Datang">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+
+      <Field label="Foto Bon (opsional)">
+        <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
+      </Field>
+      {fotoBonPreview && (
+        <div className="mb-3">
+          <img
+            src={fotoBonPreview}
+            alt="Preview bon/nota"
+            className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950"
+          />
+        </div>
+      )}
+
+      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang yang Datang</p>
+      <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1 mb-1">
+        {models.map((m, idx) => {
+          const totalQtyBaris = Number(m.jumlahDatang) || 0;
+          const qtyBaikBaris = Math.max(totalQtyBaris - (Number(m.jumlahRusak) || 0), 0);
+          return (
+            <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
+              <div className="flex-1 space-y-2">
+                <input
+                  className={inputClass}
+                  value={m.nama}
+                  onChange={(e) => updateModel(idx, { nama: e.target.value })}
+                  placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                />
+                <div className="flex gap-2">
+                  <Field label="Qty Datang (total)">
+                    <input
+                      type="number"
+                      min="0"
+                      className={inputClass}
+                      value={m.jumlahDatang}
+                      onChange={(e) => updateModel(idx, { jumlahDatang: Number(e.target.value) })}
+                    />
+                  </Field>
+                  <Field label="Qty Rusak">
+                    <input
+                      type="number"
+                      min="0"
+                      className={`${inputClass} ${rusakMelebihiDatang(m) ? "border-red-500" : ""}`}
+                      value={m.jumlahRusak}
+                      onChange={(e) => updateModel(idx, { jumlahRusak: Number(e.target.value) })}
+                    />
+                  </Field>
+                </div>
+                <p className="text-[11px] text-slate-500 -mt-1">
+                  Isi Qty Datang dengan TOTAL fisik yang diterima (baik + rusak jadi satu angka).
+                </p>
+                {rusakMelebihiDatang(m) && (
+                  <p className="text-[11px] text-red-400">Qty rusak tidak boleh lebih dari qty datang.</p>
+                )}
+                {Number(m.jumlahRusak) > 0 && (
+                  <input
+                    className={inputClass}
+                    value={m.alasanRusak}
+                    onChange={(e) => updateModel(idx, { alasanRusak: e.target.value })}
+                    placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
+                  />
+                )}
+                <InputRupiah
+                  value={m.harga}
+                  onChange={(v) => updateModel(idx, { harga: v })}
+                  placeholder="Harga/pcs"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Total qty baris ini: {totalQtyBaris}x
+                  {Number(m.jumlahRusak) > 0 ? ` (baik: ${qtyBaikBaris}x, rusak: ${m.jumlahRusak}x)` : ""}
+                  {qtyBaikBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(qtyBaikBaris * (Number(m.harga) || 0))}` : ""}
+                </p>
+              </div>
+              {models.length > 1 && (
+                <button
+                  onClick={() => hapusModel(idx)}
+                  className="text-slate-500 hover:text-red-400 mt-1"
+                  title="Hapus model ini"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button
+        onClick={tambahModel}
+        className="w-full mb-3 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
+      >
+        <Plus size={14} /> Tambah Model
+      </button>
+      <p className="text-[11px] text-slate-500 -mt-2 mb-3">
+        Total: {models.length} model / {totalDatang}x datang
+        {totalRusak > 0 ? ` · ${totalRusak}x rusak` : ""}
+        {totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
+      </p>
+
+      {adaSelisih && (
+        <Field label="Keterangan Selisih (wajib diisi)">
+          <input
+            className={`${inputClass} ${keteranganSelisih.trim() === "" ? "border-amber-500" : ""}`}
+            value={keteranganSelisih}
+            onChange={(e) => setKeteranganSelisih(e.target.value)}
+            placeholder="Contoh: diskon tambahan dari supplier, ongkir dipisah, dll"
+            autoFocus
+          />
+          <p className="text-[11px] text-amber-400/80 mt-1">
+            Total harga barang datang tidak sama dengan harga kesepakatan — jelaskan alasannya
+            sebelum bisa disimpan.
+          </p>
+        </Field>
+      )}
+
+      <Field label="Catatan (opsional)">
+        <input
+          className={inputClass}
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          placeholder="Contoh: no. bon, keterangan tambahan, dll"
+        />
+      </Field>
+      <button
+        disabled={saving || !valid}
+        onClick={() =>
+          onSubmit({
+            tanggal,
+            fotoBon,
+            models: models.map((m) => ({
+              nama: m.nama.trim() || null,
+              jumlahDatang: Number(m.jumlahDatang) || 0,
+              jumlahRusak: Number(m.jumlahRusak) || 0,
+              alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
+              harga: Number(m.harga) || 0,
+            })),
+            catatan: catatan.trim() || null,
+            hargaKesepakatan: adaKesepakatan ? totalHargaAwal : null,
+            keteranganSelisih: adaSelisih ? keteranganSelisih.trim() : null,
+          })
+        }
+        className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Konfirmasi & Lanjut ke Alur Barang"}
+      </button>
+    </ModalShell>
+  );
+}
+
 // Form pembuatan SKU — satu layar saja, tidak ada lagi navigasi berpindah
 // layar (dulu "cari" → "buat" dengan tombol kembali). Persis pola field
 // Pelanggan di Grosir > Buat Pesanan Baru: pilih dari daftar yang sudah ada

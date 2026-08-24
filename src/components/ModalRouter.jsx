@@ -10,7 +10,7 @@ import {
 import {
   BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
-  BarangDatangForm,
+  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -1803,6 +1803,147 @@ export default function ModalRouter({
   // (lihat blok "buat-sku" di bawah), baru qty final (datang - rusak) yang
   // masuk stok/rak, dan qty rusaknya tercatat ke menu "Rusak".
   // ------------------------------------------------------------------
+  // ------------------------------------------------------------------
+  // PESAN BARANG — dicatat begitu order ke supplier DIBUAT (baru tahu toko
+  // & harga kesepakatan). Disimpan sebagai pesanan_masuk "kosong"
+  // (jumlah_pesan=0, jumlah_diterima=0, detail_model[0].datang=false) —
+  // statusnya otomatis "Menunggu" (lihat statusPesananMasuk di lib/api).
+  // Kode pakai prefix PSN- (beda dari BON- di alur langsung di bawah) supaya
+  // gampang dibedakan riwayat mana yang lewat pra-order vs dicatat langsung.
+  // ------------------------------------------------------------------
+  if (modal.type === "pesan-barang") {
+    return (
+      <PesanBarangForm
+        onClose={close}
+        saving={saving}
+        onSubmit={({ tanggal, supplier, jenis, totalHarga, catatan }) =>
+          run(async () => {
+            const kodePesan = nextKode(pesananMasuk, "kode_bon", "PSN-");
+            await sb("pesanan_masuk", {
+              method: "POST",
+              body: JSON.stringify({
+                tanggal_pesan: tanggal,
+                supplier,
+                jenis,
+                // jumlah_pesan cuma placeholder (1) — DB tidak boleh 0 (check
+                // constraint), sedangkan qty aslinya memang belum ketahuan
+                // waktu pesan. Angka ini diganti dengan qty sebenarnya begitu
+                // "Konfirmasi Datang" disimpan (lihat handler di bawah).
+                // statusPesananMasuk tidak terpengaruh angka placeholder ini —
+                // status "Menunggu" ditentukan dari jumlah_diterima <= 0 saja.
+                jumlah_pesan: 1,
+                jumlah_diterima: 0,
+                dibatalkan: false,
+                catatan,
+                foto_bon_url: null,
+                kode_bon: kodePesan,
+                // harga_kesepakatan = TOTAL nilai kesepakatan (bukan per pcs —
+                // itu memang belum bisa dihitung karena qty/model per model
+                // belum ketahuan). Disimpan di kolom sendiri (bukan cuma di
+                // dalam detail_model) supaya tidak hilang begitu detail_model
+                // ditimpa isi sebenarnya waktu "Konfirmasi Datang" — dipakai
+                // untuk validasi selisih harga kesepakatan vs harga barang
+                // datang di form itu. Harga per pcs tiap model baru diisi
+                // nanti waktu "Konfirmasi Datang" (field "harga" di
+                // detail_model yang dipakai untuk nilaiModel/laporan tetap
+                // murni per pcs).
+                harga_kesepakatan: totalHarga || null,
+                detail_model: [
+                  { nama: null, jumlah: 0, rusak: 0, alasan_rusak: null, harga: null, harga_total_pesan: totalHarga, datang: false },
+                ],
+              }),
+            });
+          }, "Pesanan dicatat — konfirmasi begitu barang datang")
+        }
+      />
+    );
+  }
+
+  // KONFIRMASI DATANG — dibuka dari baris pesanan (status Menunggu/Sebagian
+  // Datang) yang dibuat lewat "pesan-barang" di atas. PATCH baris pesanan
+  // yang SAMA (bukan bikin baru) supaya kode/toko/riwayatnya tetap nyambung
+  // dari pesan sampai barang di tangan, lalu lanjut ke alur SKU seperti
+  // input barang datang biasa.
+  if (modal.type === "konfirmasi-datang") {
+    const p = modal.item;
+    return (
+      <KonfirmasiDatangForm
+        pesanan={p}
+        onClose={close}
+        saving={saving}
+        onSubmit={({ tanggal, fotoBon, models, catatan, hargaKesepakatan, keteranganSelisih }) =>
+          run(async () => {
+            let fotoBonUrl = p.foto_bon_url || null;
+            if (fotoBon) {
+              const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
+              const path = `bon-${Date.now()}.${ext}`;
+              fotoBonUrl = await sbUploadFoto(fotoBon, path);
+            }
+
+            const totalDatang = models.reduce(
+              (sum, m) => sum + Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+              0
+            );
+
+            await sb(`pesanan_masuk?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                jumlah_pesan: totalDatang,
+                jumlah_diterima: totalDatang,
+                catatan,
+                foto_bon_url: fotoBonUrl,
+                // harga_kesepakatan dibawa apa adanya dari form (sudah dibaca
+                // dari kolom ini waktu form dibuka) supaya tetap tersimpan di
+                // kolomnya sendiri, tidak ikut hilang saat detail_model
+                // ditimpa isi sebenarnya di bawah. keterangan_selisih dicatat
+                // kalau total harga barang datang tidak sama dengan
+                // kesepakatan (validasi wajib isi ada di form).
+                harga_kesepakatan: hargaKesepakatan,
+                keterangan_selisih: keteranganSelisih,
+                detail_model: models.map((m) => ({
+                  nama: m.nama,
+                  jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+                  rusak: m.jumlahRusak,
+                  alasan_rusak: m.alasanRusak,
+                  harga: m.harga,
+                  datang: true,
+                })),
+              }),
+            });
+
+            for (const m of models) {
+              const totalQtyModel = m.jumlahDatang;
+              if (totalQtyModel <= 0) continue;
+              const [itemBaru] = await sb("items", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal,
+                  gudang: p.jenis,
+                  jumlah: totalQtyModel,
+                  jumlah_rusak: m.jumlahRusak || 0,
+                  alasan_rusak: m.alasanRusak || null,
+                  harga: m.harga || null,
+                  stage: "sku",
+                  kode_bon: p.kode_bon,
+                }),
+              });
+              await sb("pesanan_penerimaan", {
+                method: "POST",
+                body: JSON.stringify({
+                  pesanan_id: p.id,
+                  tanggal,
+                  jumlah: totalQtyModel,
+                  item_id: itemBaru?.id || null,
+                  foto_bon_url: fotoBonUrl,
+                }),
+              });
+            }
+          }, "Barang datang dikonfirmasi — lanjut ke alur SKU")
+        }
+      />
+    );
+  }
+
   if (modal.type === "barang-datang") {
     return (
       <BarangDatangForm
