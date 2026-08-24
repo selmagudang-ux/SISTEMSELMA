@@ -421,28 +421,38 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
 // Box ketik manual untuk gabungan beberapa kode master data sekaligus, mis.
 // Bahan+Peruntukan+Kategori (digabung tanpa pemisah, contoh: bahan "T" +
 // peruntukan "D" + kategori "GL" = "TDGL") ditambah Subkategori (dipisah "-",
-// jadi "TDGL-XX") ditambah lagi Model (dipisah "-" lagi, jadi "TDGL-XX-100"),
-// sesuai format SKU (Bahan,Peruntukan,Kategori)-Subkategori-Model-Warna-
-// Ukuran. User cukup ketik gabungan kodenya — boleh pakai "-" seperti nulis
-// SKU beneran, boleh juga tanpa "-" sama sekali, dua-duanya tetap cocok
-// karena pemisah diabaikan saat pencocokan. Daftar di bawah menampilkan
-// semua kombinasi Bahan/Peruntukan/Kategori/Subkategori yang ADA di master
-// data dan kodenya diawali (atau mengawali) yang diketik. Kalau yang diketik
-// lebih panjang dari kombinasi itu (mis. "TDGL-GJR-100" sedangkan kombinasi
-// hanya "TDGLGJR"), sisa karakter di belakangnya ("100") diperlakukan sebagai
-// Model bebas (tidak perlu ada di master data) dan ikut ditampilkan/dipilih.
-// Pilih salah satu untuk langsung mengisi dropdown-dropdown terkait (mis.
-// Bahan, Peruntukan, Kategori, Subkategori) sekaligus, plus Model kalau ada.
+// jadi "TDGL-XX") ditambah lagi Model-Warna-Ukuran (masing-masing dipisah
+// "-" lagi, jadi "TDGL-XX-216-PER-P18CM"), sesuai format SKU LENGKAP
+// (Bahan,Peruntukan,Kategori)-Subkategori-Model-Warna-Ukuran. User cukup
+// ketik gabungan kodenya — boleh pakai "-" seperti nulis SKU beneran (untuk
+// bagian Bahan/Peruntukan/Kategori/Subkategori pemisah "-" opsional, boleh
+// ditulis atau tidak, dua-duanya tetap cocok karena diabaikan saat
+// pencocokan bagian itu). Daftar di bawah menampilkan semua kombinasi
+// Bahan/Peruntukan/Kategori/Subkategori yang ADA di master data dan kodenya
+// diawali (atau mengawali) yang diketik. Kalau yang diketik lebih panjang
+// dari kombinasi itu (mis. "TDGL-GJR-216-PER-P18CM" sedangkan kombinasi
+// hanya "TDGLGJR"), sisanya ("216-PER-P18CM") diperlakukan sebagai ekor
+// Model-Warna-Ukuran — DIPISAH PAKAI "-" (dash di bagian ini wajib supaya
+// jelas batasnya, karena Model kodenya bebas/tidak dari master data): bagian
+// pertama = Model (bebas, tidak perlu ada di master data), bagian kedua =
+// dicocokkan ke master Warna, bagian ketiga = dicocokkan ke master Ukuran.
+// Pilih salah satu untuk langsung mengisi dropdown-dropdown terkait (Bahan,
+// Peruntukan, Kategori, Subkategori) plus Model/Warna/Ukuran kalau ada.
 // segments: [{ options: [{kode,label}, ...], sep }, ...] — urutan sesuai
 // urutan penggabungan kode di SKU, HANYA untuk bagian yang punya daftar
 // tetap di master data (Model TIDAK dimasukkan sebagai segmen karena
-// nilainya bebas ketik, bukan dari daftar — otomatis tertangkap sebagai sisa
-// karakter di belakang). `sep` (opsional) adalah pemisah yang ditulis
+// nilainya bebas ketik, bukan dari daftar — otomatis tertangkap sebagai
+// bagian pertama ekor). `sep` (opsional) adalah pemisah yang ditulis
 // SEBELUM kode segmen ini di tampilan (mis. "-" untuk Subkategori).
-// onPick(picks, sisaTeks) — picks: array opsi terpilih (urutan sama dengan
-// segments), sisaTeks: string sisa karakter di belakang kombinasi (Model),
-// kosong ("") kalau tidak ada.
-export function KodeGabunganInput({ segments, onPick, placeholder }) {
+// tailOptions: { warna: [{kode,label}, ...], ukuran: [{kode,label}, ...] } —
+// dipakai untuk mencocokkan bagian kedua & ketiga dari ekor (Warna & Ukuran)
+// setelah Model. Opsional — kalau tidak diisi, ekor cuma dipecah jadi Model
+// (perilaku lama, kompatibel untuk pemakaian di form lain kalau ada).
+// onPick(picks, tail) — picks: array opsi terpilih (urutan sama dengan
+// segments); tail: { model, warna, warnaText, ukuran, ukuranText } — warna/
+// ukuran berisi opsi master yang cocok (atau null kalau teksnya tidak ada di
+// master/belum ketik), warnaText/ukuranText adalah teks mentah yang diketik.
+export function KodeGabunganInput({ segments, tailOptions, onPick, placeholder }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -455,8 +465,25 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  const q = query.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
   const norm = (v) => String(v).toUpperCase();
+
+  // origUpper = query asli (diuppercase, dash TETAP dipertahankan — dipakai
+  // nanti untuk memisah ekor Model-Warna-Ukuran). q/qChars = versi tanpa
+  // dash/simbol lain, dipakai untuk mencocokkan segmen Bahan/Peruntukan/
+  // Kategori/Subkategori seperti sebelumnya. origIdxOfQChar memetakan tiap
+  // karakter di q kembali ke posisinya di origUpper, supaya begitu segmen-
+  // segmen itu selesai dicocokkan, kita bisa tahu persis di mana ekor
+  // (dengan dash aslinya) dimulai di string asli.
+  const origUpper = query.toUpperCase();
+  const qChars = [];
+  const origIdxOfQChar = [];
+  for (let i = 0; i < origUpper.length; i++) {
+    if (/[A-Z0-9]/.test(origUpper[i])) {
+      qChars.push(origUpper[i]);
+      origIdxOfQChar.push(i);
+    }
+  }
+  const q = qChars.join("");
 
   // Bangun teks kode gabungan (dengan pemisah "-" sesuai `sep` tiap segmen)
   // dari sekumpulan picks yang urutannya sama dengan `segments`.
@@ -468,10 +495,10 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
   // supaya "T" cuma menampilkan Bahan yang cocok (Tembaga), bukan langsung
   // meloncat ke daftar Peruntukan/Kategori/Subkategori di bawahnya. Kalau
   // masih ada sisa karakter, baru lanjut ke segmen berikutnya. Kalau semua
-  // segmen sudah habis dan masih ada sisa, itu jadi teks Model bebas.
+  // segmen sudah habis dan masih ada sisa, itu jadi ekor Model-Warna-Ukuran.
   const resolveState = (remaining, level, picks) => {
     if (level >= segments.length) {
-      return { kind: "done", picks, leftover: remaining };
+      return { kind: "done", picks, leftoverLen: remaining.length };
     }
     const opts = segments[level].options || [];
     if (remaining === "") {
@@ -494,8 +521,34 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
 
   const state = q ? resolveState(q, 0, []) : null;
 
-  const commit = (picks, leftover) => {
-    onPick(picks, leftover);
+  // Ambil ekor MENTAH (dengan dash asli) dari original string, mulai dari
+  // posisi tepat setelah karakter stripped terakhir yang sudah terpakai
+  // segmen-segmen di atas — lalu pecah pakai "-" jadi Model/Warna/Ukuran.
+  const rawTailOf = (leftoverLen) => {
+    const startInQ = q.length - leftoverLen;
+    if (startInQ <= 0) return origUpper.replace(/^-+/, "");
+    const startInOrig = origIdxOfQChar[startInQ];
+    if (startInOrig === undefined) return "";
+    return origUpper.slice(startInOrig).replace(/^-+/, "");
+  };
+
+  const parseTail = (leftoverLen) => {
+    const rawTail = rawTailOf(leftoverLen);
+    const parts = rawTail.split("-").map((s) => s.trim()).filter(Boolean);
+    const [modelText, warnaText, ukuranText] = parts;
+    const findOpt = (list, text) => (text ? (list || []).find((o) => norm(o.kode) === norm(text)) || null : null);
+    return {
+      rawTail,
+      model: modelText || "",
+      warnaText: warnaText || "",
+      warna: findOpt(tailOptions?.warna, warnaText),
+      ukuranText: ukuranText || "",
+      ukuran: findOpt(tailOptions?.ukuran, ukuranText),
+    };
+  };
+
+  const commit = (picks, tail) => {
+    onPick(picks, tail);
     setQuery("");
     setOpen(false);
   };
@@ -522,23 +575,38 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
       />
       {open && q && state && (
         <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
-          {state.kind === "done" && (
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => commit(state.picks, state.leftover)}
-              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
-            >
-              <span className="text-slate-300 text-xs">
-                {state.picks.map((p) => p.label).join(" / ")}
-                {state.leftover && <span className="text-slate-500"> · Model {state.leftover}</span>}
-              </span>
-              <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
-                {buildKode(state.picks)}
-                {state.leftover && `-${state.leftover}`}
-              </span>
-            </button>
-          )}
+          {state.kind === "done" && (() => {
+            const tail = parseTail(state.leftoverLen);
+            return (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => commit(state.picks, tail)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
+              >
+                <span className="text-slate-300 text-xs">
+                  {state.picks.map((p) => p.label).join(" / ")}
+                  {tail.model && <span className="text-slate-500"> · Model {tail.model}</span>}
+                  {tail.warnaText && (
+                    <span className={tail.warna ? "text-slate-500" : "text-amber-500/80"}>
+                      {" "}
+                      · Warna {tail.warna ? tail.warna.label : `"${tail.warnaText}" (tidak dikenal)`}
+                    </span>
+                  )}
+                  {tail.ukuranText && (
+                    <span className={tail.ukuran ? "text-slate-500" : "text-amber-500/80"}>
+                      {" "}
+                      · Ukuran {tail.ukuran ? tail.ukuran.label : `"${tail.ukuranText}" (tidak dikenal)`}
+                    </span>
+                  )}
+                </span>
+                <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
+                  {buildKode(state.picks)}
+                  {tail.rawTail && `-${tail.rawTail}`}
+                </span>
+              </button>
+            );
+          })()}
 
           {state.kind === "resolved" && (
             <div className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm">
@@ -556,7 +624,7 @@ export function KodeGabunganInput({ segments, onPick, placeholder }) {
                     key={c.kode}
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => (isLast ? commit([...state.picks, c], "") : extend(state.picks, c))}
+                    onClick={() => (isLast ? commit([...state.picks, c], parseTail(0)) : extend(state.picks, c))}
                     className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
                   >
                     <span className="text-slate-300 text-xs">

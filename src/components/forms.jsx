@@ -923,7 +923,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
       </div>
 
       <div>
-        <Field label="Ketik Kode Gabungan Bahan+Peruntukan+Kategori-Subkategori-Model (opsional)">
+        <Field label="Ketik Kode Gabungan SKU Lengkap (opsional)">
           <KodeGabunganInput
             segments={[
               { options: master.bahan || [] },
@@ -931,20 +931,25 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
               { options: master.kategori || [] },
               { options: master.subkategori || [], sep: "-" },
             ]}
-            onPick={([b, p, k, sub], modelText) => {
+            tailOptions={{ warna: master.warna || [], ukuran: master.ukuran || [] }}
+            onPick={([b, p, k, sub], tail) => {
               setBahan(b.kode);
               setPeruntukan(p.kode);
               setKategori(k.kode);
               setSubkategori(sub.kode);
-              if (modelText) {
-                setModel(modelText);
+              if (tail.model) {
+                setModel(tail.model);
                 setModelTouched(true);
               }
+              if (tail.warna) setWarna(tail.warna.kode);
+              if (tail.ukuran) setUkuran(tail.ukuran.kode);
             }}
-            placeholder="Ketik gabungan kode, mis. TDGL-GJR-100"
+            placeholder="Ketik gabungan kode, mis. TDGL-GJR-216-PER-P18CM"
           />
           <p className="text-[11px] text-slate-500 mt-1.5">
-            Pilih dari daftar yang muncul untuk otomatis mengisi dropdown Bahan, Peruntukan, Kategori &amp; Subkategori di bawah — kalau ada sisa angka/huruf di belakangnya (mis. "100"), otomatis dipakai jadi Model juga.
+            Pilih dari daftar yang muncul untuk otomatis mengisi dropdown Bahan, Peruntukan, Kategori &amp;
+            Subkategori di bawah — kalau ada sisa di belakangnya (format: Model-Warna-Ukuran, mis.
+            "216-PER-P18CM"), Model/Warna/Ukuran ikut terisi juga.
           </p>
         </Field>
         <div className="grid grid-cols-2 gap-x-3">
