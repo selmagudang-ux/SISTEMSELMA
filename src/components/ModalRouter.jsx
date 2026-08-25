@@ -400,9 +400,16 @@ export default function ModalRouter({
 
   if (modal.type === "respon-pengajuan-restock") {
     const p = modal.item;
+    // Foto disimpan per-barang (items.foto_url), bukan di pengajuan_restock —
+    // ambil dari barang dengan SKU yang sama, yang paling baru diberi foto.
+    const fotoItem = (items || [])
+      .filter((i) => i.sku === p.sku && i.foto_url)
+      .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
     return (
       <ResponPengajuanForm
         pengajuan={p}
+        fotoUrl={fotoItem?.foto_url}
+        onLihatFoto={fotoItem ? () => setModal({ type: "lihat-foto", item: fotoItem }) : null}
         onClose={close}
         saving={saving}
         onSubmitSetujui={() =>

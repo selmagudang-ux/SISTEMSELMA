@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -2353,16 +2353,28 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
 // Pesan Barang (PO) baru — cuma menandai status "disetujui" (mirip badge
 // "Habis" di Katalog/Master Barang), gudang yang nanti bikin PO manual
 // lewat alur Pesan Barang yang sudah ada kalau memang mau ditindaklanjuti.
-export function ResponPengajuanForm({ pengajuan: p, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
+export function ResponPengajuanForm({ pengajuan: p, fotoUrl, onLihatFoto, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
   const [mauTolak, setMauTolak] = useState(false);
   const [catatanOwner, setCatatanOwner] = useState("");
 
   return (
     <ModalShell title="Tinjau Pengajuan Restock" onClose={onClose}>
+      {fotoUrl ? (
+        <img
+          src={fotoUrl}
+          alt={p.sku}
+          onClick={onLihatFoto || undefined}
+          className="w-full max-h-56 object-contain rounded-lg border border-slate-800 bg-slate-950 mb-3 cursor-zoom-in hover:opacity-90"
+        />
+      ) : (
+        <div className="w-full h-28 flex items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-950 mb-3 text-slate-700">
+          <Camera size={20} />
+        </div>
+      )}
       <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 space-y-1.5">
         <div>
           <div className="text-[11px] text-slate-500">SKU</div>
-          <div className="font-mono text-sm text-slate-200">{p.sku}</div>
+          <div className="font-mono text-base font-semibold text-amber-400">{p.sku}</div>
         </div>
         <div>
           <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
