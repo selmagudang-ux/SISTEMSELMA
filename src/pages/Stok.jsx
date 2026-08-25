@@ -23,10 +23,15 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
     .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
     .sort((a, b) => (a.stok || 0) - (b.stok || 0));
 
-  // SKU yang sudah punya pengajuan menunggu — supaya tidak diajukan dobel.
-  const skuSudahDiajukan = new Set(
-    (pengajuanRestock || []).filter((p) => p.status === "menunggu").map((p) => p.sku)
-  );
+  // Pengajuan TERBARU per SKU (apapun statusnya) — supaya tiap baris bisa
+  // langsung nunjukin balasan owner: masih menunggu, sudah disetujui, atau
+  // ditolak. Kalau sudah "disetujui"/"ditolak" (bukan "menunggu"), pengajuan
+  // itu dianggap selesai jadi SKU boleh diajukan ulang kalau stoknya masih
+  // menipis.
+  const pengajuanTerbaruPerSku = new Map();
+  [...(pengajuanRestock || [])]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .forEach((p) => pengajuanTerbaruPerSku.set(p.sku, p));
 
   return (
     <div>
@@ -39,7 +44,8 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {menipis.map((s, i) => {
-            const sudahDiajukan = skuSudahDiajukan.has(s.sku);
+            const pengajuan = pengajuanTerbaruPerSku.get(s.sku);
+            const sudahDiajukan = pengajuan?.status === "menunggu";
             return (
               <div
                 key={s.id}
@@ -47,11 +53,17 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
               >
                 <div className="min-w-0">
                   <div className="font-mono text-xs text-slate-200 truncate">{s.sku}</div>
-                  <div className="text-[11px] mt-0.5">
+                  <div className="text-[11px] mt-0.5 flex items-center gap-2 flex-wrap">
                     {s.stok <= 0 ? (
                       <span className="text-red-400 font-medium">Habis</span>
                     ) : (
                       <span className="text-amber-400 font-medium">Sisa {s.stok}</span>
+                    )}
+                    {pengajuan?.status === "menunggu" && <Badge color="amber">Menunggu Respon</Badge>}
+                    {pengajuan?.status === "disetujui" && <Badge color="emerald">Disetujui Owner</Badge>}
+                    {pengajuan?.status === "ditolak" && <Badge color="red">Ditolak Owner</Badge>}
+                    {pengajuan?.status && pengajuan.status !== "menunggu" && pengajuan.catatan_owner && (
+                      <span className="text-slate-500 truncate">"{pengajuan.catatan_owner}"</span>
                     )}
                   </div>
                 </div>
