@@ -3,7 +3,7 @@ import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight } from 
 import { ModalShell, Badge, suggestKode, Field, inputClass } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
-  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang,
+  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang, resolveMenungguHarga,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
   detailModelPesanan,
 } from "../lib/api";
@@ -2262,12 +2262,14 @@ export default function ModalRouter({
                 stage: "rak",
                 jumlah,
                 // Menentukan tahap sesudah rak (dibaca di "advance-rak"):
-                // - ada perubahan harga -> Verifikasi Foto, ditandai foto ulang
-                //   (sama seperti mekanisme tandaiPerluFotoUlang, karena foto
-                //   lama SKU ini biasanya menampilkan harga lama).
+                // - ada perubahan harga (belum diputuskan) -> "menunggu-harga",
+                //   BUKAN langsung Verifikasi Foto. Barang ditahan dulu supaya
+                //   tidak masuk Pemotretan sebelum Master Barang benar-benar
+                //   memutuskan mau pakai harga lama atau harga baru (lihat
+                //   resolveMenungguHarga yang dipanggil dari modal "pilih-harga").
                 // - tidak ada perubahan harga -> langsung Selesai, karena ini
                 //   cuma tambah stok ke SKU yang sudah pernah difoto & dijual.
-                stage_setelah_rak: hargaAsliBaru != null ? "verifikasi-ulang" : "selesai",
+                stage_setelah_rak: hargaAsliBaru != null ? "menunggu-harga" : "selesai",
               }),
             });
             await sb("stock_history", {
@@ -2451,14 +2453,16 @@ export default function ModalRouter({
             });
             // stage_setelah_rak diset waktu Buat SKU / tambah stok ke SKU lama:
             // "selesai" -> tambah stok tanpa perubahan harga, tidak perlu difoto lagi.
-            // "verifikasi-ulang" -> ada perubahan harga, masuk ke Foto Ulang (bukan Foto Baru).
+            // "menunggu-harga" -> ada perubahan harga yang BELUM diputuskan di Master
+            //   Barang — ditahan dulu, belum boleh masuk Pemotretan (lihat
+            //   resolveMenungguHarga, dipanggil begitu keputusan harganya dibuat).
             // default/"verifikasi" -> SKU baru, masuk ke Foto Baru seperti biasa.
             const tujuan = modal.item.stage_setelah_rak || "verifikasi";
             const patchItem =
               tujuan === "selesai"
                 ? { rak_code: rakCode, stage: "selesai" }
-                : tujuan === "verifikasi-ulang"
-                ? { rak_code: rakCode, stage: "verifikasi", perlu_foto_ulang: true }
+                : tujuan === "menunggu-harga"
+                ? { rak_code: rakCode, stage: "menunggu-harga" }
                 : { rak_code: rakCode, stage: "verifikasi" };
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
@@ -2676,8 +2680,12 @@ export default function ModalRouter({
         settings={settings}
         saving={saving}
         onClose={close}
-        onConfirm={(hargaTerpilih) =>
-          run(async () => {
+        onConfirm={(hargaTerpilih) => {
+          // Berubah beneran cuma kalau yang dipilih itu Harga Baru — kalau yang
+          // dipilih Harga Lama, harga_asli akhirnya sama persis dengan sebelumnya
+          // (tidak ada perubahan), jadi tidak perlu foto ulang sama sekali.
+          const hargaBerubah = hargaTerpilih !== s.harga_asli;
+          return run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
             const harga = calcHarga(hargaTerpilih, settings);
             await sb(`sku_master?id=eq.${s.id}`, {
@@ -2692,9 +2700,17 @@ export default function ModalRouter({
                 harga_asli_baru: null,
               }),
             });
-            await tandaiPerluFotoUlang(s.sku);
-          }, "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan")
-        }
+            // Lepas barang yang tertahan di "menunggu-harga" ke Pemotretan —
+            // perlu foto ulang cuma kalau harganya beneran berubah.
+            await resolveMenungguHarga(s.sku, hargaBerubah);
+            // Tarik balik barang yang SUDAH difoto (Marketplace/Selesai) ke
+            // Pemotretan cuma kalau harganya beneran berubah — kalau yang
+            // dipilih tetap harga lama, foto yang sudah ada masih akurat.
+            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
+          }, hargaBerubah
+            ? "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan"
+            : "Harga lama tetap dipakai, barang yang tertahan lanjut ke Pemotretan tanpa foto ulang");
+        }}
       />
     );
   }
@@ -2717,16 +2733,20 @@ export default function ModalRouter({
         settings={settings}
         saving={saving}
         onClose={close}
-        onConfirm={(patch) =>
-          run(async () => {
+        onConfirm={(patch) => {
+          const hargaBerubah = patch.harga_asli !== s.harga_asli;
+          return run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
             await sb(`sku_master?id=eq.${s.id}`, {
               method: "PATCH",
               body: JSON.stringify({ ...patch, harga_asli_baru: null }),
             });
-            await tandaiPerluFotoUlang(s.sku);
-          }, "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan")
-        }
+            await resolveMenungguHarga(s.sku, hargaBerubah);
+            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
+          }, hargaBerubah
+            ? "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan"
+            : "Harga SKU disimpan (nilainya sama), tidak ada barang yang perlu foto ulang");
+        }}
       />
     );
   }

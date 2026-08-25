@@ -3,11 +3,21 @@ import {
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, AlertTriangle,
 } from "lucide-react";
 
-export const STAGE_ORDER = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
+export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
 
 export const STAGE_META = {
   sku: { label: "Buat SKU", icon: Boxes, color: "amber" },
   rak: { label: "Rak", icon: MapPin, color: "sky" },
+  // Tahap transisi khusus barang lama (tambah stok ke SKU yang sudah ada)
+  // yang masuk dengan harga asli berbeda dari yang tercatat di Master
+  // Barang. Barang sudah ditempatkan di rak, TAPI belum boleh masuk
+  // Pemotretan sampai keputusan harganya jelas (lihat modal "pilih-harga"
+  // di SKU & Harga / MasterBarang) — soalnya baru dari situ ketahuan apakah
+  // fotonya nanti perlu foto ulang (harga jadi berubah) atau tidak (harga
+  // lama tetap dipakai). Tidak ada tombol "Lanjut" manual untuk tahap ini —
+  // pindah ke Verifikasi Foto otomatis begitu keputusan harganya dibuat
+  // (lihat resolveMenungguHarga di lib/api.js).
+  "menunggu-harga": { label: "Menunggu Harga", icon: Wallet, color: "orange" },
   verifikasi: { label: "Verifikasi Foto", icon: Camera, color: "pink" },
   marketplace: { label: "Marketplace", icon: ShoppingBag, color: "teal" },
   selesai: { label: "Selesai", icon: ClipboardList, color: "emerald" },

@@ -202,6 +202,22 @@ export async function tandaiPerluFotoUlang(sku) {
   });
 }
 
+// Barang yang masuk lagi dengan harga asli berbeda dari yang tercatat di
+// Master Barang ditahan dulu di tahap "menunggu-harga" begitu ditempatkan
+// di rak (lihat "advance-rak" di ModalRouter) — BELUM boleh masuk
+// Pemotretan sampai keputusannya jelas. Fungsi ini dipanggil begitu
+// keputusan itu dibuat (modal "pilih-harga" / "edit-harga" di Master
+// Barang) untuk melepas semua barang yang tertahan tadi ke Verifikasi
+// Foto: kalau harga yang ditetapkan ternyata berubah dari harga lama,
+// ditandai perlu foto ulang; kalau harga yang ditetapkan tetap yang lama
+// (tidak berubah), tetap lanjut ke Verifikasi tapi tanpa perlu foto ulang.
+export async function resolveMenungguHarga(sku, hargaBerubah) {
+  await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=eq.menunggu-harga`, {
+    method: "PATCH",
+    body: JSON.stringify({ stage: "verifikasi", perlu_foto_ulang: !!hargaBerubah }),
+  });
+}
+
 // Ganti kode Master Data (mis. kategori "ANJ" -> "ANJB") dan rambatkan
 // perubahannya ke semua SKU yang sudah jadi yang masih memakai kode lama itu
 // — termasuk string SKU-nya sendiri (karena SKU dibentuk dari gabungan
