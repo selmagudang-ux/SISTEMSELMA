@@ -2,9 +2,9 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, AlertTriangle,
+  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3,
 } from "lucide-react";
-import { STAGE_ORDER, STAGE_META, COLOR, AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
+import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import {
   fmtRp,
   sisaHutangPesanan,
@@ -23,24 +23,19 @@ import { GrafikArusKas, BreakdownPengeluaran, LaporanLabaRugi } from "./Keuangan
 // vs Absensi supaya masing-masing tetap fokus (angka gudang tidak nyampur sama
 // angka grosir/keuangan/absensi), tapi tetap satu halaman "Dashboard" (pola
 // sama seperti halaman Laporan), bukan menu terpisah di sidebar.
+// Menu "dashboard" sendiri HANYA bisa diakses role owner & superadmin (lihat
+// ROLE_MENUS di lib/constants.js) — jadi semua tab di sini, termasuk
+// "Menunggu Persetujuan", otomatis cuma kelihatan oleh dua role itu. Tab
+// "Stok Menipis" (ajukan restock) sudah dipindah jadi sub-menu di dalam
+// Gudang → Stok, supaya gudang mengajukan restock dari halaman kerjanya
+// sendiri tanpa perlu akses dashboard.
 const TABS = [
   { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
-  { key: "menipis", label: "Stok Menipis", icon: AlertTriangle },
   { key: "persetujuan", label: "Menunggu Persetujuan", icon: ClipboardList },
   { key: "grosir", label: "Dashboard Grosir", icon: Store },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
   { key: "absensi", label: "Dashboard Absensi", icon: Clock },
 ];
-
-// Role gudang cuma diberi akses ke menu "dashboard" supaya bisa buka tab
-// "Stok Menipis" (ajukan restock) & "Menunggu Persetujuan" (pantau status
-// pengajuannya sendiri) — tab Grosir/Keuangan/Absensi bukan urusan gudang,
-// jadi disembunyikan untuk role itu. Role lain yang memang sudah dapat akses
-// "dashboard" (superadmin/owner) tetap lihat semua tab.
-function tabsUntukRole(role) {
-  if (role === "gudang") return TABS.filter((t) => ["gudang", "menipis", "persetujuan"].includes(t.key));
-  return TABS;
-}
 
 function awalBulanIni() {
   const d = new Date();
@@ -79,12 +74,10 @@ export default function Dashboard({
   master = {},
   absensiRows = [],
   karyawanList = [],
-  skuMaster = [],
   pengajuanRestock = [],
   session,
 }) {
-  const [tab, setTab] = useState(session?.role === "gudang" ? "menipis" : "gudang");
-  const tabsTampil = tabsUntukRole(session?.role);
+  const [tab, setTab] = useState("gudang");
   const jumlahMenunggu = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
 
   return (
@@ -98,8 +91,6 @@ export default function Dashboard({
             ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
-            : tab === "menipis"
-            ? "SKU yang stoknya sudah turun dan siap diajukan restock ke owner."
             : tab === "persetujuan"
             ? "Pengajuan restock dari gudang — tinjau, dan lihat riwayat yang sudah direspon."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
@@ -107,7 +98,7 @@ export default function Dashboard({
       />
 
       <div className="flex flex-wrap items-center gap-1.5 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1">
-        {tabsTampil.map((t) => {
+        {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
           return (
@@ -142,13 +133,6 @@ export default function Dashboard({
           rakKosong={rakKosong}
           items={items}
           onNavigate={onNavigate}
-          setModal={setModal}
-        />
-      ) : tab === "menipis" ? (
-        <DashboardStokMenipis
-          skuMaster={skuMaster}
-          pengajuanRestock={pengajuanRestock}
-          session={session}
           setModal={setModal}
         />
       ) : tab === "persetujuan" ? (
@@ -335,64 +319,6 @@ function DashboardGudang({ stageCounts, skuCount, totalStok, rakCount, rakKosong
           </table>
         )}
       </div>
-    </div>
-  );
-}
-
-// Tab "Stok Menipis" — daftar SKU yang stoknya sudah turun sampai
-// AMBANG_MENIPIS_RESTOCK pcs, gudang bisa langsung ajukan restock dari sini.
-function DashboardStokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
-  const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
-
-  const menipis = (skuMaster || [])
-    .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
-    .sort((a, b) => (a.stok || 0) - (b.stok || 0));
-
-  // SKU yang sudah punya pengajuan menunggu — supaya tidak diajukan dobel.
-  const skuSudahDiajukan = new Set(
-    (pengajuanRestock || []).filter((p) => p.status === "menunggu").map((p) => p.sku)
-  );
-
-  return (
-    <div>
-      <div className="text-xs font-semibold text-slate-400 mb-2">
-        Stok Menipis (≤ {AMBANG_MENIPIS_RESTOCK}pcs)
-      </div>
-      {menipis.length === 0 ? (
-        <EmptyState label="Tidak ada SKU dengan stok menipis." />
-      ) : (
-        <div className="rounded-xl border border-slate-800 overflow-hidden">
-          {menipis.map((s, i) => {
-            const sudahDiajukan = skuSudahDiajukan.has(s.sku);
-            return (
-              <div
-                key={s.id}
-                className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-              >
-                <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-200 truncate">{s.sku}</div>
-                  <div className="text-[11px] mt-0.5">
-                    {s.stok <= 0 ? (
-                      <span className="text-red-400 font-medium">Habis</span>
-                    ) : (
-                      <span className="text-amber-400 font-medium">Sisa {s.stok}</span>
-                    )}
-                  </div>
-                </div>
-                {bisaAjukan && (
-                  <button
-                    disabled={sudahDiajukan}
-                    onClick={() => setModal({ type: "ajukan-restock", item: s })}
-                    className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                  >
-                    {sudahDiajukan ? "Sudah diajukan" : "Ajukan Order →"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

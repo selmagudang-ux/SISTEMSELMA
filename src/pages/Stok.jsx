@@ -2,12 +2,75 @@ import { useState } from "react";
 import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtTgl, downloadCsv } from "../lib/api";
+import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
 
-export default function Stok({ sub, skuMaster, penempatan, stockHistory, setModal }) {
+export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengajuanRestock, session, setModal }) {
+  if (sub === "menipis") return <StokMenipis skuMaster={skuMaster} pengajuanRestock={pengajuanRestock} session={session} setModal={setModal} />;
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "hitung") return <HitungQty skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "riwayat") return <RiwayatStok stockHistory={stockHistory} />;
   return <StokBarang skuMaster={skuMaster} />;
+}
+
+// Sub-menu "Stok Menipis" — pindahan dari tab Dashboard (dulu "Barang
+// Menipis"), sekarang jadi bagian dari menu Stok supaya gudang mengajukan
+// restock dari tempat yang sama dengan kerja stok sehari-hari. Dashboard kini
+// murni untuk tab "Menunggu Persetujuan" (owner/superadmin saja).
+function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
+  const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
+
+  const menipis = (skuMaster || [])
+    .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
+    .sort((a, b) => (a.stok || 0) - (b.stok || 0));
+
+  // SKU yang sudah punya pengajuan menunggu — supaya tidak diajukan dobel.
+  const skuSudahDiajukan = new Set(
+    (pengajuanRestock || []).filter((p) => p.status === "menunggu").map((p) => p.sku)
+  );
+
+  return (
+    <div>
+      <PageHeader
+        title="Stok Menipis"
+        description={`SKU yang stoknya sudah turun (≤ ${AMBANG_MENIPIS_RESTOCK}pcs) dan siap diajukan restock ke owner.`}
+      />
+      {menipis.length === 0 ? (
+        <EmptyState label="Tidak ada SKU dengan stok menipis." />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {menipis.map((s, i) => {
+            const sudahDiajukan = skuSudahDiajukan.has(s.sku);
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-xs text-slate-200 truncate">{s.sku}</div>
+                  <div className="text-[11px] mt-0.5">
+                    {s.stok <= 0 ? (
+                      <span className="text-red-400 font-medium">Habis</span>
+                    ) : (
+                      <span className="text-amber-400 font-medium">Sisa {s.stok}</span>
+                    )}
+                  </div>
+                </div>
+                {bisaAjukan && (
+                  <button
+                    disabled={sudahDiajukan}
+                    onClick={() => setModal({ type: "ajukan-restock", item: s })}
+                    className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    {sudahDiajukan ? "Sudah diajukan" : "Ajukan Order →"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StokBarang({ skuMaster }) {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
@@ -68,9 +68,9 @@ function MainApp({ session, onLogout }) {
   // (lihat fungsi navigate di bawah), tampilan langsung kembali ke menu yang
   // baru saja diklik, bukan balik lagi ke dashboard.
   // Landing awal login pakai "dashboard" HANYA untuk role yang dashboard-nya
-  // memang halaman utama (superadmin/owner). Role operasional seperti gudang
-  // sekarang juga diizinkan buka "dashboard" (untuk tab Barang Menipis), tapi
-  // tetap landing ke halaman kerja masing-masing (allowed[0]) seperti semula.
+  // memang halaman utama (superadmin/owner) — role operasional (termasuk
+  // gudang) tidak punya akses "dashboard" sama sekali, langsung ke halaman
+  // kerja masing-masing (allowed[0]).
   const landingKeDashboard = allowed.includes("dashboard") && ["superadmin", "owner"].includes(session.role);
   const [nav, setNav] = useState(() => {
     try {
@@ -293,10 +293,15 @@ function MainApp({ session, onLogout }) {
   const cekMarketplaceCount =
     notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
 
+  const stokMenipisCount = skuMaster.filter(
+    (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
+  ).length;
+
   const sidebarBadges = withParentBadges(NAV, {
     "sku-harga.buat": stageCounts.sku,
     "rak.tempatkan": tanpaRakCount,
     "rak.gudang": sisaGudangList.length,
+    "stok.menipis": stokMenipisCount,
     foto: stageCounts.verifikasi,
     "marketplace.belum": stageCounts.marketplace,
     "marketplace.cek": cekMarketplaceCount,
@@ -441,7 +446,6 @@ function MainApp({ session, onLogout }) {
                   master={master}
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
-                  skuMaster={skuMasterGrosir}
                   pengajuanRestock={pengajuanRestock}
                   session={session}
                 />
@@ -472,7 +476,15 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "stok" && (
-                <Stok sub={nav.sub || "barang"} skuMaster={skuMaster} penempatan={penempatan} stockHistory={stockHistory} setModal={setModal} />
+                <Stok
+                  sub={nav.sub || "barang"}
+                  skuMaster={skuMaster}
+                  penempatan={penempatan}
+                  stockHistory={stockHistory}
+                  pengajuanRestock={pengajuanRestock}
+                  session={session}
+                  setModal={setModal}
+                />
               )}
               {nav.menu === "rak" && (
                 <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} skuMaster={skuMaster} master={master} setModal={setModal} />

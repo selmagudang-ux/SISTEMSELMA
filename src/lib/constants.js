@@ -39,10 +39,10 @@ export const STAGE_ROLE = {
   marketplace: "marketplace",
 };
 
-// Ambang batas "Barang Menipis" (Dashboard) — SKU dianggap layak diajukan
-// restock begitu stoknya turun sampai titik ini (≤), dan jumlah yang
+// Ambang batas "Stok Menipis" (menu Stok → Stok Menipis) — SKU dianggap layak
+// diajukan restock begitu stoknya turun sampai titik ini (≤), dan jumlah yang
 // diajukan gudang ke owner pun minimal segini juga (lihat AjukanRestockForm
-// & DashboardMenipis).
+// & StokMenipis).
 export const AMBANG_MENIPIS_RESTOCK = 12;
 
 // Owner & superadmin selalu boleh melanjutkan tahap apa pun, role lain hanya
@@ -111,6 +111,7 @@ export const NAV = [
         key: "stok", label: "Stok", icon: BarChart3,
         children: [
           { key: "barang", label: "Stok Barang" },
+          { key: "menipis", label: "Stok Menipis" },
           { key: "keluar", label: "Barang Keluar" },
           { key: "hitung", label: "Hitung Qty" },
           { key: "riwayat", label: "Riwayat Stok" },
@@ -301,11 +302,11 @@ export const ROLES = [
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
-// "dashboard" tetap terbuka untuk superadmin & owner (role operasional lain
-// langsung ke halaman kerja masing-masing). Owner sekarang dapat SEMUA menu
-// kecuali "pengaturan" (khusus superadmin). Role operasional (gudang/
-// pemotretan/marketplace) masing-masing dibatasi HANYA ke grup menunya sendiri
-// beserta semua sub-nya — grosir tidak disinggung ulang di sini, tetap seperti
+// "dashboard" HANYA untuk superadmin & owner (role operasional lain langsung
+// ke halaman kerja masing-masing). Owner sekarang dapat SEMUA menu kecuali
+// "pengaturan" (khusus superadmin). Role operasional (gudang/pemotretan/
+// marketplace) masing-masing dibatasi HANYA ke grup menunya sendiri beserta
+// semua sub-nya — grosir tidak disinggung ulang di sini, tetap seperti
 // sebelumnya (hanya menu "grosir").
 // "barang-masuk" sengaja tetap disertakan walau sudah tidak ada di sidebar NAV —
 // dipakai untuk izin tombol tambah cepat "+ Barang Masuk" di header. Diletakkan
@@ -316,11 +317,12 @@ export const ROLE_MENUS = {
   owner: [...ALL_MENU_KEYS.filter((k) => k !== "pengaturan"), "barang-masuk"],
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
-  // di ROLE_SUBMENUS — PLUS "dashboard", khusus supaya gudang bisa buka tab
-  // "Barang Menipis" untuk mengajukan restock ke owner. Landing page login
-  // tetap ke "barang-datang" seperti biasa (lihat App.jsx), bukan ke
-  // dashboard, walau sekarang diizinkan mengaksesnya lewat sidebar.
-  gudang: ["barang-datang", "data-barang", "sku-harga", "rusak", "stok", "rak", "cetak-label", "dashboard", "barang-masuk"],
+  // di ROLE_SUBMENUS. "Stok Menipis" (ajukan restock) sekarang jadi sub-menu
+  // di dalam "stok", jadi gudang tidak lagi butuh akses "dashboard" sama
+  // sekali — dashboard (termasuk tab "Menunggu Persetujuan") murni untuk
+  // owner & superadmin. Landing page login gudang tetap ke "barang-datang"
+  // (lihat App.jsx).
+  gudang: ["barang-datang", "data-barang", "sku-harga", "rusak", "stok", "rak", "cetak-label", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma
