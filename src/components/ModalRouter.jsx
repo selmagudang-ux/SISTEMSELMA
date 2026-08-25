@@ -2256,7 +2256,18 @@ export default function ModalRouter({
             });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ sku: selectedSku.sku, stage: "rak", jumlah }),
+              body: JSON.stringify({
+                sku: selectedSku.sku,
+                stage: "rak",
+                jumlah,
+                // Menentukan tahap sesudah rak (dibaca di "advance-rak"):
+                // - ada perubahan harga -> Verifikasi Foto, ditandai foto ulang
+                //   (sama seperti mekanisme tandaiPerluFotoUlang, karena foto
+                //   lama SKU ini biasanya menampilkan harga lama).
+                // - tidak ada perubahan harga -> langsung Selesai, karena ini
+                //   cuma tambah stok ke SKU yang sudah pernah difoto & dijual.
+                stage_setelah_rak: hargaAsliBaru != null ? "verifikasi-ulang" : "selesai",
+              }),
             });
             await sb("stock_history", {
               method: "POST",
@@ -2352,7 +2363,7 @@ export default function ModalRouter({
             });
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ sku, stage: "rak", jumlah }),
+              body: JSON.stringify({ sku, stage: "rak", jumlah, stage_setelah_rak: "verifikasi" }),
             });
             await sb("stock_history", {
               method: "POST",
@@ -2437,9 +2448,20 @@ export default function ModalRouter({
               method: "POST",
               body: JSON.stringify({ sku: modal.item.sku, rak_code: rakCode, qty }),
             });
+            // stage_setelah_rak diset waktu Buat SKU / tambah stok ke SKU lama:
+            // "selesai" -> tambah stok tanpa perubahan harga, tidak perlu difoto lagi.
+            // "verifikasi-ulang" -> ada perubahan harga, masuk ke Foto Ulang (bukan Foto Baru).
+            // default/"verifikasi" -> SKU baru, masuk ke Foto Baru seperti biasa.
+            const tujuan = modal.item.stage_setelah_rak || "verifikasi";
+            const patchItem =
+              tujuan === "selesai"
+                ? { rak_code: rakCode, stage: "selesai" }
+                : tujuan === "verifikasi-ulang"
+                ? { rak_code: rakCode, stage: "verifikasi", perlu_foto_ulang: true }
+                : { rak_code: rakCode, stage: "verifikasi" };
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ rak_code: rakCode, stage: "verifikasi" }),
+              body: JSON.stringify(patchItem),
             });
           }, "Barang ditempatkan di rak")
         }
