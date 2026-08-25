@@ -401,15 +401,28 @@ export default function ModalRouter({
 
   if (modal.type === "respon-pengajuan-restock") {
     const p = modal.item;
+    const skuRow = (skuMaster || []).find((s) => s.sku === p.sku) || null;
     // Foto disimpan per-barang (items.foto_url), bukan di pengajuan_restock —
     // ambil dari barang dengan SKU yang sama, yang paling baru diberi foto.
     const fotoItem = (items || [])
       .filter((i) => i.sku === p.sku && i.foto_url)
       .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
+    // Nama toko/supplier ditelusuri dari barang masuk TERBARU untuk SKU ini
+    // (items.kode_bon -> pesanan_masuk.kode_bon -> pesanan_masuk.supplier) —
+    // supaya owner langsung tahu SKU ini biasanya dipasok dari toko/supplier
+    // mana saat meninjau pengajuan restock-nya.
+    const itemTerbaru = (items || [])
+      .filter((i) => i.sku === p.sku && i.kode_bon)
+      .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
+    const pesananTerkait = itemTerbaru
+      ? (pesananMasuk || []).find((pm) => pm.kode_bon === itemTerbaru.kode_bon)
+      : null;
     return (
       <ResponPengajuanForm
         pengajuan={p}
         fotoUrl={fotoItem?.foto_url}
+        barcodeSupplier={skuRow?.barcode_supplier}
+        namaSupplier={pesananTerkait?.supplier}
         onLihatFoto={fotoItem ? () => setModal({ type: "lihat-foto", item: fotoItem }) : null}
         onClose={close}
         saving={saving}

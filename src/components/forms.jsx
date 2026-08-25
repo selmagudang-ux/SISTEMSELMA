@@ -2398,7 +2398,7 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
 // Pesan Barang (PO) baru — cuma menandai status "disetujui" (mirip badge
 // "Habis" di Katalog/Master Barang), gudang yang nanti bikin PO manual
 // lewat alur Pesan Barang yang sudah ada kalau memang mau ditindaklanjuti.
-export function ResponPengajuanForm({ pengajuan: p, fotoUrl, onLihatFoto, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
+export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, namaSupplier, onLihatFoto, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
   const [mauTolak, setMauTolak] = useState(false);
   const [catatanOwner, setCatatanOwner] = useState("");
 
@@ -2420,6 +2420,14 @@ export function ResponPengajuanForm({ pengajuan: p, fotoUrl, onLihatFoto, onClos
         <div>
           <div className="text-[11px] text-slate-500">SKU</div>
           <div className="font-mono text-base font-semibold text-amber-400">{p.sku}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-slate-500">Model Supplier</div>
+          <div className="font-mono text-sm text-slate-300">{barcodeSupplier || "—"}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-slate-500">Nama Toko/Supplier</div>
+          <div className="text-sm text-slate-300">{namaSupplier || "—"}</div>
         </div>
         <div>
           <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
