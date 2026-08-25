@@ -97,7 +97,11 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
 
   const filtered = skuMaster.filter((s) => {
     if (!tampilkanNonaktif && s.nonaktif) return false;
-    if (!s.sku.toLowerCase().includes(q.toLowerCase())) return false;
+    const qLower = q.toLowerCase();
+    const cocokQ =
+      s.sku.toLowerCase().includes(qLower) ||
+      (s.barcode_supplier || "").toLowerCase().includes(qLower);
+    if (!cocokQ) return false;
     if (kategori && s.kategori !== kategori) return false;
     if (subkategori && s.subkategori !== subkategori) return false;
     return true;
@@ -116,6 +120,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
       `master-barang-${new Date().toISOString().slice(0, 10)}.csv`,
       [
         { key: "sku", label: "SKU" },
+        { key: "barcode_supplier", label: "Barcode Supplier" },
         { key: "stok", label: "Stok" },
         { key: "rak", label: "Rak" },
         { key: "harga_asli", label: "Harga Asli" },
@@ -228,7 +233,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari SKU…"
+            placeholder="Cari SKU atau barcode supplier…"
             className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
           />
         </div>
@@ -366,6 +371,14 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
                               )}
                               <div className="min-w-0">
                                 <div className="font-mono text-xs text-slate-300 truncate">{s.sku}</div>
+                                {s.barcode_supplier && (
+                                  <div
+                                    className="font-mono text-[10px] text-slate-500 truncate"
+                                    title={`Barcode Supplier: ${s.barcode_supplier}`}
+                                  >
+                                    {s.barcode_supplier}
+                                  </div>
+                                )}
                                 <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                                   {s.stok <= 0 ? <Badge color="red">Habis</Badge> : (
                                     <span className="text-[11px] text-slate-500">Stok {s.stok}</span>

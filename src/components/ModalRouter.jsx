@@ -1617,6 +1617,7 @@ export default function ModalRouter({
       ["Model", s.model || "—"],
       ["Warna", labelFor(master, "warna", s.warna)],
       ["Ukuran", labelFor(master, "ukuran", s.ukuran)],
+      ["Barcode Supplier", s.barcode_supplier || "—"],
       ...(kodeRak ? [["Rak", kodeRak]] : []),
     ];
     return (
@@ -2030,6 +2031,10 @@ export default function ModalRouter({
                   harga: m.harga || null,
                   stage: "sku",
                   kode_bon: p.kode_bon,
+                  // Nama model yang diketik di Barang Datang sebenarnya barcode/kode
+                  // dari supplier — dibawa terus di sini supaya nanti ikut disalin
+                  // ke sku_master.barcode_supplier saat SKU dibuat (lihat "buat-sku").
+                  barcode_supplier: m.nama || null,
                 }),
               });
               await sb("pesanan_penerimaan", {
@@ -2240,6 +2245,11 @@ export default function ModalRouter({
             // mau pakai harga lama atau harga baru). Harga jual yang berlaku
             // sekarang tidak berubah sampai keputusan itu dibuat.
             if (hargaAsliBaru != null) patchBody.harga_asli_baru = hargaAsliBaru;
+            // Isi barcode supplier di SKU lama kalau memang belum pernah terisi —
+            // tidak menimpa kalau SKU-nya sudah punya barcode sendiri.
+            if (!selectedSku.barcode_supplier && modal.item.barcode_supplier) {
+              patchBody.barcode_supplier = modal.item.barcode_supplier;
+            }
             await sb(`sku_master?id=eq.${selectedSku.id}`, {
               method: "PATCH",
               body: JSON.stringify(patchBody),
@@ -2334,6 +2344,10 @@ export default function ModalRouter({
                 tengah: harga.tengah,
                 ecer: harga.ecer,
                 stok: jumlah,
+                // Barcode/kode dari supplier (diketik sebagai "Model" waktu Barang
+                // Datang) ikut disalin ke Master Barang, terpisah dari kode Model
+                // (nomor urut) di atas.
+                barcode_supplier: modal.item.barcode_supplier || null,
               }),
             });
             await sb(`items?id=eq.${modal.item.id}`, {
