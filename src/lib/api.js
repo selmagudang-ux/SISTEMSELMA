@@ -185,52 +185,54 @@ async function renameSkuEverywhere(oldSku, newSku) {
   }
 }
 
-// Setiap kali harga sebuah SKU diganti (baik lewat "Pilih Harga Asli Baru"
-// maupun "Edit Harga" superadmin), barang yang fotonya sudah diambil dan
-// sudah lanjut ke tahap Marketplace/Selesai perlu difoto ulang — soalnya
-// foto lama biasanya ikut menampilkan harga, jadi begitu harga berubah
-// fotonya jadi tidak akurat lagi. Fungsi ini menarik balik HANYA SATU barang
-// SKU itu — yang PALING BARU ditambahkan (created_at terbesar) di antara
-// yang sudah lewat Pemotretan (stage "marketplace"/"selesai") — ke tahap
-// Pemotretan lagi (stage "verifikasi") dan menandainya `perlu_foto_ulang`
-// supaya kelihatan jelas di halaman Pemotretan (badge + ringkasan jumlah).
-// Anggapannya: harga terakhir yang diketik = perubahan terakhir yang berlaku,
-// jadi cukup satu barang paling baru itu saja yang perlu difoto ulang, tidak
-// perlu menarik balik semua batch lama SKU ini. Barang yang memang belum
-// pernah difoto (masih di tahap sebelum verifikasi) dibiarkan apa adanya —
-// belum ada foto lama yang perlu dikoreksi.
-export async function tandaiPerluFotoUlang(sku) {
-  const kandidat =
+// Dipanggil begitu keputusan harga sebuah SKU dibuat (modal "pilih-harga"
+// atau "edit-harga" di Master Barang). Digabung jadi SATU fungsi (dulu ada 2
+// terpisah: tandaiPerluFotoUlang + resolveMenungguHarga) supaya barang yang
+// muncul di Pemotretan tab "Foto Ulang" untuk SKU ini SELALU cuma 1 — yang
+// paling baru ditambahkan (created_at terbesar) — bukan dobel dari 2 sumber
+// berbeda (barang yang lagi ditahan nunggu keputusan DAN barang lama yang
+// sudah pernah selesai/dipasarkan ditarik balik bersamaan).
+//
+// Cakupannya semua barang SKU ini yang statusnya:
+// - "menunggu-harga" (barang baru yang harganya beda, lagi ditahan nunggu
+//   keputusan ini) — bisa lebih dari satu kalau sempat restock beberapa kali
+//   sebelum diputuskan.
+// - "marketplace" / "selesai" (barang lama yang sudah pernah lewat
+//   Pemotretan, fotonya ikut usang begitu harga berubah).
+//
+// - harga yang ditetapkan BERUBAH dari harga lama -> dari SEMUA barang di
+//   atas, cuma yang PALING BARU yang ditarik ke Verifikasi Foto (ditandai
+//   perlu_foto_ulang) — sisanya langsung Selesai (dianggap cukup terwakili
+//   oleh foto barang paling baru itu, tidak usah semuanya difoto ulang).
+// - harga yang ditetapkan TETAP (tidak berubah) -> semuanya langsung
+//   Selesai, tidak ada yang perlu difoto ulang sama sekali.
+export async function resolveHargaSku(sku, hargaBerubah) {
+  const semua =
     (await sb(
-      `items?select=id&sku=eq.${encodeURIComponent(sku)}&stage=in.(marketplace,selesai)&order=created_at.desc&limit=1`
+      `items?select=id,created_at&sku=eq.${encodeURIComponent(sku)}&stage=in.(menunggu-harga,marketplace,selesai)&order=created_at.desc`
     )) || [];
-  const itemTerbaru = kandidat[0];
-  if (!itemTerbaru) return;
-  await sb(`items?id=eq.${itemTerbaru.id}`, {
+  if (semua.length === 0) return;
+
+  if (!hargaBerubah) {
+    await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=eq.menunggu-harga`, {
+      method: "PATCH",
+      body: JSON.stringify({ stage: "selesai" }),
+    });
+    return;
+  }
+
+  const [terbaru, ...sisanya] = semua;
+  await sb(`items?id=eq.${terbaru.id}`, {
     method: "PATCH",
     body: JSON.stringify({ stage: "verifikasi", perlu_foto_ulang: true }),
   });
-}
-
-// Barang yang masuk lagi dengan harga asli berbeda dari yang tercatat di
-// Master Barang ditahan dulu di tahap "menunggu-harga" begitu ditempatkan
-// di rak (lihat "advance-rak" di ModalRouter) — BELUM boleh masuk
-// Pemotretan sampai keputusannya jelas. Fungsi ini dipanggil begitu
-// keputusan itu dibuat (modal "pilih-harga" / "edit-harga" di Master
-// Barang) untuk melepas semua barang yang tertahan tadi:
-// - harga yang ditetapkan BERUBAH dari harga lama -> Verifikasi Foto,
-//   ditandai perlu foto ulang (foto lama sudah tidak akurat).
-// - harga yang ditetapkan TETAP (tidak berubah) -> langsung Selesai,
-//   sama sekali tidak perlu mampir ke Pemotretan (tidak ada yang berubah
-//   sejak awal, tidak ada alasan buat difoto ulang).
-export async function resolveMenungguHarga(sku, hargaBerubah) {
-  const patch = hargaBerubah
-    ? { stage: "verifikasi", perlu_foto_ulang: true }
-    : { stage: "selesai" };
-  await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=eq.menunggu-harga`, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
+  const idSisanya = sisanya.map((i) => i.id);
+  if (idSisanya.length > 0) {
+    await sb(`items?id=in.(${idSisanya.join(",")})`, {
+      method: "PATCH",
+      body: JSON.stringify({ stage: "selesai", perlu_foto_ulang: false }),
+    });
+  }
 }
 
 // Ganti kode Master Data (mis. kategori "ANJ" -> "ANJB") dan rambatkan

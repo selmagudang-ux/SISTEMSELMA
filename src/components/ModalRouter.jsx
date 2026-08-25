@@ -3,7 +3,7 @@ import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight } from 
 import { ModalShell, Badge, suggestKode, Field, inputClass } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
-  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, tandaiPerluFotoUlang, resolveMenungguHarga,
+  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
   detailModelPesanan,
 } from "../lib/api";
@@ -2351,7 +2351,7 @@ export default function ModalRouter({
                 //   BUKAN langsung Verifikasi Foto. Barang ditahan dulu supaya
                 //   tidak masuk Pemotretan sebelum Master Barang benar-benar
                 //   memutuskan mau pakai harga lama atau harga baru (lihat
-                //   resolveMenungguHarga yang dipanggil dari modal "pilih-harga").
+                //   resolveHargaSku yang dipanggil dari modal "pilih-harga").
                 // - tidak ada perubahan harga -> langsung Selesai, karena ini
                 //   cuma tambah stok ke SKU yang sudah pernah difoto & dijual.
                 stage_setelah_rak: hargaAsliBaru != null ? "menunggu-harga" : "selesai",
@@ -2540,7 +2540,7 @@ export default function ModalRouter({
             // "selesai" -> tambah stok tanpa perubahan harga, tidak perlu difoto lagi.
             // "menunggu-harga" -> ada perubahan harga yang BELUM diputuskan di Master
             //   Barang — ditahan dulu, belum boleh masuk Pemotretan (lihat
-            //   resolveMenungguHarga, dipanggil begitu keputusan harganya dibuat).
+            //   resolveHargaSku, dipanggil begitu keputusan harganya dibuat).
             // default/"verifikasi" -> SKU baru, masuk ke Foto Baru seperti biasa.
             const tujuan = modal.item.stage_setelah_rak || "verifikasi";
             const patchItem =
@@ -2779,8 +2779,7 @@ export default function ModalRouter({
             // muncul kalau harga_asli_baru masih ada isinya (lihat
             // FotoProduk.jsx). Kalau harga_asli_baru di-null-kan lebih dulu,
             // badge itu tidak akan pernah kelihatan sama sekali.
-            await resolveMenungguHarga(s.sku, hargaBerubah);
-            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
+            await resolveHargaSku(s.sku, hargaBerubah);
             // Baru sekarang harga_asli_baru boleh di-null-kan — keputusan
             // sudah final & barang yang perlu tahu perbandingan harga sudah
             // ditandai perlu_foto_ulang di atas.
@@ -2829,8 +2828,7 @@ export default function ModalRouter({
             // Sama seperti "pilih-harga": lepas/tarik balik barang DULU
             // selagi harga_asli_baru masih terisi, baru null-kan belakangan
             // — supaya badge perbandingan harga di Pemotretan sempat kebaca.
-            await resolveMenungguHarga(s.sku, hargaBerubah);
-            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
+            await resolveHargaSku(s.sku, hargaBerubah);
             await sb(`sku_master?id=eq.${s.id}`, {
               method: "PATCH",
               body: JSON.stringify({ ...patch, harga_asli_baru: null }),
