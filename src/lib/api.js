@@ -207,14 +207,19 @@ export async function tandaiPerluFotoUlang(sku) {
 // di rak (lihat "advance-rak" di ModalRouter) — BELUM boleh masuk
 // Pemotretan sampai keputusannya jelas. Fungsi ini dipanggil begitu
 // keputusan itu dibuat (modal "pilih-harga" / "edit-harga" di Master
-// Barang) untuk melepas semua barang yang tertahan tadi ke Verifikasi
-// Foto: kalau harga yang ditetapkan ternyata berubah dari harga lama,
-// ditandai perlu foto ulang; kalau harga yang ditetapkan tetap yang lama
-// (tidak berubah), tetap lanjut ke Verifikasi tapi tanpa perlu foto ulang.
+// Barang) untuk melepas semua barang yang tertahan tadi:
+// - harga yang ditetapkan BERUBAH dari harga lama -> Verifikasi Foto,
+//   ditandai perlu foto ulang (foto lama sudah tidak akurat).
+// - harga yang ditetapkan TETAP (tidak berubah) -> langsung Selesai,
+//   sama sekali tidak perlu mampir ke Pemotretan (tidak ada yang berubah
+//   sejak awal, tidak ada alasan buat difoto ulang).
 export async function resolveMenungguHarga(sku, hargaBerubah) {
+  const patch = hargaBerubah
+    ? { stage: "verifikasi", perlu_foto_ulang: true }
+    : { stage: "selesai" };
   await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=eq.menunggu-harga`, {
     method: "PATCH",
-    body: JSON.stringify({ stage: "verifikasi", perlu_foto_ulang: !!hargaBerubah }),
+    body: JSON.stringify(patch),
   });
 }
 

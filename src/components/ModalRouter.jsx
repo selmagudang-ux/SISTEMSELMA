@@ -2709,7 +2709,7 @@ export default function ModalRouter({
             if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
           }, hargaBerubah
             ? "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan"
-            : "Harga lama tetap dipakai, barang yang tertahan lanjut ke Pemotretan tanpa foto ulang");
+            : "Harga lama tetap dipakai, barang yang tertahan langsung Selesai (tidak perlu difoto ulang)");
         }}
       />
     );
