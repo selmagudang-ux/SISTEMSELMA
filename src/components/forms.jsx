@@ -2422,7 +2422,7 @@ export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, na
           <div className="font-mono text-base font-semibold text-amber-400">{p.sku}</div>
         </div>
         <div>
-          <div className="text-[11px] text-slate-500">Model Supplier</div>
+          <div className="text-[11px] text-slate-500">Kode barang</div>
           <div className="font-mono text-sm text-slate-300">{barcodeSupplier || "—"}</div>
         </div>
         <div>
