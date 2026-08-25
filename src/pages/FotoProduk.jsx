@@ -88,6 +88,16 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
             const previewLama = adaPerbandingan ? calcHarga(item.harga_lama_foto, settings) : null;
             const previewBaru = adaPerbandingan ? calcHarga(item.harga_baru_foto, settings) : null;
 
+            // Kartu ini cuma mewakili SATU baris item (biasanya batch restock
+            // paling baru — lihat resolveHargaSku di lib/api.js yang menarik
+            // hanya baris terbaru ke Verifikasi Foto). Tapi qty yang wajar
+            // ditampilkan ke admin adalah TOTAL stok SKU ini di gudang, bukan
+            // cuma qty batch itu sendiri — makanya diambil dari sku_master.stok
+            // (sumber kebenaran stok per SKU), dengan fallback ke item.jumlah
+            // kalau SKU-nya entah kenapa tidak ketemu di skuMaster.
+            const skuRow = (skuMaster || []).find((s) => s.sku === item.sku);
+            const totalStok = skuRow?.stok != null ? skuRow.stok : item.jumlah;
+
             return (
             <div
               key={item.id}
@@ -137,7 +147,7 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
               )}
               <div className="text-xs font-mono text-slate-300 truncate">{item.sku}</div>
               <div className="text-[11px] text-slate-500 mt-0.5">
-                {item.jumlah}x {item.rak_code ? `· ${item.rak_code}` : ""}
+                {totalStok}x {item.rak_code ? `· ${item.rak_code}` : ""}
               </div>
               <button
                 onClick={() => setModal({ type: "advance-verifikasi", item })}
