@@ -189,14 +189,24 @@ async function renameSkuEverywhere(oldSku, newSku) {
 // maupun "Edit Harga" superadmin), barang yang fotonya sudah diambil dan
 // sudah lanjut ke tahap Marketplace/Selesai perlu difoto ulang — soalnya
 // foto lama biasanya ikut menampilkan harga, jadi begitu harga berubah
-// fotonya jadi tidak akurat lagi. Fungsi ini menarik balik semua barang SKU
-// itu yang sudah lewat Pemotretan ke tahap Pemotretan lagi (stage
-// "verifikasi") dan menandainya `perlu_foto_ulang` supaya kelihatan jelas di
-// halaman Pemotretan (badge + ringkasan jumlah). Barang yang memang belum
+// fotonya jadi tidak akurat lagi. Fungsi ini menarik balik HANYA SATU barang
+// SKU itu — yang PALING BARU ditambahkan (created_at terbesar) di antara
+// yang sudah lewat Pemotretan (stage "marketplace"/"selesai") — ke tahap
+// Pemotretan lagi (stage "verifikasi") dan menandainya `perlu_foto_ulang`
+// supaya kelihatan jelas di halaman Pemotretan (badge + ringkasan jumlah).
+// Anggapannya: harga terakhir yang diketik = perubahan terakhir yang berlaku,
+// jadi cukup satu barang paling baru itu saja yang perlu difoto ulang, tidak
+// perlu menarik balik semua batch lama SKU ini. Barang yang memang belum
 // pernah difoto (masih di tahap sebelum verifikasi) dibiarkan apa adanya —
 // belum ada foto lama yang perlu dikoreksi.
 export async function tandaiPerluFotoUlang(sku) {
-  await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=in.(marketplace,selesai)`, {
+  const kandidat =
+    (await sb(
+      `items?select=id&sku=eq.${encodeURIComponent(sku)}&stage=in.(marketplace,selesai)&order=created_at.desc&limit=1`
+    )) || [];
+  const itemTerbaru = kandidat[0];
+  if (!itemTerbaru) return;
+  await sb(`items?id=eq.${itemTerbaru.id}`, {
     method: "PATCH",
     body: JSON.stringify({ stage: "verifikasi", perlu_foto_ulang: true }),
   });

@@ -2773,6 +2773,17 @@ export default function ModalRouter({
           return run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
             const harga = calcHarga(hargaTerpilih, settings);
+            // PENTING: lepas barang yang tertahan & tarik balik yang sudah
+            // difoto DULU, SELAGI sku_master.harga_asli_baru masih terisi —
+            // badge perbandingan "Lama vs Baru" di halaman Pemotretan cuma
+            // muncul kalau harga_asli_baru masih ada isinya (lihat
+            // FotoProduk.jsx). Kalau harga_asli_baru di-null-kan lebih dulu,
+            // badge itu tidak akan pernah kelihatan sama sekali.
+            await resolveMenungguHarga(s.sku, hargaBerubah);
+            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
+            // Baru sekarang harga_asli_baru boleh di-null-kan — keputusan
+            // sudah final & barang yang perlu tahu perbandingan harga sudah
+            // ditandai perlu_foto_ulang di atas.
             await sb(`sku_master?id=eq.${s.id}`, {
               method: "PATCH",
               body: JSON.stringify({
@@ -2785,13 +2796,6 @@ export default function ModalRouter({
                 harga_asli_baru: null,
               }),
             });
-            // Lepas barang yang tertahan di "menunggu-harga" ke Pemotretan —
-            // perlu foto ulang cuma kalau harganya beneran berubah.
-            await resolveMenungguHarga(s.sku, hargaBerubah);
-            // Tarik balik barang yang SUDAH difoto (Marketplace/Selesai) ke
-            // Pemotretan cuma kalau harganya beneran berubah — kalau yang
-            // dipilih tetap harga lama, foto yang sudah ada masih akurat.
-            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
           }, hargaBerubah
             ? "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan"
             : "Harga lama tetap dipakai, barang yang tertahan langsung Selesai (tidak perlu difoto ulang)");
@@ -2822,12 +2826,15 @@ export default function ModalRouter({
           const hargaBerubah = patch.harga_asli !== s.harga_asli;
           return run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
+            // Sama seperti "pilih-harga": lepas/tarik balik barang DULU
+            // selagi harga_asli_baru masih terisi, baru null-kan belakangan
+            // — supaya badge perbandingan harga di Pemotretan sempat kebaca.
+            await resolveMenungguHarga(s.sku, hargaBerubah);
+            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
             await sb(`sku_master?id=eq.${s.id}`, {
               method: "PATCH",
               body: JSON.stringify({ ...patch, harga_asli_baru: null }),
             });
-            await resolveMenungguHarga(s.sku, hargaBerubah);
-            if (hargaBerubah) await tandaiPerluFotoUlang(s.sku);
           }, hargaBerubah
             ? "Harga SKU diperbarui, barang yang sudah difoto ditarik balik ke Pemotretan"
             : "Harga SKU disimpan (nilainya sama), tidak ada barang yang perlu foto ulang");
