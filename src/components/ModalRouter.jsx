@@ -384,7 +384,6 @@ export default function ModalRouter({
             await sb("pengajuan_restock", {
               method: "POST",
               body: JSON.stringify({
-                sku_id: s.id,
                 sku: s.sku,
                 stok_saat_ajuan: s.stok || 0,
                 catatan,
