@@ -55,6 +55,12 @@ function BuatSkuList({ items, setModal }) {
   );
 }
 
+// Satu SKU dianggap "ada perubahan harga" kalau harga_asli_baru sudah
+// diisi (lewat Barang Masuk/Barang Datang dengan harga beda) dan belum
+// diputuskan (masih beda dari harga_asli yang berlaku sekarang) — lihat
+// resolveHargaSku di lib/api.js untuk alur keputusannya.
+const adaHargaBaruCheck = (s) => s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
+
 function MasterBarang({ skuMaster, items, master, penempatan, setModal, session }) {
   const isSuperadmin = session?.role === "superadmin";
   const [q, setQ] = useState("");
@@ -64,6 +70,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
   const [unduhFoto, setUnduhFoto] = useState(null); // { done, total } selagi foto diunduh
   const [selected, setSelected] = useState(() => new Set()); // sku yang dipilih untuk download foto
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
+  const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
   // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
@@ -97,6 +104,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
 
   const filtered = skuMaster.filter((s) => {
     if (!tampilkanNonaktif && s.nonaktif) return false;
+    if (hanyaPerubahan && !adaHargaBaruCheck(s)) return false;
     const qLower = q.toLowerCase();
     const cocokQ =
       s.sku.toLowerCase().includes(qLower) ||
@@ -106,6 +114,14 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
     if (subkategori && s.subkategori !== subkategori) return false;
     return true;
   });
+
+  // Jumlah SKU yang ada perubahan harga, dihitung dari cakupan yang sama
+  // dengan toggle nonaktif (biar angkanya konsisten sama apa yang bisa
+  // muncul kalau filter ini diaktifkan), tapi lepas dari filter q/kategori
+  // supaya badge di checkbox selalu nunjukin total sebenarnya.
+  const jumlahPerubahan = skuMaster.filter(
+    (s) => (tampilkanNonaktif || !s.nonaktif) && adaHargaBaruCheck(s)
+  ).length;
 
   // Kalau kategori diganti dan subkategori yang sedang dipilih ternyata
   // tidak ada di kategori baru itu, reset supaya tidak nyangkut jadi
@@ -267,9 +283,25 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
           />
           Tampilkan yang nonaktif
         </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={hanyaPerubahan}
+            onChange={(e) => setHanyaPerubahan(e.target.checked)}
+            className="accent-red-500"
+          />
+          Ada perubahan harga
+          {jumlahPerubahan > 0 && (
+            <span className="text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full px-1.5 py-0.5">
+              {jumlahPerubahan}
+            </span>
+          )}
+        </label>
       </div>
       {filtered.length === 0 ? (
-        <EmptyState label="Belum ada barang." />
+        <EmptyState
+          label={hanyaPerubahan ? "Tidak ada SKU dengan perubahan harga." : "Belum ada barang."}
+        />
       ) : (
         <div className="space-y-6">
           {groupByKategori(filtered).map(({ kategori, groups }) => (
@@ -288,8 +320,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {subItems.map((s) => {
-                        const adaHargaBaru =
-                          s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
+                        const adaHargaBaru = adaHargaBaruCheck(s);
                         const foto = fotoUntukSku(s.sku, items);
                         const dipilih = selected.has(s.sku);
                         const kodeRak = rakForSku(s.sku, penempatan);
