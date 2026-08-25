@@ -106,7 +106,7 @@ export default function Dashboard({
         }
       />
 
-      <div className="flex items-center gap-2 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-2xl overflow-x-auto">
+      <div className="flex flex-wrap items-center gap-1.5 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1">
         {tabsTampil.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
@@ -114,7 +114,7 @@ export default function Dashboard({
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-md transition whitespace-nowrap ${
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
                 active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
               }`}
             >
