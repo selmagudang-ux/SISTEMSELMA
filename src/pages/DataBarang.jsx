@@ -22,6 +22,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
     if (!s) return true;
     return (
       (i.sku || "").toLowerCase().includes(s) ||
+      (i.barcode_supplier || "").toLowerCase().includes(s) ||
       (i.gudang || "").toLowerCase().includes(s) ||
       rakSaatIni(i).toLowerCase().includes(s)
     );
@@ -33,6 +34,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
       [
         { key: "tanggal", label: "Tanggal" },
         { key: "sku", label: "SKU" },
+        { key: "barcode_supplier", label: "Model/Barcode Supplier" },
         { key: "jumlah", label: "Jumlah" },
         { key: "jenis", label: "Jenis" },
         { key: "rak", label: "Rak" },
@@ -41,6 +43,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
       filtered.map((i) => ({
         tanggal: i.tanggal,
         sku: i.sku || "",
+        barcode_supplier: i.barcode_supplier || "",
         jumlah: i.jumlah,
         jenis: i.gudang || "",
         rak: rakSaatIni(i) || "",
@@ -79,7 +82,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU, jenis, atau rak…"
+          placeholder="Cari SKU, model/barcode supplier, jenis, atau rak…"
           className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
         />
       </div>
@@ -88,12 +91,13 @@ export default function DataBarang({ items, penempatan, setModal }) {
         <EmptyState label="Tidak ada barang yang cocok." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[720px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5">Foto</th>
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">SKU</th>
+                <th className="px-4 py-2.5">Model/Barcode Supplier</th>
                 <th className="px-4 py-2.5">Jumlah</th>
                 <th className="px-4 py-2.5">Jenis</th>
                 <th className="px-4 py-2.5">Rak</th>
@@ -120,6 +124,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{i.tanggal}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{i.barcode_supplier || "—"}</td>
                     <td className="px-4 py-2.5">
                       {i.jumlah}x
                       {i.jumlah_rusak > 0 && i.stage === "sku" && (

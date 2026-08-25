@@ -741,6 +741,26 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const selected = skuMaster.find((s) => String(s.id) === String(selectedId)) || null;
   const skuOptions = skuMaster.map((s) => ({ value: s.id, label: `${s.sku} · stok ${s.stok}` }));
 
+  // Deteksi harga asli baru: kalau field "Harga Asli barang ini" diisi manual,
+  // pakai itu. Kalau dikosongkan, JANGAN langsung anggap "sama seperti
+  // sebelumnya" — jatuhkan ke harga/pcs yang sudah tercatat sejak Barang
+  // Masuk/Barang Datang (item.harga), karena itu sering sudah beda dari
+  // harga_asli SKU lama meskipun user tidak sempat mengetik ulang di sini.
+  // Dibandingkan dengan Number() di kedua sisi supaya tidak salah beda gara-gara
+  // tipe data (string vs number) dari API.
+  const hargaAsliBaruDeteksi =
+    selected == null
+      ? null
+      : (() => {
+          const dariField = hargaBaru !== "" ? Number(hargaBaru) : null;
+          const dariItem = Number(item?.harga) > 0 ? Number(item.harga) : null;
+          const kandidat = dariField != null ? dariField : dariItem;
+          if (kandidat == null) return null;
+          return Number(kandidat) !== Number(selected.harga_asli) ? Number(kandidat) : null;
+        })();
+  const previewBaru =
+    hargaAsliBaruDeteksi != null && settings ? calcHarga(hargaAsliBaruDeteksi, settings) : null;
+
   const [bahan, setBahan] = useState("");
   const [peruntukan, setPeruntukan] = useState("");
   const [kategori, setKategori] = useState("");
@@ -903,22 +923,47 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
                 Otomatis terisi dari harga/pcs saat Input Barang Datang — ubah/kosongkan di sini kalau perlu.
               </p>
             )}
-            {hargaBaru && Number(hargaBaru) !== selected.harga_asli && (
+            {hargaAsliBaruDeteksi != null && (
               <p className="text-[11px] text-amber-400 mt-1.5">
-                Harga beda dari harga lama — nanti di Master Barang akan muncul pilihan mau pakai harga lama atau
-                harga baru ini. Stok tetap masuk dulu memakai harga jual yang berlaku sekarang.
+                Harga beda dari harga lama — barang ini akan lanjut ke Admin Pemotretan (tab "Foto Ulang") setelah
+                ditempatkan di rak, sampai harga barunya diputuskan di Master Barang. Stok tetap masuk dulu memakai
+                harga jual yang berlaku sekarang.
               </p>
             )}
           </Field>
 
+          {hargaAsliBaruDeteksi != null && settings && (
+            <div className="mb-3 rounded-lg border border-amber-500/30 overflow-hidden text-xs">
+              <div className="px-3 py-1.5 bg-amber-500/10 text-amber-400 font-medium">
+                Perbandingan harga (akan tampil di Foto Ulang)
+              </div>
+              <div className="grid grid-cols-3 text-[11px] uppercase text-slate-500 px-3 pt-2">
+                <span></span>
+                <span>Lama</span>
+                <span>Baru</span>
+              </div>
+              {[
+                ["Harga Asli", selected.harga_asli, previewBaru.hargaDasar],
+                ["HPP", selected.hpp, previewBaru.hpp],
+                ["Grosir", selected.grosir, previewBaru.grosir],
+                ["Tengah", selected.tengah, previewBaru.tengah],
+                ["Ecer", selected.ecer, previewBaru.ecer],
+              ].map(([label, lama, baru], i) => (
+                <div
+                  key={label}
+                  className={`grid grid-cols-3 px-3 py-1.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+                >
+                  <span className="text-slate-500">{label}</span>
+                  <span className="text-slate-400">{fmtRp(lama)}</span>
+                  <span className="text-amber-300 font-medium">{fmtRp(baru)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             disabled={saving}
-            onClick={() =>
-              onSubmitExisting(
-                selected,
-                hargaBaru && Number(hargaBaru) !== selected.harga_asli ? Number(hargaBaru) : null
-              )
-            }
+            onClick={() => onSubmitExisting(selected, hargaAsliBaruDeteksi)}
             className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg mb-4"
           >
             {saving ? "Menyimpan…" : "Tambahkan Stok & Lanjut ke Rak"}

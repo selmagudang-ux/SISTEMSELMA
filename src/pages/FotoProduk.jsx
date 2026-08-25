@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ImageOff, RotateCcw, Camera } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
+import { calcHarga, fmtRp } from "../lib/api";
 
 // Dua tab: "Foto Baru" (barang yang belum pernah difoto sama sekali) dan
 // "Foto Ulang" (barang yang sudah pernah difoto tapi ditarik balik ke sini
@@ -14,7 +15,7 @@ const TABS = [
   { key: "ulang", label: "Foto Ulang", icon: RotateCcw },
 ];
 
-export default function FotoProduk({ items, setModal }) {
+export default function FotoProduk({ items, setModal, skuMaster, settings }) {
   const list = items.filter((i) => i.stage === "verifikasi");
   // Barang yang ditarik balik ke sini gara-gara ada perubahan (mis. harga
   // SKU-nya baru saja diganti — lihat tandaiPerluFotoUlang di lib/api.js)
@@ -75,7 +76,18 @@ export default function FotoProduk({ items, setModal }) {
         />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {activeList.map((item) => (
+          {activeList.map((item) => {
+            // Perbandingan harga hanya bisa ditampilkan kalau SKU-nya masih
+            // punya harga_asli_baru yang PENDING (belum diputuskan di Master
+            // Barang) — itu berarti harga di Master Barang belum benar-benar
+            // diubah, cuma diusulkan. Kalau sudah diputuskan (harga_asli_baru
+            // sudah null lagi karena sudah dipilih/diterapkan), tidak ada lagi
+            // data "harga lama" buat dibandingkan, jadi tampilkan badge biasa saja.
+            const sku = (skuMaster || []).find((s) => s.sku === item.sku) || null;
+            const adaPerbandingan = item.perlu_foto_ulang && sku && sku.harga_asli_baru != null && settings;
+            const previewBaru = adaPerbandingan ? calcHarga(sku.harga_asli_baru, settings) : null;
+
+            return (
             <div
               key={item.id}
               className={`bg-slate-900 border rounded-lg p-3 relative ${
@@ -86,6 +98,28 @@ export default function FotoProduk({ items, setModal }) {
                 <div className="absolute -top-2 left-2 flex items-center gap-1 bg-amber-500 text-slate-950 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
                   <RotateCcw size={10} />
                   Harga berubah
+                </div>
+              )}
+              {adaPerbandingan && (
+                <div className="mt-1 mb-2 rounded-md border border-amber-500/30 overflow-hidden text-[10px]">
+                  <div className="grid grid-cols-3 uppercase text-slate-500 px-2 pt-1.5">
+                    <span></span>
+                    <span>Lama</span>
+                    <span>Baru</span>
+                  </div>
+                  {[
+                    ["Asli", sku.harga_asli, previewBaru.hargaDasar],
+                    ["HPP", sku.hpp, previewBaru.hpp],
+                    ["Grosir", sku.grosir, previewBaru.grosir],
+                    ["Tengah", sku.tengah, previewBaru.tengah],
+                    ["Ecer", sku.ecer, previewBaru.ecer],
+                  ].map(([label, lama, baru], i) => (
+                    <div key={label} className={`grid grid-cols-3 px-2 py-1 ${i % 2 ? "bg-slate-950" : "bg-slate-900/60"}`}>
+                      <span className="text-slate-500">{label}</span>
+                      <span className="text-slate-400">{fmtRp(lama)}</span>
+                      <span className="text-amber-300 font-medium">{fmtRp(baru)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
               {item.foto_url ? (
@@ -115,7 +149,8 @@ export default function FotoProduk({ items, setModal }) {
                   : "Upload foto verifikasi →"}
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

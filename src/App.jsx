@@ -493,7 +493,7 @@ function MainApp({ session, onLogout }) {
                 <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} master={master} />
               )}
               {nav.menu === "foto" && (
-                <FotoProduk items={items} setModal={setModal} />
+                <FotoProduk items={items} setModal={setModal} skuMaster={skuMaster} settings={settings} />
               )}
               {nav.menu === "marketplace" && (
                 <Marketplace

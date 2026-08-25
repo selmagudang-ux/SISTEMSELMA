@@ -29,6 +29,7 @@ function DetailItemModal({ item, setModal, saving, run, showToast, close, sessio
     ["Jumlah", `${item.jumlah}x`],
     ...(item.jumlah_rusak > 0 && item.stage === "sku" ? [["Termasuk Rusak", `${item.jumlah_rusak}x`]] : []),
     ["SKU", item.sku || "Belum ada"],
+    ["Model/Barcode Supplier", item.barcode_supplier || "—"],
     ["Rak", item.rak_code || "Belum ditempatkan"],
   ];
 
