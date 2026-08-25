@@ -2246,9 +2246,12 @@ export default function ModalRouter({
             // mau pakai harga lama atau harga baru). Harga jual yang berlaku
             // sekarang tidak berubah sampai keputusan itu dibuat.
             if (hargaAsliBaru != null) patchBody.harga_asli_baru = hargaAsliBaru;
-            // Isi barcode supplier di SKU lama kalau memang belum pernah terisi —
-            // tidak menimpa kalau SKU-nya sudah punya barcode sendiri.
-            if (!selectedSku.barcode_supplier && modal.item.barcode_supplier) {
+            // Sinkronkan barcode/nama model dari supplier ke SKU lama — bukan cuma
+            // diisi kalau masih kosong, tapi juga DIPERBARUI kalau supplier kirim
+            // kode/nama model yang berbeda dari yang tercatat sekarang (mis. supplier
+            // ganti penamaan modelnya). Tidak menimpa kalau intake ini memang tidak
+            // membawa barcode_supplier sama sekali.
+            if (modal.item.barcode_supplier && modal.item.barcode_supplier !== selectedSku.barcode_supplier) {
               patchBody.barcode_supplier = modal.item.barcode_supplier;
             }
             await sb(`sku_master?id=eq.${selectedSku.id}`, {
