@@ -2163,9 +2163,11 @@ export default function ModalRouter({
     );
   }
 
-  // Hapus satu baris Riwayat Barang Datang. Ini cuma menghapus CATATAN
-  // transaksinya — barang yang sudah tercatat sebagai Barang Masuk/SKU
-  // (lewat pesanan_penerimaan) TIDAK ikut terhapus.
+  // Hapus satu baris Riwayat Barang Datang — SEKARANG cascade: barang yang
+  // sudah tercatat lewat transaksi ini (via pesanan_penerimaan -> items),
+  // beserta SKU/penempatan rak/riwayat stok yang jadi yatim karenanya, ikut
+  // dihapus juga. Dipakai supaya tidak ada data barang yang "nyangkut" waktu
+  // riwayat pesanannya sendiri sudah dihapus.
   if (modal.type === "hapus-pesanan-masuk") {
     const p = modal.item;
     const jumlahModel = detailModelPesanan(p).length;
@@ -2177,8 +2179,8 @@ export default function ModalRouter({
             Riwayat barang datang {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"} (
             {jumlahModel} model / {p.jumlah_pesan}x) akan dihapus permanen dan hilang dari daftar.
             <div className="mt-1.5 text-red-200/90">
-              Barang yang sudah tercatat tetap tercatat sebagai Barang Masuk & lanjut ke alur
-              SKU seperti biasa — yang dihapus cuma catatan pesanannya di sini.
+              Semua barang yang tercatat dari transaksi ini (Barang Masuk, SKU, penempatan rak,
+              riwayat stok) ikut dihapus. Tindakan ini tidak bisa dibatalkan.
             </div>
           </div>
         </div>
@@ -2194,11 +2196,78 @@ export default function ModalRouter({
             disabled={saving}
             onClick={() =>
               run(async () => {
-                // Hapus dulu riwayat penerimaannya (kalau ada) supaya tidak
-                // kena constraint foreign key, baru hapus pesanannya sendiri.
+                // 1) Ambil semua barang (items) yang lahir dari transaksi
+                //    pesanan ini lewat pesanan_penerimaan.
+                const penerimaanList =
+                  (await sb(`pesanan_penerimaan?select=item_id&pesanan_id=eq.${p.id}`)) || [];
+                const itemIds = [...new Set(penerimaanList.map((r) => r.item_id).filter(Boolean))];
+
+                // 2) Untuk tiap barang, hapus (dan bersihkan SKU/rak/riwayat
+                //    stok yang jadi yatim) — logikanya sama seperti "Hapus
+                //    Barang" satu-satu di menu SKU/Barang Masuk.
+                for (const itemId of itemIds) {
+                  const item = (items || []).find((i) => i.id === itemId);
+                  const stokSudahMasuk = !!item?.sku && item.stage !== "sku";
+
+                  if (item && stokSudahMasuk) {
+                    const existing = (skuMaster || []).find((s) => s.sku === item.sku);
+                    await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
+
+                    if (existing) {
+                      const barangLain =
+                        (await sb(`items?select=id&sku=eq.${encodeURIComponent(item.sku)}`)) || [];
+                      const skuMasihDipakai = barangLain.length > 0;
+
+                      if (skuMasihDipakai) {
+                        const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
+                        await sb("stock_history", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            sku: item.sku,
+                            type: "keluar",
+                            qty_before: existing.stok,
+                            qty_change: -(item.jumlah || 0),
+                            qty_after: stokBaru,
+                            note: "Riwayat pesanan dihapus",
+                          }),
+                        });
+                        await sb(`sku_master?id=eq.${existing.id}`, {
+                          method: "PATCH",
+                          body: JSON.stringify({ stok: stokBaru }),
+                        });
+                      } else {
+                        try {
+                          await sb(`stock_history?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                          await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                          await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
+                        } catch (e) {
+                          if (e.pgCode === "23503") {
+                            try {
+                              await sb(`sku_master?id=eq.${existing.id}`, {
+                                method: "PATCH",
+                                body: JSON.stringify({ nonaktif: true }),
+                              });
+                            } catch (e2) {
+                              console.error("Gagal menonaktifkan SKU yatim:", e2);
+                            }
+                          } else {
+                            console.error("Gagal membersihkan SKU/penempatan yatim:", e);
+                          }
+                        }
+                      }
+                    }
+                  } else {
+                    // Barang belum sampai tahap SKU (masih di tahap "sku"/
+                    // proses awal) — belum pernah masuk stok, jadi cukup
+                    // hapus baris items-nya saja.
+                    await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
+                  }
+                }
+
+                // 3) Baru hapus riwayat penerimaan & pesanannya sendiri.
                 await sb(`pesanan_penerimaan?pesanan_id=eq.${p.id}`, { method: "DELETE" });
                 await sb(`pesanan_masuk?id=eq.${p.id}`, { method: "DELETE" });
-              }, "Riwayat pesanan dihapus")
+              }, "Riwayat pesanan & barang terkait dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >
