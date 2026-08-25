@@ -98,6 +98,22 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
             const skuRow = (skuMaster || []).find((s) => s.sku === item.sku);
             const totalStok = skuRow?.stok != null ? skuRow.stok : item.jumlah;
 
+            // Barang di tab "Foto Ulang" biasanya BELUM punya foto_url sendiri
+            // (ditarik dari batch baru yang memang belum pernah difoto — lihat
+            // resolveHargaSku di lib/api.js). Supaya admin tetap ada acuan foto
+            // lama waktu motret ulang, cari foto TERAKHIR dari barang lain yang
+            // SKU-nya sama (pola yang sama dipakai di modal "detail-sku" —
+            // ModalRouter.jsx). Ini murni referensi, bukan foto barang ini
+            // sendiri, jadi ditandai beda (label "Foto terakhir" + agak transparan).
+            const fotoTerakhir = !item.foto_url
+              ? (items || [])
+                  .filter((i) => i.sku === item.sku && i.foto_url && i.id !== item.id)
+                  .sort(
+                    (a, b) =>
+                      new Date(b.created_at || b.tanggal || 0) - new Date(a.created_at || a.tanggal || 0)
+                  )[0]
+              : null;
+
             return (
             <div
               key={item.id}
@@ -140,6 +156,18 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                   onClick={() => setModal({ type: "lihat-foto", item })}
                   className="w-full h-24 object-cover rounded-md mb-2 border border-slate-800 cursor-pointer hover:opacity-80"
                 />
+              ) : fotoTerakhir ? (
+                <div className="relative mb-2">
+                  <img
+                    src={fotoTerakhir.foto_url}
+                    alt={item.sku}
+                    onClick={() => setModal({ type: "lihat-foto", item: fotoTerakhir })}
+                    className="w-full h-24 object-cover rounded-md border border-slate-800 cursor-pointer opacity-70 hover:opacity-90"
+                  />
+                  <span className="absolute bottom-1 right-1 bg-slate-950/80 text-slate-400 text-[9px] px-1.5 py-0.5 rounded">
+                    Foto terakhir
+                  </span>
+                </div>
               ) : (
                 <div className="w-full h-24 rounded-md mb-2 border border-dashed border-slate-700 flex items-center justify-center text-slate-600">
                   <ImageOff size={18} />
