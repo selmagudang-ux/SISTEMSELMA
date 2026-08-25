@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ImageOff, RotateCcw, Camera } from "lucide-react";
+import { ImageOff, RotateCcw, Camera, Search } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { calcHarga, fmtRp } from "../lib/api";
 
@@ -25,7 +25,15 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
   const fotoUlang = list.filter((i) => i.perlu_foto_ulang);
 
   const [tab, setTab] = useState("baru");
-  const activeList = tab === "ulang" ? fotoUlang : fotoBaru;
+  const [q, setQ] = useState("");
+  // Reset pencarian tiap pindah tab supaya tidak kebawa nyasar nyari SKU
+  // yang cuma relevan di tab satunya.
+  const gantiTab = (key) => {
+    setTab(key);
+    setQ("");
+  };
+  const activeListMentah = tab === "ulang" ? fotoUlang : fotoBaru;
+  const activeList = activeListMentah.filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div>
@@ -46,7 +54,7 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
           return (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => gantiTab(t.key)}
               className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-md transition ${
                 active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
               }`}
@@ -66,10 +74,22 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
         })}
       </div>
 
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+
       {activeList.length === 0 ? (
         <EmptyState
           label={
-            tab === "ulang"
+            q
+              ? "Tidak ada SKU yang cocok dengan pencarian."
+              : tab === "ulang"
               ? "Tidak ada barang yang perlu difoto ulang."
               : "Tidak ada barang baru yang menunggu pemotretan."
           }
