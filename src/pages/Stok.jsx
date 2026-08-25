@@ -18,9 +18,11 @@ export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengaju
 // murni untuk tab "Menunggu Persetujuan" (owner/superadmin saja).
 function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
   const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
+  const [q, setQ] = useState("");
 
   const menipis = (skuMaster || [])
     .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
+    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (a.stok || 0) - (b.stok || 0));
 
   // Pengajuan TERBARU per SKU (apapun statusnya) — supaya tiap baris bisa
@@ -39,8 +41,17 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
         title="Stok Menipis"
         description={`SKU yang stoknya sudah turun (≤ ${AMBANG_MENIPIS_RESTOCK}pcs) dan siap diajukan restock ke owner.`}
       />
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
       {menipis.length === 0 ? (
-        <EmptyState label="Tidak ada SKU dengan stok menipis." />
+        <EmptyState label={q ? "Tidak ada SKU menipis yang cocok dengan pencarian." : "Tidak ada SKU dengan stok menipis."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {menipis.map((s, i) => {
