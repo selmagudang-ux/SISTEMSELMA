@@ -434,6 +434,42 @@ export default function ModalRouter({
     );
   }
 
+  if (modal.type === "hapus-pengajuan-restock") {
+    const p = modal.item;
+    return (
+      <ModalShell title="Hapus Riwayat Pengajuan" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Pengajuan restock <span className="font-mono">{p.sku}</span> ({p.status === "disetujui" ? "Disetujui" : "Ditolak"}) akan
+            dihapus permanen. SKU ini akan kembali tampil sebagai "belum pernah diajukan" di Stok Menipis. Tindakan
+            ini tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`pengajuan_restock?id=eq.${p.id}`, { method: "DELETE" });
+              }, "Riwayat pengajuan dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
   if (modal.type === "ganti-password") {
     return (
       <GantiPasswordForm

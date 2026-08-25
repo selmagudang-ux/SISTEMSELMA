@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
-  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3,
+  Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR } from "../lib/constants";
 import {
@@ -385,7 +385,7 @@ function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
             {riwayat.map((p, i) => (
               <div
                 key={p.id}
-                className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+                className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
               >
                 <div className="min-w-0">
                   <div className="font-mono text-xs text-slate-300 truncate">{p.sku}</div>
@@ -394,9 +394,20 @@ function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
                     {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
                   </div>
                 </div>
-                <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
-                  {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
-                </Badge>
+                <div className="shrink-0 flex items-center gap-2">
+                  <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
+                    {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
+                  </Badge>
+                  {bisaSetujui && (
+                    <button
+                      onClick={() => setModal({ type: "hapus-pengajuan-restock", item: p })}
+                      title="Hapus riwayat ini"
+                      className="text-slate-500 hover:text-red-400 p-1"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
