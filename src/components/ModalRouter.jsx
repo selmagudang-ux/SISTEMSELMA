@@ -2773,13 +2773,11 @@ export default function ModalRouter({
           return run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
             const harga = calcHarga(hargaTerpilih, settings);
-            // PENTING: lepas barang yang tertahan & tarik balik yang sudah
-            // difoto DULU, SELAGI sku_master.harga_asli_baru masih terisi —
-            // badge perbandingan "Lama vs Baru" di halaman Pemotretan cuma
-            // muncul kalau harga_asli_baru masih ada isinya (lihat
-            // FotoProduk.jsx). Kalau harga_asli_baru di-null-kan lebih dulu,
-            // badge itu tidak akan pernah kelihatan sama sekali.
-            await resolveHargaSku(s.sku, hargaBerubah);
+            // Snapshot harga lama (s.harga_asli, sebelum diubah) & baru
+            // (hargaTerpilih) langsung di barangnya sendiri — lihat
+            // penjelasan lengkap di resolveHargaSku (lib/api.js) kenapa
+            // tidak bisa mengandalkan sku_master.harga_asli_baru lagi.
+            await resolveHargaSku(s.sku, hargaBerubah, s.harga_asli, hargaTerpilih);
             // Baru sekarang harga_asli_baru boleh di-null-kan — keputusan
             // sudah final & barang yang perlu tahu perbandingan harga sudah
             // ditandai perlu_foto_ulang di atas.
@@ -2825,10 +2823,9 @@ export default function ModalRouter({
           const hargaBerubah = patch.harga_asli !== s.harga_asli;
           return run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
-            // Sama seperti "pilih-harga": lepas/tarik balik barang DULU
-            // selagi harga_asli_baru masih terisi, baru null-kan belakangan
-            // — supaya badge perbandingan harga di Pemotretan sempat kebaca.
-            await resolveHargaSku(s.sku, hargaBerubah);
+            // Snapshot harga lama/baru di barangnya sendiri — lihat
+            // resolveHargaSku (lib/api.js) untuk alasannya.
+            await resolveHargaSku(s.sku, hargaBerubah, s.harga_asli, patch.harga_asli);
             await sb(`sku_master?id=eq.${s.id}`, {
               method: "PATCH",
               body: JSON.stringify({ ...patch, harga_asli_baru: null }),

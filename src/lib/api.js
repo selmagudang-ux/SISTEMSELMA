@@ -193,6 +193,16 @@ async function renameSkuEverywhere(oldSku, newSku) {
 // berbeda (barang yang lagi ditahan nunggu keputusan DAN barang lama yang
 // sudah pernah selesai/dipasarkan ditarik balik bersamaan).
 //
+// hargaLama/hargaBaru = harga_asli SKU sebelum & sesudah keputusan ini —
+// disimpan sebagai SNAPSHOT langsung di baris barang yang ditandai
+// perlu_foto_ulang (kolom harga_lama_foto/harga_baru_foto), BUKAN dibaca
+// belakangan dari sku_master.harga_asli_baru — soalnya kolom itu langsung
+// di-null-kan begitu keputusan ini selesai (lihat pemanggil di
+// ModalRouter.jsx), jadi begitu halaman Pemotretan reload, datanya sudah
+// hilang duluan kalau tidak di-snapshot di sini. Dengan snapshot di
+// barangnya sendiri, perbandingan "Lama vs Baru" di FotoProduk.jsx selalu
+// akurat walau SKU-nya sudah lanjut berubah-ubah lagi setelahnya.
+//
 // Cakupannya semua barang SKU ini yang statusnya:
 // - "menunggu-harga" (barang baru yang harganya beda, lagi ditahan nunggu
 //   keputusan ini) — bisa lebih dari satu kalau sempat restock beberapa kali
@@ -202,11 +212,12 @@ async function renameSkuEverywhere(oldSku, newSku) {
 //
 // - harga yang ditetapkan BERUBAH dari harga lama -> dari SEMUA barang di
 //   atas, cuma yang PALING BARU yang ditarik ke Verifikasi Foto (ditandai
-//   perlu_foto_ulang) — sisanya langsung Selesai (dianggap cukup terwakili
-//   oleh foto barang paling baru itu, tidak usah semuanya difoto ulang).
+//   perlu_foto_ulang, dengan snapshot harga lama/baru) — sisanya langsung
+//   Selesai (dianggap cukup terwakili oleh foto barang paling baru itu,
+//   tidak usah semuanya difoto ulang).
 // - harga yang ditetapkan TETAP (tidak berubah) -> semuanya langsung
 //   Selesai, tidak ada yang perlu difoto ulang sama sekali.
-export async function resolveHargaSku(sku, hargaBerubah) {
+export async function resolveHargaSku(sku, hargaBerubah, hargaLama, hargaBaru) {
   const semua =
     (await sb(
       `items?select=id,created_at&sku=eq.${encodeURIComponent(sku)}&stage=in.(menunggu-harga,marketplace,selesai)&order=created_at.desc`
@@ -224,7 +235,12 @@ export async function resolveHargaSku(sku, hargaBerubah) {
   const [terbaru, ...sisanya] = semua;
   await sb(`items?id=eq.${terbaru.id}`, {
     method: "PATCH",
-    body: JSON.stringify({ stage: "verifikasi", perlu_foto_ulang: true }),
+    body: JSON.stringify({
+      stage: "verifikasi",
+      perlu_foto_ulang: true,
+      harga_lama_foto: hargaLama,
+      harga_baru_foto: hargaBaru,
+    }),
   });
   const idSisanya = sisanya.map((i) => i.id);
   if (idSisanya.length > 0) {

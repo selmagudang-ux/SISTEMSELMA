@@ -6,7 +6,7 @@ import { calcHarga, fmtRp } from "../lib/api";
 // Dua tab: "Foto Baru" (barang yang belum pernah difoto sama sekali) dan
 // "Foto Ulang" (barang yang sudah pernah difoto tapi ditarik balik ke sini
 // karena ada perubahan — harga SKU baru diganti, atau alasan lain — lihat
-// tandaiPerluFotoUlang di lib/api.js untuk pemicu "harga berubah"). Sebelum
+// resolveHargaSku di lib/api.js untuk pemicu "harga berubah"). Sebelum
 // ini dua-duanya dicampur dalam satu grid dengan badge "Harga berubah";
 // sekarang dipisah jadi dua tab supaya admin bisa fokus kerjakan satu per
 // satu dan langsung kelihatan berapa banyak yang perlu difoto ulang.
@@ -18,7 +18,7 @@ const TABS = [
 export default function FotoProduk({ items, setModal, skuMaster, settings }) {
   const list = items.filter((i) => i.stage === "verifikasi");
   // Barang yang ditarik balik ke sini gara-gara ada perubahan (mis. harga
-  // SKU-nya baru saja diganti — lihat tandaiPerluFotoUlang di lib/api.js)
+  // SKU-nya baru saja diganti — lihat resolveHargaSku di lib/api.js)
   // — fotonya masih foto lama dan wajib difoto ulang karena sudah tidak
   // akurat lagi (harga, atau perubahan lain).
   const fotoBaru = list.filter((i) => !i.perlu_foto_ulang);
@@ -77,15 +77,16 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {activeList.map((item) => {
-            // Perbandingan harga hanya bisa ditampilkan kalau SKU-nya masih
-            // punya harga_asli_baru yang PENDING (belum diputuskan di Master
-            // Barang) — itu berarti harga di Master Barang belum benar-benar
-            // diubah, cuma diusulkan. Kalau sudah diputuskan (harga_asli_baru
-            // sudah null lagi karena sudah dipilih/diterapkan), tidak ada lagi
-            // data "harga lama" buat dibandingkan, jadi tampilkan badge biasa saja.
-            const sku = (skuMaster || []).find((s) => s.sku === item.sku) || null;
-            const adaPerbandingan = item.perlu_foto_ulang && sku && sku.harga_asli_baru != null && settings;
-            const previewBaru = adaPerbandingan ? calcHarga(sku.harga_asli_baru, settings) : null;
+            // Perbandingan harga dibaca langsung dari SNAPSHOT di barangnya
+            // sendiri (harga_lama_foto/harga_baru_foto, diisi waktu keputusan
+            // harga dibuat — lihat resolveHargaSku di lib/api.js). TIDAK lagi
+            // mengandalkan sku_master.harga_asli_baru, karena kolom itu sudah
+            // di-null-kan begitu keputusan dibuat — begitu halaman ini reload,
+            // datanya sudah hilang duluan kalau masih pakai cara lama.
+            const adaPerbandingan =
+              item.perlu_foto_ulang && item.harga_lama_foto != null && item.harga_baru_foto != null && settings;
+            const previewLama = adaPerbandingan ? calcHarga(item.harga_lama_foto, settings) : null;
+            const previewBaru = adaPerbandingan ? calcHarga(item.harga_baru_foto, settings) : null;
 
             return (
             <div
@@ -108,11 +109,11 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                     <span>Baru</span>
                   </div>
                   {[
-                    ["Asli", sku.harga_asli, previewBaru.hargaDasar],
-                    ["HPP", sku.hpp, previewBaru.hpp],
-                    ["Grosir", sku.grosir, previewBaru.grosir],
-                    ["Tengah", sku.tengah, previewBaru.tengah],
-                    ["Ecer", sku.ecer, previewBaru.ecer],
+                    ["Asli", previewLama.hargaDasar, previewBaru.hargaDasar],
+                    ["HPP", previewLama.hpp, previewBaru.hpp],
+                    ["Grosir", previewLama.grosir, previewBaru.grosir],
+                    ["Tengah", previewLama.tengah, previewBaru.tengah],
+                    ["Ecer", previewLama.ecer, previewBaru.ecer],
                   ].map(([label, lama, baru], i) => (
                     <div key={label} className={`grid grid-cols-3 px-2 py-1 ${i % 2 ? "bg-slate-950" : "bg-slate-900/60"}`}>
                       <span className="text-slate-500">{label}</span>
