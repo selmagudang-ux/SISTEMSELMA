@@ -70,25 +70,83 @@ export async function sb(path, opts = {}) {
 // order=, filter=, dst) tetap ditulis sama seperti biasa lewat sb().
 const SB_PAGE_SIZE = 1000;
 
-export async function sbAll(path, opts = {}) {
-  let all = [];
-  let offset = 0;
-  while (true) {
-    const from = offset;
-    const to = offset + SB_PAGE_SIZE - 1;
-    const rows = await sb(path, {
-      ...opts,
-      headers: {
-        Range: `${from}-${to}`,
-        ...(opts.headers || {}),
-      },
-    });
-    const batch = rows || [];
-    all = all.concat(batch);
-    if (batch.length < SB_PAGE_SIZE) break; // baris didapat < page size -> udah abis
-    offset += SB_PAGE_SIZE;
+// Ambil satu halaman + (opsional) total jumlah baris dari header
+// "Content-Range" (butuh "Prefer: count=exact" supaya PostgREST menghitung
+// totalnya). Dipisah dari sb() karena perlu baca response header, bukan
+// cuma body JSON-nya.
+async function sbPage(path, opts, from, to, withCount) {
+  const prefer = [opts.prefer || "return=representation", withCount ? "count=exact" : null]
+    .filter(Boolean)
+    .join(",");
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    cache: "no-store",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: prefer,
+      Range: `${from}-${to}`,
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    const friendly = friendlyDbError(parsed, res.status);
+    const err = new Error(friendly || parsed?.message || text || `${res.status} ${res.statusText}`);
+    if (parsed?.code) err.pgCode = parsed.code;
+    throw err;
   }
-  return all;
+  const rows = res.status === 204 ? [] : (await res.json()) || [];
+  // Content-Range formatnya "from-to/total" (mis. "0-999/4820"), atau
+  // "*/4820" kalau baris hasilnya kosong. Kalau total-nya "*" (tidak
+  // dihitung PostgREST) atau header tidak ada, total dianggap tidak
+  // diketahui -> sbAll fallback ke cara lama (nyicil satu-satu).
+  const range = res.headers.get("content-range") || "";
+  const totalPart = range.split("/")[1];
+  const total = totalPart && totalPart !== "*" ? Number(totalPart) : null;
+  return { rows, total: Number.isFinite(total) ? total : null };
+}
+
+export async function sbAll(path, opts = {}) {
+  // Halaman pertama sekalian minta total jumlah baris (lewat
+  // "Prefer: count=exact"), supaya begitu ketahuan ada berapa halaman lagi,
+  // SISANYA bisa diambil SEKALIGUS secara paralel — bukan satu-satu
+  // bergantian seperti sebelumnya (jauh lebih cepat untuk tabel besar).
+  const first = await sbPage(path, opts, 0, SB_PAGE_SIZE - 1, true);
+  if (first.total == null) {
+    // Total tidak diketahui (mis. server tidak mendukung count=exact) ->
+    // fallback ke cara lama, nyicil satu-satu sampai habis.
+    let all = [...first.rows];
+    let offset = SB_PAGE_SIZE;
+    let last = first.rows;
+    while (last.length === SB_PAGE_SIZE) {
+      const page = await sbPage(path, opts, offset, offset + SB_PAGE_SIZE - 1, false);
+      all = all.concat(page.rows);
+      last = page.rows;
+      offset += SB_PAGE_SIZE;
+    }
+    return all;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(first.total / SB_PAGE_SIZE));
+  if (totalPages <= 1) return first.rows;
+
+  const rest = await Promise.all(
+    Array.from({ length: totalPages - 1 }, (_, i) => {
+      const page = i + 1;
+      const from = page * SB_PAGE_SIZE;
+      const to = from + SB_PAGE_SIZE - 1;
+      return sbPage(path, opts, from, to, false).then((r) => r.rows);
+    })
+  );
+  return first.rows.concat(...rest);
 }
 
 // Nama bucket Storage di Supabase untuk menyimpan foto verifikasi.

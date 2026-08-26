@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
@@ -8,22 +8,29 @@ import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import ModalRouter from "./components/ModalRouter";
 import Login from "./pages/Login";
 
-import Dashboard from "./pages/Dashboard";
-import BarangDatang from "./pages/BarangDatang";
-import BarangMasuk from "./pages/BarangMasuk";
-import DataBarang from "./pages/DataBarang";
-import Rusak from "./pages/Rusak";
-import SkuHarga from "./pages/SkuHarga";
-import Stok from "./pages/Stok";
+// Halaman-halaman di bawah ini di-load "malas" (lazy) — kode & library
+// beratnya (mis. jszip/html2canvas dipakai Keuangan, SkuHarga) baru diambil
+// browser begitu menu itu benar-benar dibuka, bukan ikut numpuk di bundle
+// awal. Tidak mengubah tampilan/fitur sama sekali, cuma mempercepat loading.
+// "Rak" TETAP diimpor biasa (bukan lazy) karena beberapa fungsinya
+// (cariPerluDitempatkanUlang, dst) dipakai di luar halaman Rak sendiri, mis.
+// untuk badge & notifikasi di Dashboard/Sidebar yang selalu dihitung.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const BarangDatang = lazy(() => import("./pages/BarangDatang"));
+const BarangMasuk = lazy(() => import("./pages/BarangMasuk"));
+const DataBarang = lazy(() => import("./pages/DataBarang"));
+const Rusak = lazy(() => import("./pages/Rusak"));
+const SkuHarga = lazy(() => import("./pages/SkuHarga"));
+const Stok = lazy(() => import("./pages/Stok"));
 import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from "./pages/Rak";
-import CetakLabel from "./pages/CetakLabel";
-import FotoProduk from "./pages/FotoProduk";
-import Marketplace from "./pages/Marketplace";
+const CetakLabel = lazy(() => import("./pages/CetakLabel"));
+const FotoProduk = lazy(() => import("./pages/FotoProduk"));
+const Marketplace = lazy(() => import("./pages/Marketplace"));
 import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs, computeRakPindahNotifs, computeRakKosongNotifs } from "./lib/marketplaceNotif";
-import Grosir from "./pages/Grosir";
-import Keuangan from "./pages/Keuangan";
-import Pengaturan from "./pages/Pengaturan";
-import Absensi from "./pages/Absensi";
+const Grosir = lazy(() => import("./pages/Grosir"));
+const Keuangan = lazy(() => import("./pages/Keuangan"));
+const Pengaturan = lazy(() => import("./pages/Pengaturan"));
+const Absensi = lazy(() => import("./pages/Absensi"));
 import { FormAbsen } from "./pages/AbsenKaryawan";
 import { listAbsensi, listKaryawan } from "./lib/absensi";
 
@@ -427,7 +434,13 @@ function MainApp({ session, onLogout }) {
               Anda tidak punya akses ke halaman ini.
             </div>
           ) : (
-            <>
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-24 text-slate-500 gap-2 text-sm">
+                  <Loader2 size={18} className="animate-spin" /> Memuat halaman…
+                </div>
+              }
+            >
               {nav.menu === "dashboard" && (
                 <Dashboard
                   stageCounts={stageCounts}
@@ -547,7 +560,7 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
               )}
-            </>
+            </Suspense>
           )}
         </main>
       </div>
