@@ -2496,6 +2496,16 @@ export default function ModalRouter({
           run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
 
+            // Ambil dulu riwayat penerimaan asal item ini (kalau item ini lahir
+            // dari Barang Datang/Konfirmasi Datang, ada baris pesanan_penerimaan
+            // yang menaut item_id -> pesanan_id). Item TAMBAHAN hasil pecah
+            // ukuran (baris ke-2 dst di bawah) perlu ikut ditaut ke pesanan yang
+            // sama — kalau tidak, "Hapus Riwayat Barang Datang" cuma nemu &
+            // hapus item baris pertama lewat pesanan_penerimaan, sisanya jadi
+            // yatim (tetap muncul di Alur Barang walau pesanannya sudah dihapus).
+            const penerimaanAsal = await sb(`pesanan_penerimaan?item_id=eq.${modal.item.id}&limit=1`);
+            const penerimaanAsalRow = penerimaanAsal?.[0] || null;
+
             const tipeFields = ["bahan", "peruntukan", "kategori", "subkategori", "warna"];
             for (const tipe of tipeFields) {
               const kode = skuFieldsUmum[tipe];
@@ -2574,7 +2584,7 @@ export default function ModalRouter({
                   body: JSON.stringify({ sku, stage: "rak", jumlah: row.jumlah, stage_setelah_rak: "selesai" }),
                 });
               } else {
-                await sb("items", {
+                const [itemBaru] = await sb("items", {
                   method: "POST",
                   body: JSON.stringify({
                     tanggal: modal.item.tanggal,
@@ -2586,6 +2596,21 @@ export default function ModalRouter({
                     stage_setelah_rak: "selesai",
                   }),
                 });
+                // Tautkan item hasil pecahan ini ke pesanan Barang Datang yang
+                // sama dengan item asal (kalau ada), supaya ikut kehapus juga
+                // nanti kalau riwayat pesanan itu dihapus.
+                if (penerimaanAsalRow && itemBaru?.id) {
+                  await sb("pesanan_penerimaan", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      pesanan_id: penerimaanAsalRow.pesanan_id,
+                      tanggal: modal.item.tanggal,
+                      jumlah: row.jumlah,
+                      item_id: itemBaru.id,
+                      foto_bon_url: penerimaanAsalRow.foto_bon_url || null,
+                    }),
+                  });
+                }
               }
             }
           }, `${rows.length} SKU dibuat/ditambah dari 1 baris (pecah ukuran)`)
