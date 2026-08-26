@@ -2144,6 +2144,11 @@ export default function ModalRouter({
                   harga: m.harga || null,
                   stage: "sku",
                   kode_bon: kodeBon,
+                  // Nama model yang diketik di sini adalah barcode/kode dari
+                  // supplier — harus ikut disalin ke barcode_supplier item,
+                  // sama seperti alur Konfirmasi Datang, supaya muncul di
+                  // kolom "Model/Barcode Supplier" pada Alur Barang.
+                  barcode_supplier: m.nama || null,
                 }),
               });
               await sb("pesanan_penerimaan", {
