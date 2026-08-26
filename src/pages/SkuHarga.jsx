@@ -40,7 +40,9 @@ function BuatSkuList({ items, setModal }) {
               className="text-left bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-lg p-3 transition"
             >
               <Boxes size={16} className="text-amber-400 mb-2" />
-              <div className="text-xs font-mono text-slate-300">#{item.id.slice(0, 8)}</div>
+              <div className="text-xs font-mono text-slate-300">
+                {item.barcode_supplier || `#${item.id.slice(0, 8)}`}
+              </div>
               <div className="text-[11px] text-slate-500 mt-0.5">
                 {item.jumlah}x · {item.tanggal}
               </div>
