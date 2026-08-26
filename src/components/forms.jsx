@@ -775,9 +775,12 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   // Mode "pecah ke beberapa ukuran": satu baris Alur Barang (1 model, qty
   // gabungan) dipecah jadi beberapa SKU sekaligus — Bahan/Peruntukan/
   // Kategori/Subkategori/Model/Warna/Harga tetap satu (sama untuk semua
-  // ukuran), cuma Ukuran & Qty yang beda-beda per baris pecahan. Cuma
-  // ditawarkan kalau item ini TIDAK ada qty rusak — rusak dicatat ke satu
-  // SKU tertentu, jadi ambigu kalau item-nya dipecah ke banyak SKU sekaligus.
+  // ukuran), cuma Ukuran & Qty yang beda-beda per baris pecahan. Tetap bisa
+  // dipakai walau ada qty rusak — totalnya (pecahTotalJumlah) divalidasi pas
+  // dengan jumlahFinal (qty baik, rusak sudah dikeluarkan duluan), dan qty
+  // rusaknya dicatat sebagai SATU baris total ke menu "Rusak" (ditautkan ke
+  // SKU ukuran baris pertama) — tidak dipecah per ukuran, karena rusaknya
+  // sendiri tidak diketahui ukurannya yang mana.
   const [pecahMode, setPecahMode] = useState(false);
   const [pecahRows, setPecahRows] = useState([{ ukuran: "", jumlah: "" }]);
   const updatePecahRow = (idx, patch) =>
@@ -1073,16 +1076,21 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           )}
         </Field>
 
-        {jumlahRusak === 0 && (
-          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none mb-3">
-            <input
-              type="checkbox"
-              checked={pecahMode}
-              onChange={(e) => setPecahMode(e.target.checked)}
-              className="accent-amber-500"
-            />
-            Model ini isinya campuran beberapa ukuran — pecah ke beberapa SKU sekaligus
-          </label>
+        <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none mb-3">
+          <input
+            type="checkbox"
+            checked={pecahMode}
+            onChange={(e) => setPecahMode(e.target.checked)}
+            className="accent-amber-500"
+          />
+          Model ini isinya campuran beberapa ukuran — pecah ke beberapa SKU sekaligus
+        </label>
+
+        {pecahMode && jumlahRusak > 0 && (
+          <p className="text-[11px] text-red-400/80 -mt-2 mb-3">
+            {jumlahRusak}x rusak akan dicatat total (tidak dipecah per ukuran) di menu "Rusak", ditautkan ke SKU
+            ukuran baris pertama di bawah.
+          </p>
         )}
 
         {pecahMode && (

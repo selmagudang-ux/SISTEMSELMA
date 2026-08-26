@@ -2583,6 +2583,23 @@ export default function ModalRouter({
                   method: "PATCH",
                   body: JSON.stringify({ sku, stage: "rak", jumlah: row.jumlah, stage_setelah_rak: "selesai" }),
                 });
+                // Qty rusak (kalau ada) tidak dipecah per ukuran — dicatat
+                // total sebagai satu baris ke menu "Rusak", ditautkan ke SKU
+                // baris pertama ini saja.
+                const jumlahRusakAsal = modal.item.jumlah_rusak || 0;
+                if (jumlahRusakAsal > 0) {
+                  await sb("barang_rusak", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      sku,
+                      qty: jumlahRusakAsal,
+                      tanggal: new Date().toISOString().slice(0, 10),
+                      catatan: modal.item.alasan_rusak || null,
+                      item_id: modal.item.id,
+                      kode_bon: modal.item.kode_bon || null,
+                    }),
+                  });
+                }
               } else {
                 const [itemBaru] = await sb("items", {
                   method: "POST",
