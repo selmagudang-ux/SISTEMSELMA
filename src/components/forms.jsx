@@ -728,7 +728,176 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
   );
 }
 
-// Form pembuatan SKU — satu layar saja, tidak ada lagi navigasi berpindah
+// Form "Edit Riwayat Barang Datang" — dibuka dari tombol "Edit" di baris
+// Riwayat Barang Datang, untuk baris yang SUDAH datang (bukan yang masih
+// "Menunggu"/"Sebagian" — itu pakai "Konfirmasi Datang" seperti biasa).
+//
+// SENGAJA cuma boleh edit info yang AMAN diubah belakangan: tanggal,
+// supplier, jenis, catatan, foto bon, dan per-model nama/harga-pcs/alasan
+// rusak. Qty (jumlah datang & jumlah rusak) TIDAK BISA diedit di sini —
+// begitu "Konfirmasi Datang"/"Input Barang Datang" disimpan, qty itu sudah
+// jadi baris "items" tersendiri dan lanjut ke alur SKU/rak/dst (lihat
+// handler "barang-datang" & "konfirmasi-datang" di ModalRouter). Kalau qty
+// ikut diubah di sini tanpa menyentuh baris items yang sudah terlanjur
+// dibuat, riwayat & stok jadi tidak nyambung lagi. Kalau qty-nya memang
+// salah, cara paling aman: hapus riwayat ini (otomatis ikut hapus barang
+// turunannya) lalu input ulang dari awal.
+export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving }) {
+  const detailAwal = pesanan?.detail_model || [];
+  const jenisAwal = pesanan?.jenis || "Pembelian";
+  const jenisDikenal = JENIS_BARANG_MASUK.includes(jenisAwal);
+
+  const [tanggal, setTanggal] = useState(pesanan?.tanggal_pesan || new Date().toISOString().slice(0, 10));
+  const [fotoBon, setFotoBon] = useState(null);
+  const [fotoBonPreview, setFotoBonPreview] = useState(pesanan?.foto_bon_url || null);
+  const [supplier, setSupplier] = useState(pesanan?.supplier || "");
+  const [jenis, setJenis] = useState(jenisDikenal ? jenisAwal : "Lainnya");
+  const [jenisLainnya, setJenisLainnya] = useState(jenisDikenal ? "" : jenisAwal);
+  const [models, setModels] = useState(
+    detailAwal.map((m) => ({ ...m, nama: m.nama || "", harga: m.harga ?? "", alasan_rusak: m.alasan_rusak || "" }))
+  );
+  const [catatan, setCatatan] = useState(pesanan?.catatan || "");
+
+  const handleFotoBon = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFotoBon(f);
+    setFotoBonPreview(URL.createObjectURL(f));
+  };
+
+  const updateModel = (idx, patch) =>
+    setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+
+  const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
+  const valid = jenis !== "Lainnya" || jenisLainnya.trim();
+
+  return (
+    <ModalShell title={`Edit Riwayat — ${pesanan?.kode_bon || ""}`} onClose={onClose}>
+      <div className="mb-3 flex items-start gap-2 bg-slate-950 border border-slate-800 text-slate-400 text-[11px] px-3 py-2.5 rounded-lg">
+        <span>
+          Qty datang &amp; qty rusak tidak bisa diubah di sini karena sudah jadi barang di alur
+          SKU/rak. Kalau qty-nya salah, hapus riwayat ini lalu input ulang.
+        </span>
+      </div>
+
+      <Field label="Tanggal">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+
+      <Field label="Foto Bon (opsional — kosongkan kalau tidak ganti)">
+        <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
+      </Field>
+      {fotoBonPreview && (
+        <div className="mb-3">
+          <img
+            src={fotoBonPreview}
+            alt="Preview bon/nota"
+            className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950"
+          />
+        </div>
+      )}
+
+      <Field label="Supplier/Distributor (opsional)">
+        <input
+          className={inputClass}
+          value={supplier}
+          onChange={(e) => setSupplier(e.target.value)}
+          placeholder="Nama supplier/distributor"
+        />
+      </Field>
+      <Field label="Jenis Barang Datang">
+        <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
+          {JENIS_BARANG_MASUK.map((j) => (
+            <option key={j} value={j}>{j}</option>
+          ))}
+        </select>
+      </Field>
+      {jenis === "Lainnya" && (
+        <Field label="Keterangan">
+          <input
+            className={inputClass}
+            value={jenisLainnya}
+            onChange={(e) => setJenisLainnya(e.target.value)}
+            placeholder="Contoh: Konsinyasi, Hadiah, dll"
+          />
+        </Field>
+      )}
+
+      {models.length > 0 && (
+        <>
+          <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang</p>
+          <div className="space-y-2 max-h-[36vh] overflow-y-auto pr-1 mb-3">
+            {models.map((m, idx) =>
+              m.datang === false ? (
+                <div key={idx} className="rounded-lg border border-slate-800 p-2.5 text-xs text-amber-400/80 italic">
+                  Belum datang — belum ada yang bisa diedit di baris ini.
+                </div>
+              ) : (
+                <div key={idx} className="rounded-lg border border-slate-800 p-2.5 space-y-2">
+                  <input
+                    className={inputClass}
+                    value={m.nama || ""}
+                    onChange={(e) => updateModel(idx, { nama: e.target.value })}
+                    placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                  />
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <span className="rounded-md bg-slate-950 border border-slate-800 px-2 py-1 text-slate-400">
+                      Qty {m.jumlah ?? 0}x{Number(m.rusak) > 0 ? ` (rusak ${m.rusak}x)` : ""} — tidak bisa diubah
+                    </span>
+                  </div>
+                  {Number(m.rusak) > 0 && (
+                    <input
+                      className={inputClass}
+                      value={m.alasan_rusak || ""}
+                      onChange={(e) => updateModel(idx, { alasan_rusak: e.target.value })}
+                      placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
+                    />
+                  )}
+                  <InputRupiah
+                    value={m.harga}
+                    onChange={(v) => updateModel(idx, { harga: v })}
+                    placeholder="Harga/pcs"
+                  />
+                </div>
+              )
+            )}
+          </div>
+        </>
+      )}
+
+      <Field label="Catatan (opsional)">
+        <input
+          className={inputClass}
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          placeholder="Contoh: no. bon, keterangan tambahan, dll"
+        />
+      </Field>
+
+      <button
+        disabled={saving || !valid}
+        onClick={() =>
+          onSubmit({
+            tanggal,
+            fotoBon,
+            supplier: supplier.trim() || null,
+            jenis: jenisFinal || null,
+            models: models.map((m) => ({
+              ...m,
+              nama: (m.nama || "").trim() || null,
+              harga: Number(m.harga) || 0,
+              alasan_rusak: Number(m.rusak) > 0 ? (m.alasan_rusak || "").trim() || null : null,
+            })),
+            catatan: catatan.trim() || null,
+          })
+        }
+        className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Perubahan"}
+      </button>
+    </ModalShell>
+  );
+}
 // layar (dulu "cari" → "buat" dengan tombol kembali). Persis pola field
 // Pelanggan di Grosir > Buat Pesanan Baru: pilih dari daftar yang sudah ada
 // DI ATAS, atau isi bagian "buat SKU baru" di bawahnya — dua-duanya kelihatan
@@ -1763,6 +1932,91 @@ export function VerifikasiForm({ item, onClose, onSubmit, saving }) {
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Mengunggah…" : "Simpan & Lanjut ke Marketplace"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Versi "banyak sekaligus" dari VerifikasiForm — dibuka waktu admin pilih
+// lebih dari satu SKU di halaman Pemotretan lalu upload SATU foto yang
+// berlaku untuk semua SKU terpilih (mis. beberapa varian warna/ukuran yang
+// tampilannya sama persis waktu difoto). Satu file yang sama di-PATCH ke
+// foto_url tiap item terpilih (lihat handler "advance-verifikasi-banyak" di
+// ModalRouter) — bukan upload berulang per SKU seperti VerifikasiForm biasa.
+export function VerifikasiBanyakForm({ items, onClose, onSubmit, saving }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [cocok, setCocok] = useState(false);
+
+  const handleFile = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setCocok(false);
+  };
+
+  const sudahPunyaFoto = items.filter((i) => i.foto_url);
+
+  return (
+    <ModalShell title={`Verifikasi Foto — ${items.length} SKU Sekaligus`} onClose={onClose}>
+      <p className="text-[11px] text-slate-500 -mt-1 mb-3">
+        Satu foto ini dipakai sebagai foto verifikasi untuk SEMUA SKU di bawah — cocok kalau
+        barangnya memang tampilannya identik waktu difoto (mis. beberapa varian sekaligus).
+      </p>
+
+      <div className="mb-3 max-h-32 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 divide-y divide-slate-800">
+        {items.map((it) => (
+          <div key={it.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
+            <span className="font-mono text-amber-400">{it.sku || "—"}</span>
+            <span className="text-slate-500">{it.jumlah}x{it.rak_code ? ` · ${it.rak_code}` : ""}</span>
+          </div>
+        ))}
+      </div>
+
+      {sudahPunyaFoto.length > 0 && (
+        <div className="mb-3 flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2.5 rounded-lg">
+          <span>
+            {sudahPunyaFoto.length} dari {items.length} SKU ini sudah punya foto — akan ditimpa foto baru.
+          </span>
+        </div>
+      )}
+
+      <Field label="Ambil / upload foto barang">
+        <input type="file" accept="image/*" onChange={handleFile} className={inputClass} />
+      </Field>
+
+      {preview ? (
+        <div className="mb-3">
+          <img
+            src={preview}
+            alt="Preview foto barang"
+            className="w-full max-h-64 object-contain rounded-lg border border-slate-800 bg-slate-950"
+          />
+        </div>
+      ) : (
+        <div className="mb-3 h-40 rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-slate-600 text-xs">
+          Belum ada foto dipilih
+        </div>
+      )}
+
+      <label className="flex items-start gap-2 mb-4 text-xs text-slate-300">
+        <input
+          type="checkbox"
+          checked={cocok}
+          onChange={(e) => setCocok(e.target.checked)}
+          className="mt-0.5"
+          disabled={!file}
+        />
+        <span>Saya sudah cek, foto di atas sesuai untuk SEMUA {items.length} SKU di atas</span>
+      </label>
+
+      <button
+        disabled={!file || !cocok || saving}
+        onClick={() => onSubmit(file)}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Mengunggah…" : `Simpan & Lanjut ke Marketplace (${items.length} SKU)`}
       </button>
     </ModalShell>
   );

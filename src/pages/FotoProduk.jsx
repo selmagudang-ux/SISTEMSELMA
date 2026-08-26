@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ImageOff, RotateCcw, Camera, Search } from "lucide-react";
+import { ImageOff, RotateCcw, Camera, Search, CheckCircle2, Circle, X } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { calcHarga, fmtRp } from "../lib/api";
 
@@ -26,14 +26,26 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
 
   const [tab, setTab] = useState("baru");
   const [q, setQ] = useState("");
+  // SKU-SKU yang dicentang untuk dipotret sekaligus dalam SATU foto (lihat
+  // "advance-verifikasi-banyak" di ModalRouter) — direset tiap pindah tab
+  // supaya tidak kebawa nyasar milih SKU dari tab lain yang beda konteks.
+  const [selected, setSelected] = useState(() => new Set());
+  const toggleSelect = (id) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   // Reset pencarian tiap pindah tab supaya tidak kebawa nyasar nyari SKU
   // yang cuma relevan di tab satunya.
   const gantiTab = (key) => {
     setTab(key);
     setQ("");
+    setSelected(new Set());
   };
   const activeListMentah = tab === "ulang" ? fotoUlang : fotoBaru;
   const activeList = activeListMentah.filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
+  const itemsTerpilih = activeList.filter((i) => selected.has(i.id));
 
   return (
     <div>
@@ -83,6 +95,10 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
           className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
         />
       </div>
+      <p className="text-[11px] text-slate-500 mb-3 -mt-1">
+        Centang beberapa SKU sekaligus kalau mau motret satu foto untuk beberapa SKU (mis. beda
+        varian tapi tampilannya sama).
+      </p>
 
       {activeList.length === 0 ? (
         <EmptyState
@@ -138,9 +154,23 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
             <div
               key={item.id}
               className={`bg-slate-900 border rounded-lg p-3 relative ${
-                item.perlu_foto_ulang ? "border-amber-500/40" : "border-slate-800"
+                selected.has(item.id)
+                  ? "border-amber-500 ring-1 ring-amber-500/50"
+                  : item.perlu_foto_ulang
+                  ? "border-amber-500/40"
+                  : "border-slate-800"
               }`}
             >
+              <button
+                type="button"
+                onClick={() => toggleSelect(item.id)}
+                className={`absolute top-2 right-2 z-10 rounded-full ${
+                  selected.has(item.id) ? "text-amber-400 bg-slate-950" : "text-slate-500 bg-slate-950/80 hover:text-slate-300"
+                }`}
+                title={selected.has(item.id) ? "Batalkan pilih SKU ini" : "Pilih SKU ini untuk difoto sekaligus"}
+              >
+                {selected.has(item.id) ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+              </button>
               {item.perlu_foto_ulang && (
                 <div className="absolute -top-2 left-2 flex items-center gap-1 bg-amber-500 text-slate-950 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
                   <RotateCcw size={10} />
@@ -210,6 +240,27 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
             </div>
             );
           })}
+        </div>
+      )}
+
+      {itemsTerpilih.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-slate-900 border border-amber-500/40 rounded-xl shadow-lg px-4 py-2.5">
+          <span className="text-xs text-slate-300">
+            <span className="text-amber-400 font-semibold">{itemsTerpilih.length}</span> SKU dipilih
+          </span>
+          <button
+            onClick={() => setModal({ type: "advance-verifikasi-banyak", items: itemsTerpilih })}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg"
+          >
+            <Camera size={13} /> Upload 1 Foto untuk Semua
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-slate-500 hover:text-red-400"
+            title="Batal pilih"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
     </div>

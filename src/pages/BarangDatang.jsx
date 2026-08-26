@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock, Pencil } from "lucide-react";
 import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
 import { detailModelPesanan, fmtRp, statusPesananMasuk } from "../lib/api";
 import { PO_STATUS_META } from "../lib/constants";
@@ -315,6 +315,15 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
                               title="Isi rincian model & qty yang datang"
                             >
                               <PackageCheck size={13} /> Konfirmasi Datang
+                            </button>
+                          )}
+                          {status !== "menunggu" && (
+                            <button
+                              onClick={() => setModal({ type: "edit-barang-datang", item: p })}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-amber-400"
+                              title="Edit tanggal, supplier, jenis, foto bon, nama/harga model"
+                            >
+                              <Pencil size={13} /> Edit
                             </button>
                           )}
                           <button

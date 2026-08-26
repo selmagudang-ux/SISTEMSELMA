@@ -8,9 +8,9 @@ import {
   detailModelPesanan,
 } from "../lib/api";
 import {
-  BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, TambahRakForm, EditRakForm, BarangKeluarForm,
+  BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
-  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, AjukanRestockForm, ResponPengajuanForm,
+  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, ResponPengajuanForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -2066,6 +2066,43 @@ export default function ModalRouter({
     );
   }
 
+  // EDIT RIWAYAT BARANG DATANG — perbaikan info yang aman diubah belakangan
+  // (tanggal, supplier, jenis, catatan, foto bon, nama/harga-pcs/alasan
+  // rusak per model). Qty SENGAJA tidak ikut di-PATCH di sini — lihat
+  // penjelasan lengkap di komentar EditBarangDatangForm (components/forms.jsx)
+  // kenapa qty tidak aman diubah lewat form ini.
+  if (modal.type === "edit-barang-datang") {
+    const p = modal.item;
+    return (
+      <EditBarangDatangForm
+        pesanan={p}
+        onClose={close}
+        saving={saving}
+        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan }) =>
+          run(async () => {
+            let fotoBonUrl = p.foto_bon_url || null;
+            if (fotoBon) {
+              const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
+              const path = `bon-${Date.now()}.${ext}`;
+              fotoBonUrl = await sbUploadFoto(fotoBon, path);
+            }
+            await sb(`pesanan_masuk?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                tanggal_pesan: tanggal,
+                supplier,
+                jenis,
+                catatan,
+                foto_bon_url: fotoBonUrl,
+                detail_model: models,
+              }),
+            });
+          }, "Riwayat barang datang diperbarui")
+        }
+      />
+    );
+  }
+
   if (modal.type === "barang-datang") {
     return (
       <BarangDatangForm
@@ -2849,6 +2886,35 @@ export default function ModalRouter({
               body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
             });
           }, "Foto verifikasi tersimpan")
+        }
+      />
+    );
+  }
+
+  // VERIFIKASI FOTO — BANYAK SKU SEKALIGUS. Dibuka dari halaman Pemotretan
+  // waktu admin centang lebih dari satu SKU lalu upload SATU foto untuk
+  // semuanya. Filenya diberi nama sendiri (bukan nama SKU seperti verifikasi
+  // satuan di atas) karena satu file ini memang mewakili banyak SKU
+  // sekaligus — lalu URL yang sama di-PATCH ke tiap item terpilih satu-satu.
+  if (modal.type === "advance-verifikasi-banyak") {
+    const itemsTerpilih = modal.items || [];
+    return (
+      <VerifikasiBanyakForm
+        items={itemsTerpilih}
+        onClose={close}
+        saving={saving}
+        onSubmit={(file) =>
+          run(async () => {
+            const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+            const path = `multi-${Date.now()}.${ext}`;
+            const url = await sbUploadFoto(file, path);
+            for (const it of itemsTerpilih) {
+              await sb(`items?id=eq.${it.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
+              });
+            }
+          }, `Foto verifikasi tersimpan untuk ${itemsTerpilih.length} SKU`)
         }
       />
     );
