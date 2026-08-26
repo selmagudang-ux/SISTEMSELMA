@@ -177,9 +177,34 @@ function hitungLemburJam(jamAktualHHMM, jamPulangStandar, minLemburMenit) {
   return 0;
 }
 
+// ---- Daftar Shift ----
+// Jam masuk & pulang standar sekarang bisa beda-beda per shift (mis. Shift
+// Pagi 08:00-16:00, Shift Siang 10:00-18:00, Shift Malam 13:00-21:00) —
+// bukan 1 jam standar tunggal untuk semua karyawan seperti sebelumnya.
+// Daftar shift disimpan di absensi_settings.shift_list (kolom jsonb, array
+// {nama, jam_masuk, jam_pulang}). Kalau kolom itu belum ada/masih kosong
+// (mis. baru upgrade dari versi lama), fallback ke SATU shift "Standar" yang
+// dibentuk dari kolom lama jam_masuk_standar/jam_pulang_standar, supaya
+// sistem tetap jalan normal sebelum admin sempat menambah shift baru.
+export function daftarShift(settings) {
+  if (Array.isArray(settings?.shift_list) && settings.shift_list.length > 0) {
+    return settings.shift_list;
+  }
+  return [
+    {
+      nama: "Standar",
+      jam_masuk: settings?.jam_masuk_standar || "08:00",
+      jam_pulang: settings?.jam_pulang_standar || "17:00",
+    },
+  ];
+}
+
 // ---- Submit absen (Masuk/Pulang) — dipanggil dari halaman check-in publik ----
-// Menolak kalau di luar radius kantor (sama seperti sistem lama).
-export async function submitAbsen({ karyawan, tipe, lat, lng, settings }) {
+// Menolak kalau di luar radius kantor (sama seperti sistem lama). "shift"
+// ({nama, jam_masuk, jam_pulang}) dipilih sendiri oleh karyawan di form absen
+// (lihat AbsenKaryawan.jsx) — telat/lembur dihitung terhadap jam shift itu,
+// BUKAN lagi terhadap 1 jam standar tunggal untuk semua orang.
+export async function submitAbsen({ karyawan, tipe, lat, lng, settings, shift }) {
   const jarak = hitungJarakMeter(settings.office_lat, settings.office_lng, lat, lng);
   if (jarak > settings.radius_meter) {
     const err = new Error(
@@ -189,6 +214,8 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings }) {
     err.jarak = Math.round(jarak);
     throw err;
   }
+
+  const shiftDipakai = shift || daftarShift(settings)[0];
 
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
@@ -201,10 +228,10 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings }) {
   let keterangan = tipe === "Masuk" ? "Tepat Waktu" : "Normal";
 
   if (tipe === "Masuk") {
-    telatMenit = hitungTelatMenit(jamHHMM, settings.jam_masuk_standar, settings.toleransi_telat_menit);
+    telatMenit = hitungTelatMenit(jamHHMM, shiftDipakai.jam_masuk, settings.toleransi_telat_menit);
     keterangan = telatMenit > 0 ? `Telat ${telatMenit} menit` : "Tepat Waktu";
   } else {
-    lemburJam = hitungLemburJam(jamHHMM, settings.jam_pulang_standar, settings.min_lembur_menit);
+    lemburJam = hitungLemburJam(jamHHMM, shiftDipakai.jam_pulang, settings.min_lembur_menit);
     keterangan = lemburJam > 0 ? `Lembur ${lemburJam} jam` : "Normal";
   }
 
@@ -223,6 +250,7 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings }) {
       telat_menit: telatMenit,
       lembur_jam: lemburJam,
       keterangan,
+      shift: shiftDipakai.nama || null,
     }),
   });
 
@@ -233,6 +261,7 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings }) {
     telatMenit,
     lemburJam,
     keterangan,
+    shift: shiftDipakai.nama || null,
   };
 }
 

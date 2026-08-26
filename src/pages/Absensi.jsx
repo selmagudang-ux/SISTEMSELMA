@@ -19,6 +19,7 @@ import {
   NAMA_HARI,
   getAbsensiSettings,
   updateAbsensiSettings,
+  daftarShift,
 } from "../lib/absensi";
 
 // Hanya superadmin & owner yang boleh: (1) mengedit/menandai absensi manual
@@ -822,7 +823,9 @@ function PengaturanAbsensi({ showToast }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getAbsensiSettings().then(setForm).catch((e) => showToast?.(e.message || "Gagal memuat pengaturan", "err"));
+    getAbsensiSettings()
+      .then((s) => setForm({ ...s, shift_list: daftarShift(s) }))
+      .catch((e) => showToast?.(e.message || "Gagal memuat pengaturan", "err"));
   }, []);
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
@@ -839,15 +842,35 @@ function PengaturanAbsensi({ showToast }) {
     );
   };
 
+  // Kelola daftar shift — tiap shift punya jam masuk & jam pulang sendiri.
+  // Karyawan tinggal pilih salah satu shift ini pas absen (lihat
+  // AbsenKaryawan.jsx), telat/lembur dihitung terhadap jam shift yang
+  // dipilih, bukan lagi 1 jam standar untuk semua orang.
+  const updateShift = (idx, patch) =>
+    setForm((f) => ({
+      ...f,
+      shift_list: f.shift_list.map((s, i) => (i === idx ? { ...s, ...patch } : s)),
+    }));
+  const tambahShift = () =>
+    setForm((f) => ({ ...f, shift_list: [...f.shift_list, { nama: "", jam_masuk: "08:00", jam_pulang: "16:00" }] }));
+  const hapusShift = (idx) =>
+    setForm((f) => ({ ...f, shift_list: f.shift_list.filter((_, i) => i !== idx) }));
+
+  const shiftValid =
+    form?.shift_list?.length > 0 && form.shift_list.every((s) => s.nama.trim() && s.jam_masuk && s.jam_pulang);
+
   const simpan = async () => {
+    if (!shiftValid) {
+      showToast?.("Tiap shift wajib punya nama, jam masuk, dan jam pulang.", "err");
+      return;
+    }
     setSaving(true);
     try {
       await updateAbsensiSettings({
         office_lat: Number(form.office_lat),
         office_lng: Number(form.office_lng),
         radius_meter: Number(form.radius_meter),
-        jam_masuk_standar: form.jam_masuk_standar,
-        jam_pulang_standar: form.jam_pulang_standar,
+        shift_list: form.shift_list,
         toleransi_telat_menit: Number(form.toleransi_telat_menit),
         min_lembur_menit: Number(form.min_lembur_menit),
       });
@@ -882,13 +905,57 @@ function PengaturanAbsensi({ showToast }) {
         <input className={inputClass} value={form.radius_meter} onChange={(e) => set("radius_meter", e.target.value)} />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Jam Masuk Standar">
-          <input className={inputClass} value={form.jam_masuk_standar} onChange={(e) => set("jam_masuk_standar", e.target.value)} />
-        </Field>
-        <Field label="Jam Pulang Standar">
-          <input className={inputClass} value={form.jam_pulang_standar} onChange={(e) => set("jam_pulang_standar", e.target.value)} />
-        </Field>
+      <div>
+        <div className="text-xs text-slate-400 mb-1.5 font-medium">
+          Daftar Shift — karyawan pilih salah satu ini sendiri pas absen
+        </div>
+        <div className="space-y-2">
+          {form.shift_list.map((s, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 sm:p-0 rounded-lg border border-slate-800 sm:border-0 bg-slate-950/40 sm:bg-transparent"
+            >
+              <input
+                className={`${inputClass} w-full sm:flex-1 sm:min-w-[140px]`}
+                placeholder="Nama shift (mis. Pagi)"
+                value={s.nama}
+                onChange={(e) => updateShift(idx, { nama: e.target.value })}
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  className={`${inputClass} flex-1 sm:flex-none sm:w-28`}
+                  value={s.jam_masuk}
+                  onChange={(e) => updateShift(idx, { jam_masuk: e.target.value })}
+                />
+                <span className="text-slate-600 text-xs">–</span>
+                <input
+                  type="time"
+                  className={`${inputClass} flex-1 sm:flex-none sm:w-28`}
+                  value={s.jam_pulang}
+                  onChange={(e) => updateShift(idx, { jam_pulang: e.target.value })}
+                />
+                {form.shift_list.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => hapusShift(idx)}
+                    className="p-1.5 rounded-md text-slate-500 hover:text-red-400 hover:bg-slate-800 shrink-0"
+                    title="Hapus shift ini"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={tambahShift}
+          className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300"
+        >
+          <Plus size={13} /> Tambah Shift
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

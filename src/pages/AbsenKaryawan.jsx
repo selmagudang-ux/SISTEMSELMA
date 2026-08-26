@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2 } from "lucide-react";
-import { gantiPasswordKaryawan, getAbsensiSettings, hitungJarakMeter, submitAbsen } from "../lib/absensi";
+import { gantiPasswordKaryawan, getAbsensiSettings, hitungJarakMeter, submitAbsen, daftarShift } from "../lib/absensi";
 
 // Form absen Masuk/Pulang untuk karyawan, dipakai setelah login lewat
 // halaman Login gabungan (lib/unifiedLogin.js) — karyawan absen pakai akun
@@ -11,12 +11,23 @@ export function FormAbsen({ session, onLogout }) {
   const [clock, setClock] = useState("");
   const [settings, setSettings] = useState(null);
   const [tipe, setTipe] = useState("Masuk");
+  const [shiftNama, setShiftNama] = useState(null);
   const [coords, setCoords] = useState(null);
   const [locState, setLocState] = useState({ status: "warn", text: "Mengambil lokasi…" });
   const [submitting, setSubmitting] = useState(false);
   const [hasil, setHasil] = useState(null);
   const [error, setError] = useState("");
   const [showGanti, setShowGanti] = useState(false);
+
+  // Daftar shift yang bisa dipilih karyawan (mis. Pagi 08:00, Siang 10:00,
+  // Malam 13:00 — jam pulangnya ikut mengikuti shift yang sama). Begitu
+  // pengaturan sudah termuat, shift pertama otomatis terpilih supaya user
+  // tetap bisa langsung absen tanpa wajib klik dulu.
+  const shiftList = settings ? daftarShift(settings) : [];
+  useEffect(() => {
+    if (shiftList.length > 0 && !shiftNama) setShiftNama(shiftList[0].nama);
+  }, [settings]);
+  const shiftDipilih = shiftList.find((s) => s.nama === shiftNama) || shiftList[0] || null;
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -60,7 +71,7 @@ export function FormAbsen({ session, onLogout }) {
     setError("");
     setHasil(null);
     try {
-      const res = await submitAbsen({ karyawan: session, tipe, lat: coords.lat, lng: coords.lng, settings });
+      const res = await submitAbsen({ karyawan: session, tipe, lat: coords.lat, lng: coords.lng, settings, shift: shiftDipilih });
       setHasil(res);
     } catch (err) {
       setError(err.message || "Gagal mengirim absen.");
@@ -117,6 +128,28 @@ export function FormAbsen({ session, onLogout }) {
             </div>
           </div>
 
+          {shiftList.length > 1 && (
+            <div>
+              <div className="text-xs text-slate-400 mb-1.5 font-medium">Shift Anda Hari Ini</div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {shiftList.map((s) => (
+                  <button
+                    key={s.nama}
+                    onClick={() => setShiftNama(s.nama)}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg border-2 text-xs font-medium ${
+                      shiftNama === s.nama
+                        ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                        : "border-slate-800 text-slate-400"
+                    }`}
+                  >
+                    <span>{s.nama}</span>
+                    <span className="font-mono">{s.jam_masuk}–{s.jam_pulang}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div
             className={`text-xs px-3 py-2.5 rounded-lg flex items-start gap-2 ${
               locState.status === "ok"
@@ -138,7 +171,7 @@ export function FormAbsen({ session, onLogout }) {
           {hasil && (
             <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg">
               <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5" />
-              Absen {tipe} berhasil! Jam {hasil.jam} — {hasil.keterangan} (jarak {hasil.jarak} m).
+              Absen {tipe} berhasil! Jam {hasil.jam}{hasil.shift ? ` (Shift ${hasil.shift})` : ""} — {hasil.keterangan} (jarak {hasil.jarak} m).
             </div>
           )}
 
