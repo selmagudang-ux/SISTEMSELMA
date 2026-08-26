@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight } from "lucide-react";
-import { ModalShell, Badge, suggestKode, Field, inputClass } from "./ui";
+import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
   sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
@@ -1707,12 +1707,10 @@ export default function ModalRouter({
   if (modal.type === "lihat-foto") {
     const item = modal.item;
     return (
-      <ModalShell title={`Foto — ${item.sku || "SKU belum ada"}`} onClose={close}>
-        <img
-          src={item.foto_url}
-          alt={item.sku || "foto barang"}
-          className="w-full max-h-[70vh] object-contain rounded-lg border border-slate-800 bg-slate-950 mb-3"
-        />
+      <ModalShell title={`Foto — ${item.sku || "SKU belum ada"}`} onClose={close} maxWidth="max-w-2xl">
+        <div className="mb-3">
+          <ZoomableImage src={item.foto_url} alt={item.sku || "foto barang"} />
+        </div>
         <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-400 space-y-1">
           <div>SKU: <span className="font-mono text-amber-400">{item.sku || "—"}</span></div>
           <div>Jumlah: {item.jumlah}x</div>

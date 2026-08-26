@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Inbox, CalendarDays, Plus, Loader2, Check } from "lucide-react";
+import { X, Inbox, CalendarDays, Plus, Loader2, Check, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { sb } from "../lib/api";
 
 export const inputClass =
   "w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500";
 
-export function ModalShell({ title, onClose, children }) {
+export function ModalShell({ title, onClose, children, maxWidth }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md max-h-[85vh] overflow-y-auto">
+      <div className={`bg-slate-900 border border-slate-800 rounded-xl w-full ${maxWidth || "max-w-md"} max-h-[85vh] overflow-y-auto`}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 sticky top-0 bg-slate-900">
           <h3 className="font-semibold text-sm">{title}</h3>
           <button onClick={onClose} className="text-slate-500 hover:text-white">
@@ -16,6 +16,116 @@ export function ModalShell({ title, onClose, children }) {
           </button>
         </div>
         <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// Viewer foto dengan zoom pakai scroll mouse + geser (drag) waktu sudah
+// di-zoom, plus tombol +/-/reset (buat yang pakai touchscreen / tanpa
+// scroll wheel). Batas zoom 1x-6x. Zoom balik ke 1x otomatis reset posisi
+// geser supaya gambar tidak "nyangkut" di pojok waktu di-zoom-out lagi.
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 6;
+
+export function ZoomableImage({ src, alt, height = "h-[65vh]" }) {
+  const [scale, setScale] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef(null);
+
+  const clamp = (v) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v));
+
+  const applyZoom = (next) => {
+    const clamped = clamp(next);
+    setScale(clamped);
+    if (clamped === ZOOM_MIN) setPos({ x: 0, y: 0 });
+  };
+
+  const handleWheel = (e) => {
+    e.preventDefault();
+    // Sensitivitas proporsional ke scale saat ini biar zoom terasa halus
+    // baik waktu masih 1x maupun sudah dekat 6x.
+    applyZoom(scale - e.deltaY * 0.0025 * scale);
+  };
+
+  const startDrag = (e) => {
+    if (scale === ZOOM_MIN) return;
+    setDragging(true);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
+  };
+  const onDrag = (e) => {
+    if (!dragRef.current) return;
+    setPos({
+      x: dragRef.current.origX + (e.clientX - dragRef.current.startX),
+      y: dragRef.current.origY + (e.clientY - dragRef.current.startY),
+    });
+  };
+  const stopDrag = () => {
+    dragRef.current = null;
+    setDragging(false);
+  };
+
+  const reset = () => {
+    setScale(ZOOM_MIN);
+    setPos({ x: 0, y: 0 });
+  };
+
+  return (
+    <div className="relative select-none">
+      <div
+        onWheel={handleWheel}
+        onMouseDown={startDrag}
+        onMouseMove={onDrag}
+        onMouseUp={stopDrag}
+        onMouseLeave={stopDrag}
+        onDoubleClick={() => applyZoom(scale === ZOOM_MIN ? 2.5 : ZOOM_MIN)}
+        className={`w-full ${height} overflow-hidden rounded-lg border border-slate-800 bg-slate-950 ${
+          scale > ZOOM_MIN ? (dragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
+        }`}
+      >
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          className="w-full h-full object-contain"
+          style={{
+            transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`,
+            transition: dragging ? "none" : "transform 100ms ease-out",
+          }}
+        />
+      </div>
+      <div className="absolute bottom-2 right-2 flex items-center gap-0.5 bg-slate-950/90 border border-slate-800 rounded-lg p-1">
+        <button
+          type="button"
+          onClick={() => applyZoom(scale - 0.6)}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-slate-800"
+          title="Perkecil"
+        >
+          <ZoomOut size={14} />
+        </button>
+        <span className="text-[10px] text-slate-400 w-9 text-center font-mono">{Math.round(scale * 100)}%</span>
+        <button
+          type="button"
+          onClick={() => applyZoom(scale + 0.6)}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-slate-800"
+          title="Perbesar"
+        >
+          <ZoomIn size={14} />
+        </button>
+        {scale > ZOOM_MIN && (
+          <button
+            type="button"
+            onClick={reset}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-amber-400 hover:text-amber-300 hover:bg-slate-800"
+            title="Reset zoom"
+          >
+            <Maximize2 size={13} />
+          </button>
+        )}
+      </div>
+      <div className="mt-1 text-center text-[10px] text-slate-600">
+        Scroll mouse untuk zoom · geser gambar untuk lihat bagian lain
       </div>
     </div>
   );
