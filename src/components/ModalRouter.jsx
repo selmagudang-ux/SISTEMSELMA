@@ -2479,6 +2479,112 @@ export default function ModalRouter({
             }
           }, "SKU dibuat & stok tercatat")
         }
+        // Satu baris Alur Barang (1 model, qty gabungan) dipecah jadi beberapa
+        // SKU sekaligus — satu per ukuran. Bahan/Peruntukan/Kategori/
+        // Subkategori/Model/Warna/Harga sama untuk semua baris pecahan, cuma
+        // Ukuran & Qty yang beda (lihat validasi "readyPecah" di SkuEntryForm:
+        // totalnya sudah dijamin PAS sama qty item ini sebelum sampai sini).
+        // Baris pertama menimpa item asal (id-nya dipertahankan), baris
+        // sisanya jadi item baru terpisah — supaya tidak perlu hapus item
+        // asal (menjaga referensi kode_bon/riwayat penerimaan tetap utuh).
+        onSubmitSplit={(skuFieldsUmum, hargaAsli, hargaManual, rows) =>
+          run(async () => {
+            if (!settings) throw new Error("Pengaturan harga belum termuat");
+
+            const tipeFields = ["bahan", "peruntukan", "kategori", "subkategori", "warna"];
+            for (const tipe of tipeFields) {
+              const kode = skuFieldsUmum[tipe];
+              const sudahAda = (master[tipe] || []).some((m) => m.kode === kode);
+              if (kode && !sudahAda) {
+                await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: kode }) });
+              }
+            }
+            for (const row of rows) {
+              const sudahAda = (master.ukuran || []).some((m) => m.kode === row.ukuran);
+              if (row.ukuran && !sudahAda) {
+                await sb("master_data", {
+                  method: "POST",
+                  body: JSON.stringify({ tipe: "ukuran", kode: row.ukuran, label: row.ukuran }),
+                });
+              }
+            }
+
+            const hargaOtomatis = calcHarga(hargaAsli, settings);
+            const harga = hargaManual
+              ? { ...hargaOtomatis, grosir: hargaManual.grosir, tengah: hargaManual.tengah, ecer: hargaManual.ecer }
+              : hargaOtomatis;
+
+            for (let i = 0; i < rows.length; i++) {
+              const row = rows[i];
+              const sku = `${skuFieldsUmum.bahan}${skuFieldsUmum.peruntukan}${skuFieldsUmum.kategori}-${skuFieldsUmum.subkategori}-${skuFieldsUmum.model}-${skuFieldsUmum.warna}-${row.ukuran}`;
+              const existing = skuMaster.find((s) => s.sku === sku);
+              let stokBaru;
+              if (existing) {
+                stokBaru = existing.stok + row.jumlah;
+                await sb(`sku_master?id=eq.${existing.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ stok: stokBaru, nonaktif: false }),
+                });
+              } else {
+                stokBaru = row.jumlah;
+                await sb("sku_master", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    sku,
+                    bahan: skuFieldsUmum.bahan,
+                    peruntukan: skuFieldsUmum.peruntukan,
+                    kategori: skuFieldsUmum.kategori,
+                    subkategori: skuFieldsUmum.subkategori,
+                    model: skuFieldsUmum.model,
+                    warna: skuFieldsUmum.warna,
+                    ukuran: row.ukuran,
+                    harga_asli: hargaAsli,
+                    harga_dasar: harga.hargaDasar,
+                    hpp: harga.hpp,
+                    grosir: harga.grosir,
+                    tengah: harga.tengah,
+                    ecer: harga.ecer,
+                    stok: row.jumlah,
+                    barcode_supplier: modal.item.barcode_supplier || null,
+                  }),
+                });
+              }
+              await sb("stock_history", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku,
+                  type: "masuk",
+                  qty_before: existing ? existing.stok : 0,
+                  qty_change: row.jumlah,
+                  qty_after: stokBaru,
+                  note: existing
+                    ? "Ditambahkan ke SKU yang sudah ada (pecah ukuran dari 1 baris Alur Barang)"
+                    : "SKU baru dibuat (pecah ukuran dari 1 baris Alur Barang)",
+                }),
+              });
+
+              if (i === 0) {
+                await sb(`items?id=eq.${modal.item.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ sku, stage: "rak", jumlah: row.jumlah, stage_setelah_rak: "selesai" }),
+                });
+              } else {
+                await sb("items", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    tanggal: modal.item.tanggal,
+                    gudang: modal.item.gudang,
+                    jumlah: row.jumlah,
+                    sku,
+                    barcode_supplier: modal.item.barcode_supplier || null,
+                    stage: "rak",
+                    stage_setelah_rak: "selesai",
+                  }),
+                });
+              }
+            }
+          }, `${rows.length} SKU dibuat/ditambah dari 1 baris (pecah ukuran)`)
+        }
       />
     );
   }

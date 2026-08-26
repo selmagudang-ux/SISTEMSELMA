@@ -733,7 +733,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
 // Pelanggan di Grosir > Buat Pesanan Baru: pilih dari daftar yang sudah ada
 // DI ATAS, atau isi bagian "buat SKU baru" di bawahnya — dua-duanya kelihatan
 // sekaligus, user tinggal pakai salah satu lalu simpan.
-export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, saving, session }) {
+export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, onSubmitSplit, saving, session }) {
   const isSuperadmin = session?.role === "superadmin";
   const [selectedId, setSelectedId] = useState("");
   const [hargaBaru, setHargaBaru] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
@@ -770,6 +770,19 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [warna, setWarna] = useState("");
   const [ukuran, setUkuran] = useState("");
   const [hargaAsli, setHargaAsli] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
+
+  // Mode "pecah ke beberapa ukuran": satu baris Alur Barang (1 model, qty
+  // gabungan) dipecah jadi beberapa SKU sekaligus — Bahan/Peruntukan/
+  // Kategori/Subkategori/Model/Warna/Harga tetap satu (sama untuk semua
+  // ukuran), cuma Ukuran & Qty yang beda-beda per baris pecahan. Cuma
+  // ditawarkan kalau item ini TIDAK ada qty rusak — rusak dicatat ke satu
+  // SKU tertentu, jadi ambigu kalau item-nya dipecah ke banyak SKU sekaligus.
+  const [pecahMode, setPecahMode] = useState(false);
+  const [pecahRows, setPecahRows] = useState([{ ukuran: "", jumlah: "" }]);
+  const updatePecahRow = (idx, patch) =>
+    setPecahRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const tambahPecahRow = () => setPecahRows((rows) => [...rows, { ukuran: "", jumlah: "" }]);
+  const hapusPecahRow = (idx) => setPecahRows((rows) => rows.filter((_, i) => i !== idx));
 
   // Khusus superadmin: opsi ketik sendiri harga Grosir/Tengah/Ecer, tanpa
   // ikut rumus calcHarga otomatis. Role lain tidak lihat opsi ini sama sekali.
@@ -862,6 +875,19 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   // tercatat ke menu Rusak (lihat ModalRouter "buat-sku"), bukan ikut stok.
   const jumlahRusak = Number(item.jumlah_rusak) || 0;
   const jumlahFinal = Math.max((Number(item.jumlah) || 0) - jumlahRusak, 0);
+
+  // Validasi mode pecah: tiap baris harus punya ukuran & qty (>=1), ukurannya
+  // tidak boleh dobel antar baris, dan totalnya harus PAS sama jumlahFinal
+  // (tidak boleh kurang/lebih) sebelum boleh disimpan.
+  const pecahTotalJumlah = pecahRows.reduce((sum, r) => sum + (Number(r.jumlah) || 0), 0);
+  const pecahUkuranDobel = pecahRows.some(
+    (r, idx) => r.ukuran && pecahRows.findIndex((x) => x.ukuran === r.ukuran) !== idx
+  );
+  const pecahRowsLengkap = pecahRows.length > 0 && pecahRows.every((r) => r.ukuran && Number(r.jumlah) >= 1);
+  const pecahTotalPas = pecahTotalJumlah === jumlahFinal;
+  const commonFieldsLengkap =
+    bahan && peruntukan && kategori && subkategori && model && warna && hargaAsli && (!hargaManual || manualLengkap);
+  const readyPecah = commonFieldsLengkap && pecahRowsLengkap && !pecahUkuranDobel && pecahTotalPas && settings;
 
   return (
     <ModalShell title={`Buat SKU — ${jumlahFinal}x barang`} onClose={onClose}>
@@ -1013,7 +1039,9 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           <Field label="Kategori"><Combobox value={kategori} onChange={setKategori} options={master.kategori || []} tipe="kategori" reload={reload} /></Field>
           <Field label="Subkategori"><Combobox value={subkategori} onChange={setSubkategori} options={master.subkategori || []} tipe="subkategori" reload={reload} /></Field>
           <Field label="Warna"><Combobox value={warna} onChange={setWarna} options={master.warna || []} tipe="warna" reload={reload} /></Field>
-          <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} tipe="ukuran" reload={reload} /></Field>
+          {!pecahMode && (
+            <Field label="Ukuran"><Combobox value={ukuran} onChange={setUkuran} options={master.ukuran || []} tipe="ukuran" reload={reload} /></Field>
+          )}
         </div>
         <Field label="Model (kode bebas)">
           <input
@@ -1043,6 +1071,83 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
             </p>
           )}
         </Field>
+
+        {jumlahRusak === 0 && (
+          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none mb-3">
+            <input
+              type="checkbox"
+              checked={pecahMode}
+              onChange={(e) => setPecahMode(e.target.checked)}
+              className="accent-amber-500"
+            />
+            Model ini isinya campuran beberapa ukuran — pecah ke beberapa SKU sekaligus
+          </label>
+        )}
+
+        {pecahMode && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[11px] uppercase text-slate-500 font-semibold">Pecah ke Ukuran</p>
+              <span className={`text-[11px] font-mono ${pecahTotalPas ? "text-emerald-400" : "text-amber-400"}`}>
+                Total {pecahTotalJumlah} / {jumlahFinal}x
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pecahRows.map((r, idx) => {
+                const dobel = r.ukuran && pecahRows.findIndex((x) => x.ukuran === r.ukuran) !== idx;
+                return (
+                  <div key={idx}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <Combobox
+                          value={r.ukuran}
+                          onChange={(v) => updatePecahRow(idx, { ukuran: v })}
+                          options={master.ukuran || []}
+                          tipe="ukuran"
+                          reload={reload}
+                        />
+                      </div>
+                      <div className="w-20 shrink-0">
+                        <input
+                          type="number"
+                          min="1"
+                          className={inputClass}
+                          value={r.jumlah}
+                          onChange={(e) => updatePecahRow(idx, { jumlah: e.target.value })}
+                          placeholder="Qty"
+                        />
+                      </div>
+                      {pecahRows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => hapusPecahRow(idx)}
+                          className="text-slate-500 hover:text-red-400 mt-2 shrink-0"
+                          title="Hapus baris ini"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    {dobel && <p className="text-[11px] text-red-400 mt-1">Ukuran ini sudah dipakai di baris lain.</p>}
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={tambahPecahRow}
+              className="w-full mt-2 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
+            >
+              <Plus size={14} /> Tambah Ukuran
+            </button>
+            {!pecahTotalPas && (
+              <p className="text-[11px] text-amber-400 mt-1.5">
+                Total qty semua ukuran harus pas {jumlahFinal}x dulu sebelum bisa disimpan.
+              </p>
+            )}
+          </div>
+        )}
+
         <Field label="Harga Asli (Rp)">
           <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
           {Number(item?.harga) > 0 && (
@@ -1092,50 +1197,78 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           </>
         )}
 
-        {skuSudahAda && (
-          <div className="mb-3 bg-red-950/40 border border-red-900 rounded-lg px-3 py-2">
-            <div className="text-[11px] text-red-400">SKU ini sudah ada di daftar</div>
-            <div className="font-mono text-sm text-red-300">{skuKombinasi}</div>
-            <p className="text-[11px] text-red-400/80 mt-1.5">
-              Stok: {skuSudahAda.stok}. Kalau mau menambah stok barang ini, pilih SKU-nya di kolom "SKU yang sudah
-              ada" di atas — bukan lewat "buat SKU baru".
+        {pecahMode ? (
+          <>
+            <p className="text-[11px] text-slate-500 mb-3">
+              Tiap ukuran di atas otomatis dicek: kalau SKU-nya sudah ada, stok tinggal ditambah; kalau belum, SKU
+              baru dibuat pakai kode &amp; harga di atas (ukuran beda-beda, sisanya sama).
             </p>
-          </div>
-        )}
-
-        {preview && (
-          <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-            <div className="text-[11px] text-slate-500">SKU</div>
-            <div className="font-mono text-sm text-amber-400">{preview}</div>
-            {hargaManual && manualLengkap ? (
-              <div className="text-[11px] text-slate-500 mt-1.5">
-                Ecer (manual): <span className="text-amber-400 font-medium">{fmtRp(ecerManual)}</span>
+            <button
+              disabled={!readyPecah || saving}
+              onClick={() =>
+                onSubmitSplit(
+                  { bahan, peruntukan, kategori, subkategori, model, warna },
+                  Number(hargaAsli),
+                  isSuperadmin && hargaManual
+                    ? { grosir: Number(grosirManual), tengah: Number(tengahManual), ecer: Number(ecerManual) }
+                    : null,
+                  pecahRows.map((r) => ({ ukuran: r.ukuran, jumlah: Number(r.jumlah) }))
+                )
+              }
+              className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {saving ? "Menyimpan…" : `Buat/Tambah ${pecahRows.length} SKU Sekaligus`}
+            </button>
+          </>
+        ) : (
+          <>
+            {skuSudahAda && (
+              <div className="mb-3 bg-red-950/40 border border-red-900 rounded-lg px-3 py-2">
+                <div className="text-[11px] text-red-400">SKU ini sudah ada di daftar</div>
+                <div className="font-mono text-sm text-red-300">{skuKombinasi}</div>
+                <p className="text-[11px] text-red-400/80 mt-1.5">
+                  Stok: {skuSudahAda.stok}. Kalau mau menambah stok barang ini, pilih SKU-nya di kolom "SKU yang
+                  sudah ada" di atas — bukan lewat "buat SKU baru".
+                </p>
               </div>
-            ) : (
-              settings && hargaAsli && (
-                <div className="text-[11px] text-slate-500 mt-1.5">
-                  Ecer: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(hargaAsli, settings).ecer)}</span>
-                </div>
-              )
             )}
-          </div>
-        )}
 
-        <button
-          disabled={!ready || saving}
-          onClick={() =>
-            onSubmitNew(
-              { bahan, peruntukan, kategori, subkategori, model, warna, ukuran },
-              Number(hargaAsli),
-              isSuperadmin && hargaManual
-                ? { grosir: Number(grosirManual), tengah: Number(tengahManual), ecer: Number(ecerManual) }
-                : null
-            )
-          }
-          className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
-        >
-          {saving ? "Menyimpan…" : "Buat SKU Baru & Lanjut ke Rak"}
-        </button>
+            {preview && (
+              <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+                <div className="text-[11px] text-slate-500">SKU</div>
+                <div className="font-mono text-sm text-amber-400">{preview}</div>
+                {hargaManual && manualLengkap ? (
+                  <div className="text-[11px] text-slate-500 mt-1.5">
+                    Ecer (manual): <span className="text-amber-400 font-medium">{fmtRp(ecerManual)}</span>
+                  </div>
+                ) : (
+                  settings && hargaAsli && (
+                    <div className="text-[11px] text-slate-500 mt-1.5">
+                      Ecer:{" "}
+                      <span className="text-slate-300 font-medium">{fmtRp(calcHarga(hargaAsli, settings).ecer)}</span>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            <button
+              disabled={!ready || saving}
+              onClick={() =>
+                onSubmitNew(
+                  { bahan, peruntukan, kategori, subkategori, model, warna, ukuran },
+                  Number(hargaAsli),
+                  isSuperadmin && hargaManual
+                    ? { grosir: Number(grosirManual), tengah: Number(tengahManual), ecer: Number(ecerManual) }
+                    : null
+                )
+              }
+              className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {saving ? "Menyimpan…" : "Buat SKU Baru & Lanjut ke Rak"}
+            </button>
+          </>
+        )}
       </div>
     </ModalShell>
   );
