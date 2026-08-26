@@ -770,6 +770,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [warna, setWarna] = useState("");
   const [ukuran, setUkuran] = useState("");
   const [hargaAsli, setHargaAsli] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
+  const [showPanduanHarga, setShowPanduanHarga] = useState(false);
 
   // Mode "pecah ke beberapa ukuran": satu baris Alur Barang (1 model, qty
   // gabungan) dipecah jadi beberapa SKU sekaligus — Bahan/Peruntukan/
@@ -1147,6 +1148,33 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
             )}
           </div>
         )}
+
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => setShowPanduanHarga((v) => !v)}
+            className="text-[11px] font-medium text-amber-400 hover:text-amber-300"
+          >
+            {showPanduanHarga ? "▾" : "▸"} Catatan cara hitung Harga Asli per distributor
+          </button>
+          {showPanduanHarga && (
+            <div className="mt-1.5 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-[11px] text-slate-400 space-y-2.5">
+              <div>
+                <div className="font-semibold text-slate-300">Yakia</div>
+                <div className="font-mono text-amber-300/90">Harga Asli = (harga barang / 2) − 20%</div>
+              </div>
+              <div>
+                <div className="font-semibold text-slate-300">Xuping Prem</div>
+                <div className="text-slate-500">1. Meylin &nbsp;2. Everlin &nbsp;3. Xuping</div>
+                <div className="font-mono text-amber-300/90">Harga Asli = Harga barcode / 4</div>
+              </div>
+              <div>
+                <div className="font-semibold text-slate-300">Standar</div>
+                <div className="text-slate-500">Pakai Harga Asli apa adanya (sesuai bon), tidak ada rumus.</div>
+              </div>
+            </div>
+          )}
+        </div>
 
         <Field label="Harga Asli (Rp)">
           <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
