@@ -1,4 +1,4 @@
-import { sb, sbAll } from "./api";
+import { sb, sbAll, SUPABASE_URL, SUPABASE_ANON_KEY } from "./api";
 
 // =========================================================
 // ABSENSI — migrasi dari sistem lama (Google Apps Script).
@@ -39,41 +39,49 @@ export function logoutKaryawan() {
   sessionStorage.removeItem(SESSION_KEY);
 }
 
+// KHUSUS login, verifikasi password TIDAK lagi dilakukan di sini — sudah
+// dipindah ke Edge Function verify-login-karyawan supaya password_hash
+// tidak pernah terkirim ke browser (lihat
+// supabase/functions/verify-login-karyawan).
 export async function loginKaryawan(idKaryawan, password) {
   const id = (idKaryawan || "").trim();
   if (!id || !password) throw new Error("ID dan Password wajib diisi.");
 
-  const rows = await sb(
-    `karyawan?id_karyawan=eq.${encodeURIComponent(id)}&select=id,id_karyawan,nama,password_hash,aktif`
-  );
-  const user = (rows || [])[0];
-  if (!user) throw new Error("ID Karyawan tidak ditemukan.");
-  if (!user.aktif) throw new Error("Akun ini sudah dinonaktifkan. Hubungi HRD.");
-
-  const hash = await sha256Hex(password);
-  if (hash !== user.password_hash) throw new Error("Password salah.");
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-login-karyawan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ id_karyawan: id, password }),
+  });
+  const user = await res.json().catch(() => null);
+  if (!res.ok || !user) throw new Error(user?.error || "Gagal login");
 
   const session = { id: user.id, id_karyawan: user.id_karyawan, nama: user.nama };
   setAbsenSession(session);
   return session;
 }
 
+// Verifikasi password lama + simpan password baru dilakukan di Edge Function
+// change-password-karyawan (service_role), password_hash tidak pernah lewat
+// anon key.
 export async function gantiPasswordKaryawan(karyawanId, passwordLama, passwordBaru) {
   if (!passwordLama || !passwordBaru) throw new Error("Password lama dan password baru wajib diisi.");
   if (String(passwordBaru).trim().length < 4) throw new Error("Password baru minimal 4 karakter.");
 
-  const rows = await sb(`karyawan?id=eq.${karyawanId}&select=password_hash`);
-  const user = (rows || [])[0];
-  if (!user) throw new Error("Data karyawan tidak ditemukan.");
-
-  const hashLama = await sha256Hex(passwordLama);
-  if (hashLama !== user.password_hash) throw new Error("Password lama salah.");
-
-  const password_hash = await sha256Hex(passwordBaru);
-  await sb(`karyawan?id=eq.${karyawanId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ password_hash }),
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/change-password-karyawan`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ karyawanId, oldPassword: passwordLama, newPassword: passwordBaru }),
   });
+  const result = await res.json().catch(() => null);
+  if (!res.ok || !result?.ok) throw new Error(result?.error || "Gagal mengganti password");
 }
 
 // ---- Kelola data karyawan (dipakai di halaman Absensi, khusus superadmin/owner) ----

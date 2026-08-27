@@ -4,6 +4,7 @@
 const SUPABASE_URL = "https://mctzwsfnidxvckadqlhq.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jdHp3c2ZuaWR4dmNrYWRxbGhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNTAwNDQsImV4cCI6MjEwMTcyNjA0NH0.0RN1_Kbk4MS_FBR2b9ahZtKIzEaDNR0IzgoeSSdp8eQ";
+export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 // Terjemahan kode error Postgres (lewat PostgREST) jadi pesan yang bisa dibaca
 // orang biasa, bukan JSON mentah. code 23503 = foreign key violation (data
