@@ -2278,6 +2278,13 @@ export default function ModalRouter({
                     // hapus baris items-nya saja.
                     await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
                   }
+
+                  // Catatan "Rusak" (barang_rusak) ikut lahir dari item ini
+                  // (lihat modal "buat-sku") tapi tidak ikut terhapus lewat
+                  // DELETE items di atas (tabel beda, tidak ada FK cascade).
+                  // Hapus manual di sini supaya tidak "nyangkut" di menu
+                  // Rusak setelah riwayat pesanannya sendiri dihapus.
+                  await sb(`barang_rusak?item_id=eq.${itemId}`, { method: "DELETE" });
                 }
 
                 // 3) Baru hapus riwayat penerimaan & pesanannya sendiri.
@@ -2589,10 +2596,18 @@ export default function ModalRouter({
                 }),
               });
 
+              // Tujuan setelah rak: sama seperti alur SKU tunggal (non-pecah)
+              // — SKU yang BENAR-BENAR baru dibuat belum pernah difoto/
+              // diupload ke marketplace, jadi harus mampir ke "verifikasi"
+              // dulu, bukan langsung "selesai". SKU yang sudah ada (cuma
+              // ditambah stok) dianggap sudah pernah difoto, jadi aman
+              // langsung "selesai".
+              const stageSetelahRak = existing ? "selesai" : "verifikasi";
+
               if (i === 0) {
                 await sb(`items?id=eq.${modal.item.id}`, {
                   method: "PATCH",
-                  body: JSON.stringify({ sku, stage: "rak", jumlah: row.jumlah, stage_setelah_rak: "selesai" }),
+                  body: JSON.stringify({ sku, stage: "rak", jumlah: row.jumlah, stage_setelah_rak: stageSetelahRak }),
                 });
                 // Qty rusak (kalau ada) tidak dipecah per ukuran — dicatat
                 // total sebagai satu baris ke menu "Rusak", ditautkan ke SKU
@@ -2621,7 +2636,7 @@ export default function ModalRouter({
                     sku,
                     barcode_supplier: modal.item.barcode_supplier || null,
                     stage: "rak",
-                    stage_setelah_rak: "selesai",
+                    stage_setelah_rak: stageSetelahRak,
                   }),
                 });
                 // Tautkan item hasil pecahan ini ke pesanan Barang Datang yang

@@ -4,17 +4,21 @@ import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui
 import { detailModelPesanan, fmtRp, statusPesananMasuk } from "../lib/api";
 import { PO_STATUS_META } from "../lib/constants";
 
-// Nilai (Rp) satu baris model = qty datang (baik) x harga/pcs-nya. Qty
-// rusak TIDAK ikut dihitung ke nilai — dianggap klaim ke supplier, bukan
-// barang yang dibeli/masuk stok.
-const nilaiModel = (m) => (Number(m.jumlah) || 0) * (Number(m.harga) || 0);
-const totalNilaiTransaksi = (detail) => detail.reduce((sum, m) => sum + nilaiModel(m), 0);
-const totalRusakTransaksi = (detail) => detail.reduce((sum, m) => sum + (Number(m.rusak) || 0), 0);
 // "Qty Datang" = TOTAL fisik yang datang dari supplier (barang bagus +
 // barang rusak dijumlah jadi satu angka) — bukan cuma yang baik saja.
 // Qty rusak tetap ditampilkan terpisah di kolom sendiri sebagai rincian.
 const qtyDatangModel = (m) => (Number(m.jumlah) || 0) + (Number(m.rusak) || 0);
 const totalQtyDatangTransaksi = (detail) => detail.reduce((sum, m) => sum + qtyDatangModel(m), 0);
+// Nilai (Rp) satu baris model = TOTAL qty datang (baik + rusak) x
+// harga/pcs-nya — HARUS sama persis dengan angka "Total harga barang
+// datang" yang sudah dihitung & dikonfirmasi user di form Konfirmasi
+// Datang (lihat totalNilai di KonfirmasiDatangForm, forms.jsx), supaya
+// tidak selisih sendiri dari yang diinput. Barang rusak tetap ikut
+// dihitung di sini karena secara fisik barang itu tetap "datang" dan
+// dibayar ke supplier — bukan berarti otomatis masuk stok.
+const nilaiModel = (m) => qtyDatangModel(m) * (Number(m.harga) || 0);
+const totalNilaiTransaksi = (detail) => detail.reduce((sum, m) => sum + nilaiModel(m), 0);
+const totalRusakTransaksi = (detail) => detail.reduce((sum, m) => sum + (Number(m.rusak) || 0), 0);
 
 // Warna badge jenis barang datang — sama seperti jenis di Barang Masuk
 // (Pembelian/Retur/Lainnya) supaya konsisten secara visual di seluruh sistem.
