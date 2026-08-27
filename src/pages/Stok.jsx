@@ -1,13 +1,19 @@
 import { useState } from "react";
-import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download } from "lucide-react";
-import { PageHeader, EmptyState, Badge } from "../components/ui";
+import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download, Package, PackageX, PackageSearch, ArrowDownUp } from "lucide-react";
+import { PageHeader, EmptyState, Badge, StatCard } from "../components/ui";
 import { fmtTgl, downloadCsv } from "../lib/api";
 import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
+
+// Ambang batas "Stok Menipis" khusus tampilan badge per-baris di Stok Barang —
+// beda dari AMBANG_MENIPIS_RESTOCK (yang dipakai buat halaman "Stok Menipis" /
+// pengajuan restock). Sengaja dibiarkan terpisah supaya threshold badge di sini
+// tetap seperti semula, tidak ikut berubah kalau AMBANG_MENIPIS_RESTOCK diubah.
+const AMBANG_MENIPIS_BADGE = 5;
 
 export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengajuanRestock, session, setModal }) {
   if (sub === "menipis") return <StokMenipis skuMaster={skuMaster} pengajuanRestock={pengajuanRestock} session={session} setModal={setModal} />;
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
-  if (sub === "hitung") return <HitungQty skuMaster={skuMaster} setModal={setModal} />;
+  if (sub === "hitung") return <StokOpname skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "riwayat") return <RiwayatStok stockHistory={stockHistory} />;
   return <StokBarang skuMaster={skuMaster} />;
 }
@@ -103,11 +109,35 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
   );
 }
 
+const STOK_SORT_OPTIONS = [
+  { key: "tertinggi", label: "Stok Tertinggi" },
+  { key: "terendah", label: "Stok Terendah" },
+  { key: "az", label: "SKU A-Z" },
+];
+
 function StokBarang({ skuMaster }) {
   const [q, setQ] = useState("");
-  const sorted = [...skuMaster]
-    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => (b.stok || 0) - (a.stok || 0));
+  const [sortBy, setSortBy] = useState("tertinggi");
+
+  // Sengaja TIDAK menyaring SKU nonaktif di sini — perilaku data sama seperti
+  // sebelumnya (halaman ini dulu menampilkan semua skuMaster apa adanya),
+  // cuma tampilannya yang dirapikan.
+  const semua = skuMaster || [];
+  const totalStok = semua.reduce((sum, s) => sum + (Number(s.stok) || 0), 0);
+  const habisCount = semua.filter((s) => (s.stok || 0) <= 0).length;
+  const menipisCount = semua.filter((s) => (s.stok || 0) > 0 && s.stok < AMBANG_MENIPIS_BADGE).length;
+
+  const filtered = semua.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === "az") return a.sku.localeCompare(b.sku, "id", { numeric: true, sensitivity: "base" });
+    if (sortBy === "terendah") return (a.stok || 0) - (b.stok || 0);
+    return (b.stok || 0) - (a.stok || 0);
+  });
+
+  // Stok tertinggi di antara hasil yang tampil — dipakai sebagai basis
+  // proporsi bar visual per baris (biar barang dengan stok paling banyak
+  // selalu tampil bar penuh, sisanya proporsional terhadap itu).
+  const maxStok = Math.max(1, ...sorted.map((s) => Number(s.stok) || 0));
 
   const handleDownload = () => {
     downloadCsv(
@@ -135,36 +165,71 @@ function StokBarang({ skuMaster }) {
           </button>
         }
       />
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <StatCard label="Total SKU" value={semua.length} icon={Package} iconColor="text-slate-400" />
+        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} icon={PackageSearch} iconColor="text-amber-400" accent="text-amber-400" />
+        <StatCard label="Stok Menipis" value={menipisCount} icon={AlertTriangle} iconColor="text-amber-400" accent={menipisCount > 0 ? "text-amber-400" : ""} />
+        <StatCard label="Stok Habis" value={habisCount} icon={PackageX} iconColor="text-red-400" accent={habisCount > 0 ? "text-red-400" : ""} />
       </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:w-56">
+          <ArrowDownUp size={14} className="text-slate-500 flex-shrink-0" />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-transparent outline-none text-sm flex-1 text-slate-300"
+          >
+            {STOK_SORT_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key} className="bg-slate-900">
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {sorted.length === 0 ? (
-        <EmptyState label="Belum ada data stok." />
+        <EmptyState label={q ? "Tidak ada SKU yang cocok dengan pencarian." : "Belum ada data stok."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
-          {sorted.map((s, i) => (
-            <div
-              key={s.id}
-              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-            >
-              <span className="font-mono text-xs text-slate-300">{s.sku}</span>
-              <div className="flex items-center gap-2">
-                {s.stok <= 0 ? (
-                  <Badge color="red">Habis</Badge>
-                ) : s.stok < 5 ? (
-                  <Badge color="amber">Menipis · {s.stok}</Badge>
-                ) : (
-                  <span className="text-sm font-semibold text-slate-200">{s.stok}</span>
-                )}
+          {sorted.map((s, i) => {
+            const stok = Number(s.stok) || 0;
+            const habis = stok <= 0;
+            const menipis = !habis && stok < AMBANG_MENIPIS_BADGE;
+            const barColor = habis ? "bg-red-500/60" : menipis ? "bg-amber-500" : "bg-emerald-500/70";
+            const barWidth = habis ? 3 : Math.max(4, Math.round((stok / maxStok) * 100));
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center gap-4 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <span className="font-mono text-xs text-slate-300 w-40 sm:w-56 truncate flex-shrink-0">{s.sku}</span>
+                <div className="flex-1 hidden sm:block h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barWidth}%` }} />
+                </div>
+                <div className="flex items-center justify-end gap-2 w-28 flex-shrink-0">
+                  {habis ? (
+                    <Badge color="red">Habis</Badge>
+                  ) : menipis ? (
+                    <Badge color="amber">Menipis · {stok}</Badge>
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-200">{stok}</span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -220,7 +285,7 @@ function BarangKeluar({ skuMaster, setModal }) {
   );
 }
 
-function HitungQty({ skuMaster, setModal }) {
+function StokOpname({ skuMaster, setModal }) {
   const [q, setQ] = useState("");
   // Qty hasil hitung fisik (stok opname) yang baru saja diketik user — { [sku_master.id]: string }.
   // Belum tersimpan ke sistem sampai user klik "Sesuaikan Stok" (lewat modal konfirmasi).
@@ -243,8 +308,8 @@ function HitungQty({ skuMaster, setModal }) {
   return (
     <div>
       <PageHeader
-        title="Hitung Qty"
-        description="Hitung fisik stok di gudang (stok opname), lalu bandingkan dengan Stok Sistem untuk mengecek selisih."
+        title="Stok Opname"
+        description="Hitung fisik stok di gudang, lalu bandingkan dengan Stok Sistem untuk mengecek selisih."
       />
       <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
         <Search size={14} className="text-slate-500" />

@@ -5,10 +5,17 @@ import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "..
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
+import Rusak from "./Rusak";
 
-export default function SkuHarga({ sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session }) {
+export default function SkuHarga({
+  sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
+  barangRusak, pesananMasuk,
+}) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
   if (sub === "kategori") return <MasterData master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
+  // Sub-menu "Barang Reject" — dulu menu top-level terpisah bernama "Rusak",
+  // sekarang dipindahkan ke sini karena datanya sama-sama seputar SKU.
+  if (sub === "reject") return <Rusak barangRusak={barangRusak} pesananMasuk={pesananMasuk} setModal={setModal} />;
   return (
     <MasterBarang
       skuMaster={skuMaster}

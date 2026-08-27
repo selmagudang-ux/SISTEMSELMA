@@ -1079,7 +1079,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
             {item.jumlah}x total − {jumlahRusak}x rusak = {jumlahFinal}x masuk stok
           </div>
           <p className="text-[11px] text-red-400/80 mt-1.5">
-            {jumlahRusak}x rusak ini akan otomatis tercatat ke menu "Rusak" untuk SKU ini, tidak ikut masuk stok/rak.
+            {jumlahRusak}x rusak ini akan otomatis tercatat ke menu "Barang Reject" (SKU & Harga) untuk SKU ini, tidak ikut masuk stok/rak.
             {item.alasan_rusak ? ` Alasan: ${item.alasan_rusak}.` : ""}
           </p>
         </div>
@@ -1261,7 +1261,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
 
         {pecahMode && jumlahRusak > 0 && (
           <p className="text-[11px] text-red-400/80 -mt-2 mb-3">
-            {jumlahRusak}x rusak akan dicatat total (tidak dipecah per ukuran) di menu "Rusak", ditautkan ke SKU
+            {jumlahRusak}x rusak akan dicatat total (tidak dipecah per ukuran) di menu "Barang Reject", ditautkan ke SKU
             ukuran baris pertama di bawah.
           </p>
         )}

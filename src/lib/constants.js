@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
-  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, AlertTriangle,
+  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -110,20 +110,22 @@ export const NAV = [
           { key: "buat", label: "Buat SKU" },
           { key: "master-barang", label: "Master Barang" },
           { key: "kategori", label: "Master Data" },
+          // Menu "Rusak" dipindahkan ke sini (dari top-level) dan diganti nama
+          // jadi "Barang Reject" — daftar barang rusak yang dipisahkan otomatis
+          // begitu SKU dibuat (lihat ModalRouter "buat-sku") lebih pas dikelompokkan
+          // bareng data SKU & Harga lain, bukan jadi menu terpisah sendiri.
+          { key: "reject", label: "Barang Reject" },
         ],
       },
-      // Menu baru: daftar barang rusak yang dipisahkan otomatis begitu SKU
-      // dibuat (lihat ModalRouter "buat-sku") — qty rusak yang sudah dicatat
-      // sejak Barang Datang baru resmi tercatat di sini setelah SKU-nya
-      // diketahui, karena sebelum itu belum ada SKU untuk dilekatkan.
-      { key: "rusak", label: "Rusak", icon: AlertTriangle },
       {
         key: "stok", label: "Stok", icon: BarChart3,
         children: [
           { key: "barang", label: "Stok Barang" },
           { key: "menipis", label: "Stok Menipis" },
           { key: "keluar", label: "Barang Keluar" },
-          { key: "hitung", label: "Hitung Qty" },
+          // Dulu "Hitung Qty" — diganti nama jadi "Stok Opname" (istilah yang
+          // lebih umum dipakai gudang untuk hitung fisik vs stok sistem).
+          { key: "hitung", label: "Stok Opname" },
           { key: "riwayat", label: "Riwayat Stok" },
         ],
       },
@@ -332,7 +334,7 @@ export const ROLE_MENUS = {
   // sekali — dashboard (termasuk tab "Menunggu Persetujuan") murni untuk
   // owner & superadmin. Landing page login gudang tetap ke "barang-datang"
   // (lihat App.jsx).
-  gudang: ["barang-datang", "data-barang", "sku-harga", "rusak", "stok", "rak", "cetak-label", "barang-masuk"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma

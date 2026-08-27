@@ -19,7 +19,6 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const BarangDatang = lazy(() => import("./pages/BarangDatang"));
 const BarangMasuk = lazy(() => import("./pages/BarangMasuk"));
 const DataBarang = lazy(() => import("./pages/DataBarang"));
-const Rusak = lazy(() => import("./pages/Rusak"));
 const SkuHarga = lazy(() => import("./pages/SkuHarga"));
 const Stok = lazy(() => import("./pages/Stok"));
 import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from "./pages/Rak";
@@ -472,9 +471,6 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "data-barang" && (
                 <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
               )}
-              {nav.menu === "rusak" && (
-                <Rusak barangRusak={barangRusak} pesananMasuk={pesananMasuk} setModal={setModal} />
-              )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga
                   sub={nav.sub || "buat"}
@@ -486,6 +482,8 @@ function MainApp({ session, onLogout }) {
                   reload={loadAll}
                   showToast={showToast}
                   session={session}
+                  barangRusak={barangRusak}
+                  pesananMasuk={pesananMasuk}
                 />
               )}
               {nav.menu === "stok" && (

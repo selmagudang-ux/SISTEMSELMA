@@ -92,11 +92,13 @@ function DetailBonModal({ pesanan, kodeBon, onClose }) {
   );
 }
 
-// Halaman "Rusak" — daftar barang yang rusak, otomatis tercatat di sini
-// begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"): qty rusak yang sudah
-// dicatat sejak Barang Datang baru resmi punya SKU setelah tahap ini, jadi
-// baru muncul di menu ini begitu SKU sudah diketahui. Qty rusak TIDAK pernah
-// ikut masuk stok — ini murni catatan/riwayat.
+// Halaman "Barang Reject" (dulu "Rusak") — daftar barang yang rusak, otomatis
+// tercatat di sini begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"): qty
+// rusak yang sudah dicatat sejak Barang Datang baru resmi punya SKU setelah
+// tahap ini, jadi baru muncul di menu ini begitu SKU sudah diketahui. Qty
+// rusak TIDAK pernah ikut masuk stok — ini murni catatan/riwayat. Sekarang
+// ditampilkan sebagai sub-menu di dalam "SKU & Harga" (bukan menu top-level
+// terpisah lagi).
 export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
   const [q, setQ] = useState("");
   const [detailBon, setDetailBon] = useState(null);
@@ -130,7 +132,7 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
   return (
     <div>
       <PageHeader
-        title="Rusak"
+        title="Barang Reject"
         description="Barang yang tercatat rusak sejak Barang Datang — otomatis dipisahkan dari stok begitu SKU-nya dibuat."
         action={
           <button
