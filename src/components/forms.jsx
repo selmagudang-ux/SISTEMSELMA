@@ -2261,8 +2261,8 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
             Bayar melebihi sisa hutang pesanan ini sebesar <span className="font-semibold">{fmtRp(kelebihan)}</span>.
-            Kelebihannya otomatis dipakai buat melunasi pesanan lain milik pelanggan ini yang belum lunas (dari yang
-            paling lama); kalau masih tersisa, baru masuk sebagai saldo deposit.
+            Kelebihannya langsung masuk sebagai saldo deposit pelanggan — pesanan lain yang belum lunas TIDAK ikut
+            terbayar otomatis.
           </div>
         </div>
       )}
