@@ -2225,6 +2225,15 @@ export default function ModalRouter({
                   const item = (items || []).find((i) => i.id === itemId);
                   const stokSudahMasuk = !!item?.sku && item.stage !== "sku";
 
+                  // Catatan "Rusak" (barang_rusak) ikut lahir dari item ini
+                  // (lihat modal "buat-sku") lewat kolom item_id — dihapus
+                  // DULU, SEBELUM baris items-nya sendiri dihapus di bawah,
+                  // supaya (a) tidak ada FK constraint yang menahan DELETE
+                  // items gara-gara masih direferensikan barang_rusak, dan
+                  // (b) tidak ada catatan rusak yang "nyangkut" di menu Rusak
+                  // setelah riwayat pesanannya sendiri dihapus.
+                  await sb(`barang_rusak?item_id=eq.${itemId}`, { method: "DELETE" });
+
                   if (item && stokSudahMasuk) {
                     const existing = (skuMaster || []).find((s) => s.sku === item.sku);
                     await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
@@ -2278,13 +2287,6 @@ export default function ModalRouter({
                     // hapus baris items-nya saja.
                     await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
                   }
-
-                  // Catatan "Rusak" (barang_rusak) ikut lahir dari item ini
-                  // (lihat modal "buat-sku") tapi tidak ikut terhapus lewat
-                  // DELETE items di atas (tabel beda, tidak ada FK cascade).
-                  // Hapus manual di sini supaya tidak "nyangkut" di menu
-                  // Rusak setelah riwayat pesanannya sendiri dihapus.
-                  await sb(`barang_rusak?item_id=eq.${itemId}`, { method: "DELETE" });
                 }
 
                 // 3) Baru hapus riwayat penerimaan & pesanannya sendiri.
