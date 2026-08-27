@@ -1161,6 +1161,7 @@ export default function ModalRouter({
         tokoGrosir={tokoGrosir}
         produkManualGrosir={produkManualGrosir}
         skuMaster={skuMaster}
+        penempatan={penempatan}
         reload={reload}
         showToast={showToast}
         onClose={close}
@@ -2941,24 +2942,26 @@ export default function ModalRouter({
             });
             // Samakan qty di rak (FIFO: rak paling lama ditempatkan duluan
             // yang dikurangi) supaya Peta Rak tetap sinkron dengan stok baru.
+            // Baris penempatan yang qty-nya habis TIDAK dihapus lagi — cuma
+            // di-PATCH qty jadi 0, supaya rak itu tetap "menandai" SKU apa
+            // yang biasa ada di situ (Peta Rak menampilkannya sebagai
+            // "Habis", bukan langsung hilang seolah rak-nya kosong bebas).
             const rencana = rencanaKurangiRak(modal.item.sku, qty, penempatan);
             for (const r of rencana) {
+              await sb(`penempatan?id=eq.${r.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ qty: Math.max(r.qtyBaru, 0) }),
+              });
               if (r.qtyBaru <= 0) {
                 const baris = (penempatan || []).find((p) => p.id === r.id);
-                await sb(`penempatan?id=eq.${r.id}`, { method: "DELETE" });
-                // Habis terjual/keluar sampai rak itu kosong — catat biar Cek
-                // Marketplace bisa notif "Rak Jadi Kosong".
+                // Rak-nya habis — catat biar Cek Marketplace bisa notif
+                // "Rak Jadi Kosong" (dipakai sebagai notifikasi restock juga).
                 if (baris) {
                   await sb("rak_events", {
                     method: "POST",
                     body: JSON.stringify({ sku: modal.item.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
                   });
                 }
-              } else {
-                await sb(`penempatan?id=eq.${r.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ qty: r.qtyBaru }),
-                });
               }
             }
           }, "Barang keluar dicatat, stok diperbarui")
@@ -3116,14 +3119,20 @@ export default function ModalRouter({
                 // qty di rak (FIFO) supaya Peta Rak tidak nunjukkin lebih banyak
                 // dari stok yang sebenarnya. Kalau lebih besar (stok nambah),
                 // kita TIDAK menebak-nebak taruh selisihnya di rak mana — biarkan
-                // muncul di "Sisa di Gudang" supaya ditempatkan manual.
+                // muncul di "Sisa di Gudang" supaya ditempatkan manual. Baris rak
+                // yang qty-nya habis TIDAK dihapus lagi — cuma di-PATCH ke 0
+                // (lihat catatan sama di "Barang Keluar") supaya Peta Rak tetap
+                // menandai SKU apa yang biasa ada di rak itu, ditandai "Habis".
                 if (selisih < 0) {
                   const rencana = rencanaKurangiRak(s.sku, -selisih, penempatan);
                   for (const r of rencana) {
+                    await sb(`penempatan?id=eq.${r.id}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ qty: Math.max(r.qtyBaru, 0) }),
+                    });
                     if (r.qtyBaru <= 0) {
                       const baris = (penempatan || []).find((p) => p.id === r.id);
-                      await sb(`penempatan?id=eq.${r.id}`, { method: "DELETE" });
-                      // Rak itu jadi kosong akibat penyesuaian stok opname —
+                      // Rak itu jadi habis akibat penyesuaian stok opname —
                       // catat biar Cek Marketplace bisa notif "Rak Jadi Kosong".
                       if (baris) {
                         await sb("rak_events", {
@@ -3131,11 +3140,6 @@ export default function ModalRouter({
                           body: JSON.stringify({ sku: s.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
                         });
                       }
-                    } else {
-                      await sb(`penempatan?id=eq.${r.id}`, {
-                        method: "PATCH",
-                        body: JSON.stringify({ qty: r.qtyBaru }),
-                      });
                     }
                   }
                 }

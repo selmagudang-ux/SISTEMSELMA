@@ -63,7 +63,14 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
                 className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
               >
                 <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-200 truncate">{s.sku}</div>
+                  <button
+                    type="button"
+                    onClick={() => setModal({ type: "detail-sku", item: s })}
+                    title="Lihat detail SKU"
+                    className="font-mono text-xs text-slate-200 truncate hover:underline hover:text-amber-300 text-left"
+                  >
+                    {s.sku}
+                  </button>
                   <div className="text-[11px] mt-0.5 flex items-center gap-2 flex-wrap">
                     {s.stok <= 0 ? (
                       <span className="text-red-400 font-medium">Habis</span>

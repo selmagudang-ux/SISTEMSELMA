@@ -369,7 +369,13 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
     return [...kandidat]
       .filter((sku) => {
         const s = (skuMaster || []).find((x) => x.sku === sku);
-        if (!s || !(s.stok > 0)) return false;
+        // Dulu SKU yang stoknya sudah 0 di sini disembunyikan sepenuhnya
+        // (dianggap rak-nya otomatis "Kosong"). Sekarang TETAP ditampilkan
+        // (lihat flag `habis` di bawah) supaya rak yang barangnya habis
+        // tetap ada catatannya, bukan langsung hilang seolah rak bebas.
+        // Cuma SKU yang sudah tidak ada sama sekali di Master Barang (dihapus)
+        // yang disembunyikan.
+        if (!s) return false;
         if (sku === pemenang) return true;
         return (
           rakForSku(sku, penempatan) === kodeRak &&
@@ -386,10 +392,15 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
           (p) => p.sku === sku && p.rak_code === kodeRak
         );
         const qtyRak = penempatanRak?.qty;
+        const stok = qtyRak != null ? qtyRak : (skuMaster || []).find((x) => x.sku === sku)?.stok ?? 0;
         return {
           sku,
-          stok: qtyRak != null ? qtyRak : (skuMaster || []).find((x) => x.sku === sku)?.stok ?? 0,
+          stok,
           penempatanId: penempatanRak?.id ?? null,
+          // "Habis" = qty KHUSUS di rak ini sudah 0 (rak ini kosong), beda
+          // dengan stok SKU secara keseluruhan (SKU yang sama bisa masih ada
+          // stok di rak lain, cuma rak yang ini yang habis duluan karena FIFO).
+          habis: !(stok > 0),
         };
       });
   };
@@ -524,6 +535,12 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
                     const skus = skuDiRak(r.code);
                     const kosong = skus.length === 0;
                     const adaBentrok = skus.some(({ sku }) => gandaLookup.has(`${sku}|${r.code}`));
+                    // Rak yang punya SKU tercatat tapi qty di rak itu SEMUANYA
+                    // sudah 0 — beda dari "Kosong" (rak yang memang belum
+                    // pernah diisi apa-apa). Ditampilkan sebagai "Habis" biar
+                    // ada catatan barang apa yang biasa ada di situ, bukan
+                    // langsung dianggap rak bebas.
+                    const semuaHabis = !kosong && skus.every((s) => s.habis);
                     return (
                       <div
                         key={r.id}
@@ -532,27 +549,48 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
                             ? "border-amber-500/40 bg-amber-500/5"
                             : kosong
                             ? "border-emerald-500/30 bg-emerald-500/5"
+                            : semuaHabis
+                            ? "border-rose-500/40 bg-rose-500/5"
                             : "border-sky-500/30 bg-sky-500/10"
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
                           <MapPin
                             size={13}
-                            className={adaBentrok ? "text-amber-400" : kosong ? "text-emerald-400" : "text-sky-400"}
+                            className={
+                              adaBentrok
+                                ? "text-amber-400"
+                                : kosong
+                                ? "text-emerald-400"
+                                : semuaHabis
+                                ? "text-rose-400"
+                                : "text-sky-400"
+                            }
                           />
                           <span
                             className={`font-mono text-xs font-semibold ${
-                              adaBentrok ? "text-amber-300" : kosong ? "text-emerald-300" : "text-sky-300"
+                              adaBentrok
+                                ? "text-amber-300"
+                                : kosong
+                                ? "text-emerald-300"
+                                : semuaHabis
+                                ? "text-rose-300"
+                                : "text-sky-300"
                             }`}
                           >
                             {r.code}
                           </span>
+                          {semuaHabis && (
+                            <span className="text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded px-1 py-0.5 ml-auto">
+                              HABIS
+                            </span>
+                          )}
                         </div>
                         {kosong ? (
                           <div className="text-[10px] text-emerald-400/70 italic">Kosong</div>
                         ) : (
                           <div className="flex flex-col gap-1">
-                            {skus.map(({ sku, stok, penempatanId }) => {
+                            {skus.map(({ sku, stok, penempatanId, habis }) => {
                               const bentrokId = gandaLookup.get(`${sku}|${r.code}`);
                               const bentrok = !!bentrokId;
                               const idUntukPindah = bentrokId || penempatanId;
@@ -565,15 +603,19 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
                                       onClick={() => skuObj && setModal({ type: "detail-sku", item: skuObj })}
                                       title="Lihat detail SKU"
                                       className={`font-mono text-[10px] break-all flex items-center gap-1 text-left hover:underline ${
-                                        bentrok ? "text-amber-300" : "text-slate-300"
+                                        bentrok ? "text-amber-300" : habis ? "text-slate-500" : "text-slate-300"
                                       }`}
                                     >
                                       {bentrok && <AlertTriangle size={10} className="flex-shrink-0" />}
                                       {sku}
                                     </button>
                                     <div className="flex items-center gap-1 shrink-0">
-                                      <span className="text-[10px] text-slate-500 font-medium">{stok}x</span>
-                                      {idUntukPindah && (
+                                      {habis ? (
+                                        <span className="text-[10px] text-rose-400 font-semibold">Habis</span>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-500 font-medium">{stok}x</span>
+                                      )}
+                                      {idUntukPindah && !habis && (
                                         <button
                                           onClick={() => bukaPindah(sku, r.code, idUntukPindah, stok)}
                                           title="Pindahkan SKU ini ke rak lain"
@@ -587,6 +629,11 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
                                   {bentrok && (
                                     <div className="text-[9px] text-amber-400/80">
                                       juga tercatat di rak lain — pindahkan salah satu
+                                    </div>
+                                  )}
+                                  {habis && !bentrok && (
+                                    <div className="text-[9px] text-rose-400/80">
+                                      stoknya habis — belum diisi ulang
                                     </div>
                                   )}
                                 </div>

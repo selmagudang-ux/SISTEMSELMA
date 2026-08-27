@@ -8,6 +8,7 @@ import {
   sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
 } from "../lib/api";
+import { rencanaKurangiRak } from "./Rak";
 
 export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
@@ -787,7 +788,7 @@ export const newItemRow = (sumberProduk) => ({
   stokTersedia: null, // null = tidak relevan (item manual)
 });
 
-export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, reload, showToast, onClose }) {
+export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, penempatan, reload, showToast, onClose }) {
   const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [pelangganId, setPelangganId] = useState("");
   const [pelangganNamaBaru, setPelangganNamaBaru] = useState(""); // dipakai kalau pelanggan belum ada di daftar
@@ -1015,6 +1016,29 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
               note: `Pesanan grosir ${nomorPesanan}`,
             }),
           });
+
+          // Samakan juga qty di rak (FIFO: rak paling lama ditempatkan
+          // duluan yang dikurangi), sama seperti alur "Barang Keluar" di
+          // menu Stok — supaya Peta Rak ikut sinkron waktu stok terjual
+          // lewat pesanan grosir, bukan cuma lewat menu Stok manual. Baris
+          // rak yang qty-nya habis TIDAK dihapus, cuma di-PATCH ke 0 supaya
+          // tetap ada catatan SKU apa yang biasa ada di rak itu ("Habis").
+          const rencanaRak = rencanaKurangiRak(r.sku, Number(r.qty), penempatan);
+          for (const rk of rencanaRak) {
+            await sb(`penempatan?id=eq.${rk.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ qty: Math.max(rk.qtyBaru, 0) }),
+            });
+            if (rk.qtyBaru <= 0) {
+              const baris = (penempatan || []).find((p) => p.id === rk.id);
+              if (baris) {
+                await sb("rak_events", {
+                  method: "POST",
+                  body: JSON.stringify({ sku: r.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
+                });
+              }
+            }
+          }
         }
       }
 
