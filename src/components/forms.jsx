@@ -211,10 +211,12 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   // Qty Datang sekarang memang diisi sebagai TOTAL, bukan cuma yang baik).
   const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
   const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
-  // Nilai (Rp) cuma dihitung dari qty BAIK (Qty Datang - Qty Rusak) — rusak
-  // dianggap klaim ke supplier, bukan barang yang dibeli/masuk stok.
+  // Nilai (Rp) dihitung dari TOTAL qty datang (bukan cuma qty baik) — qty
+  // rusak tetap ikut dihitung nilainya, karena barang rusak yang diterima
+  // tetap dianggap dibeli/dibayar penuh (klaim ke supplier itu urusan
+  // terpisah, bukan pengurang nilai pembelian di sini).
   const totalNilai = models.reduce(
-    (sum, m) => sum + Math.max((Number(m.jumlahDatang) || 0) - (Number(m.jumlahRusak) || 0), 0) * (Number(m.harga) || 0),
+    (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
@@ -330,7 +332,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
                 <p className="text-[11px] text-slate-500">
                   Total qty baris ini: {totalQtyBaris}x
                   {Number(m.jumlahRusak) > 0 ? ` (baik: ${qtyBaikBaris}x, rusak: ${m.jumlahRusak}x)` : ""}
-                  {qtyBaikBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(qtyBaikBaris * (Number(m.harga) || 0))}` : ""}
+                  {totalQtyBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(totalQtyBaris * (Number(m.harga) || 0))}` : ""}
                 </p>
               </div>
               {models.length > 1 && (
@@ -517,12 +519,14 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
 
   const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
   const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
+  // Nilai (Rp) dihitung dari TOTAL qty datang (bukan cuma qty baik) — qty
+  // rusak tetap ikut dihitung nilainya (lihat catatan sama di BarangDatangForm).
   const totalNilai = models.reduce(
-    (sum, m) => sum + Math.max((Number(m.jumlahDatang) || 0) - (Number(m.jumlahRusak) || 0), 0) * (Number(m.harga) || 0),
+    (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
   // Selisih antara total harga kesepakatan (waktu pesan) dan total harga
-  // barang yang benar-benar datang (qty baik x harga/pcs, diisi di atas).
+  // barang yang benar-benar datang (qty total x harga/pcs, diisi di atas).
   // Cuma relevan kalau ada harga kesepakatan tercatat (totalHargaAwal > 0).
   const adaKesepakatan = totalHargaAwal > 0;
   const selisih = adaKesepakatan ? totalNilai - totalHargaAwal : 0;
@@ -650,7 +654,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
                 <p className="text-[11px] text-slate-500">
                   Total qty baris ini: {totalQtyBaris}x
                   {Number(m.jumlahRusak) > 0 ? ` (baik: ${qtyBaikBaris}x, rusak: ${m.jumlahRusak}x)` : ""}
-                  {qtyBaikBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(qtyBaikBaris * (Number(m.harga) || 0))}` : ""}
+                  {totalQtyBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(totalQtyBaris * (Number(m.harga) || 0))}` : ""}
                 </p>
               </div>
               {models.length > 1 && (
