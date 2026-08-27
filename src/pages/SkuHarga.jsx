@@ -63,6 +63,11 @@ function BuatSkuList({ items, setModal }) {
 // resolveHargaSku di lib/api.js untuk alur keputusannya.
 const adaHargaBaruCheck = (s) => s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli;
 
+// SKU dibentuk sebagai {bahan}{peruntukan}{kategori}-{subkategori}-{model}-{warna}-{ukuran}
+// (lihat pembuatan SKU baru di ModalRouter.jsx) — jadi segmen "model" adalah
+// bagian ke-3 kalau SKU dipecah per tanda "-".
+const modelFromSku = (sku) => (sku || "").split("-")[2] || "";
+
 function MasterBarang({ skuMaster, items, master, penempatan, setModal, session }) {
   const isSuperadmin = session?.role === "superadmin";
   const [q, setQ] = useState("");
@@ -73,6 +78,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
   const [selected, setSelected] = useState(() => new Set()); // sku yang dipilih untuk download foto
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
   const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
+  const [sortBy, setSortBy] = useState("model"); // "model" | "az" | "za"
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
   // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
@@ -104,18 +110,32 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
     )
   ).sort();
 
-  const filtered = skuMaster.filter((s) => {
-    if (!tampilkanNonaktif && s.nonaktif) return false;
-    if (hanyaPerubahan && !adaHargaBaruCheck(s)) return false;
-    const qLower = q.toLowerCase();
-    const cocokQ =
-      s.sku.toLowerCase().includes(qLower) ||
-      (s.barcode_supplier || "").toLowerCase().includes(qLower);
-    if (!cocokQ) return false;
-    if (kategori && s.kategori !== kategori) return false;
-    if (subkategori && s.subkategori !== subkategori) return false;
-    return true;
-  });
+  const filtered = skuMaster
+    .filter((s) => {
+      if (!tampilkanNonaktif && s.nonaktif) return false;
+      if (hanyaPerubahan && !adaHargaBaruCheck(s)) return false;
+      const qLower = q.toLowerCase();
+      const cocokQ =
+        s.sku.toLowerCase().includes(qLower) ||
+        (s.barcode_supplier || "").toLowerCase().includes(qLower);
+      if (!cocokQ) return false;
+      if (kategori && s.kategori !== kategori) return false;
+      if (subkategori && s.subkategori !== subkategori) return false;
+      return true;
+    })
+    // Urutan: per Model (segmen ke-3 di dalam SKU, numerik natural — 1, 2, 3,
+    // ..., 10, 11, bukan 1, 10, 11, 2, 3, ...) atau SKU A-Z / Z-A, sesuai
+    // pilihan sortBy. SKU tanpa model selalu ditaruh di akhir grupnya.
+    .sort((a, b) => {
+      if (sortBy === "az") return a.sku.localeCompare(b.sku, "id", { numeric: true, sensitivity: "base" });
+      if (sortBy === "za") return b.sku.localeCompare(a.sku, "id", { numeric: true, sensitivity: "base" });
+      const ma = modelFromSku(a.sku);
+      const mb = modelFromSku(b.sku);
+      if (!ma && !mb) return 0;
+      if (!ma) return 1;
+      if (!mb) return -1;
+      return ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
+    });
 
   // Jumlah SKU yang ada perubahan harga, dihitung dari cakupan yang sama
   // dengan toggle nonaktif (biar angkanya konsisten sama apa yang bisa
@@ -275,6 +295,15 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
           {subkategoriOptions.map((sk) => (
             <option key={sk} value={sk}>{subkategoriLabel(sk)}</option>
           ))}
+        </select>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none"
+        >
+          <option value="model">Urutkan: Model</option>
+          <option value="az">Urutkan: SKU A-Z</option>
+          <option value="za">Urutkan: SKU Z-A</option>
         </select>
         <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
           <input
