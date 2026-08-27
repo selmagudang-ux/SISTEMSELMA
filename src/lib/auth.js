@@ -78,24 +78,61 @@ export async function listUsers() {
   return data;
 }
 
+// Tabel app_users dikunci total dari anon key, jadi tambah user lewat Edge
+// Function create-user (service_role) — bukan sb() langsung (lihat
+// supabase/functions/create-user).
 export async function createUser({ username, password, nama, role }) {
-  const password_hash = await sha256Hex(password);
-  return sb("app_users", {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
     method: "POST",
-    body: JSON.stringify({ username: (username || "").trim(), password_hash, nama, role }),
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ username: (username || "").trim(), password, nama, role }),
   });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || "Gagal menambah user");
+  return data;
 }
 
+// PENTING: dulu fungsi ini PATCH langsung ke app_users pakai anon key. Kalau
+// RLS memblokir UPDATE untuk anon, PostgREST tidak melempar error — dia
+// balas "sukses" padahal 0 baris ke-update (password_hash lama tidak
+// berubah), jadi kelihatan berhasil di UI tapi login pakai password baru
+// tetap gagal. Sekarang lewat Edge Function update-user-password
+// (service_role) supaya beneran ke-update atau melempar error yang jelas.
 export async function updateUserPassword(id, newPassword) {
-  const password_hash = await sha256Hex(newPassword);
-  return sb(`app_users?id=eq.${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ password_hash }),
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/update-user-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ id, newPassword }),
   });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) throw new Error(data?.error || "Gagal mengganti password");
+  return data;
 }
 
+// Tabel app_users dikunci total dari anon key, jadi hapus user lewat Edge
+// Function delete-user (service_role) — bukan sb() langsung (lihat
+// supabase/functions/delete-user).
 export async function deleteUser(id) {
-  return sb(`app_users?id=eq.${id}`, { method: "DELETE" });
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/delete-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+    body: JSON.stringify({ id }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) throw new Error(data?.error || "Gagal menghapus user");
+  return data;
 }
 
 // ---- Ganti password sendiri (dipakai semua role lewat menu di Sidebar) ----
