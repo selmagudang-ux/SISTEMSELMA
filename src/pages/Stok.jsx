@@ -10,12 +10,31 @@ import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
 // tetap seperti semula, tidak ikut berubah kalau AMBANG_MENIPIS_RESTOCK diubah.
 const AMBANG_MENIPIS_BADGE = 5;
 
+// SKU dibentuk sebagai {bahan}{peruntukan}{kategori}-{subkategori}-{model}-{warna}-{ukuran}
+// (lihat pembuatan SKU baru di ModalRouter.jsx & pola yang sama di SkuHarga.jsx)
+// — jadi segmen "model" adalah bagian ke-3 kalau SKU dipecah per tanda "-".
+// Dipakai supaya sortir "Model A-Z/Z-A" di Stok Barang urut berdasarkan nomor
+// model (numerik natural — 1, 2, 3, ..., 10, bukan 1, 10, 2, 3, ...), bukan
+// alfabetis dari SKU penuh.
+const modelFromSku = (sku) => (sku || "").split("-")[2] || "";
+
+// Perbandingan dua SKU berdasarkan nomor model — SKU tanpa model selalu
+// ditaruh di akhir. `arah` -1 untuk Z-A (dibalik), 1 untuk A-Z.
+const compareModel = (a, b, arah = 1) => {
+  const ma = modelFromSku(a.sku);
+  const mb = modelFromSku(b.sku);
+  if (!ma && !mb) return 0;
+  if (!ma) return 1;
+  if (!mb) return -1;
+  return arah * ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
+};
+
 export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengajuanRestock, session, setModal }) {
   if (sub === "menipis") return <StokMenipis skuMaster={skuMaster} pengajuanRestock={pengajuanRestock} session={session} setModal={setModal} />;
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "hitung") return <StokOpname skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "riwayat") return <RiwayatStok stockHistory={stockHistory} />;
-  return <StokBarang skuMaster={skuMaster} />;
+  return <StokBarang skuMaster={skuMaster} setModal={setModal} />;
 }
 
 // Sub-menu "Stok Menipis" — pindahan dari tab Dashboard (dulu "Barang
@@ -112,10 +131,11 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
 const STOK_SORT_OPTIONS = [
   { key: "tertinggi", label: "Stok Tertinggi" },
   { key: "terendah", label: "Stok Terendah" },
-  { key: "az", label: "SKU A-Z" },
+  { key: "az", label: "Model A-Z" },
+  { key: "za", label: "Model Z-A" },
 ];
 
-function StokBarang({ skuMaster }) {
+function StokBarang({ skuMaster, setModal }) {
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState("tertinggi");
 
@@ -129,7 +149,8 @@ function StokBarang({ skuMaster }) {
 
   const filtered = semua.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
   const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === "az") return a.sku.localeCompare(b.sku, "id", { numeric: true, sensitivity: "base" });
+    if (sortBy === "az") return compareModel(a, b, 1);
+    if (sortBy === "za") return compareModel(a, b, -1);
     if (sortBy === "terendah") return (a.stok || 0) - (b.stok || 0);
     return (b.stok || 0) - (a.stok || 0);
   });
@@ -214,7 +235,16 @@ function StokBarang({ skuMaster }) {
                 key={s.id}
                 className={`flex items-center gap-4 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
               >
-                <span className="font-mono text-xs text-slate-300 w-40 sm:w-56 truncate flex-shrink-0">{s.sku}</span>
+                <span className="flex-shrink-0 flex items-center gap-2 w-40 sm:w-56">
+                  <button
+                    type="button"
+                    onClick={() => setModal({ type: "detail-sku", item: s })}
+                    title="Lihat detail SKU"
+                    className="font-mono text-xs text-slate-300 truncate hover:underline hover:text-amber-300 text-left"
+                  >
+                    {s.sku}
+                  </button>
+                </span>
                 <div className="flex-1 hidden sm:block h-1.5 rounded-full bg-slate-800 overflow-hidden">
                   <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barWidth}%` }} />
                 </div>
@@ -266,8 +296,15 @@ function BarangKeluar({ skuMaster, setModal }) {
               key={s.id}
               className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
             >
-              <div>
-                <div className="font-mono text-xs text-slate-300">{s.sku}</div>
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setModal({ type: "detail-sku", item: s })}
+                  title="Lihat detail SKU"
+                  className="font-mono text-xs text-slate-300 truncate hover:underline hover:text-amber-300 text-left"
+                >
+                  {s.sku}
+                </button>
                 <div className="text-[11px] text-slate-500 mt-0.5">Stok: {s.stok || 0}</div>
               </div>
               <button
@@ -337,7 +374,16 @@ function StokOpname({ skuMaster, setModal }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 font-mono text-xs">{r.sku}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setModal({ type: "detail-sku", item: r })}
+                      title="Lihat detail SKU"
+                      className="hover:underline hover:text-amber-300 text-left"
+                    >
+                      {r.sku}
+                    </button>
+                  </td>
                   <td className="px-4 py-2.5">{r.stok}</td>
                   <td className="px-4 py-2.5">
                     <input
