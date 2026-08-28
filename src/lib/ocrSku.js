@@ -102,22 +102,29 @@ export function pecahSegmenPertama(segmen, master) {
   return null;
 }
 
-// Cocokkan teks bebas hasil OCR (mis. "TEMBAGA PREMIUM", "PUTIH", "P18CM") ke
-// Master Data. Dicek dulu apakah teksnya sudah PERSIS sama dengan kode-nya
-// sendiri (kasus ukuran "P18CM" dari pola PANJANG, lihat parseTeksSku), baru
-// kalau tidak ketemu, dicocokkan ke label seperti biasa. Balikan null kalau
+// Cocokkan teks bebas hasil OCR (mis. "TEMBAGA PREMIUM", "PUTIH", "P18CM",
+// "ROSEGOLD") ke Master Data. Dibandingkan dalam bentuk "dinormalisasi" —
+// spasi & tanda baca dibuang, huruf kecil semua — supaya "ROSEGOLD" (dari
+// foto, tanpa spasi) tetap cocok ke label Master Data yang ditulis "Rose
+// Gold" (pakai spasi); kalau dibandingkan apa adanya keduanya dianggap beda.
+// Urutan cek: kode dulu (kasus ukuran "P18CM" dari pola PANJANG, lihat
+// parseTeksSku), baru label persis, baru label sebagian. Balikan null kalau
 // tidak ada yang cukup mirip (biar tidak salah pasang kode yang jauh beda).
+const normalisasi = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
 export function cariKodeDariTeks(teks, list) {
   if (!teks) return null;
-  const t = teks.toLowerCase();
+  const t = normalisasi(teks);
+  if (!t) return null;
   const items = list || [];
-  const kodeExact = items.find((m) => t === m.kode.toLowerCase());
+  const kodeExact = items.find((m) => t === normalisasi(m.kode));
   if (kodeExact) return kodeExact.kode;
-  const exact = items.find((m) => t === m.label.toLowerCase());
+  const exact = items.find((m) => t === normalisasi(m.label));
   if (exact) return exact.kode;
-  const partial = items.find(
-    (m) => t.includes(m.label.toLowerCase()) || m.label.toLowerCase().includes(t)
-  );
+  const partial = items.find((m) => {
+    const label = normalisasi(m.label);
+    return label && (t.includes(label) || label.includes(t));
+  });
   return partial ? partial.kode : null;
 }
 
