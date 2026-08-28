@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2 } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
+import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks } from "../lib/ocrSku";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
 // tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya
@@ -1503,6 +1504,10 @@ function barisSkuBaru() {
     hargaManual: false, grosirManual: "", tengahManual: "", ecerManual: "",
     fotoFile: null, fotoPreview: null,
     rakCode: "",
+    // Status baca-otomatis dari foto (lihat handleFoto): "idle" | "membaca" | "selesai" | "gagal"
+    ocrStatus: "idle",
+    ocrRaw: "",
+    ocrTakTerbaca: [], // label field yang gagal dicocokkan ke Master Data, buat peringatan ke admin
   };
 }
 
@@ -1514,10 +1519,53 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
   const tambahRow = () => setRows((rs) => [...rs, barisSkuBaru()]);
   const hapusRow = (idx) => setRows((rs) => rs.filter((_, i) => i !== idx));
 
-  const handleFoto = (idx, e) => {
+  // Begitu foto dipilih, langsung dibaca otomatis (OCR) supaya Bahan/
+  // Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran terisi sendiri dari
+  // teks yang tercetak di foto (lihat lib/ocrSku.js) — admin tinggal cek
+  // sekilas lalu isi Rak. Kalau ada bagian yang tidak berhasil dicocokkan ke
+  // Master Data (mis. kode Bahan yang belum pernah didaftarkan), field itu
+  // dibiarkan kosong dan ditandai di ocrTakTerbaca supaya admin tahu harus
+  // isi manual, bukan diam-diam salah.
+  const handleFoto = async (idx, e) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    updateRow(idx, { fotoFile: f, fotoPreview: URL.createObjectURL(f) });
+    updateRow(idx, {
+      fotoFile: f,
+      fotoPreview: URL.createObjectURL(f),
+      ocrStatus: "membaca",
+      ocrRaw: "",
+      ocrTakTerbaca: [],
+    });
+
+    try {
+      const hasil = await bacaFotoSku(f);
+      const [seg1, seg2, seg3] = hasil.kodeSegments;
+      const decoded = seg1 ? pecahSegmenPertama(seg1, master) : null;
+      const warnaKode = cariKodeDariTeks(hasil.warnaText, master.warna || []);
+      const ukuranKode = cariKodeDariTeks(hasil.ukuranText, master.ukuran || []);
+
+      const takTerbaca = [];
+      if (seg1 && !decoded) takTerbaca.push("Bahan/Peruntukan/Kategori");
+      if (!seg2) takTerbaca.push("Subkategori");
+      if (hasil.warnaText && !warnaKode) takTerbaca.push("Warna");
+      if (hasil.ukuranText && !ukuranKode) takTerbaca.push("Ukuran");
+      if (hasil.kodeSegments.length === 0) takTerbaca.push("Kode SKU tidak ketemu di foto");
+
+      updateRow(idx, {
+        ...(decoded ? { bahan: decoded.bahan, peruntukan: decoded.peruntukan, kategori: decoded.kategori } : {}),
+        ...(seg2 ? { subkategori: seg2.toUpperCase() } : {}),
+        ...(seg3 ? { model: seg3, modelTouched: true } : {}),
+        ...(warnaKode ? { warna: warnaKode } : {}),
+        ...(ukuranKode ? { ukuran: ukuranKode } : {}),
+        jumlah: 1,
+        hargaAsli: 0,
+        ocrStatus: "selesai",
+        ocrRaw: hasil.raw,
+        ocrTakTerbaca: takTerbaca,
+      });
+    } catch (err) {
+      updateRow(idx, { ocrStatus: "gagal", ocrRaw: "" });
+    }
   };
 
   const skuOf = (r) =>
@@ -1537,9 +1585,12 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
     const occupant = r.rakCode ? (penempatan || []).find((p) => p.rak_code === r.rakCode) : null;
     const rakConflict = !!occupant;
     const manualLengkap = r.grosirManual !== "" && r.tengahManual !== "" && r.ecerManual !== "";
+    // Harga Asli boleh 0 (dipakai kalau foto sudah dibaca otomatis dan harga
+    // belinya memang belum/tidak diisi lewat foto) — yang penting bukan string
+    // kosong, supaya tidak kebobolan baris yang field-nya belum tersentuh.
     const lengkap =
       sku && !sudahAdaDiMaster && !dobelDiBatch &&
-      Number(r.jumlah) >= 1 && Number(r.hargaAsli) > 0 &&
+      Number(r.jumlah) >= 1 && r.hargaAsli !== "" && Number(r.hargaAsli) >= 0 &&
       r.fotoFile && r.rakCode && !rakConflict &&
       (!r.hargaManual || manualLengkap);
     return { sku, sudahAdaDiMaster, dobelDiBatch, occupant, rakConflict, lengkap };
@@ -1569,7 +1620,9 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
     <ModalShell title="Buat SKU Baru — Banyak Sekaligus" maxWidth="max-w-2xl" onClose={onClose}>
       <p className="text-[11px] text-slate-500 mb-3">
         Untuk produk baru yang belum pernah punya SKU sama sekali. Tiap baris langsung jadi SKU siap jual — foto
-        sudah ikut diupload di sini, jadi lewat tahap Verifikasi Foto &amp; Marketplace, langsung "Selesai".
+        sudah ikut diupload di sini, jadi lewat tahap Verifikasi Foto &amp; Marketplace, langsung "Selesai". Begitu
+        foto dipilih, Bahan/Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran dicoba dibaca otomatis dari teks di
+        foto — cek dulu hasilnya, lalu tinggal isi Rak.
       </p>
 
       <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
@@ -1723,7 +1776,7 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
                 </p>
               )}
 
-              <Field label="Foto SKU (wajib)">
+              <Field label="Foto SKU (wajib) — kode, bahan, warna & ukuran dibaca otomatis dari foto">
                 <input type="file" accept="image/*" onChange={(e) => handleFoto(idx, e)} className={inputClass} />
               </Field>
               {r.fotoPreview && (
@@ -1732,6 +1785,36 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
                   alt="Preview"
                   className="w-full max-h-40 object-contain rounded-lg border border-slate-800 bg-slate-950"
                 />
+              )}
+              {r.ocrStatus === "membaca" && (
+                <p className="flex items-center gap-1.5 text-[11px] text-amber-400">
+                  <Loader2 size={12} className="animate-spin" /> Membaca kode dari foto…
+                </p>
+              )}
+              {r.ocrStatus === "selesai" && r.ocrTakTerbaca.length === 0 && (
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                  <CheckCircle2 size={12} /> Terbaca otomatis dari foto — cek sebelum simpan.
+                </p>
+              )}
+              {r.ocrStatus === "selesai" && r.ocrTakTerbaca.length > 0 && (
+                <p className="flex items-start gap-1.5 text-[11px] text-orange-400">
+                  <ScanLine size={12} className="mt-0.5 flex-shrink-0" />
+                  Sebagian terbaca — <strong>{r.ocrTakTerbaca.join(", ")}</strong> tidak berhasil dicocokkan ke
+                  Master Data, isi manual di bawah.
+                </p>
+              )}
+              {r.ocrStatus === "gagal" && (
+                <p className="flex items-center gap-1.5 text-[11px] text-red-400">
+                  <AlertTriangle size={12} /> Gagal membaca foto — isi field di bawah manual.
+                </p>
+              )}
+              {r.ocrRaw && (
+                <details className="text-[10px] text-slate-500">
+                  <summary className="cursor-pointer hover:text-slate-400">Lihat teks mentah hasil baca foto</summary>
+                  <pre className="mt-1 whitespace-pre-wrap font-mono bg-slate-950 border border-slate-800 rounded-md p-2">
+                    {r.ocrRaw}
+                  </pre>
+                </details>
               )}
 
               <Field label="Rak">
