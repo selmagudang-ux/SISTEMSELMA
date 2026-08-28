@@ -17,6 +17,19 @@ export default defineConfig({
           if (id.includes("jszip")) return "vendor-jszip";
           if (id.includes("html2canvas")) return "vendor-html2canvas";
           if (id.includes("lucide-react")) return "vendor-icons";
+          // jsPDF cuma dipakai dari halaman SkuHarga & Keuangan (sudah
+          // lazy-loaded). Sengaja TIDAK dikasih nama chunk manual (beda
+          // dari jszip/html2canvas/tesseract di atas) — kalau dipaksa jadi
+          // chunk sendiri, Rollup menaruh helper dynamic-import bersama
+          // di situ, dan itu malah bikin seluruh chunk jsPDF ikut
+          // ke-preload eager. Dibiarkan `undefined` di sini supaya Rollup
+          // split otomatis mengikuti batas lazy-load halaman yang benar.
+          if (id.includes("jspdf")) return undefined;
+          // tesseract.js sendirian ~700KB — kalau ikut digabung ke "vendor"
+          // dia ikut ke-preload dari index.html walau importnya sudah
+          // dynamic di ocrSku.js. Dipisah sendiri supaya cuma diambil saat
+          // fitur scan-foto SKU benar-benar dipakai.
+          if (id.includes("tesseract")) return "vendor-tesseract";
           return "vendor";
         },
       },

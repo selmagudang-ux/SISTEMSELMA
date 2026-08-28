@@ -14,7 +14,11 @@
 // ditaruh di field yang sama seperti pengisian manual (Combobox dll), jadi
 // admin tetap bisa koreksi sebelum simpan kalau bacaannya meleset.
 
-import { createWorker } from "tesseract.js";
+// tesseract.js sengaja TIDAK diimpor statis di sini — library ini berat
+// (~700KB), dan tanpa dynamic import dia ikut masuk ke bundle awal yang
+// wajib didownload semua orang, walau fitur scan-foto ini cuma dipakai
+// sesekali. createWorker() di-import di dalam bacaFotoSku saja, jadi cuma
+// diambil browser pas tombol scan diklik.
 
 const bersih = (s) => (s || "").replace(/\s+/g, " ").trim();
 
@@ -132,6 +136,7 @@ export function cariKodeDariTeks(teks, list) {
 // dimatikan lagi tiap panggilan (dipakainya jarang & satu-satu per foto,
 // tidak perlu worker yang hidup terus).
 export async function bacaFotoSku(file) {
+  const { createWorker } = await import("tesseract.js");
   const worker = await createWorker("ind");
   try {
     const {

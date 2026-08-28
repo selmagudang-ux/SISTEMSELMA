@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight } from "lucide-react";
+import { useState, lazy, Suspense } from "react";
+import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2 } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
@@ -14,8 +14,31 @@ import {
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
-import { EditPesananForm, BuatPesanan } from "../pages/Grosir";
-import { NotaPesananModal, LabelPengirimanModal } from "../pages/NotaGrosir";
+
+// Lazy-load: EditPesananForm/BuatPesanan (pages/Grosir.jsx) dan
+// NotaPesananModal/LabelPengirimanModal (pages/NotaGrosir.jsx) sengaja
+// TIDAK diimpor statis di sini. Sebelumnya import statis ini bikin Vite
+// gagal code-split kedua file itu ke chunk terpisah (walau App.jsx sudah
+// lazy-load halaman Grosir), jadi semua kode Grosir ikut ke-bundle di
+// chunk awal yang wajib didownload semua pengguna. Dengan lazy() di sini,
+// kodenya cuma diambil browser saat salah satu modal ini benar-benar dibuka.
+const EditPesananForm = lazy(() => import("../pages/Grosir").then((m) => ({ default: m.EditPesananForm })));
+const BuatPesanan = lazy(() => import("../pages/Grosir").then((m) => ({ default: m.BuatPesanan })));
+const NotaPesananModal = lazy(() => import("../pages/NotaGrosir").then((m) => ({ default: m.NotaPesananModal })));
+const LabelPengirimanModal = lazy(() => import("../pages/NotaGrosir").then((m) => ({ default: m.LabelPengirimanModal })));
+
+// Fallback singkat dipakai selagi modal-modal yang di-lazy-load (Grosir/
+// NotaGrosir) sedang didownload — biasanya cuma sekejap sekali, tapi harus
+// tetap ada supaya tidak blank kalau koneksinya lambat.
+function ModalLoading({ onClose }) {
+  return (
+    <ModalShell title="Memuat…" onClose={onClose}>
+      <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-400">
+        <Loader2 size={18} className="animate-spin" /> Memuat…
+      </div>
+    </ModalShell>
+  );
+}
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
 // (status unduh foto) yang harus aman dari Rules of Hooks saat modal.type berpindah.
@@ -1122,14 +1145,16 @@ export default function ModalRouter({
     const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
     const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
     return (
-      <NotaPesananModal
-        pesanan={p}
-        pelanggan={pelanggan}
-        detailItems={detailItems}
-        totalDibayar={totalDibayar}
-        sisaHutang={sisaHutang}
-        onClose={close}
-      />
+      <Suspense fallback={<ModalLoading onClose={close} />}>
+        <NotaPesananModal
+          pesanan={p}
+          pelanggan={pelanggan}
+          detailItems={detailItems}
+          totalDibayar={totalDibayar}
+          sisaHutang={sisaHutang}
+          onClose={close}
+        />
+      </Suspense>
     );
   }
 
@@ -1139,13 +1164,15 @@ export default function ModalRouter({
     const toko = (tokoGrosir || []).find((x) => x.id === p.toko_id);
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
     return (
-      <LabelPengirimanModal
-        pesanan={p}
-        pelanggan={pelanggan}
-        toko={toko}
-        detailItems={detailItems}
-        onClose={close}
-      />
+      <Suspense fallback={<ModalLoading onClose={close} />}>
+        <LabelPengirimanModal
+          pesanan={p}
+          pelanggan={pelanggan}
+          toko={toko}
+          detailItems={detailItems}
+          onClose={close}
+        />
+      </Suspense>
     );
   }
 
@@ -1156,16 +1183,18 @@ export default function ModalRouter({
   // sebelumnya saat masih jadi halaman) — di sini cuma diteruskan saja.
   if (modal.type === "grosir-buat-pesanan") {
     return (
-      <BuatPesanan
-        pelangganGrosir={pelangganGrosir}
-        tokoGrosir={tokoGrosir}
-        produkManualGrosir={produkManualGrosir}
-        skuMaster={skuMaster}
-        penempatan={penempatan}
-        reload={reload}
-        showToast={showToast}
-        onClose={close}
-      />
+      <Suspense fallback={<ModalLoading onClose={close} />}>
+        <BuatPesanan
+          pelangganGrosir={pelangganGrosir}
+          tokoGrosir={tokoGrosir}
+          produkManualGrosir={produkManualGrosir}
+          skuMaster={skuMaster}
+          penempatan={penempatan}
+          reload={reload}
+          showToast={showToast}
+          onClose={close}
+        />
+      </Suspense>
     );
   }
 
@@ -1175,6 +1204,7 @@ export default function ModalRouter({
     const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
 
     return (
+      <Suspense fallback={<ModalLoading onClose={close} />}>
       <EditPesananForm
         pesanan={p}
         detailItems={detailItems}
@@ -1300,6 +1330,7 @@ export default function ModalRouter({
           }, "Pesanan diperbarui")
         }
       />
+      </Suspense>
     );
   }
 
