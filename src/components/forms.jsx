@@ -1656,6 +1656,48 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
                   <X size={14} />
                 </button>
               )}
+
+              <Field label="Foto SKU (wajib) — kode, bahan, warna & ukuran dibaca otomatis dari foto">
+                <input type="file" accept="image/*" onChange={(e) => handleFoto(idx, e)} className={inputClass} />
+              </Field>
+              {r.fotoPreview && (
+                <img
+                  src={r.fotoPreview}
+                  alt="Preview"
+                  className="w-full max-h-40 object-contain rounded-lg border border-slate-800 bg-slate-950"
+                />
+              )}
+              {r.ocrStatus === "membaca" && (
+                <p className="flex items-center gap-1.5 text-[11px] text-amber-400">
+                  <Loader2 size={12} className="animate-spin" /> Membaca kode dari foto…
+                </p>
+              )}
+              {r.ocrStatus === "selesai" && r.ocrTakTerbaca.length === 0 && (
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-400">
+                  <CheckCircle2 size={12} /> Terbaca otomatis dari foto — cek sebelum simpan.
+                </p>
+              )}
+              {r.ocrStatus === "selesai" && r.ocrTakTerbaca.length > 0 && (
+                <p className="flex items-start gap-1.5 text-[11px] text-orange-400">
+                  <ScanLine size={12} className="mt-0.5 flex-shrink-0" />
+                  Sebagian terbaca — <strong>{r.ocrTakTerbaca.join(", ")}</strong> tidak berhasil dicocokkan ke
+                  Master Data, isi manual di bawah.
+                </p>
+              )}
+              {r.ocrStatus === "gagal" && (
+                <p className="flex items-center gap-1.5 text-[11px] text-red-400">
+                  <AlertTriangle size={12} /> Gagal membaca foto — isi field di bawah manual.
+                </p>
+              )}
+              {r.ocrRaw && (
+                <details className="text-[10px] text-slate-500">
+                  <summary className="cursor-pointer hover:text-slate-400">Lihat teks mentah hasil baca foto</summary>
+                  <pre className="mt-1 whitespace-pre-wrap font-mono bg-slate-950 border border-slate-800 rounded-md p-2">
+                    {r.ocrRaw}
+                  </pre>
+                </details>
+              )}
+
               <p className="text-[11px] uppercase text-slate-500 font-semibold">SKU Baru {idx + 1}</p>
 
               <Field label="Ketik Kode Gabungan SKU (opsional)">
@@ -1774,47 +1816,6 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
                 <p className="text-[11px] text-slate-500">
                   Ecer otomatis: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(Number(r.hargaAsli), settings).ecer)}</span>
                 </p>
-              )}
-
-              <Field label="Foto SKU (wajib) — kode, bahan, warna & ukuran dibaca otomatis dari foto">
-                <input type="file" accept="image/*" onChange={(e) => handleFoto(idx, e)} className={inputClass} />
-              </Field>
-              {r.fotoPreview && (
-                <img
-                  src={r.fotoPreview}
-                  alt="Preview"
-                  className="w-full max-h-40 object-contain rounded-lg border border-slate-800 bg-slate-950"
-                />
-              )}
-              {r.ocrStatus === "membaca" && (
-                <p className="flex items-center gap-1.5 text-[11px] text-amber-400">
-                  <Loader2 size={12} className="animate-spin" /> Membaca kode dari foto…
-                </p>
-              )}
-              {r.ocrStatus === "selesai" && r.ocrTakTerbaca.length === 0 && (
-                <p className="flex items-center gap-1.5 text-[11px] text-emerald-400">
-                  <CheckCircle2 size={12} /> Terbaca otomatis dari foto — cek sebelum simpan.
-                </p>
-              )}
-              {r.ocrStatus === "selesai" && r.ocrTakTerbaca.length > 0 && (
-                <p className="flex items-start gap-1.5 text-[11px] text-orange-400">
-                  <ScanLine size={12} className="mt-0.5 flex-shrink-0" />
-                  Sebagian terbaca — <strong>{r.ocrTakTerbaca.join(", ")}</strong> tidak berhasil dicocokkan ke
-                  Master Data, isi manual di bawah.
-                </p>
-              )}
-              {r.ocrStatus === "gagal" && (
-                <p className="flex items-center gap-1.5 text-[11px] text-red-400">
-                  <AlertTriangle size={12} /> Gagal membaca foto — isi field di bawah manual.
-                </p>
-              )}
-              {r.ocrRaw && (
-                <details className="text-[10px] text-slate-500">
-                  <summary className="cursor-pointer hover:text-slate-400">Lihat teks mentah hasil baca foto</summary>
-                  <pre className="mt-1 whitespace-pre-wrap font-mono bg-slate-950 border border-slate-800 rounded-md p-2">
-                    {r.ocrRaw}
-                  </pre>
-                </details>
               )}
 
               <Field label="Rak">
