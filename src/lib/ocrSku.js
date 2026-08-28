@@ -1,9 +1,10 @@
 // Baca otomatis kode SKU dari foto produk — dipakai di "Buat SKU Baru —
 // Banyak Sekaligus" (khusus superadmin) supaya admin tidak perlu ketik ulang
-// Bahan/Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran satu-satu, karena
-// semua info itu sudah tercetak di foto (lihat template desain SELMA, mis.
-// "BAHAN.TEMBAGA PREMIUM WARNA.PUTIH", "PANJANG.-/+17CM", dan kode
-// "214284 TDGL-GJR-130" di pojok kanan bawah foto).
+// Bahan/Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran/Harga satu-satu,
+// karena semua info itu sudah tercetak di foto (lihat template desain SELMA,
+// mis. "BAHAN.TEMBAGA PREMIUM WARNA.PERHIASAN", "PANJANG.-/+18CM", dan kode
+// "4256112 TDGL-GJR-135" di pojok kanan bawah foto — angka di depan kode SKU
+// itu KODE HARGA, lihat decodeKodeHarga di bawah).
 //
 // Alur: foto -> OCR (tesseract.js, jalan di browser, tidak perlu server) ->
 // teks mentah -> di-parse dengan pola regex sesuai template -> kode disamakan
@@ -23,23 +24,56 @@ export function parseTeksSku(rawText) {
 
   // Kode SKU: pola AAAA-BBB-CCC (huruf/angka, minimal 2 tanda strip),
   // biasanya muncul sebagai baris terakhir, kadang didahului nomor referensi
-  // internal (mis. "214284 TDGL-GJR-130" -> yang diambil cuma "TDGL-GJR-130").
+  // internal (mis. "4256112 TDGL-GJR-135" -> yang diambil cuma "TDGL-GJR-135").
   const codeMatch = teks.match(/\b([A-Z0-9]{2,}-[A-Z0-9]+-[A-Z0-9]+(?:-[A-Z0-9]+)*)\b/);
   const kodeSegments = codeMatch ? codeMatch[1].split("-") : [];
+
+  // Nomor 6-8 digit tepat sebelum kode SKU itu KODE HARGA (lihat
+  // decodeKodeHarga), mis. "4256112 TDGL-GJR-135" -> kodeHargaText: "4256112".
+  const kodeHargaMatch = teks.match(/\b(\d{6,8})\s+[A-Z0-9]{2,}-[A-Z0-9]+-[A-Z0-9]+/);
 
   // "BAHAN.TEMBAGA PREMIUM WARNA.PUTIH" -> bahanText: "TEMBAGA PREMIUM"
   const bahanMatch = teks.match(/BAHAN[.:\s]+([A-Z ]+?)(?=\s*WARNA|\s*PANJANG|\s*UKURAN|$)/);
   // -> warnaText: "PUTIH"
   const warnaMatch = teks.match(/WARNA[.:\s]+([A-Z ]+?)(?=\s*PANJANG|\s*UKURAN|\s*BAHAN|$)/);
-  // "PANJANG.-/+17CM KELEBIHAN R.-/+3CM" -> ukuranText: "17CM"
-  const panjangMatch = teks.match(/PANJANG[.:\s]+[^0-9]*([0-9]+\s*CM)/) || teks.match(/UKURAN[.:\s]+([A-Z0-9 ]+)/);
+  // "PANJANG.-/+18CM KELEBIHAN R.-/+3CM" -> kode Ukuran dibentuk sebagai
+  // "P18CM" (P + angka + CM), PERSIS format kode Ukuran di Master Data (lihat
+  // contoh kode gabungan "TDGL-GJR-216-PER-P18CM") — bukan cuma "18CM" —
+  // supaya cocok langsung ke kode, tidak perlu tebak-tebak lewat label.
+  const panjangMatch = teks.match(/PANJANG[.:\s]+[^0-9]*([0-9]+)\s*CM/);
+  // Fallback kalau template fotonya pakai "UKURAN.XXX" (bukan "PANJANG"),
+  // mis. ukuran baju S/M/L — di sini teksnya dipakai apa adanya, dicocokkan
+  // ke label seperti biasa (bukan ke kode "P..CM").
+  const ukuranAltMatch = !panjangMatch ? teks.match(/UKURAN[.:\s]+([A-Z0-9 ]+)/) : null;
 
   return {
     raw: rawText,
-    kodeSegments, // mis. ["TDGL", "GJR", "130"]
+    kodeSegments, // mis. ["TDGL", "GJR", "135"]
+    kodeHargaText: kodeHargaMatch ? kodeHargaMatch[1] : "",
     bahanText: bahanMatch ? bersih(bahanMatch[1]) : "",
     warnaText: warnaMatch ? bersih(warnaMatch[1]) : "",
-    ukuranText: panjangMatch ? bersih(panjangMatch[1]) : "",
+    ukuranText: panjangMatch ? `P${panjangMatch[1]}CM` : ukuranAltMatch ? bersih(ukuranAltMatch[1]) : "",
+  };
+}
+
+// Kode harga tercetak di foto (mis. "4256112") BUKAN barcode acak — ini price
+// code yang sengaja disamarkan biar harga jual tidak kelihatan jelas di foto,
+// tapi tetap bisa dibaca ulang oleh admin sendiri. Aturannya (dikonfirmasi
+// user): 2 digit paling depan = Harga Grosir x1000, 2 digit berikutnya =
+// Harga Tengah x1000, sisa 2-3 digit di belakang = Harga Ecer x1000.
+// Contoh: "4256112" -> "42"=Grosir 42rb, "56"=Tengah 56rb, "112"=Ecer 112rb.
+export function decodeKodeHarga(kode) {
+  if (!kode) return null;
+  const digits = String(kode).replace(/\D/g, "");
+  if (digits.length < 6 || digits.length > 8) return null;
+  const depan = digits.slice(0, 2);
+  const tengah = digits.slice(2, 4);
+  const belakang = digits.slice(4);
+  if (belakang.length < 2 || belakang.length > 3) return null;
+  return {
+    grosir: Number(depan) * 1000,
+    tengah: Number(tengah) * 1000,
+    ecer: Number(belakang) * 1000,
   };
 }
 
@@ -68,13 +102,17 @@ export function pecahSegmenPertama(segmen, master) {
   return null;
 }
 
-// Cocokkan teks bebas hasil OCR (mis. "TEMBAGA PREMIUM", "PUTIH", "17CM") ke
-// kode Master Data yang label-nya paling mirip. Balikan null kalau tidak ada
-// yang cukup mirip (biar tidak salah pasang kode yang jauh beda).
+// Cocokkan teks bebas hasil OCR (mis. "TEMBAGA PREMIUM", "PUTIH", "P18CM") ke
+// Master Data. Dicek dulu apakah teksnya sudah PERSIS sama dengan kode-nya
+// sendiri (kasus ukuran "P18CM" dari pola PANJANG, lihat parseTeksSku), baru
+// kalau tidak ketemu, dicocokkan ke label seperti biasa. Balikan null kalau
+// tidak ada yang cukup mirip (biar tidak salah pasang kode yang jauh beda).
 export function cariKodeDariTeks(teks, list) {
   if (!teks) return null;
   const t = teks.toLowerCase();
   const items = list || [];
+  const kodeExact = items.find((m) => t === m.kode.toLowerCase());
+  if (kodeExact) return kodeExact.kode;
   const exact = items.find((m) => t === m.label.toLowerCase());
   if (exact) return exact.kode;
   const partial = items.find(

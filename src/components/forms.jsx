@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
-import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks } from "../lib/ocrSku";
+import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
 // tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya
@@ -1519,6 +1519,55 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
   const tambahRow = () => setRows((rs) => [...rs, barisSkuBaru()]);
   const hapusRow = (idx) => setRows((rs) => rs.filter((_, i) => i !== idx));
 
+  // ------------------------------------------------------------
+  // GENERATOR KOMBINASI — buat banyak baris sekaligus dari 1 produk dasar
+  // (Bahan/Peruntukan/Kategori/Subkategori/Model) disilangkan dengan banyak
+  // Warna x banyak Ukuran yang dicentang. Tiap kombinasi jadi 1 baris SKU;
+  // baris yang sudah ada (foto, jumlah, dst per baris tetap harus diisi satu
+  // per satu setelah digenerate, sesuai alur form ini). Ini cuma bantu isi
+  // Bahan/Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran + default
+  // Jumlah/Harga secara otomatis, supaya tidak perlu ketik ulang per baris.
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [genBase, setGenBase] = useState({ bahan: "", peruntukan: "", kategori: "", subkategori: "", model: "1" });
+  const [genWarna, setGenWarna] = useState([]);
+  const [genUkuran, setGenUkuran] = useState([]);
+  const [genJumlah, setGenJumlah] = useState(1);
+  const [genHarga, setGenHarga] = useState("");
+
+  const toggleGenWarna = (kode) =>
+    setGenWarna((ws) => (ws.includes(kode) ? ws.filter((w) => w !== kode) : [...ws, kode]));
+  const toggleGenUkuran = (kode) =>
+    setGenUkuran((us) => (us.includes(kode) ? us.filter((u) => u !== kode) : [...us, kode]));
+
+  const genBaseLengkap = genBase.bahan && genBase.peruntukan && genBase.kategori && genBase.subkategori && genBase.model;
+  const genWarnaList = genWarna.length > 0 ? genWarna : [""];
+  const genUkuranList = genUkuran.length > 0 ? genUkuran : [""];
+  const genCombosCount = genWarnaList.length * genUkuranList.length;
+
+  const handleGenerate = () => {
+    if (!genBaseLengkap || genCombosCount < 1) return;
+    const generated = [];
+    for (const warna of genWarnaList) {
+      for (const ukuran of genUkuranList) {
+        generated.push({
+          ...barisSkuBaru(),
+          bahan: genBase.bahan,
+          peruntukan: genBase.peruntukan,
+          kategori: genBase.kategori,
+          subkategori: genBase.subkategori,
+          model: genBase.model,
+          modelTouched: true,
+          warna,
+          ukuran,
+          jumlah: Number(genJumlah) || 1,
+          hargaAsli: genHarga === "" ? "" : Number(genHarga),
+        });
+      }
+    }
+    setRows(generated);
+    setShowGenerator(false);
+  };
+
   // Begitu foto dipilih, langsung dibaca otomatis (OCR) supaya Bahan/
   // Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran terisi sendiri dari
   // teks yang tercetak di foto (lihat lib/ocrSku.js) — admin tinggal cek
@@ -1543,12 +1592,20 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
       const decoded = seg1 ? pecahSegmenPertama(seg1, master) : null;
       const warnaKode = cariKodeDariTeks(hasil.warnaText, master.warna || []);
       const ukuranKode = cariKodeDariTeks(hasil.ukuranText, master.ukuran || []);
+      // Kode harga (mis. "4256112" sebelum kode SKU) didekode jadi
+      // Grosir/Tengah/Ecer — lihat decodeKodeHarga di ocrSku.js. Harga Asli
+      // (harga beli) TETAP selalu 0 dari OCR karena memang tidak pernah
+      // tercetak di foto — cuma harga jual (Grosir/Tengah/Ecer) yang ada di
+      // kode ini, jadi diisi lewat toggle "Isi harga manual" (superadmin only,
+      // dan form ini memang khusus superadmin).
+      const hargaKode = hasil.kodeHargaText ? decodeKodeHarga(hasil.kodeHargaText) : null;
 
       const takTerbaca = [];
       if (seg1 && !decoded) takTerbaca.push("Bahan/Peruntukan/Kategori");
       if (!seg2) takTerbaca.push("Subkategori");
       if (hasil.warnaText && !warnaKode) takTerbaca.push("Warna");
       if (hasil.ukuranText && !ukuranKode) takTerbaca.push("Ukuran");
+      if (hasil.kodeHargaText && !hargaKode) takTerbaca.push("Kode Harga");
       if (hasil.kodeSegments.length === 0) takTerbaca.push("Kode SKU tidak ketemu di foto");
 
       updateRow(idx, {
@@ -1559,6 +1616,9 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
         ...(ukuranKode ? { ukuran: ukuranKode } : {}),
         jumlah: 1,
         hargaAsli: 0,
+        ...(hargaKode
+          ? { hargaManual: true, grosirManual: String(hargaKode.grosir), tengahManual: String(hargaKode.tengah), ecerManual: String(hargaKode.ecer) }
+          : {}),
         ocrStatus: "selesai",
         ocrRaw: hasil.raw,
         ocrTakTerbaca: takTerbaca,
@@ -1624,6 +1684,108 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
         foto dipilih, Bahan/Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran dicoba dibaca otomatis dari teks di
         foto — cek dulu hasilnya, lalu tinggal isi Rak.
       </p>
+
+      <button
+        type="button"
+        onClick={() => setShowGenerator((v) => !v)}
+        className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg mb-3"
+      >
+        <ScanLine size={14} /> {showGenerator ? "Tutup Generator Kombinasi" : "Generate Banyak SKU dari Kombinasi Warna & Ukuran"}
+      </button>
+
+      {showGenerator && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2.5 mb-4">
+          <p className="text-[11px] text-slate-400">
+            Isi produk dasarnya sekali, centang Warna &amp; Ukuran yang mau dibuat — tiap kombinasi jadi 1 baris SKU
+            di bawah (baris yang sudah ada akan diganti). Foto tetap wajib diisi satu-satu per baris setelah ini.
+          </p>
+
+          <div className="grid grid-cols-2 gap-x-3">
+            <Field label="Bahan">
+              <Combobox value={genBase.bahan} onChange={(v) => setGenBase((b) => ({ ...b, bahan: v }))} options={master.bahan || []} tipe="bahan" reload={reload} />
+            </Field>
+            <Field label="Peruntukan">
+              <Combobox value={genBase.peruntukan} onChange={(v) => setGenBase((b) => ({ ...b, peruntukan: v }))} options={master.peruntukan || []} tipe="peruntukan" reload={reload} />
+            </Field>
+            <Field label="Kategori">
+              <Combobox value={genBase.kategori} onChange={(v) => setGenBase((b) => ({ ...b, kategori: v }))} options={master.kategori || []} tipe="kategori" reload={reload} />
+            </Field>
+            <Field label="Subkategori">
+              <Combobox value={genBase.subkategori} onChange={(v) => setGenBase((b) => ({ ...b, subkategori: v }))} options={master.subkategori || []} tipe="subkategori" reload={reload} />
+            </Field>
+          </div>
+
+          <Field label="Model (kode bebas)">
+            <input
+              className={inputClass}
+              value={genBase.model}
+              onChange={(e) => setGenBase((b) => ({ ...b, model: e.target.value }))}
+            />
+          </Field>
+
+          <Field label={`Warna (${genWarna.length || "semua kosong — 1 kombinasi tanpa warna"})`}>
+            <div className="flex flex-wrap gap-1.5">
+              {(master.warna || []).map((w) => (
+                <button
+                  key={w.kode}
+                  type="button"
+                  onClick={() => toggleGenWarna(w.kode)}
+                  className={`px-2 py-1 rounded-md text-[11px] font-mono border ${
+                    genWarna.includes(w.kode)
+                      ? "bg-amber-500/20 border-amber-500 text-amber-400"
+                      : "border-slate-800 text-slate-400 hover:border-slate-600"
+                  }`}
+                >
+                  {w.kode}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label={`Ukuran (${genUkuran.length || "semua kosong — 1 kombinasi tanpa ukuran"})`}>
+            <div className="flex flex-wrap gap-1.5">
+              {(master.ukuran || []).map((u) => (
+                <button
+                  key={u.kode}
+                  type="button"
+                  onClick={() => toggleGenUkuran(u.kode)}
+                  className={`px-2 py-1 rounded-md text-[11px] font-mono border ${
+                    genUkuran.includes(u.kode)
+                      ? "bg-amber-500/20 border-amber-500 text-amber-400"
+                      : "border-slate-800 text-slate-400 hover:border-slate-600"
+                  }`}
+                >
+                  {u.kode}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-x-3">
+            <Field label="Jumlah default per SKU">
+              <input
+                type="number"
+                min="1"
+                className={inputClass}
+                value={genJumlah}
+                onChange={(e) => setGenJumlah(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="Harga Asli default (opsional)">
+              <InputRupiah value={genHarga} onChange={setGenHarga} />
+            </Field>
+          </div>
+
+          <button
+            type="button"
+            disabled={!genBaseLengkap || genCombosCount < 1}
+            onClick={handleGenerate}
+            className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-xs py-2 rounded-lg"
+          >
+            <Plus size={13} /> Generate {genCombosCount} SKU
+          </button>
+        </div>
+      )}
 
       <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
         {rows.map((r, idx) => {
