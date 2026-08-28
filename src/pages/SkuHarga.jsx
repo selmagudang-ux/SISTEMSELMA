@@ -11,7 +11,7 @@ export default function SkuHarga({
   sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
   barangRusak, pesananMasuk,
 }) {
-  if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} />;
+  if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} session={session} />;
   if (sub === "kategori") return <MasterData master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
   // Sub-menu "Barang Reject" — dulu menu top-level terpisah bernama "Rusak",
   // sekarang dipindahkan ke sini karena datanya sama-sama seputar SKU.
@@ -28,13 +28,26 @@ export default function SkuHarga({
   );
 }
 
-function BuatSkuList({ items, setModal }) {
+function BuatSkuList({ items, setModal, session }) {
   const belumSku = items.filter((i) => i.stage === "sku");
+  // Input banyak sekaligus khusus superadmin — role lain tetap pakai alur
+  // Buat SKU satu-satu seperti biasa dari daftar barang di bawah.
+  const isSuperadmin = session?.role === "superadmin";
   return (
     <div>
       <PageHeader
         title="Buat SKU"
         description="Cari dulu apakah SKU-nya sudah ada. Kalau ketemu, stok tinggal ditambahkan. Kalau belum ada, buat SKU baru."
+        action={
+          isSuperadmin ? (
+            <button
+              onClick={() => setModal({ type: "buat-sku-banyak" })}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Boxes size={14} /> SKU Baru — Banyak Sekaligus
+            </button>
+          ) : null
+        }
       />
       {belumSku.length === 0 ? (
         <EmptyState label="Tidak ada barang yang menunggu pembuatan SKU." />

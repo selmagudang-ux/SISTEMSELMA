@@ -1483,6 +1483,294 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   );
 }
 
+// ============================================================
+// BUAT SKU BARU — BANYAK SEKALIGUS. Beda dari SkuEntryForm di atas (yang
+// selalu terikat ke satu `item` hasil Barang Masuk/Barang Datang): form ini
+// dipakai untuk bikin SKU BARU dari nol, tanpa perlu catat Barang Masuk
+// dulu — dipakai kalau sekaligus ada banyak produk baru yang mau
+// didaftarkan. Tiap baris = 1 SKU baru lengkap: kode SKU + jumlah stok awal
+// + harga asli + FOTO (wajib, supaya tidak perlu mampir ke tahap Verifikasi
+// Foto lagi) + rak penempatan. Begitu disimpan, tiap baris langsung jadi SKU
+// "Selesai" (lewati tahap Verifikasi Foto & Marketplace) — lihat alasan
+// lengkap di ModalRouter "buat-sku-banyak".
+function barisSkuBaru() {
+  return {
+    bahan: "", peruntukan: "", kategori: "", subkategori: "",
+    model: "1", modelTouched: false,
+    warna: "", ukuran: "",
+    jumlah: 1,
+    hargaAsli: "",
+    hargaManual: false, grosirManual: "", tengahManual: "", ecerManual: "",
+    fotoFile: null, fotoPreview: null,
+    rakCode: "",
+  };
+}
+
+export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penempatan, reload, onClose, onSubmit, saving, session }) {
+  const isSuperadmin = session?.role === "superadmin";
+  const [rows, setRows] = useState([barisSkuBaru()]);
+
+  const updateRow = (idx, patch) => setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const tambahRow = () => setRows((rs) => [...rs, barisSkuBaru()]);
+  const hapusRow = (idx) => setRows((rs) => rs.filter((_, i) => i !== idx));
+
+  const handleFoto = (idx, e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    updateRow(idx, { fotoFile: f, fotoPreview: URL.createObjectURL(f) });
+  };
+
+  const skuOf = (r) =>
+    r.bahan && r.peruntukan && r.kategori && r.subkategori && r.model && r.warna && r.ukuran
+      ? `${r.bahan}${r.peruntukan}${r.kategori}-${r.subkategori}-${r.model}-${r.warna}-${r.ukuran}`
+      : null;
+
+  // Info turunan per baris: kode SKU, apakah sudah ada di Master Barang atau
+  // dobel dengan baris lain di batch ini, dan apakah rak yang dipilih sudah
+  // dipakai SKU lain (occupant) — di form ini SKU-nya selalu baru, jadi rak
+  // yang sudah terisi SKU apapun dianggap konflik (tidak ada mode "gabung"
+  // seperti di TempatkanRakForm, biar aman dipakai banyak baris sekaligus).
+  const rowInfos = rows.map((r, idx) => {
+    const sku = skuOf(r);
+    const sudahAdaDiMaster = sku ? (skuMaster || []).some((s) => s.sku === sku) : false;
+    const dobelDiBatch = sku ? rows.findIndex((x, i) => i !== idx && skuOf(x) === sku) !== -1 : false;
+    const occupant = r.rakCode ? (penempatan || []).find((p) => p.rak_code === r.rakCode) : null;
+    const rakConflict = !!occupant;
+    const manualLengkap = r.grosirManual !== "" && r.tengahManual !== "" && r.ecerManual !== "";
+    const lengkap =
+      sku && !sudahAdaDiMaster && !dobelDiBatch &&
+      Number(r.jumlah) >= 1 && Number(r.hargaAsli) > 0 &&
+      r.fotoFile && r.rakCode && !rakConflict &&
+      (!r.hargaManual || manualLengkap);
+    return { sku, sudahAdaDiMaster, dobelDiBatch, occupant, rakConflict, lengkap };
+  });
+
+  const semuaLengkap = rows.length > 0 && rowInfos.every((info) => info.lengkap);
+
+  const handleSubmit = () => {
+    onSubmit(
+      rows.map((r, i) => ({
+        bahan: r.bahan, peruntukan: r.peruntukan, kategori: r.kategori, subkategori: r.subkategori,
+        model: r.model, warna: r.warna, ukuran: r.ukuran,
+        sku: rowInfos[i].sku,
+        jumlah: Number(r.jumlah),
+        hargaAsli: Number(r.hargaAsli),
+        hargaManual:
+          isSuperadmin && r.hargaManual
+            ? { grosir: Number(r.grosirManual), tengah: Number(r.tengahManual), ecer: Number(r.ecerManual) }
+            : null,
+        fotoFile: r.fotoFile,
+        rakCode: r.rakCode,
+      }))
+    );
+  };
+
+  return (
+    <ModalShell title="Buat SKU Baru — Banyak Sekaligus" maxWidth="max-w-2xl" onClose={onClose}>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Untuk produk baru yang belum pernah punya SKU sama sekali. Tiap baris langsung jadi SKU siap jual — foto
+        sudah ikut diupload di sini, jadi lewat tahap Verifikasi Foto &amp; Marketplace, langsung "Selesai".
+      </p>
+
+      <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+        {rows.map((r, idx) => {
+          const info = rowInfos[idx];
+          const modelSuggestion = (() => {
+            if (!r.bahan || !r.peruntukan || !r.kategori || !r.subkategori) return null;
+            const numbers = new Set(
+              (skuMaster || [])
+                .filter(
+                  (s) =>
+                    s.bahan === r.bahan && s.peruntukan === r.peruntukan &&
+                    s.kategori === r.kategori && s.subkategori === r.subkategori
+                )
+                .map((s) => Number(s.model))
+                .filter((n) => Number.isFinite(n) && n > 0)
+            );
+            let next = 1;
+            while (numbers.has(next)) next++;
+            return String(next);
+          })();
+
+          return (
+            <div key={idx} className="rounded-lg border border-slate-800 p-3 space-y-2 relative">
+              {rows.length > 1 && (
+                <button
+                  onClick={() => hapusRow(idx)}
+                  className="absolute top-2 right-2 text-slate-500 hover:text-red-400"
+                  title="Hapus baris ini"
+                >
+                  <X size={14} />
+                </button>
+              )}
+              <p className="text-[11px] uppercase text-slate-500 font-semibold">SKU Baru {idx + 1}</p>
+
+              <Field label="Ketik Kode Gabungan SKU (opsional)">
+                <KodeGabunganInput
+                  segments={[
+                    { options: master.bahan || [] },
+                    { options: master.peruntukan || [] },
+                    { options: master.kategori || [] },
+                    { options: master.subkategori || [], sep: "-" },
+                  ]}
+                  tailOptions={{ warna: master.warna || [], ukuran: master.ukuran || [] }}
+                  onPick={([b, p, k, sub], tail) => {
+                    const patch = { bahan: b.kode, peruntukan: p.kode, kategori: k.kode, subkategori: sub.kode };
+                    if (tail.model) {
+                      patch.model = tail.model;
+                      patch.modelTouched = true;
+                    }
+                    if (tail.warna) patch.warna = tail.warna.kode;
+                    if (tail.ukuran) patch.ukuran = tail.ukuran.kode;
+                    updateRow(idx, patch);
+                  }}
+                  placeholder="mis. TDGL-GJR-216-PER-P18CM"
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-x-3">
+                <Field label="Bahan">
+                  <Combobox value={r.bahan} onChange={(v) => updateRow(idx, { bahan: v })} options={master.bahan || []} tipe="bahan" reload={reload} />
+                </Field>
+                <Field label="Peruntukan">
+                  <Combobox value={r.peruntukan} onChange={(v) => updateRow(idx, { peruntukan: v })} options={master.peruntukan || []} tipe="peruntukan" reload={reload} />
+                </Field>
+                <Field label="Kategori">
+                  <Combobox value={r.kategori} onChange={(v) => updateRow(idx, { kategori: v })} options={master.kategori || []} tipe="kategori" reload={reload} />
+                </Field>
+                <Field label="Subkategori">
+                  <Combobox value={r.subkategori} onChange={(v) => updateRow(idx, { subkategori: v })} options={master.subkategori || []} tipe="subkategori" reload={reload} />
+                </Field>
+                <Field label="Warna">
+                  <Combobox value={r.warna} onChange={(v) => updateRow(idx, { warna: v })} options={master.warna || []} tipe="warna" reload={reload} />
+                </Field>
+                <Field label="Ukuran">
+                  <Combobox value={r.ukuran} onChange={(v) => updateRow(idx, { ukuran: v })} options={master.ukuran || []} tipe="ukuran" reload={reload} />
+                </Field>
+              </div>
+
+              <Field label="Model (kode bebas)">
+                <input
+                  className={inputClass}
+                  value={r.model}
+                  onChange={(e) => updateRow(idx, { model: e.target.value, modelTouched: true })}
+                />
+                {modelSuggestion && (
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    Rekomendasi: <span className="text-amber-400 font-medium">{modelSuggestion}</span>
+                    {r.model !== modelSuggestion && (
+                      <button
+                        type="button"
+                        onClick={() => updateRow(idx, { model: modelSuggestion, modelTouched: false })}
+                        className="ml-2 text-amber-400 hover:underline"
+                      >
+                        Pakai
+                      </button>
+                    )}
+                  </p>
+                )}
+              </Field>
+
+              {info.sudahAdaDiMaster && (
+                <p className="text-[11px] text-red-400">
+                  SKU <span className="font-mono">{info.sku}</span> sudah ada di Master Barang — pakai menu "Buat SKU" biasa untuk menambah stok.
+                </p>
+              )}
+              {info.dobelDiBatch && (
+                <p className="text-[11px] text-red-400">SKU ini sama dengan baris lain di bawah — ubah salah satunya.</p>
+              )}
+              {info.sku && !info.sudahAdaDiMaster && !info.dobelDiBatch && (
+                <p className="text-[11px] text-slate-500">
+                  SKU: <span className="font-mono text-amber-400">{info.sku}</span>
+                </p>
+              )}
+
+              <Field label="Jumlah (stok awal)">
+                <input
+                  type="number"
+                  min="1"
+                  className={inputClass}
+                  value={r.jumlah}
+                  onChange={(e) => updateRow(idx, { jumlah: Number(e.target.value) })}
+                />
+              </Field>
+
+              <Field label="Harga Asli">
+                <InputRupiah value={r.hargaAsli} onChange={(v) => updateRow(idx, { hargaAsli: v })} />
+              </Field>
+
+              {isSuperadmin && (
+                <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={r.hargaManual}
+                    onChange={(e) => updateRow(idx, { hargaManual: e.target.checked })}
+                    className="accent-amber-500"
+                  />
+                  Isi harga Grosir/Tengah/Ecer manual (lewati rumus otomatis)
+                </label>
+              )}
+              {isSuperadmin && r.hargaManual && (
+                <div className="grid grid-cols-3 gap-x-2">
+                  <Field label="Grosir"><InputRupiah value={r.grosirManual} onChange={(v) => updateRow(idx, { grosirManual: v })} /></Field>
+                  <Field label="Tengah"><InputRupiah value={r.tengahManual} onChange={(v) => updateRow(idx, { tengahManual: v })} /></Field>
+                  <Field label="Ecer"><InputRupiah value={r.ecerManual} onChange={(v) => updateRow(idx, { ecerManual: v })} /></Field>
+                </div>
+              )}
+              {!r.hargaManual && settings && Number(r.hargaAsli) > 0 && (
+                <p className="text-[11px] text-slate-500">
+                  Ecer otomatis: <span className="text-slate-300 font-medium">{fmtRp(calcHarga(Number(r.hargaAsli), settings).ecer)}</span>
+                </p>
+              )}
+
+              <Field label="Foto SKU (wajib)">
+                <input type="file" accept="image/*" onChange={(e) => handleFoto(idx, e)} className={inputClass} />
+              </Field>
+              {r.fotoPreview && (
+                <img
+                  src={r.fotoPreview}
+                  alt="Preview"
+                  className="w-full max-h-40 object-contain rounded-lg border border-slate-800 bg-slate-950"
+                />
+              )}
+
+              <Field label="Rak">
+                <SearchableSelect
+                  value={r.rakCode}
+                  onChange={(v) => updateRow(idx, { rakCode: v })}
+                  options={(rakList || []).map((rk) => ({ value: rk.code, label: rk.code }))}
+                  placeholder="Ketik atau pilih rak…"
+                />
+              </Field>
+              {info.rakConflict && (
+                <p className="text-[11px] text-red-400">
+                  Rak <span className="font-mono">{r.rakCode}</span> sudah dipakai SKU{" "}
+                  <span className="font-mono">{info.occupant.sku}</span> — pilih rak lain.
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={tambahRow}
+        className="w-full mt-3 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
+      >
+        <Plus size={14} /> Tambah SKU
+      </button>
+
+      <button
+        disabled={saving || !semuaLengkap}
+        onClick={handleSubmit}
+        className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : `Simpan ${rows.length} SKU`}
+      </button>
+    </ModalShell>
+  );
+}
+
 export function TempatkanRakForm({ item, rakList, penempatan, skuMaster, onClose, onSubmit, saving }) {
   // Rekomendasi rak untuk "barang lama": kalau SKU ini sudah pernah ditempatkan
   // di rak sebelumnya, tawarkan rak yang sama itu sebagai default (penempatan

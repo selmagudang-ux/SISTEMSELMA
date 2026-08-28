@@ -8,7 +8,7 @@ import {
   detailModelPesanan,
 } from "../lib/api";
 import {
-  BarangMasukForm, SkuEntryForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, BarangKeluarForm,
+  BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
   BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, ResponPengajuanForm,
 } from "./forms";
@@ -2660,6 +2660,122 @@ export default function ModalRouter({
               }
             }
           }, `${rows.length} SKU dibuat/ditambah dari 1 baris (pecah ukuran)`)
+        }
+      />
+    );
+  }
+
+  // BUAT SKU BARU — BANYAK SEKALIGUS. Beda dari "buat-sku" di atas: tidak
+  // terikat ke satu `item` Barang Masuk, langsung bikin SKU dari nol untuk
+  // banyak produk baru sekaligus. Tiap baris sudah bawa fotonya sendiri
+  // (diupload di sini), jadi TIDAK perlu mampir ke tahap Verifikasi Foto /
+  // Marketplace — item-nya langsung dibuat di stage "selesai" (permintaan
+  // eksplisit user: karena foto sudah lengkap saat dibuat, kelengkapan datanya
+  // sudah terpenuhi; Marketplace sendiri cuma soal listing manual terpisah
+  // yang memang belum tentu sudah dilakukan, jadi sengaja dilewati juga
+  // sesuai konfirmasi user, bukan tahap yang datanya kurang).
+  if (modal.type === "buat-sku-banyak") {
+    return (
+      <BuatSkuBanyakForm
+        master={master}
+        settings={settings}
+        skuMaster={skuMaster}
+        rakList={rakList}
+        penempatan={penempatan}
+        reload={reload}
+        onClose={close}
+        saving={saving}
+        session={session}
+        onSubmit={(rows) =>
+          run(async () => {
+            if (!settings) throw new Error("Pengaturan harga belum termuat");
+
+            // Kode master_data baru (bahan/peruntukan/dst yang diketik manual,
+            // belum ada di daftar) di-dedupe dulu supaya kode yang sama tidak
+            // diposting berkali-kali kalau dipakai di beberapa baris SKU sekaligus.
+            const kodeSudahDibuat = new Set();
+            const tipeFields = ["bahan", "peruntukan", "kategori", "subkategori", "warna", "ukuran"];
+            for (const row of rows) {
+              for (const tipe of tipeFields) {
+                const kode = row[tipe];
+                const key = `${tipe}:${kode}`;
+                const sudahAda = (master[tipe] || []).some((m) => m.kode === kode);
+                if (kode && !sudahAda && !kodeSudahDibuat.has(key)) {
+                  kodeSudahDibuat.add(key);
+                  await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: kode }) });
+                }
+              }
+            }
+
+            for (const row of rows) {
+              const existing = skuMaster.find((s) => s.sku === row.sku);
+              if (existing) {
+                throw new Error(
+                  `SKU ${row.sku} ternyata sudah ada di Master Barang — dibatalkan, tidak ada baris yang disimpan setelah ini.`
+                );
+              }
+
+              const skuSafe = row.sku.replace(/[^a-zA-Z0-9-_]/g, "-");
+              const ext = (row.fotoFile.name.split(".").pop() || "jpg").toLowerCase();
+              const fotoUrl = await sbUploadFoto(row.fotoFile, `${skuSafe}.${ext}`);
+
+              const hargaOtomatis = calcHarga(row.hargaAsli, settings);
+              const harga = row.hargaManual
+                ? { ...hargaOtomatis, grosir: row.hargaManual.grosir, tengah: row.hargaManual.tengah, ecer: row.hargaManual.ecer }
+                : hargaOtomatis;
+
+              await sb("sku_master", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku: row.sku,
+                  bahan: row.bahan,
+                  peruntukan: row.peruntukan,
+                  kategori: row.kategori,
+                  subkategori: row.subkategori,
+                  model: row.model,
+                  warna: row.warna,
+                  ukuran: row.ukuran,
+                  harga_asli: row.hargaAsli,
+                  harga_dasar: harga.hargaDasar,
+                  hpp: harga.hpp,
+                  grosir: harga.grosir,
+                  tengah: harga.tengah,
+                  ecer: harga.ecer,
+                  stok: row.jumlah,
+                }),
+              });
+              await sb("stock_history", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku: row.sku,
+                  type: "masuk",
+                  qty_before: 0,
+                  qty_change: row.jumlah,
+                  qty_after: row.jumlah,
+                  note: "SKU baru dibuat (input banyak sekaligus)",
+                }),
+              });
+              // Item dibuat langsung di stage "selesai" — tidak lewat Barang
+              // Masuk, Verifikasi Foto, atau Marketplace sama sekali (lihat
+              // catatan di atas modal.type ini).
+              await sb("items", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  gudang: "Pembelian",
+                  jumlah: row.jumlah,
+                  sku: row.sku,
+                  foto_url: fotoUrl,
+                  rak_code: row.rakCode,
+                  stage: "selesai",
+                }),
+              });
+              await sb("penempatan", {
+                method: "POST",
+                body: JSON.stringify({ sku: row.sku, rak_code: row.rakCode, qty: row.jumlah }),
+              });
+            }
+          }, `${rows.length} SKU baru dibuat, langsung Selesai`)
         }
       />
     );
