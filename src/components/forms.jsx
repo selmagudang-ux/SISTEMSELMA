@@ -376,17 +376,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   );
 }
 
-// Form "Pesan Barang" — dicatat begitu ORDER ke supplier dibuat, bukan pas
-// barangnya sudah sampai. Sengaja TIDAK minta rincian model/qty karena pada
-// prakteknya itu baru ketahuan begitu barang dibuka fisiknya — saat pesan,
-// yang biasanya sudah pasti cuma toko & harga kesepakatan. Rincian model,
-// qty, dan foto bon diisi belakangan lewat "Konfirmasi Datang" (dibuka dari
-// baris pesanan ini di halaman Barang Datang) begitu barangnya benar-benar
-// di tangan — supaya riwayat toko/harga/kodenya tetap satu, nyambung dari
-// pesan sampai datang, bukan dua catatan terpisah yang tidak berhubungan.
-// `initial` (opsional) dipakai untuk pre-fill saat form dibuka dari pengajuan
-// restock yang sudah disetujui — supplier/catatan diisi otomatis dari riwayat
-// SKU tersebut, tapi tetap bisa diubah manual sebelum disimpan.
+
 export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
