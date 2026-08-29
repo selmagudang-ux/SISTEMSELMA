@@ -465,19 +465,9 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
   );
 }
 
-// Form "Konfirmasi Datang" — dibuka dari baris pesanan (dibuat lewat
-// PesanBarangForm di atas) yang statusnya masih Menunggu/Sebagian Datang.
-// Isi rincian model & qty yang SEBENARNYA datang di sini, persis pola
-// BarangDatangForm — bedanya, submit-nya meng-UPDATE baris pesanan yang SAMA
-// (bukan bikin baris baru), supaya kode/toko/riwayatnya tetap satu dari pesan
-// sampai datang. Total harga kesepakatan waktu pesan ditampilkan sebagai info
-// di atas (BUKAN harga per pcs — itu memang beda satuan), jadi harga per pcs
-// tiap model tetap harus diisi manual di sini setelah rinciannya jelas.
+
 export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
   const today = new Date().toISOString().slice(0, 10);
-  // harga_kesepakatan = kolom baru (persisten, tidak hilang setelah konfirmasi).
-  // Fallback ke detail_model[0].harga_total_pesan untuk pesanan lama yang
-  // dibuat sebelum kolom ini ada.
   const totalHargaAwal = Number(pesanan?.harga_kesepakatan ?? pesanan?.detail_model?.[0]?.harga_total_pesan) || 0;
   const [tanggal, setTanggal] = useState(today);
   const [fotoBon, setFotoBon] = useState(null);
@@ -506,9 +496,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
     (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
-  // Selisih antara total harga kesepakatan (waktu pesan) dan total harga
-  // barang yang benar-benar datang (qty total x harga/pcs, diisi di atas).
-  // Cuma relevan kalau ada harga kesepakatan tercatat (totalHargaAwal > 0).
+
   const adaKesepakatan = totalHargaAwal > 0;
   const selisih = adaKesepakatan ? totalNilai - totalHargaAwal : 0;
   const adaSelisih = adaKesepakatan && selisih !== 0;
