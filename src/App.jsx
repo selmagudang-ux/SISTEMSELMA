@@ -124,22 +124,28 @@ function MainApp({ session, onLogout }) {
     setTimeout(() => setToast(null), duration);
   };
 
-  // Cegah akses ke menu (atau sub-menu) yang tidak diizinkan untuk role ini
-  // (mis. lewat state lama, atau URL/badge yang mengarah ke sub tertentu).
-  // Setiap pindah menu, halaman di-reload penuh (bukan cuma ganti state React)
-  // supaya datanya selalu segar — menu tujuan disimpan dulu ke sessionStorage
-  // supaya setelah reload langsung terbuka di menu itu (lihat useState nav).
+  // Setiap pindah menu, datanya tetap di-refresh (loadAll()) supaya selalu
+  // segar — penting karena sistemnya sering dipakai barengan beberapa staf
+  // sekaligus. TAPI sebelumnya ini dilakukan lewat window.location.reload()
+  // (reload total browser: layar putih kedip, seluruh JS di-parse ulang dari
+  // nol, sesi login di-cek ulang) — sekarang cukup ganti state `nav` dan
+  // panggil loadAll() di background. Selama data lama masih ada di memori
+  // (items.length > 0), tampilan lama tetap kelihatan sambil data baru
+  // dimuat (lihat kondisi "loading && items.length === 0" di bawah), jadi
+  // pindah menu jadi terasa instan, bukan nunggu reload total tiap kali.
   const navigate = (menu, sub) => {
     if (!allowed.includes(menu)) return;
     const subs = allowedSubMenus(session.role, menu);
     if (subs && sub && !subs.includes(sub)) return;
 
-    if (menu === nav.menu && (sub || null) === (nav.sub || null)) return; // sudah di menu itu, tidak perlu reload
+    if (menu === nav.menu && (sub || null) === (nav.sub || null)) return; // sudah di menu itu, tidak perlu apa-apa
 
     try {
       sessionStorage.setItem("selma-nav", JSON.stringify({ menu, sub: sub || null }));
     } catch {}
-    window.location.reload();
+    setModal(null); // dulu ikut ke-reset otomatis gara-gara reload total — sekarang ditutup manual
+    setNav({ menu, sub: sub || null });
+    loadAll();
   };
 
   // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
