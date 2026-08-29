@@ -5,9 +5,7 @@ import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganD
 import { rakForSku } from "../pages/Rak";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
 
-// Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
-// tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya
-// dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
+// Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
 export const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
 
 // Satu baris input barang masuk (dipakai berulang saat mode banyak-sekaligus).
@@ -19,8 +17,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   const today = new Date().toISOString().slice(0, 10);
   const isSuperadmin = session?.role === "superadmin";
 
-  // Mode banyak sekaligus: khusus superadmin. Role lain tetap pakai form
-  // satu-satu seperti biasa.
+  // Mode banyak sekaligus: khusus superadmin. Role lain tetap pakai form satu-satu seperti biasa.
   const [multi, setMulti] = useState(false);
   const [baris_, setBaris] = useState([baris(today)]);
 
@@ -170,17 +167,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   );
 }
 
-// Form "Input Barang Datang" — SATU LANGKAH: dicatat begitu barang fisik
-// sudah di tangan (bukan janji pesanan dulu baru dikonfirmasi belakangan).
-// Tiap model: "Qty Datang" = TOTAL fisik yang diterima (baik + rusak jadi
-// satu angka), "Qty Rusak" = berapa dari total itu yang rusak (subset dari
-// Qty Datang, jadi tidak boleh lebih besar). SELURUH Qty Datang (totalnya)
-// ikut masuk ke alur barang (items, tahap "sku") supaya bisa lanjut dibuatkan
-// SKU seperti biasa. Begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"),
-// qty rusak otomatis dipisah: qty final (Qty Datang - Qty Rusak) yang masuk
-// stok/rak, dan qty rusak tercatat ke menu "Rusak" (SKU + qty rusak).
-// Satu baris model dalam input barang datang (dipakai berulang di
-// BarangDatangForm).
+
 function barisBarangDatang() {
   return { nama: "", jumlahDatang: 1, jumlahRusak: 0, alasanRusak: "", harga: "" };
 }
@@ -208,21 +195,15 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   const tambahModel = () => setModels((rows) => [...rows, barisBarangDatang()]);
   const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
 
-  // totalDatang = total fisik yang diterima (sudah termasuk rusak, karena
-  // Qty Datang sekarang memang diisi sebagai TOTAL, bukan cuma yang baik).
+ 
   const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
   const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
-  // Nilai (Rp) dihitung dari TOTAL qty datang (bukan cuma qty baik) — qty
-  // rusak tetap ikut dihitung nilainya, karena barang rusak yang diterima
-  // tetap dianggap dibeli/dibayar penuh (klaim ke supplier itu urusan
-  // terpisah, bukan pengurang nilai pembelian di sini).
   const totalNilai = models.reduce(
     (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
-  // Qty rusak tidak boleh lebih besar dari qty datang di baris yang sama —
-  // rusak itu bagian DARI yang datang, jadi maksimal ya sebanyak yang datang.
+.
   const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
   const valid =
     models.length > 0 &&
