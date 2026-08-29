@@ -624,87 +624,127 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
 function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
   const bisaSetujui = ["owner", "superadmin"].includes(session?.role);
 
-  const menunggu = [...(pengajuanRestock || [])]
+  const semua = pengajuanRestock || [];
+  const menunggu = [...semua]
     .filter((p) => p.status === "menunggu")
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const riwayat = [...(pengajuanRestock || [])]
+  const riwayat = [...semua]
     .filter((p) => p.status !== "menunggu")
     .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at))
     .slice(0, 10);
 
+  const bulanIni = hariIniIso().slice(0, 7);
+  const disetujuiBulanIni = semua.filter(
+    (p) => p.status === "disetujui" && (p.direspon_pada || "").slice(0, 7) === bulanIni
+  ).length;
+  const ditolakBulanIni = semua.filter(
+    (p) => p.status === "ditolak" && (p.direspon_pada || "").slice(0, 7) === bulanIni
+  ).length;
+
   return (
     <div>
-      <div className="mb-6">
-        <div className="text-xs font-semibold text-slate-400 mb-2">
-          Menunggu Persetujuan{!bisaSetujui && " (diajukan tim gudang)"}
-        </div>
-        {menunggu.length === 0 ? (
-          <EmptyState label="Tidak ada pengajuan yang menunggu persetujuan." />
-        ) : (
-          <div className="rounded-xl border border-slate-800 overflow-hidden">
-            {menunggu.map((p, i) => (
-              <div key={p.id} className={`px-4 py-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-mono text-xs text-slate-200 truncate">{p.sku}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">
-                      Diajukan oleh {p.dibuat_oleh_nama || "—"} · stok saat itu{" "}
-                      {p.stok_saat_ajuan}
-                      {p.catatan ? ` · "${p.catatan}"` : ""}
-                    </div>
-                  </div>
-                  {bisaSetujui ? (
-                    <button
-                      onClick={() => setModal({ type: "respon-pengajuan-restock", item: p })}
-                      className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md border border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
-                    >
-                      Tinjau
-                    </button>
-                  ) : (
-                    <Badge color="amber">Menunggu</Badge>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <StatCard label="Menunggu Ditinjau" value={menunggu.length} accent="text-amber-400" icon={ClipboardList} iconColor="text-amber-500" />
+        <StatCard label="Disetujui Bulan Ini" value={disetujuiBulanIni} accent="text-emerald-400" icon={PackageCheck} iconColor="text-emerald-500" />
+        <StatCard label="Ditolak Bulan Ini" value={ditolakBulanIni} accent="text-red-400" icon={Trash2} iconColor="text-red-500" />
       </div>
 
-      {riwayat.length > 0 && (
+      <div className="grid lg:grid-cols-2 gap-6">
         <div>
-          <div className="text-xs font-semibold text-slate-400 mb-2">Riwayat Pengajuan Terakhir</div>
-          <div className="rounded-xl border border-slate-800 overflow-hidden">
-            {riwayat.map((p, i) => (
-              <div
-                key={p.id}
-                className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-              >
-                <div className="min-w-0">
-                  <div className="font-mono text-xs text-slate-300 truncate">{p.sku}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Diajukan oleh {p.dibuat_oleh_nama || "—"}
-                    {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
+          <div className="text-xs font-semibold text-slate-400 mb-2">
+            Menunggu Persetujuan{!bisaSetujui && " (diajukan tim gudang)"}
+          </div>
+          {menunggu.length === 0 ? (
+            <EmptyState label="Tidak ada pengajuan yang menunggu persetujuan." />
+          ) : (
+            <div className="space-y-2">
+              {menunggu.map((p) => (
+                <div
+                  key={p.id}
+                  className="rounded-xl border border-amber-500/25 bg-amber-500/[0.04] px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex items-start gap-2.5">
+                      <div className="mt-0.5 w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                        <Boxes size={14} className="text-amber-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
+                        </div>
+                        {p.catatan && (
+                          <div className="text-[11px] text-slate-400 mt-1 italic">"{p.catatan}"</div>
+                        )}
+                      </div>
+                    </div>
+                    {bisaSetujui ? (
+                      <button
+                        onClick={() => setModal({ type: "respon-pengajuan-restock", item: p })}
+                        className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950"
+                      >
+                        Tinjau
+                      </button>
+                    ) : (
+                      <Badge color="amber">Menunggu</Badge>
+                    )}
                   </div>
                 </div>
-                <div className="shrink-0 flex items-center gap-2">
-                  <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
-                    {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
-                  </Badge>
-                  {bisaSetujui && (
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold text-slate-400 mb-2">Riwayat Pengajuan Terakhir</div>
+          {riwayat.length === 0 ? (
+            <EmptyState label="Belum ada riwayat pengajuan yang direspon." />
+          ) : (
+            <div className="rounded-xl border border-slate-800 divide-y divide-slate-800/70 overflow-hidden">
+              {riwayat.map((p) => (
+                <div key={p.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-semibold text-slate-200 truncate">{p.sku}</span>
+                        <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
+                          {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
+                        </Badge>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        Diajukan oleh {p.dibuat_oleh_nama || "—"}
+                        {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
+                      </div>
+                    </div>
+                    {bisaSetujui && (
+                      <button
+                        onClick={() => setModal({ type: "hapus-pengajuan-restock", item: p })}
+                        title="Hapus riwayat ini"
+                        className="text-slate-600 hover:text-red-400 p-1 shrink-0"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {bisaSetujui && p.status === "disetujui" && (
                     <button
-                      onClick={() => setModal({ type: "hapus-pengajuan-restock", item: p })}
-                      title="Hapus riwayat ini"
-                      className="text-slate-500 hover:text-red-400 p-1"
+                      onClick={() =>
+                        setModal({
+                          type: "pesan-barang",
+                          item: { dariRestock: true, sku: p.sku, catatanRestock: p.catatan },
+                        })
+                      }
+                      className="mt-2 flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
                     >
-                      <Trash2 size={13} />
+                      <ShoppingBag size={12} /> Buat Pesan Barang
                     </button>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

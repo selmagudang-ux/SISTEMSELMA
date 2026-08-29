@@ -403,20 +403,29 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
 // baris pesanan ini di halaman Barang Datang) begitu barangnya benar-benar
 // di tangan — supaya riwayat toko/harga/kodenya tetap satu, nyambung dari
 // pesan sampai datang, bukan dua catatan terpisah yang tidak berhubungan.
-export function PesanBarangForm({ onClose, onSubmit, saving }) {
+// `initial` (opsional) dipakai untuk pre-fill saat form dibuka dari pengajuan
+// restock yang sudah disetujui — supplier/catatan diisi otomatis dari riwayat
+// SKU tersebut, tapi tetap bisa diubah manual sebelum disimpan.
+export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
-  const [supplier, setSupplier] = useState("");
+  const [supplier, setSupplier] = useState(initial.supplier || "");
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
   const [harga, setHarga] = useState("");
-  const [catatan, setCatatan] = useState("");
+  const [catatan, setCatatan] = useState(initial.catatan || "");
 
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
   const valid = supplier.trim() && (jenis !== "Lainnya" || jenisLainnya.trim());
 
   return (
     <ModalShell title="Pesan Barang ke Supplier" onClose={onClose}>
+      {initial.dariRestock && (
+        <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-[11px] text-amber-300">
+          Dibuat dari pengajuan restock SKU <span className="font-mono font-semibold">{initial.sku}</span> yang
+          sudah disetujui. Toko/supplier & catatan sudah diisi otomatis dari riwayat — cek dulu sebelum kirim.
+        </div>
+      )}
       <p className="text-[11px] text-slate-500 -mt-1 mb-3">
         Dicatat begitu order dibuat — biasanya baru tahu toko &amp; harganya dulu. Rincian model
         &amp; qty diisi belakangan lewat "Konfirmasi Datang" begitu barangnya benar-benar sampai.

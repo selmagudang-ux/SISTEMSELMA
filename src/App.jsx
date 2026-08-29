@@ -309,7 +309,15 @@ function MainApp({ session, onLogout }) {
     (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
   ).length;
 
+  // Badge di menu Dashboard (sidebar) = jumlah pengajuan restock yang masih
+  // "menunggu" — supaya owner/superadmin langsung lihat ada yang perlu
+  // ditinjau tanpa harus buka halaman Dashboard dulu (reminder pasif, bukan
+  // notifikasi push — cukup untuk kasus ini karena menu "dashboard" memang
+  // sudah dibatasi hanya untuk role owner/superadmin di ROLE_MENUS).
+  const pengajuanMenungguCount = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
+
   const sidebarBadges = withParentBadges(NAV, {
+    dashboard: pengajuanMenungguCount,
     "sku-harga.buat": stageCounts.sku,
     "rak.tempatkan": tanpaRakCount,
     "rak.gudang": sisaGudangList.length,

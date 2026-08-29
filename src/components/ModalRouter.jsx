@@ -1938,10 +1938,34 @@ export default function ModalRouter({
   // gampang dibedakan riwayat mana yang lewat pra-order vs dicatat langsung.
   // ------------------------------------------------------------------
   if (modal.type === "pesan-barang") {
+    // Dibuka dari tombol "Buat Pesan Barang" di pengajuan restock yang sudah
+    // disetujui (Dashboard > Menunggu Persetujuan) — modal.item berisi
+    // { dariRestock: true, sku, catatanRestock }. Cari toko/supplier langganan
+    // SKU ini dari riwayat barang datang terakhir (logika sama seperti di
+    // "respon-pengajuan-restock" di bawah), supaya form-nya sudah terisi.
+    const restock = modal.item?.dariRestock ? modal.item : null;
+    let prefill = null;
+    if (restock) {
+      const itemTerbaru = (items || [])
+        .filter((i) => i.sku === restock.sku && i.kode_bon)
+        .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
+      const pesananTerkait = itemTerbaru
+        ? (pesananMasuk || []).find((pm) => pm.kode_bon === itemTerbaru.kode_bon)
+        : null;
+      prefill = {
+        dariRestock: true,
+        sku: restock.sku,
+        supplier: pesananTerkait?.supplier || "",
+        catatan: [`Restock SKU ${restock.sku}`, restock.catatanRestock]
+          .filter(Boolean)
+          .join(" — "),
+      };
+    }
     return (
       <PesanBarangForm
         onClose={close}
         saving={saving}
+        initial={prefill || undefined}
         onSubmit={({ tanggal, supplier, jenis, totalHarga, catatan }) =>
           run(async () => {
             const kodePesan = nextKode(pesananMasuk, "kode_bon", "PSN-");
