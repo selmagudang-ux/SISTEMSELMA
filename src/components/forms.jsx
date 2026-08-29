@@ -5,7 +5,9 @@ import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganD
 import { rakForSku } from "../pages/Rak";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
 
-// Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
+// Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
+// tetap fleksibel untuk kasus di luar Pembelian & Retur. Diexport supaya
+// dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
 export const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
 
 // Satu baris input barang masuk (dipakai berulang saat mode banyak-sekaligus).
@@ -17,7 +19,8 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   const today = new Date().toISOString().slice(0, 10);
   const isSuperadmin = session?.role === "superadmin";
 
-  // Mode banyak sekaligus: khusus superadmin. Role lain tetap pakai form satu-satu seperti biasa.
+  // Mode banyak sekaligus: khusus superadmin. Role lain tetap pakai form
+  // satu-satu seperti biasa.
   const [multi, setMulti] = useState(false);
   const [baris_, setBaris] = useState([baris(today)]);
 
@@ -167,7 +170,17 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   );
 }
 
-
+// Form "Input Barang Datang" — SATU LANGKAH: dicatat begitu barang fisik
+// sudah di tangan (bukan janji pesanan dulu baru dikonfirmasi belakangan).
+// Tiap model: "Qty Datang" = TOTAL fisik yang diterima (baik + rusak jadi
+// satu angka), "Qty Rusak" = berapa dari total itu yang rusak (subset dari
+// Qty Datang, jadi tidak boleh lebih besar). SELURUH Qty Datang (totalnya)
+// ikut masuk ke alur barang (items, tahap "sku") supaya bisa lanjut dibuatkan
+// SKU seperti biasa. Begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"),
+// qty rusak otomatis dipisah: qty final (Qty Datang - Qty Rusak) yang masuk
+// stok/rak, dan qty rusak tercatat ke menu "Rusak" (SKU + qty rusak).
+// Satu baris model dalam input barang datang (dipakai berulang di
+// BarangDatangForm).
 function barisBarangDatang() {
   return { nama: "", jumlahDatang: 1, jumlahRusak: 0, alasanRusak: "", harga: "" };
 }
@@ -195,15 +208,21 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   const tambahModel = () => setModels((rows) => [...rows, barisBarangDatang()]);
   const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
 
- 
+  // totalDatang = total fisik yang diterima (sudah termasuk rusak, karena
+  // Qty Datang sekarang memang diisi sebagai TOTAL, bukan cuma yang baik).
   const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
   const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
+  // Nilai (Rp) dihitung dari TOTAL qty datang (bukan cuma qty baik) — qty
+  // rusak tetap ikut dihitung nilainya, karena barang rusak yang diterima
+  // tetap dianggap dibeli/dibayar penuh (klaim ke supplier itu urusan
+  // terpisah, bukan pengurang nilai pembelian di sini).
   const totalNilai = models.reduce(
     (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
-.
+  // Qty rusak tidak boleh lebih besar dari qty datang di baris yang sama —
+  // rusak itu bagian DARI yang datang, jadi maksimal ya sebanyak yang datang.
   const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
   const valid =
     models.length > 0 &&
@@ -376,7 +395,17 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
   );
 }
 
-
+// Form "Pesan Barang" — dicatat begitu ORDER ke supplier dibuat, bukan pas
+// barangnya sudah sampai. Sengaja TIDAK minta rincian model/qty karena pada
+// prakteknya itu baru ketahuan begitu barang dibuka fisiknya — saat pesan,
+// yang biasanya sudah pasti cuma toko & harga kesepakatan. Rincian model,
+// qty, dan foto bon diisi belakangan lewat "Konfirmasi Datang" (dibuka dari
+// baris pesanan ini di halaman Barang Datang) begitu barangnya benar-benar
+// di tangan — supaya riwayat toko/harga/kodenya tetap satu, nyambung dari
+// pesan sampai datang, bukan dua catatan terpisah yang tidak berhubungan.
+// `initial` (opsional) dipakai untuk pre-fill saat form dibuka dari pengajuan
+// restock yang sudah disetujui — supplier/catatan diisi otomatis dari riwayat
+// SKU tersebut, tapi tetap bisa diubah manual sebelum disimpan.
 export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
@@ -465,9 +494,19 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
   );
 }
 
-
+// Form "Konfirmasi Datang" — dibuka dari baris pesanan (dibuat lewat
+// PesanBarangForm di atas) yang statusnya masih Menunggu/Sebagian Datang.
+// Isi rincian model & qty yang SEBENARNYA datang di sini, persis pola
+// BarangDatangForm — bedanya, submit-nya meng-UPDATE baris pesanan yang SAMA
+// (bukan bikin baris baru), supaya kode/toko/riwayatnya tetap satu dari pesan
+// sampai datang. Total harga kesepakatan waktu pesan ditampilkan sebagai info
+// di atas (BUKAN harga per pcs — itu memang beda satuan), jadi harga per pcs
+// tiap model tetap harus diisi manual di sini setelah rinciannya jelas.
 export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
   const today = new Date().toISOString().slice(0, 10);
+  // harga_kesepakatan = kolom baru (persisten, tidak hilang setelah konfirmasi).
+  // Fallback ke detail_model[0].harga_total_pesan untuk pesanan lama yang
+  // dibuat sebelum kolom ini ada.
   const totalHargaAwal = Number(pesanan?.harga_kesepakatan ?? pesanan?.detail_model?.[0]?.harga_total_pesan) || 0;
   const [tanggal, setTanggal] = useState(today);
   const [fotoBon, setFotoBon] = useState(null);
@@ -496,7 +535,9 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
     (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
-
+  // Selisih antara total harga kesepakatan (waktu pesan) dan total harga
+  // barang yang benar-benar datang (qty total x harga/pcs, diisi di atas).
+  // Cuma relevan kalau ada harga kesepakatan tercatat (totalHargaAwal > 0).
   const adaKesepakatan = totalHargaAwal > 0;
   const selisih = adaKesepakatan ? totalNilai - totalHargaAwal : 0;
   const adaSelisih = adaKesepakatan && selisih !== 0;
