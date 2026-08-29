@@ -3,7 +3,7 @@ import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
-  Activity, Truck, ShoppingBag, DollarSign,
+  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -666,13 +666,28 @@ function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex items-start gap-2.5">
                       <div className="mt-0.5 w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-                        <Boxes size={14} className="text-amber-500" />
+                        {p.jenis === "zona" ? (
+                          <LayoutGrid size={14} className="text-amber-500" />
+                        ) : (
+                          <Boxes size={14} className="text-amber-500" />
+                        )}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
-                          {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
-                        </div>
+                        {p.jenis === "zona" ? (
+                          <>
+                            <div className="text-xs font-semibold text-slate-100 truncate">Zona: {p.zona}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              {p.dibuat_oleh_nama || "—"} · {p.jumlah_rak_kosong} rak kosong
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
+                            </div>
+                          </>
+                        )}
                         {p.catatan && (
                           <div className="text-[11px] text-slate-400 mt-1 italic">"{p.catatan}"</div>
                         )}
@@ -706,13 +721,18 @@ function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold text-slate-200 truncate">{p.sku}</span>
+                        {p.jenis === "zona" ? (
+                          <span className="text-xs font-semibold text-slate-200 truncate">Zona: {p.zona}</span>
+                        ) : (
+                          <span className="font-mono text-xs font-semibold text-slate-200 truncate">{p.sku}</span>
+                        )}
                         <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
                           {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
                         </Badge>
                       </div>
                       <div className="text-[11px] text-slate-500 mt-1">
                         Diajukan oleh {p.dibuat_oleh_nama || "—"}
+                        {p.jenis === "zona" ? ` · ${p.jumlah_rak_kosong} rak kosong` : ""}
                         {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
                       </div>
                     </div>
@@ -726,7 +746,7 @@ function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
                       </button>
                     )}
                   </div>
-                  {bisaSetujui && p.status === "disetujui" && (
+                  {bisaSetujui && p.status === "disetujui" && p.jenis !== "zona" && (
                     <button
                       onClick={() =>
                         setModal({

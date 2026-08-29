@@ -514,7 +514,17 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "rak" && (
-                <Rak sub={nav.sub || "tempatkan"} items={items} rak={rak} penempatan={penempatan} skuMaster={skuMaster} master={master} setModal={setModal} />
+                <Rak
+                  sub={nav.sub || "tempatkan"}
+                  items={items}
+                  rak={rak}
+                  penempatan={penempatan}
+                  skuMaster={skuMaster}
+                  master={master}
+                  pengajuanRestock={pengajuanRestock}
+                  session={session}
+                  setModal={setModal}
+                />
               )}
               {nav.menu === "cetak-label" && (
                 <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} master={master} />

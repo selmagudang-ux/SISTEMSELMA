@@ -10,7 +10,7 @@ import {
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
-  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, ResponPengajuanForm,
+  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -408,6 +408,7 @@ export default function ModalRouter({
             await sb("pengajuan_restock", {
               method: "POST",
               body: JSON.stringify({
+                jenis: "sku",
                 sku: s.sku,
                 stok_saat_ajuan: s.stok || 0,
                 catatan,
@@ -417,6 +418,39 @@ export default function ModalRouter({
               }),
             });
           }, "Pengajuan restock terkirim ke owner")
+        }
+      />
+    );
+  }
+
+  // Ajukan ke owner dari Peta Rak — bukan per SKU, tapi per ZONA (mis. "Gelang
+  // Jurai"): melaporkan jumlah rak kosong di zona itu sebagai perkiraan jumlah
+  // model baru yang bisa dibeli untuk mengisinya. Ditandai jenis:"zona" supaya
+  // beda alur tampil dari pengajuan per-SKU, tapi tetap satu tabel & satu alur
+  // Setujui/Tolak yang sama (lihat "respon-pengajuan-restock" di bawah).
+  if (modal.type === "ajukan-restock-zona") {
+    const { zona, jumlahKosong } = modal.item;
+    return (
+      <AjukanRestockZonaForm
+        zona={zona}
+        jumlahKosong={jumlahKosong}
+        onClose={close}
+        saving={saving}
+        onSubmit={(catatan) =>
+          run(async () => {
+            await sb("pengajuan_restock", {
+              method: "POST",
+              body: JSON.stringify({
+                jenis: "zona",
+                zona,
+                jumlah_rak_kosong: jumlahKosong,
+                catatan,
+                status: "menunggu",
+                dibuat_oleh_id: session?.id || null,
+                dibuat_oleh_nama: session?.nama || session?.username || null,
+              }),
+            });
+          }, "Pengajuan restock zona terkirim ke owner")
         }
       />
     );
@@ -480,14 +514,15 @@ export default function ModalRouter({
 
   if (modal.type === "hapus-pengajuan-restock") {
     const p = modal.item;
+    const labelItem = p.jenis === "zona" ? `zona "${p.zona}"` : <span className="font-mono">{p.sku}</span>;
     return (
       <ModalShell title="Hapus Riwayat Pengajuan" onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <div>
-            Pengajuan restock <span className="font-mono">{p.sku}</span> ({p.status === "disetujui" ? "Disetujui" : "Ditolak"}) akan
-            dihapus permanen. SKU ini akan kembali tampil sebagai "belum pernah diajukan" di Stok Menipis. Tindakan
-            ini tidak bisa dibatalkan.
+            Pengajuan restock {labelItem} ({p.status === "disetujui" ? "Disetujui" : "Ditolak"}) akan
+            dihapus permanen. {p.jenis === "zona" ? "Zona ini" : "SKU ini"} akan kembali tampil sebagai "belum pernah
+            diajukan" di {p.jenis === "zona" ? "Peta Rak" : "Stok Menipis"}. Tindakan ini tidak bisa dibatalkan.
           </div>
         </div>
         <div className="flex gap-2">

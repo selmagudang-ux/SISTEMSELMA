@@ -128,9 +128,19 @@ export function rencanaKurangiRak(sku, jumlahKurang, penempatan) {
   return out;
 }
 
-export default function Rak({ sub, items, rak, penempatan, skuMaster, master, setModal }) {
+export default function Rak({ sub, items, rak, penempatan, skuMaster, master, pengajuanRestock, session, setModal }) {
   if (sub === "peta")
-    return <PetaRak rak={rak} penempatan={penempatan} skuMaster={skuMaster} master={master} setModal={setModal} />;
+    return (
+      <PetaRak
+        rak={rak}
+        penempatan={penempatan}
+        skuMaster={skuMaster}
+        master={master}
+        pengajuanRestock={pengajuanRestock}
+        session={session}
+        setModal={setModal}
+      />
+    );
   if (sub === "gudang")
     return <SisaGudang rak={rak} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "master") return <MasterRak rak={rak} setModal={setModal} />;
@@ -327,7 +337,7 @@ function compareMeja(a, b) {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
+function PetaRak({ rak, penempatan, skuMaster, master, pengajuanRestock, session, setModal }) {
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   // Zona yang sedang disembunyikan (di-collapse) di tampilan Peta Rak — klik
@@ -452,7 +462,34 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
       });
   };
 
-  // Cocokkan pencarian ke kode rak itu sendiri ATAU ke SKU yang lagi mengisi
+  // Jumlah rak KOSONG per zona (independen dari kolom cari/kategori — supaya
+  // angkanya tetap mewakili kondisi zona secara utuh, bukan cuma yang sedang
+  // difilter tampil). Dipakai tombol "Ajukan ke Owner": jumlah rak kosong di
+  // satu zona = perkiraan jumlah model baru yang bisa dibeli untuk mengisinya.
+  const rakKosongPerZona = {};
+  zonaOrder.forEach((z) => {
+    let n = 0;
+    mejaByZona[z].forEach((meja) => {
+      groups[meja].forEach((r) => {
+        if (skuDiRak(r.code).length === 0) n += 1;
+      });
+    });
+    rakKosongPerZona[z] = n;
+  });
+
+  // Pengajuan restock ZONA yang masih "menunggu" per nama zona, supaya
+  // tombolnya bisa dinonaktifkan/berubah label kalau sudah pernah diajukan
+  // dan belum direspon owner (sama polanya dengan Stok Menipis per-SKU).
+  const pengajuanZonaMenunggu = new Map();
+  (pengajuanRestock || [])
+    .filter((p) => p.jenis === "zona" && p.status === "menunggu")
+    .forEach((p) => pengajuanZonaMenunggu.set(p.zona, p));
+  const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
+
+  const ajukanZona = (zona) =>
+    setModal?.({ type: "ajukan-restock-zona", item: { zona, jumlahKosong: rakKosongPerZona[zona] || 0 } });
+
+
   // rak tersebut — jadi user bisa cari "G1A-10A" ataupun cari SKU langsung
   // buat tahu dia disimpan di rak mana.
   const qLower = q.trim().toLowerCase();
@@ -583,24 +620,45 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
               return (
             <div key={zona || "flat"}>
               {zona && (
-                <button
-                  type="button"
-                  onClick={() => toggleZona(zona)}
-                  className="flex items-center gap-2 mb-3 w-full text-left group"
-                >
-                  {tersembunyi ? (
-                    <ChevronRight size={14} className="text-slate-500 group-hover:text-slate-300" />
-                  ) : (
-                    <ChevronDown size={14} className="text-slate-500 group-hover:text-slate-300" />
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => toggleZona(zona)}
+                    className="flex items-center gap-2 text-left group"
+                  >
+                    {tersembunyi ? (
+                      <ChevronRight size={14} className="text-slate-500 group-hover:text-slate-300" />
+                    ) : (
+                      <ChevronDown size={14} className="text-slate-500 group-hover:text-slate-300" />
+                    )}
+                    <LayoutGrid size={14} className="text-amber-400" />
+                    <div className="text-sm font-bold text-slate-200">
+                      {zona === TANPA_ZONA ? "Tanpa Zona" : `Zona: ${zona}`}
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      ({mejaCocok.length} meja{tersembunyi ? " — disembunyikan" : ""})
+                    </div>
+                  </button>
+                  {zona !== TANPA_ZONA && rakKosongPerZona[zona] > 0 && (
+                    <>
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-0.5">
+                        {rakKosongPerZona[zona]} rak kosong
+                      </span>
+                      {bisaAjukan && (
+                        <button
+                          type="button"
+                          disabled={pengajuanZonaMenunggu.has(zona)}
+                          onClick={() => ajukanZona(zona)}
+                          title="Ajukan pembelian model baru ke owner berdasarkan jumlah rak kosong di zona ini"
+                          className="flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md border border-amber-500/40 text-amber-300 hover:bg-amber-500/10 disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                          <PackagePlus size={11} />
+                          {pengajuanZonaMenunggu.has(zona) ? "Sudah diajukan" : "Ajukan ke Owner"}
+                        </button>
+                      )}
+                    </>
                   )}
-                  <LayoutGrid size={14} className="text-amber-400" />
-                  <div className="text-sm font-bold text-slate-200">
-                    {zona === TANPA_ZONA ? "Tanpa Zona" : `Zona: ${zona}`}
-                  </div>
-                  <div className="text-[10px] text-slate-500">
-                    ({mejaCocok.length} meja{tersembunyi ? " — disembunyikan" : ""})
-                  </div>
-                </button>
+                </div>
               )}
               {!tersembunyi && (
               <div className="space-y-6">

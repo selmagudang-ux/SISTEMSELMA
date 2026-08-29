@@ -3480,18 +3480,63 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
   );
 }
 
+// Form "Ajukan Order" per ZONA — dipakai dari Peta Rak saat sebuah zona (mis.
+// "Gelang Jurai") punya rak kosong. Beda dari AjukanRestockForm (per SKU
+// yang stoknya menipis): di sini gudang melapor jumlah SLOT/rak kosong di
+// satu zona, supaya owner tahu berapa model baru yang bisa dibeli untuk
+// mengisi zona itu — jumlah rak kosong = perkiraan jumlah model yang bisa
+// dibeli (asumsi 1 rak muat 1 model).
+export function AjukanRestockZonaForm({ zona, jumlahKosong, onClose, onSubmit, saving }) {
+  const [catatan, setCatatan] = useState("");
+
+  return (
+    <ModalShell title="Ajukan Order ke Owner" onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">Zona</div>
+        <div className="text-sm font-semibold text-slate-200">{zona}</div>
+        <div className="text-[11px] text-slate-500 mt-2">Rak kosong di zona ini</div>
+        <div className="font-mono text-sm text-amber-400">{jumlahKosong} rak</div>
+        <div className="text-[10px] text-slate-500 mt-1">
+          Perkiraan slot untuk model baru — 1 rak kosong ≈ 1 model yang bisa dibeli.
+        </div>
+      </div>
+
+      <Field label="Catatan (opsional)">
+        <input
+          className={inputClass}
+          value={catatan}
+          onChange={(e) => setCatatan(e.target.value)}
+          placeholder="Contoh: model laris, mau nambah varian warna, dll"
+        />
+      </Field>
+
+      <button
+        disabled={saving}
+        onClick={() => onSubmit(catatan.trim() || null)}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Mengirim…" : "Ajukan ke Owner"}
+      </button>
+    </ModalShell>
+  );
+}
+
 // Form tinjau pengajuan restock — dipakai owner/superadmin untuk
 // Setujui/Tolak. Sesuai arahan user: menyetujui TIDAK otomatis membuat
 // Pesan Barang (PO) baru — cuma menandai status "disetujui" (mirip badge
 // "Habis" di Katalog/Master Barang), gudang yang nanti bikin PO manual
 // lewat alur Pesan Barang yang sudah ada kalau memang mau ditindaklanjuti.
+// Pengajuan bisa dua jenis: "sku" (dari Stok Menipis, per SKU) atau "zona"
+// (dari Peta Rak, jumlah rak kosong di satu zona) — tampilannya beda karena
+// datanya beda, tapi alur setuju/tolak-nya sama persis.
 export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, namaSupplier, onLihatFoto, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
   const [mauTolak, setMauTolak] = useState(false);
   const [catatanOwner, setCatatanOwner] = useState("");
+  const isZona = p.jenis === "zona";
 
   return (
     <ModalShell title="Tinjau Pengajuan Restock" onClose={onClose}>
-      {fotoUrl ? (
+      {!isZona && (fotoUrl ? (
         <img
           src={fotoUrl}
           alt={p.sku}
@@ -3502,24 +3547,39 @@ export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, na
         <div className="w-full h-28 flex items-center justify-center rounded-lg border border-dashed border-slate-800 bg-slate-950 mb-3 text-slate-700">
           <Camera size={20} />
         </div>
-      )}
+      ))}
       <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 space-y-1.5">
-        <div>
-          <div className="text-[11px] text-slate-500">SKU</div>
-          <div className="font-mono text-base font-semibold text-amber-400">{p.sku}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-slate-500">Kode barang</div>
-          <div className="font-mono text-sm text-slate-300">{barcodeSupplier || "—"}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-slate-500">Nama Toko/Supplier</div>
-          <div className="text-sm text-slate-300">{namaSupplier || "—"}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
-          <div className="font-mono text-sm text-slate-300">{p.stok_saat_ajuan}</div>
-        </div>
+        {isZona ? (
+          <>
+            <div>
+              <div className="text-[11px] text-slate-500">Zona</div>
+              <div className="text-base font-semibold text-amber-400">{p.zona}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500">Rak kosong saat diajukan</div>
+              <div className="font-mono text-sm text-slate-300">{p.jumlah_rak_kosong} rak</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <div className="text-[11px] text-slate-500">SKU</div>
+              <div className="font-mono text-base font-semibold text-amber-400">{p.sku}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500">Kode barang</div>
+              <div className="font-mono text-sm text-slate-300">{barcodeSupplier || "—"}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500">Nama Toko/Supplier</div>
+              <div className="text-sm text-slate-300">{namaSupplier || "—"}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500">Stok saat diajukan</div>
+              <div className="font-mono text-sm text-slate-300">{p.stok_saat_ajuan}</div>
+            </div>
+          </>
+        )}
         <div className="text-[11px] text-slate-500">
           Diajukan oleh <span className="text-slate-300">{p.dibuat_oleh_nama || "—"}</span>
         </div>
@@ -3529,6 +3589,7 @@ export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, na
           </div>
         )}
       </div>
+
 
       {mauTolak ? (
         <>
