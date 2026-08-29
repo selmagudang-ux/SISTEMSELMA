@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search } from "lucide-react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search, LayoutGrid } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran, labelFor } from "../lib/api";
 
@@ -274,6 +274,11 @@ function MasterRak({ rak, setModal }) {
               <div className="text-[11px] text-slate-500 mt-1">
                 {r.meja ? `Meja ${r.meja}` : ""} {r.baris ? `· Baris ${r.baris}` : ""}
               </div>
+              {r.zona && (
+                <div className="text-[10px] text-amber-400 font-medium mt-1 flex items-center gap-1">
+                  <LayoutGrid size={10} /> {r.zona}
+                </div>
+              )}
               <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
                 <button
                   onClick={() => setModal({ type: "edit-rak", item: r })}
@@ -332,6 +337,36 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
     groups[key].push(r);
   });
   const groupKeys = Object.keys(groups).sort(compareMeja);
+
+  // Zona (opsional) mengelompokkan beberapa Meja jadi satu label kategori,
+  // mis. "Meja A" s/d "Meja Z" -> zona "Cincin" — diatur lewat tombol "Atur
+  // Zona" (bulk update kolom rak.zona per Meja terpilih). Satu Meja dianggap
+  // satu zona (ambil zona dari rak pertama di meja itu yang punya nilai
+  // zona); Meja yang belum diberi zona dikelompokkan ke "Tanpa Zona" di
+  // paling bawah. Kalau belum ada satu pun rak yang diberi zona, tampilan
+  // tetap flat per-Meja seperti semula (tidak menambah header zona kosong).
+  const TANPA_ZONA = "__tanpa_zona__";
+  const zonaPerMeja = {};
+  groupKeys.forEach((meja) => {
+    const withZona = groups[meja].find((r) => r.zona);
+    if (withZona) zonaPerMeja[meja] = withZona.zona;
+  });
+  const adaZona = Object.keys(zonaPerMeja).length > 0;
+  const mejaByZona = {};
+  const zonaOrder = [];
+  groupKeys.forEach((meja) => {
+    const z = zonaPerMeja[meja] || TANPA_ZONA;
+    if (!mejaByZona[z]) {
+      mejaByZona[z] = [];
+      zonaOrder.push(z);
+    }
+    mejaByZona[z].push(meja);
+  });
+  zonaOrder.sort((a, b) => {
+    if (a === TANPA_ZONA) return 1;
+    if (b === TANPA_ZONA) return -1;
+    return a.localeCompare(b, undefined, { sensitivity: "base" });
+  });
 
   // SKU yang kepasang di lebih dari satu rak sekaligus — perlu diberi tahu
   // ke user dan dikasih jalan pintas untuk membereskannya (pindahkan salah
@@ -436,7 +471,15 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
     <div>
       <PageHeader
         title="Peta Rak"
-        description="Tampilan visual rak, dikelompokkan per meja, lengkap dengan SKU yang mengisi tiap rak."
+        description="Tampilan visual rak, dikelompokkan per meja (dan per zona kalau sudah diatur), lengkap dengan SKU yang mengisi tiap rak."
+        action={
+          <button
+            onClick={() => setModal({ type: "atur-zona-meja" })}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700"
+          >
+            <LayoutGrid size={14} /> Atur Zona
+          </button>
+        }
       />
 
       <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
@@ -516,10 +559,26 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
           }
         />
       ) : (
-        <div className="space-y-6">
-          {groupKeys
-            .filter((meja) => groups[meja].some(tampilRak))
-            .map((meja) => (
+        <div className="space-y-8">
+          {(adaZona
+            ? zonaOrder.map((z) => ({ zona: z, mejaList: mejaByZona[z] }))
+            : [{ zona: null, mejaList: groupKeys }]
+          )
+            .filter(({ mejaList }) => mejaList.some((meja) => groups[meja].some(tampilRak)))
+            .map(({ zona, mejaList }) => (
+            <div key={zona || "flat"}>
+              {zona && (
+                <div className="flex items-center gap-2 mb-3">
+                  <LayoutGrid size={14} className="text-amber-400" />
+                  <div className="text-sm font-bold text-slate-200">
+                    {zona === TANPA_ZONA ? "Tanpa Zona" : `Zona: ${zona}`}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-6">
+              {mejaList
+                .filter((meja) => groups[meja].some(tampilRak))
+                .map((meja) => (
             <div key={meja}>
               <div className="text-xs font-semibold text-slate-400 mb-2">Meja {meja}</div>
               <div className="flex flex-wrap gap-2">
@@ -644,6 +703,9 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
                       </div>
                     );
                   })}
+              </div>
+            </div>
+          ))}
               </div>
             </div>
           ))}

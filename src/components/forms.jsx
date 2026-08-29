@@ -3295,6 +3295,104 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   );
 }
 
+// Bulk-assign zona (label kategori bebas, mis. "Cincin") ke beberapa Meja
+// sekaligus — dipakai dari tombol "Atur Zona" di Peta Rak. Pilih Meja lewat
+// checkbox (bukan ketik range manual) supaya tidak salah ketik; kolom Zona
+// dikosongkan berarti Meja terpilih dikeluarkan dari zona (dikembalikan ke
+// "Tanpa Zona"). Menyimpan menimpa kolom rak.zona untuk SEMUA rak yang ada
+// di tiap Meja terpilih — jadi satu Meja selalu 1 zona.
+export function AturZonaForm({ rak, onClose, onSubmit, saving }) {
+  const mejaList = Array.from(new Set((rak || []).map((r) => r.meja).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+  const zonaPerMeja = {};
+  (rak || []).forEach((r) => {
+    if (!r.meja) return;
+    if (r.zona && !zonaPerMeja[r.meja]) zonaPerMeja[r.meja] = r.zona;
+  });
+  const zonaTerpakai = Array.from(new Set(Object.values(zonaPerMeja))).sort();
+
+  const [dipilih, setDipilih] = useState(new Set());
+  const [zona, setZona] = useState("");
+
+  const toggle = (meja) => {
+    setDipilih((prev) => {
+      const next = new Set(prev);
+      if (next.has(meja)) next.delete(meja);
+      else next.add(meja);
+      return next;
+    });
+  };
+
+  const mejaTerpilih = Array.from(dipilih);
+  const valid = mejaTerpilih.length > 0;
+
+  return (
+    <ModalShell title="Atur Zona Meja" onClose={onClose}>
+      <p className="text-[11px] text-slate-500 -mt-1 mb-3">
+        Kelompokkan beberapa Meja jadi satu zona, contoh: Meja A sampai Z untuk kategori "Cincin". Centang Meja
+        yang mau dimasukkan, lalu isi nama zonanya.
+      </p>
+
+      <Field label={`Pilih Meja (${mejaTerpilih.length} dipilih)`}>
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 divide-y divide-slate-800/70">
+          {mejaList.map((meja) => (
+            <label
+              key={meja}
+              className="flex items-center justify-between gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-900"
+            >
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={dipilih.has(meja)}
+                  onChange={() => toggle(meja)}
+                  className="accent-amber-500"
+                />
+                Meja {meja}
+              </span>
+              {zonaPerMeja[meja] && (
+                <span className="text-[10px] text-amber-400">{zonaPerMeja[meja]}</span>
+              )}
+            </label>
+          ))}
+        </div>
+      </Field>
+
+      <Field label="Nama Zona (kosongkan untuk keluarkan dari zona)">
+        <input
+          className={inputClass}
+          value={zona}
+          onChange={(e) => setZona(e.target.value)}
+          placeholder="Contoh: Cincin, Kalung, Gelang"
+        />
+      </Field>
+      {zonaTerpakai.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 -mt-2 mb-3">
+          {zonaTerpakai.map((z) => (
+            <button
+              key={z}
+              type="button"
+              onClick={() => setZona(z)}
+              className="text-[10px] px-2 py-1 rounded-full bg-slate-800 text-slate-300 hover:bg-slate-700"
+            >
+              {z}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button
+        disabled={!valid || saving}
+        onClick={() => onSubmit({ mejaTerpilih, zona: zona.trim() || null })}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : zona.trim() ? "Simpan Zona" : "Keluarkan dari Zona"}
+      </button>
+    </ModalShell>
+  );
+}
+
+
 export function EditRakForm({ rak, onClose, onSubmit, saving }) {
   const [code, setCode] = useState(rak.code || "");
   const [meja, setMeja] = useState(rak.meja || "");

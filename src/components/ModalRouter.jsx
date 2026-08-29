@@ -8,7 +8,7 @@ import {
   detailModelPesanan,
 } from "../lib/api";
 import {
-  BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, BarangKeluarForm,
+  BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
   BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, ResponPengajuanForm,
 } from "./forms";
@@ -3365,6 +3365,28 @@ export default function ModalRouter({
               });
             }
           }, "Rak diperbarui")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "atur-zona-meja") {
+    return (
+      <AturZonaForm
+        rak={rakList}
+        onClose={close}
+        saving={saving}
+        onSubmit={({ mejaTerpilih, zona }) =>
+          run(async () => {
+            // 1 request PATCH mencakup semua Meja terpilih sekaligus lewat
+            // filter PostgREST "meja=in.(...)" — meja bertipe text, tiap
+            // nilai di-encode supaya aman kalau ada spasi/karakter khusus.
+            const filterMeja = mejaTerpilih.map((m) => encodeURIComponent(m)).join(",");
+            await sb(`rak?meja=in.(${filterMeja})`, {
+              method: "PATCH",
+              body: JSON.stringify({ zona }),
+            });
+          }, zona ? "Zona rak diperbarui" : "Meja dikeluarkan dari zona")
         }
       />
     );
