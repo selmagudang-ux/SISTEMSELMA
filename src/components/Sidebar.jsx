@@ -221,7 +221,14 @@ export default function Sidebar({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-slate-200 truncate">{user.nama || user.username}</div>
-              <div className="text-[10px] text-slate-500 truncate">{roleLabel(user.role)}</div>
+              <div className="text-[10px] text-slate-500 truncate flex items-center gap-1.5">
+                {roleLabel(user.role)}
+                {user.role === "owner" && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-800 text-amber-400 leading-none">
+                    Read-only
+                  </span>
+                )}
+              </div>
             </div>
             <button
               onClick={() => setModal?.({ type: "ganti-password" })}

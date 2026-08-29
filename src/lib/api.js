@@ -33,7 +33,44 @@ function friendlyDbError(parsed, status) {
   return null;
 }
 
+// =========================================================
+// GERBANG READ-ONLY UNTUK ROLE OWNER
+// Owner boleh MELIHAT semua data (semua query GET tetap jalan seperti biasa)
+// tapi tidak boleh mengubah/menambah/menghapus apapun — KECUALI menyetujui
+// atau menolak pengajuan restock (Dashboard > Menunggu Persetujuan), karena
+// itu memang tugas owner (lihat modal "respon-pengajuan-restock" di
+// ModalRouter, satu-satunya tempat yang PATCH ke tabel "pengajuan_restock").
+// Session disimpan di sessionStorage oleh lib/auth.js (key "selma_session")
+// — dibaca langsung di sini (bukan import getSession dari auth.js) supaya
+// tidak bikin circular import (auth.js sendiri import sb dari file ini).
+// CATATAN: ini pembatasan di sisi tampilan (mencegah klik tidak sengaja),
+// bukan pengaman keamanan — anon key Supabase yang dipakai di sini sama
+// untuk semua role, jadi enforcement yang benar-benar tidak bisa ditembus
+// tetap harus lewat RLS/policy di database kalau suatu saat dibutuhkan.
+const SESSION_KEY_LOKAL = "selma_session";
+const ROLE_READONLY = ["owner"];
+
+function roleSaatIni() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
+    return raw ? JSON.parse(raw).role : null;
+  } catch {
+    return null;
+  }
+}
+
+// Satu-satunya pengecualian untuk role read-only: PATCH ke pengajuan_restock
+// (approve/tolak). Path-nya selalu diawali "pengajuan_restock" (mis.
+// "pengajuan_restock?id=eq.123"), tidak pernah dipakai untuk tabel lain.
+function bolehWalauReadOnly(path, method) {
+  return method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path);
+}
+
 export async function sb(path, opts = {}) {
+  const method = (opts.method || "GET").toUpperCase();
+  if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method)) {
+    throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menambah, mengubah, atau menghapus data.");
+  }
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...opts,
     cache: "no-store",
