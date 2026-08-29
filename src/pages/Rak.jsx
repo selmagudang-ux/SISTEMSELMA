@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search, LayoutGrid } from "lucide-react";
+import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search, LayoutGrid, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran, labelFor } from "../lib/api";
 
@@ -330,6 +330,18 @@ function compareMeja(a, b) {
 function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
+  // Zona yang sedang disembunyikan (di-collapse) di tampilan Peta Rak — klik
+  // header zona untuk sembunyikan/tampilkan isinya. Cuma state tampilan lokal
+  // (tidak disimpan ke database), reset tiap kali halaman dibuka ulang.
+  const [zonaTersembunyi, setZonaTersembunyi] = useState(new Set());
+  const toggleZona = (z) => {
+    setZonaTersembunyi((prev) => {
+      const next = new Set(prev);
+      if (next.has(z)) next.delete(z);
+      else next.add(z);
+      return next;
+    });
+  };
   const groups = {};
   rak.forEach((r) => {
     const key = r.meja || "Tanpa Meja";
@@ -565,19 +577,34 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
             : [{ zona: null, mejaList: groupKeys }]
           )
             .filter(({ mejaList }) => mejaList.some((meja) => groups[meja].some(tampilRak)))
-            .map(({ zona, mejaList }) => (
+            .map(({ zona, mejaList }) => {
+              const tersembunyi = zona && zonaTersembunyi.has(zona);
+              const mejaCocok = mejaList.filter((meja) => groups[meja].some(tampilRak));
+              return (
             <div key={zona || "flat"}>
               {zona && (
-                <div className="flex items-center gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => toggleZona(zona)}
+                  className="flex items-center gap-2 mb-3 w-full text-left group"
+                >
+                  {tersembunyi ? (
+                    <ChevronRight size={14} className="text-slate-500 group-hover:text-slate-300" />
+                  ) : (
+                    <ChevronDown size={14} className="text-slate-500 group-hover:text-slate-300" />
+                  )}
                   <LayoutGrid size={14} className="text-amber-400" />
                   <div className="text-sm font-bold text-slate-200">
                     {zona === TANPA_ZONA ? "Tanpa Zona" : `Zona: ${zona}`}
                   </div>
-                </div>
+                  <div className="text-[10px] text-slate-500">
+                    ({mejaCocok.length} meja{tersembunyi ? " — disembunyikan" : ""})
+                  </div>
+                </button>
               )}
+              {!tersembunyi && (
               <div className="space-y-6">
-              {mejaList
-                .filter((meja) => groups[meja].some(tampilRak))
+              {mejaCocok
                 .map((meja) => (
             <div key={meja}>
               <div className="text-xs font-semibold text-slate-400 mb-2">Meja {meja}</div>
@@ -707,8 +734,10 @@ function PetaRak({ rak, penempatan, skuMaster, master, setModal }) {
             </div>
           ))}
               </div>
+              )}
             </div>
-          ))}
+              );
+            })}
         </div>
       )}
     </div>

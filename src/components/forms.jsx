@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -3314,6 +3314,7 @@ export function AturZonaForm({ rak, onClose, onSubmit, saving }) {
 
   const [dipilih, setDipilih] = useState(new Set());
   const [zona, setZona] = useState("");
+  const [cariMeja, setCariMeja] = useState("");
 
   const toggle = (meja) => {
     setDipilih((prev) => {
@@ -3327,6 +3328,11 @@ export function AturZonaForm({ rak, onClose, onSubmit, saving }) {
   const mejaTerpilih = Array.from(dipilih);
   const valid = mejaTerpilih.length > 0;
 
+  const qLower = cariMeja.trim().toLowerCase();
+  const mejaListTampil = qLower
+    ? mejaList.filter((meja) => meja.toLowerCase().includes(qLower))
+    : mejaList;
+
   return (
     <ModalShell title="Atur Zona Meja" onClose={onClose}>
       <p className="text-[11px] text-slate-500 -mt-1 mb-3">
@@ -3335,8 +3341,20 @@ export function AturZonaForm({ rak, onClose, onSubmit, saving }) {
       </p>
 
       <Field label={`Pilih Meja (${mejaTerpilih.length} dipilih)`}>
+        <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 mb-2">
+          <Search size={13} className="text-slate-500 flex-shrink-0" />
+          <input
+            value={cariMeja}
+            onChange={(e) => setCariMeja(e.target.value)}
+            placeholder="Cari meja…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
         <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950 divide-y divide-slate-800/70">
-          {mejaList.map((meja) => (
+          {mejaListTampil.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-slate-500 text-center">Tidak ada meja yang cocok.</div>
+          ) : (
+          mejaListTampil.map((meja) => (
             <label
               key={meja}
               className="flex items-center justify-between gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-900"
@@ -3354,7 +3372,8 @@ export function AturZonaForm({ rak, onClose, onSubmit, saving }) {
                 <span className="text-[10px] text-amber-400">{zonaPerMeja[meja]}</span>
               )}
             </label>
-          ))}
+          ))
+          )}
         </div>
       </Field>
 
