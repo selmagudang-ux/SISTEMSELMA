@@ -203,6 +203,8 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                 <img
                   src={item.foto_url}
                   alt={item.sku}
+                  loading="lazy"
+                  decoding="async"
                   onClick={() => setModal({ type: "lihat-foto", item })}
                   className="w-full h-24 object-cover rounded-md mb-2 border border-slate-800 cursor-pointer hover:opacity-80"
                 />
@@ -211,6 +213,8 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                   <img
                     src={fotoTerakhir.foto_url}
                     alt={item.sku}
+                    loading="lazy"
+                    decoding="async"
                     onClick={() => setModal({ type: "lihat-foto", item: fotoTerakhir })}
                     className="w-full h-24 object-cover rounded-md border border-slate-800 cursor-pointer opacity-70 hover:opacity-90"
                   />

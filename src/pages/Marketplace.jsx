@@ -398,6 +398,8 @@ function BelumUpload({ items, quickAdvance, setModal }) {
                 <img
                   src={item.foto_url}
                   alt={item.sku}
+                  loading="lazy"
+                  decoding="async"
                   onClick={() => setModal({ type: "lihat-foto", item })}
                   className="w-full h-24 object-cover rounded-md mb-2 border border-slate-800 cursor-zoom-in hover:opacity-90"
                 />

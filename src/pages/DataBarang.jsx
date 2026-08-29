@@ -115,7 +115,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
                   >
                     <td className="px-4 py-2.5">
                       {i.foto_url ? (
-                        <img src={i.foto_url} alt={i.sku} className="w-9 h-9 object-cover rounded-md border border-slate-800" />
+                        <img src={i.foto_url} alt={i.sku} loading="lazy" decoding="async" className="w-9 h-9 object-cover rounded-md border border-slate-800" />
                       ) : (
                         <div className="w-9 h-9 rounded-md border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
                           <Camera size={13} />

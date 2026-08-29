@@ -3,7 +3,7 @@ import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 import {
-  sb, sbUploadFoto, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
+  sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
   detailModelPesanan,
 } from "../lib/api";
@@ -2747,8 +2747,9 @@ export default function ModalRouter({
               }
 
               const skuSafe = row.sku.replace(/[^a-zA-Z0-9-_]/g, "-");
-              const ext = (row.fotoFile.name.split(".").pop() || "jpg").toLowerCase();
-              const fotoUrl = await sbUploadFoto(row.fotoFile, `${skuSafe}.${ext}`);
+              const fotoDikompres = await kompresFotoProduk(row.fotoFile);
+              const extAkhir = (fotoDikompres.name.split(".").pop() || "jpg").toLowerCase();
+              const fotoUrl = await sbUploadFoto(fotoDikompres, `${skuSafe}.${extAkhir}`);
 
               const hargaOtomatis = calcHarga(row.hargaAsli, settings);
               const harga = row.hargaManual
@@ -3014,14 +3015,15 @@ export default function ModalRouter({
         saving={saving}
         onSubmit={(file) =>
           run(async () => {
-            const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
             // Nama file foto dibuat dari SKU barang (bukan id internal) supaya langsung
             // gampang dikenali di Storage. Kalau SKU-nya sama diupload ulang, filenya
             // akan menimpa foto lama (x-upsert sudah aktif di sbUploadFoto) — sengaja
             // dibolehkan supaya user bisa memperbaiki sendiri kalau salah upload foto.
             const skuSafe = (modal.item.sku || modal.item.id).replace(/[^a-zA-Z0-9-_]/g, "-");
-            const path = `${skuSafe}.${ext}`;
-            const url = await sbUploadFoto(file, path);
+            const fotoDikompres = await kompresFotoProduk(file);
+            const extAkhir = (fotoDikompres.name.split(".").pop() || "jpg").toLowerCase();
+            const path = `${skuSafe}.${extAkhir}`;
+            const url = await sbUploadFoto(fotoDikompres, path);
             await sb(`items?id=eq.${modal.item.id}`, {
               method: "PATCH",
               body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
@@ -3046,9 +3048,10 @@ export default function ModalRouter({
         saving={saving}
         onSubmit={(file) =>
           run(async () => {
-            const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-            const path = `multi-${Date.now()}.${ext}`;
-            const url = await sbUploadFoto(file, path);
+            const fotoDikompres = await kompresFotoProduk(file);
+            const extAkhir = (fotoDikompres.name.split(".").pop() || "jpg").toLowerCase();
+            const path = `multi-${Date.now()}.${extAkhir}`;
+            const url = await sbUploadFoto(fotoDikompres, path);
             for (const it of itemsTerpilih) {
               await sb(`items?id=eq.${it.id}`, {
                 method: "PATCH",

@@ -175,6 +175,60 @@ export async function sbUploadFoto(file, path) {
   return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
 }
 
+// Foto produk dari kamera HP biasanya 3000-4000px lebar (bisa beberapa MB),
+// padahal cuma ditampilkan sebagai thumbnail kecil (36-96px) di daftar SKU,
+// Marketplace, dashboard, dll. Ini yang bikin halaman-halaman itu berat
+// dibuka di HP — bukan cuma ukuran filenya, tapi juga waktu decode gambar
+// beresolusi tinggi itu di browser. Fungsi ini mengecilkan foto ke maksimal
+// 1280px sisi terpanjang (masih lebih dari cukup tajam untuk katalog/label)
+// dan kompres ke JPEG kualitas 0.82 sebelum diupload.
+//
+// SENGAJA dipisah dari sbUploadFoto biasa (bukan dipasang otomatis di semua
+// upload) — foto bon/nota (BarangDatang, Rusak) tidak lewat sini, karena
+// mengecilkan foto teks berisiko bikin nominal/tulisan di bon jadi buram.
+// Foto yang dipakai buat OCR SKU juga aman: OCR jalan di foto asli dulu
+// (lihat lib/ocrSku.js), baru setelah itu hasil kompresnya yang diupload.
+export async function kompresFotoProduk(file, { maxDim = 1280, quality = 0.82 } = {}) {
+  // Kalau bukan gambar (mis. HEIC yang gagal dibaca <img>) atau file sudah
+  // kecil, upload apa adanya saja — tidak usah dipaksa lewat canvas.
+  if (!file || !file.type?.startsWith("image/")) return file;
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Gagal membaca gambar"));
+      el.src = objectUrl;
+    });
+
+    const skala = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+    // Foto sudah lebih kecil dari batas — tidak perlu dikompres ulang,
+    // upload aslinya saja supaya tidak ada kualitas yang hilang percuma.
+    if (skala >= 1) return file;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * skala);
+    canvas.height = Math.round(img.naturalHeight * skala);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    // Kalau browser gagal bikin blob (jarang terjadi), fallback ke file asli
+    // daripada gagal total upload-nya.
+    if (!blob) return file;
+
+    const namaBaru = (file.name || "foto").replace(/\.[a-zA-Z0-9]+$/, "") + ".jpg";
+    return new File([blob], namaBaru, { type: "image/jpeg" });
+  } catch {
+    // Apapun yang gagal di proses kompres (foto rusak, browser lama, dst)
+    // — jangan sampai bikin upload gagal total. Upload file aslinya saja.
+    return file;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export function calcHarga(hargaAsli, settings) {
   const round = (n) => Math.round(n / settings.round_to) * settings.round_to;
 

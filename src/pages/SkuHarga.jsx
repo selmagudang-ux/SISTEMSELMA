@@ -446,6 +446,8 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
                                 <img
                                   src={foto}
                                   alt={s.sku}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="w-12 h-12 rounded-lg object-cover border border-slate-800 flex-shrink-0"
                                 />
                               ) : (

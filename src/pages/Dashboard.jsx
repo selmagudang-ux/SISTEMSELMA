@@ -297,6 +297,8 @@ function DashboardGudang({ stageCounts, skuCount, totalStok, rakCount, rakKosong
                         <img
                           src={i.foto_url}
                           alt={i.sku || "foto barang"}
+                          loading="lazy"
+                          decoding="async"
                           onClick={() => setModal({ type: "lihat-foto", item: i })}
                           className="w-10 h-10 object-cover rounded-md border border-slate-800 cursor-pointer hover:opacity-80"
                         />
