@@ -456,6 +456,8 @@ function MainApp({ session, onLogout }) {
                   items={items}
                   onNavigate={navigate}
                   setModal={setModal}
+                  pesananMasuk={pesananMasuk}
+                  penempatan={penempatan}
                   pesananGrosir={pesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
