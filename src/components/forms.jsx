@@ -1351,7 +1351,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           {showPanduanHarga && (
             <div className="mt-1.5 rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-[11px] text-slate-400 space-y-2.5">
               <div>
-                <div className="font-semibold text-slate-300">Yakia</div>
+                <div className="font-semibold text-slate-300">Yaxiya</div>
                 <div className="font-mono text-amber-300/90">Harga Asli = (harga barang / 2) − 20%</div>
               </div>
               <div>
