@@ -68,6 +68,109 @@ export default function SistemSelmaApp() {
   );
 }
 
+// Dipisah dari MainApp SENGAJA supaya state buka/tutup sidebar di HP
+// (mobileOpen) tidak ikut memicu render ulang seluruh halaman yang sedang
+// aktif (mis. tabel Stok/Data Barang yang bisa ribuan baris) — dulu
+// mobileOpen disimpan di MainApp yang sama dengan semua data aplikasi,
+// jadi tiap klik tombol ☰ ikut me-render ulang SEMUANYA (kerasa lag,
+// apalagi di halaman dengan tabel besar). Sekarang mobileOpen cuma dikenal
+// komponen ini sendiri — konten halaman (children) sudah "jadi" dari render
+// MainApp sebelumnya dan referensinya tidak berubah kalau MainApp sendiri
+// tidak re-render, jadi klik ☰ cuma menggeser sidebar tanpa menyentuh
+// konten halaman di baliknya. TIDAK ada perubahan tampilan/fitur, murni
+// perbaikan kecepatan.
+function AppShell({
+  active,
+  onNavigate,
+  badges,
+  allowedMenuKeys,
+  user,
+  onLogout,
+  setModal,
+  menuLabel,
+  subLabel,
+  canSee,
+  belumSelesaiCount,
+  tanpaRakCount,
+  navigate,
+  loadAll,
+  loading,
+  children,
+}) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <>
+      <Sidebar
+        active={active}
+        onNavigate={onNavigate}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        badges={badges}
+        allowedMenuKeys={allowedMenuKeys}
+        user={user}
+        onLogout={onLogout}
+        setModal={setModal}
+      />
+
+      <div className="flex-1 min-w-0">
+        {/* Header — selalu tampil di semua halaman (termasuk Cetak Label) supaya
+            tombol buka menu di HP tetap bisa diakses. Disembunyikan otomatis saat
+            print lewat class print:hidden. */}
+        <header className="print:hidden border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-20">
+          <div className="px-5 py-3 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <MobileMenuButton onClick={() => setMobileOpen(true)} />
+              <div className="min-w-0">
+                <div className="text-xs text-slate-500 truncate">
+                  {menuLabel}{subLabel ? ` / ${subLabel}` : ""}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {canSee("data-barang") && belumSelesaiCount > 0 && (
+                <button
+                  onClick={() => navigate("data-barang", null)}
+                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                  title={`${belumSelesaiCount} barang belum selesai`}
+                >
+                  <Bell size={14} />
+                  <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                    {belumSelesaiCount}
+                  </span>
+                </button>
+              )}
+              {canSee("rak") && (
+                <button
+                  onClick={() => navigate("rak", "tempatkan")}
+                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                  title={tanpaRakCount > 0 ? `${tanpaRakCount} SKU belum punya rak` : "Tidak ada SKU tanpa rak"}
+                >
+                  <MapPin size={14} />
+                  {tanpaRakCount > 0 && (
+                    <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                      {tanpaRakCount}
+                    </span>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={loadAll}
+                className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                title="Muat ulang"
+              >
+                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {children}
+      </div>
+    </>
+  );
+}
+
 function MainApp({ session, onLogout }) {
   const allowed = allowedMenus(session.role);
 
@@ -86,7 +189,6 @@ function MainApp({ session, onLogout }) {
     } catch {}
     return { menu: landingKeDashboard ? "dashboard" : allowed[0], sub: null };
   });
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -439,70 +541,23 @@ function MainApp({ session, onLogout }) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
-      <Sidebar
+      <AppShell
         active={nav}
         onNavigate={navigate}
-        mobileOpen={mobileOpen}
-        setMobileOpen={setMobileOpen}
         badges={sidebarBadges}
         allowedMenuKeys={allowed}
         user={session}
         onLogout={onLogout}
         setModal={setModal}
-      />
-
-      <div className="flex-1 min-w-0">
-        {/* Header — selalu tampil di semua halaman (termasuk Cetak Label) supaya
-            tombol buka menu di HP tetap bisa diakses. Disembunyikan otomatis saat
-            print lewat class print:hidden. */}
-        <header className="print:hidden border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-20">
-          <div className="px-5 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <MobileMenuButton onClick={() => setMobileOpen(true)} />
-              <div className="min-w-0">
-                <div className="text-xs text-slate-500 truncate">
-                  {menuLabel}{subLabel ? ` / ${subLabel}` : ""}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {canSee("data-barang") && belumSelesaiCount > 0 && (
-                <button
-                  onClick={() => navigate("data-barang", null)}
-                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                  title={`${belumSelesaiCount} barang belum selesai`}
-                >
-                  <Bell size={14} />
-                  <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
-                    {belumSelesaiCount}
-                  </span>
-                </button>
-              )}
-              {canSee("rak") && (
-                <button
-                  onClick={() => navigate("rak", "tempatkan")}
-                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                  title={tanpaRakCount > 0 ? `${tanpaRakCount} SKU belum punya rak` : "Tidak ada SKU tanpa rak"}
-                >
-                  <MapPin size={14} />
-                  {tanpaRakCount > 0 && (
-                    <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
-                      {tanpaRakCount}
-                    </span>
-                  )}
-                </button>
-              )}
-              <button
-                onClick={loadAll}
-                className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                title="Muat ulang"
-              >
-                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-              </button>
-            </div>
-          </div>
-        </header>
-
+        menuLabel={menuLabel}
+        subLabel={subLabel}
+        canSee={canSee}
+        belumSelesaiCount={belumSelesaiCount}
+        tanpaRakCount={tanpaRakCount}
+        navigate={navigate}
+        loadAll={loadAll}
+        loading={loading}
+      >
         <main className="px-5 py-6 max-w-6xl">
           {error && (
             <div className="mb-4 flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg">
@@ -664,7 +719,7 @@ function MainApp({ session, onLogout }) {
             </Suspense>
           )}
         </main>
-      </div>
+      </AppShell>
 
       {modal && (
         <ModalRouter
