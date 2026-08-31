@@ -276,7 +276,7 @@ function potonganDonat(cx, cy, rLuar, rDalam, sudutAwal, sudutAkhir) {
 // daftar persentase. Kategori di luar 6 besar digabung jadi "Lainnya" di donat
 // (biar potongannya tidak terlalu tipis/rapat), tapi daftar di sisi kanan
 // tetap menampilkan semua kategori.
-export function BreakdownKategori({ total, data, judul, kosong }) {
+export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick }) {
   const [hover, setHover] = useState(null);
 
   if (total === 0 || data.length === 0) {
@@ -321,7 +321,8 @@ export function BreakdownKategori({ total, data, judul, kosong }) {
                 opacity={hover === null || hover === a.idx ? 1 : 0.35}
                 onMouseEnter={() => setHover(a.idx)}
                 onMouseLeave={() => setHover(null)}
-                style={{ cursor: "pointer" }}
+                onClick={() => onKategoriClick && a.kode !== "__lainnya__" && onKategoriClick(a)}
+                style={{ cursor: onKategoriClick && a.kode !== "__lainnya__" ? "pointer" : "default" }}
               />
             ))}
           </svg>
@@ -347,9 +348,10 @@ export function BreakdownKategori({ total, data, judul, kosong }) {
             return (
               <div
                 key={d.kode || d.label}
-                className="cursor-pointer"
+                className={onKategoriClick ? "cursor-pointer hover:bg-slate-800/40 rounded-md -mx-1 px-1 py-0.5" : ""}
                 onMouseEnter={() => setHover(idxSlice)}
                 onMouseLeave={() => setHover(null)}
+                onClick={() => onKategoriClick && onKategoriClick(d)}
               >
                 <div className="flex items-center justify-between text-xs mb-0.5">
                   <span className="flex items-center gap-1.5 text-slate-300 truncate">
@@ -372,27 +374,75 @@ export function BreakdownKategori({ total, data, judul, kosong }) {
 
 // Wrapper khusus Pengeluaran (dipertahankan namanya supaya pemanggil lama —
 // Dashboard.jsx dll — tidak perlu diubah).
-export function BreakdownPengeluaran({ total, data }) {
+export function BreakdownPengeluaran({ total, data, onKategoriClick }) {
   return (
     <BreakdownKategori
       total={total}
       data={data}
       judul="Pengeluaran per Kategori — mana yang paling boros"
       kosong="Belum ada pengeluaran pada rentang ini untuk ditampilkan."
+      onKategoriClick={onKategoriClick}
     />
   );
 }
 
 // Wrapper khusus Pemasukan — pasangan dari BreakdownPengeluaran di atas,
 // menampilkan dari kategori mana pemasukan paling banyak berasal.
-export function BreakdownPemasukan({ total, data }) {
+export function BreakdownPemasukan({ total, data, onKategoriClick }) {
   return (
     <BreakdownKategori
       total={total}
       data={data}
       judul="Pemasukan per Kategori — sumber dana paling besar"
       kosong="Belum ada pemasukan pada rentang ini untuk ditampilkan."
+      onKategoriClick={onKategoriClick}
     />
+  );
+}
+
+// Modal rincian transaksi untuk satu kategori (dipicu klik pada donat/daftar
+// BreakdownKategori) — daftar tiap transaksi kategori itu pada rentang yang
+// sama dengan grafiknya, diurutkan terbaru dulu, ditutup total keseluruhan.
+export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningList, subtitle, onClose }) {
+  const rows = (list || [])
+    .filter((t) => t.tipe === tipe && (t.kategori || "") === (kategori.kode || ""))
+    .sort((a, b) => (b.tanggal + (b.created_at || "")).localeCompare(a.tanggal + (a.created_at || "")));
+  const total = rows.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+
+  return (
+    <ModalShell title={kategori.label} onClose={onClose}>
+      {subtitle && <div className="text-[11px] text-slate-500 -mt-2 mb-3">{subtitle}</div>}
+      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+        <div className="max-h-[45vh] overflow-y-auto">
+          {rows.length === 0 ? (
+            <div className="px-4 py-6 text-center text-slate-500 text-sm">
+              Tidak ada transaksi kategori ini pada rentang tersebut.
+            </div>
+          ) : (
+            rows.map((t, i) => (
+              <div
+                key={t.id || i}
+                className={`px-3.5 py-2.5 flex items-center justify-between gap-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-200 truncate">{t.keterangan || "—"}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {formatTanggalID(t.tanggal)} · {labelDari(rekeningList, t.rekening)}
+                  </div>
+                </div>
+                <div className={`text-sm font-semibold shrink-0 ${tipe === "masuk" ? "text-emerald-400" : "text-red-400"}`}>
+                  {fmtRp(t.jumlah)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-1">
+        <span className="text-xs text-slate-400">Total ({rows.length} transaksi)</span>
+        <span className="text-sm font-semibold text-slate-100">{fmtRp(total)}</span>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -924,6 +974,7 @@ function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
+  const [detailKategori, setDetailKategori] = useState(null);
 
   const rekeningList = master.rekening || [];
   const kategoriMasukList = master.kategori_masuk || [];
@@ -1047,11 +1098,30 @@ function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <BreakdownPemasukan total={breakdownMasuk.total} data={breakdownMasuk.data} />
-        <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
+        <BreakdownPemasukan
+          total={breakdownMasuk.total}
+          data={breakdownMasuk.data}
+          onKategoriClick={(d) => setDetailKategori({ tipe: "masuk", kode: d.kode, label: d.label })}
+        />
+        <BreakdownPengeluaran
+          total={breakdownKeluar.total}
+          data={breakdownKeluar.data}
+          onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label })}
+        />
       </div>
 
       <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} />
+
+      {detailKategori && (
+        <DetailTransaksiKategoriModal
+          kategori={detailKategori}
+          tipe={detailKategori.tipe}
+          list={list}
+          rekeningList={rekeningList}
+          subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
+          onClose={() => setDetailKategori(null)}
+        />
+      )}
 
       {showLaporanNarasi && (
         <LaporanNarasiModal

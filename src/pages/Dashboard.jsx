@@ -21,7 +21,7 @@ import {
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
-import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, LaporanLabaRugi } from "./Keuangan";
+import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
 // vs Absensi supaya masing-masing tetap fokus (angka gudang tidak nyampur sama
@@ -186,6 +186,7 @@ export default function Dashboard({
 }
 
 function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
+  const [detailKategori, setDetailKategori] = useState(null);
   const dari = awalBulanIni();
   const sampai = hariIniIso();
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
@@ -223,9 +224,28 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
       <GrafikArusKas mode={mode} data={dataArusKas} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <BreakdownPemasukan total={breakdownMasuk.total} data={breakdownMasuk.data} />
-        <BreakdownPengeluaran total={breakdown.total} data={breakdown.data} />
+        <BreakdownPemasukan
+          total={breakdownMasuk.total}
+          data={breakdownMasuk.data}
+          onKategoriClick={(d) => setDetailKategori({ tipe: "masuk", kode: d.kode, label: d.label })}
+        />
+        <BreakdownPengeluaran
+          total={breakdown.total}
+          data={breakdown.data}
+          onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label })}
+        />
       </div>
+
+      {detailKategori && (
+        <DetailTransaksiKategoriModal
+          kategori={detailKategori}
+          tipe={detailKategori.tipe}
+          list={ringkasanBulanIni.list}
+          rekeningList={master.rekening || []}
+          subtitle="Bulan Ini"
+          onClose={() => setDetailKategori(null)}
+        />
+      )}
 
       <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
         <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo per Rekening</div>
