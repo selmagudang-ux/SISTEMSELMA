@@ -9,6 +9,7 @@ import {
   kodeSaldoAwal,
   arusKasPerPeriode,
   breakdownPengeluaranKategori,
+  breakdownPemasukanKategori,
   laporanBulananData,
   rekapTahunanData,
   laporanLabaRugi,
@@ -271,16 +272,17 @@ function potonganDonat(cx, cy, rLuar, rDalam, sudutAwal, sudutAkhir) {
   ].join(" ");
 }
 
-// Breakdown pengeluaran per kategori: donat + daftar persentase. Kategori di
-// luar 6 besar digabung jadi "Lainnya" di donat (biar potongannya tidak terlalu
-// tipis/rapat), tapi daftar di sisi kanan tetap menampilkan semua kategori.
-export function BreakdownPengeluaran({ total, data }) {
+// Breakdown per kategori (dipakai untuk Pengeluaran maupun Pemasukan): donat +
+// daftar persentase. Kategori di luar 6 besar digabung jadi "Lainnya" di donat
+// (biar potongannya tidak terlalu tipis/rapat), tapi daftar di sisi kanan
+// tetap menampilkan semua kategori.
+export function BreakdownKategori({ total, data, judul, kosong }) {
   const [hover, setHover] = useState(null);
 
   if (total === 0 || data.length === 0) {
     return (
       <div className="rounded-xl border border-slate-800 p-6 text-center text-slate-500 text-sm mb-5">
-        Belum ada pengeluaran pada rentang ini untuk ditampilkan.
+        {kosong || "Belum ada transaksi pada rentang ini untuk ditampilkan."}
       </div>
     );
   }
@@ -307,7 +309,7 @@ export function BreakdownPengeluaran({ total, data }) {
 
   return (
     <div className="rounded-xl border border-slate-800 p-4 mb-5 bg-slate-900/30">
-      <div className="text-xs text-slate-400 mb-3">Pengeluaran per Kategori — mana yang paling boros</div>
+      <div className="text-xs text-slate-400 mb-3">{judul || "Per Kategori"}</div>
       <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
         <div className="relative shrink-0">
           <svg viewBox="0 0 120 120" width="150" height="150">
@@ -365,6 +367,32 @@ export function BreakdownPengeluaran({ total, data }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Wrapper khusus Pengeluaran (dipertahankan namanya supaya pemanggil lama —
+// Dashboard.jsx dll — tidak perlu diubah).
+export function BreakdownPengeluaran({ total, data }) {
+  return (
+    <BreakdownKategori
+      total={total}
+      data={data}
+      judul="Pengeluaran per Kategori — mana yang paling boros"
+      kosong="Belum ada pengeluaran pada rentang ini untuk ditampilkan."
+    />
+  );
+}
+
+// Wrapper khusus Pemasukan — pasangan dari BreakdownPengeluaran di atas,
+// menampilkan dari kategori mana pemasukan paling banyak berasal.
+export function BreakdownPemasukan({ total, data }) {
+  return (
+    <BreakdownKategori
+      total={total}
+      data={data}
+      judul="Pemasukan per Kategori — sumber dana paling besar"
+      kosong="Belum ada pemasukan pada rentang ini untuk ditampilkan."
+    />
   );
 }
 
@@ -905,6 +933,7 @@ function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
+  const breakdownMasuk = breakdownPemasukanKategori(list, kategoriMasukList);
   const labaRugi = laporanLabaRugi(keuanganTransaksi, kategoriMasukList, kategoriKeluarList, dari || null, sampai || null);
 
   const sorted = [...list].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
@@ -1017,7 +1046,10 @@ function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
 
-      <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <BreakdownPemasukan total={breakdownMasuk.total} data={breakdownMasuk.data} />
+        <BreakdownPengeluaran total={breakdownKeluar.total} data={breakdownKeluar.data} />
+      </div>
 
       <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} />
 

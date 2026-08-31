@@ -13,6 +13,7 @@ import {
   saldoPerRekening,
   arusKasPerPeriode,
   breakdownPengeluaranKategori,
+  breakdownPemasukanKategori,
   laporanLabaRugi,
   ringkasanGrosir,
   statusPesananMasuk,
@@ -20,7 +21,7 @@ import {
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
-import { GrafikArusKas, BreakdownPengeluaran, LaporanLabaRugi } from "./Keuangan";
+import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, LaporanLabaRugi } from "./Keuangan";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
 // vs Absensi supaya masing-masing tetap fokus (angka gudang tidak nyampur sama
@@ -200,6 +201,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
   const { mode, data: dataArusKas } = arusKasPerPeriode(transaksi60Hari);
 
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
+  const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
 
   const labaRugiBulanIni = laporanLabaRugi(keuanganTransaksi, master.kategori_masuk || [], master.kategori_keluar || [], dari, sampai);
 
@@ -220,28 +222,29 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
 
       <GrafikArusKas mode={mode} data={dataArusKas} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <BreakdownPemasukan total={breakdownMasuk.total} data={breakdownMasuk.data} />
         <BreakdownPengeluaran total={breakdown.total} data={breakdown.data} />
+      </div>
 
-        <div className="rounded-xl border border-slate-800 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo per Rekening</div>
-          {saldoRekening.length === 0 ? (
-            <div className="p-6"><EmptyState label="Belum ada rekening terdaftar." /></div>
-          ) : (
-            <table className="w-full text-sm">
-              <tbody>
-                {saldoRekening.map((r) => (
-                  <tr key={r.kode} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2.5 text-slate-300">{r.label}</td>
-                    <td className={`px-4 py-2.5 text-right font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>
-                      {fmtRp(r.saldo)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo per Rekening</div>
+        {saldoRekening.length === 0 ? (
+          <div className="p-6"><EmptyState label="Belum ada rekening terdaftar." /></div>
+        ) : (
+          <table className="w-full text-sm">
+            <tbody>
+              {saldoRekening.map((r) => (
+                <tr key={r.kode} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 text-slate-300">{r.label}</td>
+                  <td className={`px-4 py-2.5 text-right font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>
+                    {fmtRp(r.saldo)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <LaporanLabaRugi
