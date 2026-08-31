@@ -125,15 +125,18 @@ function MainApp({ session, onLogout }) {
     setTimeout(() => setToast(null), duration);
   };
 
-  // Setiap pindah menu, datanya tetap di-refresh (loadAll()) supaya selalu
-  // segar — penting karena sistemnya sering dipakai barengan beberapa staf
-  // sekaligus. TAPI sebelumnya ini dilakukan lewat window.location.reload()
-  // (reload total browser: layar putih kedip, seluruh JS di-parse ulang dari
-  // nol, sesi login di-cek ulang) — sekarang cukup ganti state `nav` dan
-  // panggil loadAll() di background. Selama data lama masih ada di memori
-  // (items.length > 0), tampilan lama tetap kelihatan sambil data baru
-  // dimuat (lihat kondisi "loading && items.length === 0" di bawah), jadi
-  // pindah menu jadi terasa instan, bukan nunggu reload total tiap kali.
+  // Setiap pindah menu, datanya tetap di-refresh (loadForMenu()) supaya
+  // selalu segar — penting karena sistemnya sering dipakai barengan
+  // beberapa staf sekaligus. TAPI sebelumnya ini dilakukan lewat
+  // window.location.reload() (reload total browser: layar putih kedip,
+  // seluruh JS di-parse ulang dari nol, sesi login di-cek ulang) — sekarang
+  // cukup ganti state `nav` dan panggil loadForMenu() di background. Selama
+  // data lama masih ada di memori (items.length > 0), tampilan lama tetap
+  // kelihatan sambil data baru dimuat (lihat kondisi "loading &&
+  // items.length === 0" di bawah), jadi pindah menu jadi terasa instan,
+  // bukan nunggu reload total tiap kali. loadForMenu() juga cuma menarik
+  // data yang relevan sama menu tujuan (bukan SEMUA tabel), lihat penjelasan
+  // lengkap di dekat definisinya.
   const navigate = (menu, sub) => {
     if (!allowed.includes(menu)) return;
     const subs = allowedSubMenus(session.role, menu);
@@ -146,7 +149,11 @@ function MainApp({ session, onLogout }) {
     } catch {}
     setModal(null); // dulu ikut ke-reset otomatis gara-gara reload total — sekarang ditutup manual
     setNav({ menu, sub: sub || null });
-    loadAll();
+    // Dulu loadAll() (narik SEMUA 22 tabel) tiap pindah menu — sekarang
+    // cukup data yang relevan sama menu tujuan (lihat loadForMenu di atas),
+    // supaya pindah menu jadi jauh lebih ringan tanpa kehilangan data fresh
+    // yang memang dibutuhkan menu itu.
+    loadForMenu(menu);
   };
 
   // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
@@ -166,7 +173,7 @@ function MainApp({ session, onLogout }) {
         method: "PATCH",
         body: JSON.stringify(patches[stage]),
       });
-      await loadAll();
+      await loadCore(); // cuma tabel items yang berubah — bagian dari core
       showToast(messages[stage]);
     } catch (e) {
       showToast(e.message || "Gagal menyimpan", "err");
@@ -188,71 +195,113 @@ function MainApp({ session, onLogout }) {
         prefer: "return=representation,resolution=merge-duplicates",
         body: JSON.stringify(keys.map((k) => ({ notif_key: k }))),
       });
-      await loadAll();
+      await loadCore(); // cuma tabel marketplace_notif_ack yang berubah — bagian dari core
     } catch (e) {
       if (e.pgCode === "23505") {
-        await loadAll();
+        await loadCore();
         return;
       }
       showToast(e.message || "Gagal menyimpan konfirmasi", "err");
     }
   };
 
-  const loadAll = useCallback(async () => {
+  // ---- Loader per "kelompok data" -----------------------------------------
+  // loadAll() (dulu) selalu menarik SEMUA 22 tabel tiap kali pindah menu —
+  // termasuk data Grosir/Keuangan/Absensi yang sebenarnya cuma dipakai di
+  // halaman masing-masing. Efeknya app kerasa berat terus-menerus (tiap
+  // klik menu = 22 request + render ulang semua data), apalagi di WebView
+  // Android yang lebih berat dibanding browser desktop.
+  // Sekarang dipecah jadi 4 kelompok:
+  //  - loadCore()    : dipakai badge sidebar & hampir semua halaman gudang
+  //                    (persetujuan restok, barang datang/masuk, data
+  //                    barang, sku & harga, stok, rak, cetak label, foto,
+  //                    marketplace, pengaturan) — SELALU ditarik tiap
+  //                    pindah menu karena badge sidebar butuh ini.
+  //  - loadGrosir()  : data modul Grosir saja — cuma ditarik kalau lagi
+  //                    buka menu Grosir (atau Dashboard).
+  //  - loadKeuangan(): data modul Keuangan saja — cuma ditarik kalau lagi
+  //                    buka menu Keuangan (atau Dashboard).
+  //  - loadAbsensi() : dipakai HANYA oleh tab "Dashboard Absensi" (halaman
+  //                    Absensi sendiri sudah narik datanya sendiri-sendiri,
+  //                    lihat pages/Absensi.jsx) — cuma ditarik kalau lagi
+  //                    buka Dashboard.
+  // loadAll() (gabungan keempatnya) TETAP dipakai untuk: load pertama kali
+  // app dibuka, tombol "Muat ulang" manual di header, dan tiap kali ada
+  // form/modal yang habis disimpan (reload={loadAll} di banyak tempat) —
+  // supaya data yang direfresh setelah SIMPAN tetap lengkap seperti semula,
+  // TIDAK ada perubahan di situ. Yang berubah cuma pemicu OTOMATIS saat
+  // pindah-pindah menu (lihat loadForMenu & fungsi navigate di bawah).
+  const loadCore = useCallback(async () => {
+    const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
+      sbAll("items?select=*&order=created_at.desc"),
+      sbAll("pesanan_masuk?select=*&order=created_at.desc"),
+      sbAll("sku_master?select=*&order=created_at.desc"),
+      sbAll("rak?select=*&order=code"),
+      sbAll("master_data?select=*&order=label"),
+      sb("settings?select=*"),
+      sbAll("penempatan?select=*&order=created_at.desc"),
+      sbAll("stock_history?select=*&order=created_at.desc"),
+      sbAll("rak_events?select=*&order=created_at.desc"),
+      sbAll("barang_rusak?select=*&order=created_at.desc"),
+      sbAll("marketplace_notif_ack?select=*"),
+      sbAll("pengajuan_restock?select=*&order=created_at.desc"),
+    ]);
+    setItems(itemsRes || []);
+    setPesananMasuk(pesananMasukRes || []);
+    setSkuMaster(skuRes || []);
+    setRak(rakRes || []);
+    const grouped = {};
+    (masterRes || []).forEach((m) => {
+      grouped[m.tipe] = grouped[m.tipe] || [];
+      grouped[m.tipe].push(m);
+    });
+    setMaster(grouped);
+    setSettings((settingsRes || [])[0] || null);
+    setPenempatan(penempatanRes || []);
+    setStockHistory(historyRes || []);
+    setRakEvents(rakEventsRes || []);
+    setBarangRusak(barangRusakRes || []);
+    setMarketplaceNotifAck(notifAckRes || []);
+    setPengajuanRestock(pengajuanRestockRes || []);
+  }, []);
+
+  const loadGrosir = useCallback(async () => {
+    const [pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes] = await Promise.all([
+      sbAll("grosir_pelanggan?select=*&order=nama"),
+      sbAll("grosir_toko?select=*&order=nama_toko"),
+      sbAll("grosir_produk_manual?select=*&order=nama_produk"),
+      sbAll("grosir_pesanan?select=*&order=created_at.desc"),
+      sbAll("grosir_detail_pesanan?select=*"),
+      sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
+      sbAll("grosir_deposit?select=*&order=created_at.desc"),
+    ]);
+    setPelangganGrosir(pelangganRes || []);
+    setTokoGrosir(tokoRes || []);
+    setProdukManualGrosir(produkManualRes || []);
+    setPesananGrosir(pesananRes || []);
+    setDetailPesananGrosir(detailPesananRes || []);
+    setPembayaranGrosir(pembayaranRes || []);
+    setDepositGrosir(depositRes || []);
+  }, []);
+
+  const loadKeuangan = useCallback(async () => {
+    const keuanganRes = await sbAll("keuangan_transaksi?select=*&order=tanggal.desc");
+    setKeuanganTransaksi(keuanganRes || []);
+  }, []);
+
+  const loadAbsensi = useCallback(async () => {
+    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(), listKaryawan()]);
+    setAbsensiRows(absensiRes || []);
+    setKaryawanList(karyawanRes || []);
+  }, []);
+
+  // Bungkus 1+ loader di atas jadi satu pemanggilan dengan indikator
+  // loading & error yang seragam — persis perilaku loadAll() yang lama.
+  const runLoaders = useCallback(async (...loaders) => {
     setLoading(true);
     setError(null);
     try {
-      const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes, keuanganRes, absensiRes, karyawanRes, pengajuanRestockRes] = await Promise.all([
-        sbAll("items?select=*&order=created_at.desc"),
-        sbAll("pesanan_masuk?select=*&order=created_at.desc"),
-        sbAll("sku_master?select=*&order=created_at.desc"),
-        sbAll("rak?select=*&order=code"),
-        sbAll("master_data?select=*&order=label"),
-        sb("settings?select=*"),
-        sbAll("penempatan?select=*&order=created_at.desc"),
-        sbAll("stock_history?select=*&order=created_at.desc"),
-        sbAll("rak_events?select=*&order=created_at.desc"),
-        sbAll("barang_rusak?select=*&order=created_at.desc"),
-        sbAll("marketplace_notif_ack?select=*"),
-        sbAll("grosir_pelanggan?select=*&order=nama"),
-        sbAll("grosir_toko?select=*&order=nama_toko"),
-        sbAll("grosir_produk_manual?select=*&order=nama_produk"),
-        sbAll("grosir_pesanan?select=*&order=created_at.desc"),
-        sbAll("grosir_detail_pesanan?select=*"),
-        sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
-        sbAll("grosir_deposit?select=*&order=created_at.desc"),
-        sbAll("keuangan_transaksi?select=*&order=tanggal.desc"),
-        listAbsensi(),
-        listKaryawan(),
-        sbAll("pengajuan_restock?select=*&order=created_at.desc"),
-      ]);
-      setItems(itemsRes || []);
-      setPesananMasuk(pesananMasukRes || []);
-      setSkuMaster(skuRes || []);
-      setRak(rakRes || []);
-      const grouped = {};
-      (masterRes || []).forEach((m) => {
-        grouped[m.tipe] = grouped[m.tipe] || [];
-        grouped[m.tipe].push(m);
-      });
-      setMaster(grouped);
-      setSettings((settingsRes || [])[0] || null);
-      setPenempatan(penempatanRes || []);
-      setStockHistory(historyRes || []);
-      setRakEvents(rakEventsRes || []);
-      setBarangRusak(barangRusakRes || []);
-      setMarketplaceNotifAck(notifAckRes || []);
-      setPelangganGrosir(pelangganRes || []);
-      setTokoGrosir(tokoRes || []);
-      setProdukManualGrosir(produkManualRes || []);
-      setPesananGrosir(pesananRes || []);
-      setDetailPesananGrosir(detailPesananRes || []);
-      setPembayaranGrosir(pembayaranRes || []);
-      setDepositGrosir(depositRes || []);
-      setKeuanganTransaksi(keuanganRes || []);
-      setAbsensiRows(absensiRes || []);
-      setKaryawanList(karyawanRes || []);
-      setPengajuanRestock(pengajuanRestockRes || []);
+      await Promise.all(loaders.map((fn) => fn()));
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -260,9 +309,31 @@ function MainApp({ session, onLogout }) {
     }
   }, []);
 
+  const loadAll = useCallback(
+    () => runLoaders(loadCore, loadGrosir, loadKeuangan, loadAbsensi),
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadAbsensi]
+  );
+
+  // Data apa saja yang perlu ditarik tergantung menu yang dituju — dashboard
+  // butuh semuanya (dia nampilin ringkasan tiap modul dalam beberapa tab),
+  // Grosir & Keuangan cuma butuh datanya sendiri (+ core buat badge &
+  // data gabungan seperti skuMasterGrosir), sisanya cukup loadCore saja.
+  const loadForMenu = useCallback(
+    (menu) => {
+      if (menu === "dashboard") return runLoaders(loadCore, loadGrosir, loadKeuangan, loadAbsensi);
+      if (menu === "grosir") return runLoaders(loadCore, loadGrosir);
+      if (menu === "keuangan") return runLoaders(loadCore, loadKeuangan);
+      return runLoaders(loadCore);
+    },
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadAbsensi]
+  );
+
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+    // Sengaja cuma sekali saat app pertama dibuka, pakai menu awal (nav.menu)
+    // saat itu — pindah menu berikutnya sudah ditangani fungsi navigate().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadForMenu(nav.menu);
+  }, []);
 
   const stageCounts = STAGE_ORDER.reduce((acc, s) => {
     acc[s] = items.filter((i) => i.stage === s).length;
