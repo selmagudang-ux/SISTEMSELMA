@@ -36,8 +36,8 @@ import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaks
 // "Persetujuan Restok" (lihat pages/PersetujuanRestock.jsx), supaya tidak
 // perlu masuk Dashboard dulu buat menindaklanjuti pengajuan.
 const TABS = [
-  { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
   { key: "monitoring", label: "Dashboard Monitoring", icon: Activity },
+  { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
   { key: "grosir", label: "Dashboard Grosir", icon: Store },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
   { key: "absensi", label: "Dashboard Absensi", icon: Clock },
@@ -83,7 +83,7 @@ export default function Dashboard({
   absensiRows = [],
   karyawanList = [],
 }) {
-  const [tab, setTab] = useState("gudang");
+  const [tab, setTab] = useState("monitoring");
 
   return (
     <div>
