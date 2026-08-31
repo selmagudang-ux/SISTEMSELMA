@@ -16,6 +16,7 @@ import Login from "./pages/Login";
 // (cariPerluDitempatkanUlang, dst) dipakai di luar halaman Rak sendiri, mis.
 // untuk badge & notifikasi di Dashboard/Sidebar yang selalu dihitung.
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const PersetujuanRestock = lazy(() => import("./pages/PersetujuanRestock"));
 const BarangDatang = lazy(() => import("./pages/BarangDatang"));
 const BarangMasuk = lazy(() => import("./pages/BarangMasuk"));
 const DataBarang = lazy(() => import("./pages/DataBarang"));
@@ -309,15 +310,15 @@ function MainApp({ session, onLogout }) {
     (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
   ).length;
 
-  // Badge di menu Dashboard (sidebar) = jumlah pengajuan restock yang masih
-  // "menunggu" — supaya owner/superadmin langsung lihat ada yang perlu
-  // ditinjau tanpa harus buka halaman Dashboard dulu (reminder pasif, bukan
-  // notifikasi push — cukup untuk kasus ini karena menu "dashboard" memang
-  // sudah dibatasi hanya untuk role owner/superadmin di ROLE_MENUS).
+  // Badge di menu "Persetujuan Restok" (sidebar) = jumlah pengajuan restock
+  // yang masih "menunggu" — supaya owner/superadmin langsung lihat ada yang
+  // perlu ditinjau tanpa harus buka halamannya dulu (reminder pasif, bukan
+  // notifikasi push — cukup untuk kasus ini karena menu ini memang sudah
+  // dibatasi hanya untuk role owner/superadmin di ROLE_MENUS).
   const pengajuanMenungguCount = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
 
   const sidebarBadges = withParentBadges(NAV, {
-    dashboard: pengajuanMenungguCount,
+    "persetujuan-restock": pengajuanMenungguCount,
     "sku-harga.buat": stageCounts.sku,
     "rak.tempatkan": tanpaRakCount,
     "rak.gudang": sisaGudangList.length,
@@ -474,8 +475,13 @@ function MainApp({ session, onLogout }) {
                   master={master}
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
+                />
+              )}
+              {nav.menu === "persetujuan-restock" && (
+                <PersetujuanRestock
                   pengajuanRestock={pengajuanRestock}
                   session={session}
+                  setModal={setModal}
                 />
               )}
               {nav.menu === "barang-datang" && (

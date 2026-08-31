@@ -1974,7 +1974,7 @@ export default function ModalRouter({
   // ------------------------------------------------------------------
   if (modal.type === "pesan-barang") {
     // Dibuka dari tombol "Buat Pesan Barang" di pengajuan restock yang sudah
-    // disetujui (Dashboard > Menunggu Persetujuan) — modal.item berisi
+    // disetujui (menu sidebar "Persetujuan Restok") — modal.item berisi
     // { dariRestock: true, sku, catatanRestock }. Cari toko/supplier langganan
     // SKU ini dari riwayat barang datang terakhir (logika sama seperti di
     // "respon-pengajuan-restock" di bawah), supaya form-nya sudah terisi.

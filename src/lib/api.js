@@ -37,7 +37,7 @@ function friendlyDbError(parsed, status) {
 // GERBANG READ-ONLY UNTUK ROLE OWNER
 // Owner boleh MELIHAT semua data (semua query GET tetap jalan seperti biasa)
 // tapi tidak boleh mengubah/menambah/menghapus apapun — KECUALI menyetujui
-// atau menolak pengajuan restock (Dashboard > Menunggu Persetujuan), karena
+// atau menolak pengajuan restock (menu sidebar "Persetujuan Restok"), karena
 // itu memang tugas owner (lihat modal "respon-pengajuan-restock" di
 // ModalRouter, satu-satunya tempat yang PATCH ke tabel "pengajuan_restock").
 // Session disimpan di sessionStorage oleh lib/auth.js (key "selma_session")

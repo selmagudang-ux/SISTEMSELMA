@@ -3,7 +3,7 @@ import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
-  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid,
+  Activity, Truck, ShoppingBag, DollarSign,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -28,15 +28,16 @@ import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaks
 // angka grosir/keuangan/absensi), tapi tetap satu halaman "Dashboard" (pola
 // sama seperti halaman Laporan), bukan menu terpisah di sidebar.
 // Menu "dashboard" sendiri HANYA bisa diakses role owner & superadmin (lihat
-// ROLE_MENUS di lib/constants.js) — jadi semua tab di sini, termasuk
-// "Menunggu Persetujuan", otomatis cuma kelihatan oleh dua role itu. Tab
-// "Stok Menipis" (ajukan restock) sudah dipindah jadi sub-menu di dalam
-// Gudang → Stok, supaya gudang mengajukan restock dari halaman kerjanya
-// sendiri tanpa perlu akses dashboard.
+// ROLE_MENUS di lib/constants.js). Tab "Stok Menipis" (ajukan restock) sudah
+// dipindah jadi sub-menu di dalam Gudang → Stok, supaya gudang mengajukan
+// restock dari halaman kerjanya sendiri tanpa perlu akses dashboard. Tab
+// "Menunggu Persetujuan" (sisi approve dari alur yang sama) juga sudah
+// dipindah keluar dari sini — sekarang jadi menu sidebar tersendiri, halaman
+// "Persetujuan Restok" (lihat pages/PersetujuanRestock.jsx), supaya tidak
+// perlu masuk Dashboard dulu buat menindaklanjuti pengajuan.
 const TABS = [
   { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
   { key: "monitoring", label: "Dashboard Monitoring", icon: Activity },
-  { key: "persetujuan", label: "Menunggu Persetujuan", icon: ClipboardList },
   { key: "grosir", label: "Dashboard Grosir", icon: Store },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
   { key: "absensi", label: "Dashboard Absensi", icon: Clock },
@@ -81,11 +82,8 @@ export default function Dashboard({
   master = {},
   absensiRows = [],
   karyawanList = [],
-  pengajuanRestock = [],
-  session,
 }) {
   const [tab, setTab] = useState("gudang");
-  const jumlahMenunggu = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
 
   return (
     <div>
@@ -100,8 +98,6 @@ export default function Dashboard({
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
             : tab === "monitoring"
             ? "Pantau tiap tahap alur barang — dari pesanan ke supplier sampai siap dijual — plus akses cepat ke laporan keuangan & penjualan grosir."
-            : tab === "persetujuan"
-            ? "Pengajuan restock dari gudang — tinjau, dan lihat riwayat yang sudah direspon."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
         }
       />
@@ -119,15 +115,6 @@ export default function Dashboard({
               }`}
             >
               <Icon size={13} /> {t.label}
-              {t.key === "persetujuan" && jumlahMenunggu > 0 && (
-                <span
-                  className={`text-[10px] font-semibold px-1.5 rounded-full ${
-                    active ? "bg-slate-950/20" : "bg-slate-800"
-                  }`}
-                >
-                  {jumlahMenunggu}
-                </span>
-              )}
             </button>
           );
         })}
@@ -152,12 +139,6 @@ export default function Dashboard({
           keuanganTransaksi={keuanganTransaksi}
           pesananGrosir={pesananGrosir}
           onNavigate={onNavigate}
-          setModal={setModal}
-        />
-      ) : tab === "persetujuan" ? (
-        <DashboardPersetujuanRestock
-          pengajuanRestock={pengajuanRestock}
-          session={session}
           setModal={setModal}
         />
       ) : tab === "grosir" ? (
@@ -632,160 +613,6 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
               <div className="text-sm font-bold">{fmtRp(laporanGrosirBulanIni.rataRata)}</div>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Tab "Menunggu Persetujuan" — daftar pengajuan restock dari gudang, owner
-// meninjau (Setujui/Tolak) langsung dari sini, plus riwayat yang sudah
-// direspon. Menyetujui TIDAK otomatis membuat Pesan Barang (PO) — cuma
-// menandai status "disetujui" (arahan user: mirip badge "Habis" di Katalog,
-// sekadar penanda, bukan alur otomatis) — gudang yang nanti bikin PO manual
-// lewat Pesan Barang kalau mau ditindaklanjuti.
-function DashboardPersetujuanRestock({ pengajuanRestock, session, setModal }) {
-  const bisaSetujui = ["owner", "superadmin"].includes(session?.role);
-
-  const semua = pengajuanRestock || [];
-  const menunggu = [...semua]
-    .filter((p) => p.status === "menunggu")
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const riwayat = [...semua]
-    .filter((p) => p.status !== "menunggu")
-    .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at))
-    .slice(0, 10);
-
-  const bulanIni = hariIniIso().slice(0, 7);
-  const disetujuiBulanIni = semua.filter(
-    (p) => p.status === "disetujui" && (p.direspon_pada || "").slice(0, 7) === bulanIni
-  ).length;
-  const ditolakBulanIni = semua.filter(
-    (p) => p.status === "ditolak" && (p.direspon_pada || "").slice(0, 7) === bulanIni
-  ).length;
-
-  return (
-    <div>
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <StatCard label="Menunggu Ditinjau" value={menunggu.length} accent="text-amber-400" icon={ClipboardList} iconColor="text-amber-500" />
-        <StatCard label="Disetujui Bulan Ini" value={disetujuiBulanIni} accent="text-emerald-400" icon={PackageCheck} iconColor="text-emerald-500" />
-        <StatCard label="Ditolak Bulan Ini" value={ditolakBulanIni} accent="text-red-400" icon={Trash2} iconColor="text-red-500" />
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div>
-          <div className="text-xs font-semibold text-slate-400 mb-2">
-            Menunggu Persetujuan{!bisaSetujui && " (diajukan tim gudang)"}
-          </div>
-          {menunggu.length === 0 ? (
-            <EmptyState label="Tidak ada pengajuan yang menunggu persetujuan." />
-          ) : (
-            <div className="space-y-2">
-              {menunggu.map((p) => (
-                <div
-                  key={p.id}
-                  className="rounded-xl border border-amber-500/25 bg-amber-500/[0.04] px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex items-start gap-2.5">
-                      <div className="mt-0.5 w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-                        {p.jenis === "zona" ? (
-                          <LayoutGrid size={14} className="text-amber-500" />
-                        ) : (
-                          <Boxes size={14} className="text-amber-500" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        {p.jenis === "zona" ? (
-                          <>
-                            <div className="text-xs font-semibold text-slate-100 truncate">Zona: {p.zona}</div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              {p.dibuat_oleh_nama || "—"} · {p.jumlah_rak_kosong} rak kosong
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
-                              {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
-                            </div>
-                          </>
-                        )}
-                        {p.catatan && (
-                          <div className="text-[11px] text-slate-400 mt-1 italic">"{p.catatan}"</div>
-                        )}
-                      </div>
-                    </div>
-                    {bisaSetujui ? (
-                      <button
-                        onClick={() => setModal({ type: "respon-pengajuan-restock", item: p })}
-                        className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950"
-                      >
-                        Tinjau
-                      </button>
-                    ) : (
-                      <Badge color="amber">Menunggu</Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <div className="text-xs font-semibold text-slate-400 mb-2">Riwayat Pengajuan Terakhir</div>
-          {riwayat.length === 0 ? (
-            <EmptyState label="Belum ada riwayat pengajuan yang direspon." />
-          ) : (
-            <div className="rounded-xl border border-slate-800 divide-y divide-slate-800/70 overflow-hidden">
-              {riwayat.map((p) => (
-                <div key={p.id} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {p.jenis === "zona" ? (
-                          <span className="text-xs font-semibold text-slate-200 truncate">Zona: {p.zona}</span>
-                        ) : (
-                          <span className="font-mono text-xs font-semibold text-slate-200 truncate">{p.sku}</span>
-                        )}
-                        <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
-                          {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
-                        </Badge>
-                      </div>
-                      <div className="text-[11px] text-slate-500 mt-1">
-                        Diajukan oleh {p.dibuat_oleh_nama || "—"}
-                        {p.jenis === "zona" ? ` · ${p.jumlah_rak_kosong} rak kosong` : ""}
-                        {p.catatan_owner ? ` · "${p.catatan_owner}"` : ""}
-                      </div>
-                    </div>
-                    {bisaSetujui && (
-                      <button
-                        onClick={() => setModal({ type: "hapus-pengajuan-restock", item: p })}
-                        title="Hapus riwayat ini"
-                        className="text-slate-600 hover:text-red-400 p-1 shrink-0"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                  {bisaSetujui && p.status === "disetujui" && p.jenis !== "zona" && (
-                    <button
-                      onClick={() =>
-                        setModal({
-                          type: "pesan-barang",
-                          item: { dariRestock: true, sku: p.sku, catatanRestock: p.catatan },
-                        })
-                      }
-                      className="mt-2 flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                    >
-                      <ShoppingBag size={12} /> Buat Pesan Barang
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
     </div>

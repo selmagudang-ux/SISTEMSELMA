@@ -99,6 +99,11 @@ export const MASTER_TIPE = [
 // =========================================================
 export const NAV = [
   { key: "dashboard", label: "DASHBOARD", icon: LayoutDashboard },
+  // Menu sendiri (bukan tab di dalam Dashboard) supaya owner/superadmin bisa
+  // langsung menuju & lihat badge-nya dari sidebar tanpa buka Dashboard dulu.
+  // Dibatasi ke owner & superadmin lewat ROLE_MENUS di bawah (role lain tidak
+  // didaftarkan eksplisit di sana jadi otomatis tidak dapat menu ini).
+  { key: "persetujuan-restock", label: "PERSETUJUAN RESTOK", icon: ClipboardList },
   {
     key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
     children: [
@@ -330,10 +335,10 @@ export const ROLE_MENUS = {
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
   // di ROLE_SUBMENUS. "Stok Menipis" (ajukan restock) sekarang jadi sub-menu
-  // di dalam "stok", jadi gudang tidak lagi butuh akses "dashboard" sama
-  // sekali — dashboard (termasuk tab "Menunggu Persetujuan") murni untuk
-  // owner & superadmin. Landing page login gudang tetap ke "barang-datang"
-  // (lihat App.jsx).
+  // di dalam "stok", jadi gudang tidak lagi butuh akses "dashboard" atau
+  // "persetujuan-restock" sama sekali — keduanya murni untuk owner &
+  // superadmin. Landing page login gudang tetap ke "barang-datang" (lihat
+  // App.jsx).
   gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto"],

@@ -39,8 +39,9 @@ export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengaju
 
 // Sub-menu "Stok Menipis" — pindahan dari tab Dashboard (dulu "Barang
 // Menipis"), sekarang jadi bagian dari menu Stok supaya gudang mengajukan
-// restock dari tempat yang sama dengan kerja stok sehari-hari. Dashboard kini
-// murni untuk tab "Menunggu Persetujuan" (owner/superadmin saja).
+// restock dari tempat yang sama dengan kerja stok sehari-hari. Sisi
+// approve-nya ada di menu sidebar tersendiri "Persetujuan Restok"
+// (owner/superadmin saja — lihat pages/PersetujuanRestock.jsx).
 function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
   const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
   const [q, setQ] = useState("");
