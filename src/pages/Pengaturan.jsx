@@ -307,7 +307,19 @@ function FotoYatimCleaner({ reload, showToast }) {
 
   const cekSatu = async (url) => {
     try {
-      const res = await fetch(url, { method: "HEAD", cache: "no-store" });
+      // PENTING: pakai GET, BUKAN HEAD. Supabase Storage punya perilaku beda
+      // antara HEAD dan GET di layer CDN/cache-nya — HEAD kadang balas 404
+      // padahal filenya beneran masih ada (GET ke URL yang sama balas 200).
+      // Ini bug/ketidakkonsistenan yang sudah dikonfirmasi terjadi, jadi HEAD
+      // tidak bisa dipercaya untuk cek keberadaan file di Supabase Storage.
+      // Range: bytes=0-0 dipakai supaya GET-nya tetap ringan (cuma minta 1
+      // byte pertama, bukan download seluruh file) sambil tetap dapat status
+      // code yang akurat dari origin (200/206 = ada, 404 = benar-benar hilang).
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Range: "bytes=0-0" },
+        cache: "no-store",
+      });
       return res.status === 404;
     } catch {
       // Gagal fetch (mis. jaringan) tidak otomatis dianggap "hilang" — supaya
@@ -326,7 +338,7 @@ function FotoYatimCleaner({ reload, showToast }) {
       const unik = items.filter((i) => i.foto_url);
       setProgress({ done: 0, total: unik.length });
 
-      const hilang = new Set(); // foto_url yang 404
+      const hilang = new Set(); // foto_url yang 404 di pengecekan PERTAMA
       for (let i = 0; i < unik.length; i += KONKURENSI) {
         const batch = unik.slice(i, i + KONKURENSI);
         const hasil = await Promise.all(batch.map((it) => cekSatu(it.foto_url)));
@@ -336,7 +348,22 @@ function FotoYatimCleaner({ reload, showToast }) {
         setProgress({ done: Math.min(i + KONKURENSI, unik.length), total: unik.length });
       }
 
-      const yatim = unik.filter((it) => hilang.has(it.foto_url));
+      // Verifikasi ULANG khusus yang 404 di percobaan pertama (bukan cek
+      // ulang semuanya — hemat waktu). Ini jaga-jaga dari 404 yang
+      // "nyasar"/sementara (mis. gangguan jaringan sesaat atau respons tidak
+      // konsisten dari CDN Storage) — hanya yang 404 DUA KALI berturut-turut
+      // yang dianggap benar-benar hilang.
+      const kandidat = unik.filter((it) => hilang.has(it.foto_url));
+      const benarHilang = new Set();
+      for (let i = 0; i < kandidat.length; i += KONKURENSI) {
+        const batch = kandidat.slice(i, i + KONKURENSI);
+        const hasil = await Promise.all(batch.map((it) => cekSatu(it.foto_url)));
+        batch.forEach((it, j) => {
+          if (hasil[j]) benarHilang.add(it.foto_url);
+        });
+      }
+
+      const yatim = unik.filter((it) => benarHilang.has(it.foto_url));
       setOrphans(yatim);
       if (yatim.length === 0) showToast("Tidak ada foto yatim — semua foto_url di database masih ada filenya");
     } catch (e) {
