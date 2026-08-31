@@ -5,6 +5,7 @@ import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, N
 import { getSession, logout } from "./lib/auth";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
+import { rippleEffect, iconBtnClass } from "./components/ui";
 import ModalRouter from "./components/ModalRouter";
 import Login from "./pages/Login";
 
@@ -114,28 +115,29 @@ function AppShell({
       />
 
       <div className="flex-1 min-w-0">
-        {/* Header — selalu tampil di semua halaman (termasuk Cetak Label) supaya
-            tombol buka menu di HP tetap bisa diakses. Disembunyikan otomatis saat
-            print lewat class print:hidden. */}
-        <header className="print:hidden border-b border-slate-800 sticky top-0 bg-slate-950/90 backdrop-blur z-20">
-          <div className="px-5 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
+        {/* Top App Bar Material 3 — selalu tampil di semua halaman (termasuk
+            Cetak Label) supaya tombol buka menu di HP tetap bisa diakses.
+            Disembunyikan otomatis saat print lewat class print:hidden. */}
+        <header className="print:hidden sticky top-0 bg-md-surface/95 backdrop-blur z-20 h-16 flex items-center">
+          <div className="px-3 w-full flex items-center justify-between gap-4">
+            <div className="flex items-center gap-1 min-w-0">
               <MobileMenuButton onClick={() => setMobileOpen(true)} />
-              <div className="min-w-0">
-                <div className="text-xs text-slate-500 truncate">
-                  {menuLabel}{subLabel ? ` / ${subLabel}` : ""}
+              <div className="min-w-0 px-2">
+                <div className="text-base font-medium text-md-on-surface truncate">
+                  {menuLabel}{subLabel ? <span className="text-md-on-surface-variant font-normal"> / {subLabel}</span> : ""}
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1 flex-shrink-0">
               {canSee("data-barang") && belumSelesaiCount > 0 && (
                 <button
                   onClick={() => navigate("data-barang", null)}
-                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                  onMouseDown={rippleEffect}
+                  className={`relative ${iconBtnClass}`}
                   title={`${belumSelesaiCount} barang belum selesai`}
                 >
-                  <Bell size={14} />
-                  <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                  <Bell size={17} />
+                  <span className="absolute top-1 right-1 text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
                     {belumSelesaiCount}
                   </span>
                 </button>
@@ -143,23 +145,20 @@ function AppShell({
               {canSee("rak") && (
                 <button
                   onClick={() => navigate("rak", "tempatkan")}
-                  className="relative p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
+                  onMouseDown={rippleEffect}
+                  className={`relative ${iconBtnClass}`}
                   title={tanpaRakCount > 0 ? `${tanpaRakCount} SKU belum punya rak` : "Tidak ada SKU tanpa rak"}
                 >
-                  <MapPin size={14} />
+                  <MapPin size={17} />
                   {tanpaRakCount > 0 && (
-                    <span className="absolute -top-1 -right-1 text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                    <span className="absolute top-1 right-1 text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
                       {tanpaRakCount}
                     </span>
                   )}
                 </button>
               )}
-              <button
-                onClick={loadAll}
-                className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700"
-                title="Muat ulang"
-              >
-                <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              <button onClick={loadAll} onMouseDown={rippleEffect} className={iconBtnClass} title="Muat ulang">
+                <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
               </button>
             </div>
           </div>
@@ -540,7 +539,7 @@ function MainApp({ session, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex">
+    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex">
       <AppShell
         active={nav}
         onNavigate={navigate}
@@ -560,23 +559,23 @@ function MainApp({ session, onLogout }) {
       >
         <main className="px-5 py-6 max-w-6xl">
           {error && (
-            <div className="mb-4 flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg">
+            <div className="mb-4 flex items-center gap-2 bg-md-error-container text-md-on-error-container text-sm px-4 py-3 rounded-md-md">
               <AlertCircle size={16} /> {error}
             </div>
           )}
 
           {loading && items.length === 0 ? (
-            <div className="flex items-center justify-center py-24 text-slate-500 gap-2 text-sm">
+            <div className="flex items-center justify-center py-24 text-md-on-surface-variant gap-2 text-sm">
               <Loader2 size={18} className="animate-spin" /> Memuat data…
             </div>
           ) : !canSee(nav.menu) || !canSeeSub(nav.menu, nav.sub) ? (
-            <div className="flex items-center justify-center py-24 text-slate-500 text-sm">
+            <div className="flex items-center justify-center py-24 text-md-on-surface-variant text-sm">
               Anda tidak punya akses ke halaman ini.
             </div>
           ) : (
             <Suspense
               fallback={
-                <div className="flex items-center justify-center py-24 text-slate-500 gap-2 text-sm">
+                <div className="flex items-center justify-center py-24 text-md-on-surface-variant gap-2 text-sm">
                   <Loader2 size={18} className="animate-spin" /> Memuat halaman…
                 </div>
               }
@@ -749,14 +748,16 @@ function MainApp({ session, onLogout }) {
         />
       )}
 
+      {/* Snackbar Material 3 — sudut kecil (4px, khas snackbar, beda dari
+          dialog/kartu yang membulat besar), permukaan inverse + elevation 3. */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 max-w-xs px-4 py-3 rounded-lg text-sm font-medium shadow-xl z-50 ${
+          className={`fixed bottom-5 right-5 max-w-xs px-4 py-3.5 rounded-md-xs text-sm font-medium shadow-elevation-3 z-50 ${
             toast.kind === "ok"
-              ? "bg-emerald-500 text-slate-950"
+              ? "bg-emerald-200 text-emerald-950"
               : toast.kind === "warn"
-              ? "bg-amber-500 text-slate-950"
-              : "bg-red-500 text-white"
+              ? "bg-md-primary text-md-on-primary"
+              : "bg-md-error-container text-md-on-error-container"
           }`}
         >
           {toast.msg}

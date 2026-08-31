@@ -2,20 +2,87 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Inbox, CalendarDays, Plus, Loader2, Check, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { sb } from "../lib/api";
 
+// =========================================================
+// TOKEN & UTILITAS MATERIAL DESIGN 3 (dipakai bersama di seluruh app)
+// Warna/shape/elevation-nya didefinisikan di tailwind.config.js (colors.md,
+// borderRadius.md-*, boxShadow.elevation-*). File ini menerjemahkannya jadi
+// kelas Tailwind siap pakai + komponen dasar (input, tombol, kartu, chip,
+// dialog) supaya konsisten di semua halaman.
+// =========================================================
+
+// Efek ripple ala Android — dipasang lewat onMouseDown di elemen yang punya
+// class "md-ripple-container" (position:relative + overflow:hidden, lihat
+// index.css). Murni dekoratif, tidak mengganggu onClick yang sudah ada.
+export function rippleEffect(e) {
+  const el = e.currentTarget;
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  const dot = document.createElement("span");
+  dot.className = "md-ripple-dot";
+  dot.style.width = dot.style.height = `${size}px`;
+  dot.style.left = `${e.clientX - rect.left - size / 2}px`;
+  dot.style.top = `${e.clientY - rect.top - size / 2}px`;
+  el.appendChild(dot);
+  dot.addEventListener("animationend", () => dot.remove());
+}
+
+// Tombol — 4 varian sesuai Material 3 (filled = aksi utama, tonal = aksi
+// sekunder yang tetap menonjol, outlined = aksi netral, text = aksi paling
+// ringan/hemat perhatian).
+export const btnFilled =
+  "md-ripple-container inline-flex items-center justify-center gap-1.5 rounded-full bg-md-primary text-md-on-primary font-medium text-sm px-5 py-2.5 shadow-elevation-1 hover:shadow-elevation-2 active:shadow-none transition-shadow disabled:opacity-40 disabled:shadow-none";
+export const btnTonal =
+  "md-ripple-container inline-flex items-center justify-center gap-1.5 rounded-full bg-md-primary-container text-md-on-primary-container font-medium text-sm px-5 py-2.5 hover:brightness-110 transition disabled:opacity-40";
+export const btnOutlined =
+  "md-ripple-container inline-flex items-center justify-center gap-1.5 rounded-full border border-md-outline text-md-on-surface font-medium text-sm px-5 py-2.5 hover:bg-md-on-surface/[0.08] transition disabled:opacity-40";
+export const btnText =
+  "md-ripple-container inline-flex items-center justify-center gap-1 rounded-full text-md-primary font-medium text-sm px-3.5 py-2 hover:bg-md-primary/10 transition disabled:opacity-40";
+// Tombol ikon bundar (top app bar, aksi kecil di kartu/list) — 40px = target
+// sentuh nyaman di HP.
+export const iconBtnClass =
+  "md-ripple-container w-10 h-10 flex items-center justify-center rounded-full text-md-on-surface-variant hover:bg-md-on-surface/10 transition";
+// Floating Action Button — aksi utama halaman, bentuk lingkaran khas Android.
+export const fabClass =
+  "md-ripple-container fixed bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-md-primary text-md-on-primary shadow-elevation-3 flex items-center justify-center";
+
+// Text field "filled" ala Material 3 — permukaan terisi (bukan sekadar
+// outline), dengan indikator garis bawah yang menebal & berubah warna saat
+// fokus. Dipakai lewat variabel `inputClass` yang sudah lama diimpor di
+// puluhan tempat (forms.jsx, semua halaman) — jadi cukup ubah di sini,
+// tampilannya berubah otomatis di seluruh aplikasi tanpa sentuh file lain.
 export const inputClass =
-  "w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500";
+  "w-full bg-md-container-highest border-0 border-b-2 border-md-outline-variant rounded-t-md-sm px-3 pt-2.5 pb-2 text-sm text-md-on-surface outline-none transition-colors focus:border-md-primary placeholder:text-md-on-surface-variant/70";
+
+// Chip Material (dipakai di Badge di bawah, atau langsung untuk filter/tag).
+export function chipClass(color = "slate") {
+  const map = {
+    slate: "bg-md-container-high text-md-on-surface-variant",
+    amber: "bg-md-primary-container text-md-on-primary-container",
+    emerald: "bg-emerald-400/15 text-emerald-300",
+    sky: "bg-sky-400/15 text-sky-300",
+    violet: "bg-violet-400/15 text-violet-300",
+    pink: "bg-pink-400/15 text-pink-300",
+    teal: "bg-teal-400/15 text-teal-300",
+    red: "bg-md-error-container text-md-on-error-container",
+    orange: "bg-orange-400/15 text-orange-300",
+  };
+  return map[color] || map.slate;
+}
 
 export function ModalShell({ title, onClose, children, maxWidth }) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
-      <div className={`bg-slate-900 border border-slate-800 rounded-xl w-full ${maxWidth || "max-w-md"} max-h-[85vh] overflow-y-auto`}>
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 sticky top-0 bg-slate-900">
-          <h3 className="font-semibold text-sm">{title}</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white">
-            <X size={16} />
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
+      <div
+        className={`bg-md-container-high rounded-md-xl shadow-elevation-3 w-full ${maxWidth || "max-w-md"} max-h-[85vh] overflow-y-auto`}
+      >
+        <div className="flex items-center justify-between px-5 py-4 sticky top-0 bg-md-container-high">
+          <h3 className="font-medium text-base text-md-on-surface">{title}</h3>
+          <button onClick={onClose} className={iconBtnClass} onMouseDown={rippleEffect}>
+            <X size={18} />
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="px-5 pb-5">{children}</div>
       </div>
     </div>
   );
@@ -80,7 +147,7 @@ export function ZoomableImage({ src, alt, height = "h-[65vh]" }) {
         onMouseUp={stopDrag}
         onMouseLeave={stopDrag}
         onDoubleClick={() => applyZoom(scale === ZOOM_MIN ? 2.5 : ZOOM_MIN)}
-        className={`w-full ${height} overflow-hidden rounded-lg border border-slate-800 bg-slate-950 ${
+        className={`w-full ${height} overflow-hidden rounded-md-md border border-md-outline-variant bg-md-container-highest ${
           scale > ZOOM_MIN ? (dragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
         }`}
       >
@@ -95,20 +162,20 @@ export function ZoomableImage({ src, alt, height = "h-[65vh]" }) {
           }}
         />
       </div>
-      <div className="absolute bottom-2 right-2 flex items-center gap-0.5 bg-slate-950/90 border border-slate-800 rounded-lg p-1">
+      <div className="absolute bottom-2 right-2 flex items-center gap-0.5 bg-md-surface/90 border border-md-outline-variant rounded-md-md p-1">
         <button
           type="button"
           onClick={() => applyZoom(scale - 0.6)}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-slate-800"
+          className="w-7 h-7 flex items-center justify-center rounded-md-sm text-md-on-surface hover:text-md-on-surface hover:bg-md-on-surface/10"
           title="Perkecil"
         >
           <ZoomOut size={14} />
         </button>
-        <span className="text-[10px] text-slate-400 w-9 text-center font-mono">{Math.round(scale * 100)}%</span>
+        <span className="text-[10px] text-md-on-surface-variant w-9 text-center font-mono">{Math.round(scale * 100)}%</span>
         <button
           type="button"
           onClick={() => applyZoom(scale + 0.6)}
-          className="w-7 h-7 flex items-center justify-center rounded-md text-slate-300 hover:text-white hover:bg-slate-800"
+          className="w-7 h-7 flex items-center justify-center rounded-md-sm text-md-on-surface hover:text-md-on-surface hover:bg-md-on-surface/10"
           title="Perbesar"
         >
           <ZoomIn size={14} />
@@ -117,14 +184,14 @@ export function ZoomableImage({ src, alt, height = "h-[65vh]" }) {
           <button
             type="button"
             onClick={reset}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-amber-400 hover:text-amber-300 hover:bg-slate-800"
+            className="w-7 h-7 flex items-center justify-center rounded-md-sm text-md-primary hover:text-md-primary hover:bg-md-on-surface/10"
             title="Reset zoom"
           >
             <Maximize2 size={13} />
           </button>
         )}
       </div>
-      <div className="mt-1 text-center text-[10px] text-slate-600">
+      <div className="mt-1 text-center text-[10px] text-md-on-surface-variant/70">
         Scroll mouse untuk zoom · geser gambar untuk lihat bagian lain
       </div>
     </div>
@@ -164,8 +231,8 @@ export function InputTanggal({ value, onChange, className }) {
       <div
         className={`${className || inputClass} absolute inset-0 flex items-center justify-between pointer-events-none`}
       >
-        <span className={display ? "" : "text-slate-500"}>{display || "Pilih tanggal"}</span>
-        <CalendarDays size={14} className="text-slate-500 shrink-0 ml-2" />
+        <span className={display ? "" : "text-md-on-surface-variant"}>{display || "Pilih tanggal"}</span>
+        <CalendarDays size={14} className="text-md-on-surface-variant shrink-0 ml-2" />
       </div>
     </div>
   );
@@ -232,7 +299,7 @@ export function SuggestInput({ value, onChange, suggestions, placeholder, classN
         autoComplete="off"
       />
       {open && filtered.length > 0 && (
-        <div className="absolute z-30 mt-1 w-full bg-slate-900 border border-slate-800 rounded-lg overflow-hidden shadow-lg">
+        <div className="absolute z-30 mt-1 w-full bg-md-container-high border border-md-outline-variant rounded-md-md overflow-hidden shadow-lg">
           {filtered.map((s) => (
             <button
               key={s}
@@ -241,7 +308,7 @@ export function SuggestInput({ value, onChange, suggestions, placeholder, classN
                 onChange(s);
                 setOpen(false);
               }}
-              className="w-full text-left px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-amber-400 truncate"
+              className="w-full text-left px-3 py-2 text-sm text-md-on-surface hover:bg-md-on-surface/10 hover:text-md-primary truncate"
             >
               {s}
             </button>
@@ -255,7 +322,7 @@ export function SuggestInput({ value, onChange, suggestions, placeholder, classN
 export function Field({ label, children }) {
   return (
     <label className="block mb-3">
-      <div className="text-xs text-slate-400 mb-1">{label}</div>
+      <div className="text-xs text-md-on-surface-variant mb-1">{label}</div>
       {children}
     </label>
   );
@@ -370,7 +437,7 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
         autoComplete="off"
       />
       {open && (
-        <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+        <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto bg-md-container-highest border border-md-outline-variant rounded-md-md shadow-lg">
           {filtered.length > 0 ? (
             filtered.map((o) => (
               <button
@@ -378,52 +445,52 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => commit(o.kode)}
-                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900 ${
-                  o.kode === value ? "bg-amber-500/15 text-amber-400" : "text-slate-200"
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-md-on-surface/10 ${
+                  o.kode === value ? "bg-md-primary/15 text-md-primary" : "text-md-on-surface"
                 }`}
               >
                 <span>{o.label}</span>
-                <span className="font-mono text-[11px] text-slate-500">{o.kode}</span>
+                <span className="font-mono text-[11px] text-md-on-surface-variant">{o.kode}</span>
               </button>
             ))
           ) : !showAddForm ? (
-            <div className="px-3 py-2 text-xs text-slate-500">
+            <div className="px-3 py-2 text-xs text-md-on-surface-variant">
               {q ? "Tidak ada yang cocok." : "Ketik untuk mencari…"}
             </div>
           ) : null}
 
           {showAddForm && (
-            <div className="border-t border-slate-800 p-2.5">
+            <div className="border-t border-md-outline-variant p-2.5">
               {newKode === "" && newLabel === "" ? (
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={startAdd}
-                  className="w-full flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 px-1 py-1"
+                  className="w-full flex items-center gap-1.5 text-xs font-medium text-md-primary hover:text-md-primary px-1 py-1"
                 >
                   <Plus size={13} /> Tambah baru "{query.trim()}"
                 </button>
               ) : (
-                <div className="rounded-lg border border-dashed border-slate-800 bg-slate-950/40 p-2">
-                  <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
+                <div className="rounded-md-md border border-dashed border-md-outline-variant bg-md-surface/40 p-2">
+                  <div className="text-[11px] text-md-on-surface-variant mb-1.5">Data belum ada — isi untuk menambah baru:</div>
                   <div className="flex gap-1.5">
                     <div className="w-16 flex-shrink-0">
-                      <div className="text-[10px] text-slate-500 mb-1">Kode</div>
+                      <div className="text-[10px] text-md-on-surface-variant mb-1">Kode</div>
                       <input
                         value={newKode}
                         onChange={(e) => setNewKode(e.target.value)}
                         placeholder="KODE"
                         maxLength={8}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase text-center"
+                        className="w-full bg-md-container-high border border-md-outline-variant rounded-md-sm px-2 py-1.5 text-xs outline-none focus:border-md-primary uppercase text-center"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[10px] text-slate-500 mb-1">Nama</div>
+                      <div className="text-[10px] text-md-on-surface-variant mb-1">Nama</div>
                       <input
                         value={newLabel}
                         onChange={(e) => setNewLabel(e.target.value)}
                         placeholder="Nama baru"
-                        className="w-full min-w-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
+                        className="w-full min-w-0 bg-md-container-high border border-md-outline-variant rounded-md-sm px-2 py-1.5 text-xs outline-none focus:border-md-primary"
                         onKeyDown={(e) => e.key === "Enter" && submitNew()}
                       />
                     </div>
@@ -433,7 +500,7 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
                     onMouseDown={(e) => e.preventDefault()}
                     disabled={!newKode.trim() || !newLabel.trim() || creating}
                     onClick={submitNew}
-                    className="w-full flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-2.5 py-1.5 rounded-md mt-1.5"
+                    className="w-full flex items-center justify-center gap-1 bg-md-primary hover:brightness-110 disabled:opacity-40 text-md-on-primary font-semibold text-xs px-2.5 py-1.5 rounded-md-sm mt-1.5"
                   >
                     {creating ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
                     Tambah
@@ -490,7 +557,7 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
     <div className="relative" ref={wrapRef}>
       <input
         disabled={disabled}
-        className={`w-full bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-amber-500 disabled:opacity-40 ${sizeClass}`}
+        className={`w-full bg-md-container-highest border border-md-outline-variant rounded-md-md outline-none focus:border-md-primary disabled:opacity-40 ${sizeClass}`}
         value={open ? query : selectedOption ? selectedOption.label : ""}
         placeholder={placeholder || "Ketik untuk mencari…"}
         onChange={(e) => {
@@ -504,7 +571,7 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
         autoComplete="off"
       />
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-md-container-highest border border-md-outline-variant rounded-md-md shadow-lg">
           {filtered.length > 0 ? (
             filtered.map((o) => (
               <button
@@ -512,15 +579,15 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => commit(o)}
-                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900 ${
-                  String(o.value) === String(value) ? "bg-amber-500/15 text-amber-400" : "text-slate-200"
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-md-on-surface/10 ${
+                  String(o.value) === String(value) ? "bg-md-primary/15 text-md-primary" : "text-md-on-surface"
                 }`}
               >
                 {o.label}
               </button>
             ))
           ) : (
-            <div className="px-3 py-2 text-xs text-slate-500">Tidak ada yang cocok.</div>
+            <div className="px-3 py-2 text-xs text-md-on-surface-variant">Tidak ada yang cocok.</div>
           )}
         </div>
       )}
@@ -684,7 +751,7 @@ export function KodeGabunganInput({ segments, tailOptions, onPick, placeholder }
         autoComplete="off"
       />
       {open && q && state && (
-        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-md-container-highest border border-md-outline-variant rounded-md-md shadow-lg">
           {state.kind === "done" && (() => {
             const tail = parseTail(state.leftoverLen);
             return (
@@ -692,25 +759,25 @@ export function KodeGabunganInput({ segments, tailOptions, onPick, placeholder }
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => commit(state.picks, tail)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-md-on-surface/10"
               >
-                <span className="text-slate-300 text-xs">
+                <span className="text-md-on-surface text-xs">
                   {state.picks.map((p) => p.label).join(" / ")}
-                  {tail.model && <span className="text-slate-500"> · Model {tail.model}</span>}
+                  {tail.model && <span className="text-md-on-surface-variant"> · Model {tail.model}</span>}
                   {tail.warnaText && (
-                    <span className={tail.warna ? "text-slate-500" : "text-amber-500/80"}>
+                    <span className={tail.warna ? "text-md-on-surface-variant" : "text-md-primary/80"}>
                       {" "}
                       · Warna {tail.warna ? tail.warna.label : `"${tail.warnaText}" (tidak dikenal)`}
                     </span>
                   )}
                   {tail.ukuranText && (
-                    <span className={tail.ukuran ? "text-slate-500" : "text-amber-500/80"}>
+                    <span className={tail.ukuran ? "text-md-on-surface-variant" : "text-md-primary/80"}>
                       {" "}
                       · Ukuran {tail.ukuran ? tail.ukuran.label : `"${tail.ukuranText}" (tidak dikenal)`}
                     </span>
                   )}
                 </span>
-                <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
+                <span className="font-mono text-[11px] text-md-primary whitespace-nowrap">
                   {buildKode(state.picks)}
                   {tail.rawTail && `-${tail.rawTail}`}
                 </span>
@@ -720,8 +787,8 @@ export function KodeGabunganInput({ segments, tailOptions, onPick, placeholder }
 
           {state.kind === "resolved" && (
             <div className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm">
-              <span className="text-slate-300 text-xs">{state.picks.map((p) => p.label).join(" / ")}</span>
-              <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">{buildKode(state.picks)}</span>
+              <span className="text-md-on-surface text-xs">{state.picks.map((p) => p.label).join(" / ")}</span>
+              <span className="font-mono text-[11px] text-md-primary whitespace-nowrap">{buildKode(state.picks)}</span>
             </div>
           )}
 
@@ -735,19 +802,19 @@ export function KodeGabunganInput({ segments, tailOptions, onPick, placeholder }
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => (isLast ? commit([...state.picks, c], parseTail(0)) : extend(state.picks, c))}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-900"
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-md-on-surface/10"
                   >
-                    <span className="text-slate-300 text-xs">
+                    <span className="text-md-on-surface text-xs">
                       {[...state.picks.map((p) => p.label), c.label].join(" / ")}
                     </span>
-                    <span className="font-mono text-[11px] text-amber-400 whitespace-nowrap">
+                    <span className="font-mono text-[11px] text-md-primary whitespace-nowrap">
                       {buildKode([...state.picks, c])}
                     </span>
                   </button>
                 );
               })
             ) : (
-              <div className="px-3 py-2 text-xs text-slate-500">Tidak ada kombinasi kode yang cocok.</div>
+              <div className="px-3 py-2 text-xs text-md-on-surface-variant">Tidak ada kombinasi kode yang cocok.</div>
             ))}
         </div>
       )}
@@ -852,7 +919,7 @@ export function SearchableSelectOrNew({
         autoComplete="off"
       />
       {open && (
-        <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-slate-950 border border-slate-800 rounded-lg shadow-lg">
+        <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-md-container-highest border border-md-outline-variant rounded-md-md shadow-lg">
           {filtered.length > 0 ? (
             filtered.map((o) => (
               <button
@@ -860,36 +927,36 @@ export function SearchableSelectOrNew({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => commitExisting(o)}
-                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-900 ${
-                  String(o.value) === String(value) ? "bg-amber-500/15 text-amber-400" : "text-slate-200"
+                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-md-on-surface/10 ${
+                  String(o.value) === String(value) ? "bg-md-primary/15 text-md-primary" : "text-md-on-surface"
                 }`}
               >
                 {o.label}
               </button>
             ))
           ) : !showAddPrompt ? (
-            <div className="px-3 py-2 text-xs text-slate-500">
+            <div className="px-3 py-2 text-xs text-md-on-surface-variant">
               {q ? "Tidak ada yang cocok." : "Ketik untuk mencari…"}
             </div>
           ) : null}
 
           {showAddPrompt && (
-            <div className="border-t border-slate-800 p-2.5">
+            <div className="border-t border-md-outline-variant p-2.5">
               {!adding ? (
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={startAdd}
-                  className="w-full flex items-center gap-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 px-1 py-1"
+                  className="w-full flex items-center gap-1.5 text-xs font-medium text-md-primary hover:text-md-primary px-1 py-1"
                 >
                   <Plus size={13} /> Tambah baru "{query.trim()}"
                 </button>
               ) : (
                 <div>
-                  <div className="text-[11px] text-slate-500 mb-1.5">Data belum ada — isi untuk menambah baru:</div>
+                  <div className="text-[11px] text-md-on-surface-variant mb-1.5">Data belum ada — isi untuk menambah baru:</div>
                   <div className="flex gap-1.5">
                     <div className="w-16 flex-shrink-0">
-                      <div className="text-[10px] text-slate-500 mb-1">Kode</div>
+                      <div className="text-[10px] text-md-on-surface-variant mb-1">Kode</div>
                       <input
                         value={newKode}
                         onChange={(e) => {
@@ -898,11 +965,11 @@ export function SearchableSelectOrNew({
                         }}
                         placeholder="KODE"
                         maxLength={8}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 uppercase text-center"
+                        className="w-full bg-md-container-high border border-md-outline-variant rounded-md-sm px-2 py-1.5 text-xs outline-none focus:border-md-primary uppercase text-center"
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[10px] text-slate-500 mb-1">Nama</div>
+                      <div className="text-[10px] text-md-on-surface-variant mb-1">Nama</div>
                       <input
                         value={newLabel}
                         onChange={(e) => {
@@ -911,7 +978,7 @@ export function SearchableSelectOrNew({
                           if (!kodeTouched) onNewKodeChange(suggestKode(nama));
                         }}
                         placeholder={newPlaceholder || "Nama baru"}
-                        className="w-full min-w-0 bg-slate-900 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500"
+                        className="w-full min-w-0 bg-md-container-high border border-md-outline-variant rounded-md-sm px-2 py-1.5 text-xs outline-none focus:border-md-primary"
                         onKeyDown={(e) => e.key === "Enter" && confirmAdd()}
                       />
                     </div>
@@ -921,7 +988,7 @@ export function SearchableSelectOrNew({
                     onMouseDown={(e) => e.preventDefault()}
                     disabled={!newKode.trim() || !newLabel.trim()}
                     onClick={confirmAdd}
-                    className="w-full flex items-center justify-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-2.5 py-1.5 rounded-md mt-1.5"
+                    className="w-full flex items-center justify-center gap-1 bg-md-primary hover:brightness-110 disabled:opacity-40 text-md-on-primary font-semibold text-xs px-2.5 py-1.5 rounded-md-sm mt-1.5"
                   >
                     <Check size={12} /> Pakai kode ini
                   </button>
@@ -935,12 +1002,19 @@ export function SearchableSelectOrNew({
   );
 }
 
+// Kartu statistik ala Material — permukaan "container" (bukan cuma border
+// tipis) dengan elevation 1 yang naik ke elevation 2 saat disentuh/hover,
+// memberi kesan kartu benar-benar "terangkat" seperti di app Android.
 export function StatCard({ label, value, accent, icon: Icon, iconColor }) {
   return (
-    <div className="rounded-xl border border-slate-800 p-4 bg-slate-900/50">
-      {Icon && <Icon size={16} className={`mb-2 ${iconColor || "text-slate-500"}`} />}
-      <div className={`text-2xl font-bold ${accent || ""}`}>{value}</div>
-      <div className="text-xs text-slate-400 mt-1">{label}</div>
+    <div className="rounded-md-lg bg-md-container-low p-4 shadow-elevation-1 hover:shadow-elevation-2 transition-shadow">
+      {Icon && (
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-2 bg-md-on-surface/[0.06] ${iconColor || "text-md-on-surface-variant"}`}>
+          <Icon size={15} />
+        </div>
+      )}
+      <div className={`text-2xl font-medium ${accent || "text-md-on-surface"}`}>{value}</div>
+      <div className="text-xs text-md-on-surface-variant mt-1">{label}</div>
     </div>
   );
 }
@@ -953,12 +1027,13 @@ export function PageHeader({ title, description, action, sticky }) {
   return (
     <div
       className={`flex items-start justify-between gap-4 mb-5 ${
-        sticky ? "sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3" : ""
+        sticky ? "sticky top-[64px] z-10 bg-md-surface py-3 -mt-3" : ""
       }`}
     >
       <div>
-        <h1 className="text-lg font-bold text-slate-100">{title}</h1>
-        {description && <p className="text-xs text-slate-500 mt-1 max-w-xl">{description}</p>}
+        {/* Skala tipografi "headline small" Material 3. */}
+        <h1 className="text-[22px] leading-7 font-medium text-md-on-surface">{title}</h1>
+        {description && <p className="text-xs text-md-on-surface-variant mt-1 max-w-xl">{description}</p>}
       </div>
       {action}
     </div>
@@ -967,27 +1042,18 @@ export function PageHeader({ title, description, action, sticky }) {
 
 export function EmptyState({ label }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-slate-600 gap-2 border border-dashed border-slate-800 rounded-xl">
+    <div className="flex flex-col items-center justify-center py-16 text-md-on-surface-variant gap-2 border-2 border-dashed border-md-outline-variant rounded-md-lg">
       <Inbox size={22} />
       <div className="text-sm">{label}</div>
     </div>
   );
 }
 
+// Chip status ala Material (dulu "Badge") — permukaan tonal bulat penuh,
+// bukan pil warna solid tipis seperti sebelumnya.
 export function Badge({ children, color = "slate" }) {
-  const map = {
-    slate: "bg-slate-800 text-slate-300",
-    amber: "bg-amber-500/10 text-amber-400",
-    emerald: "bg-emerald-500/10 text-emerald-400",
-    sky: "bg-sky-500/10 text-sky-400",
-    violet: "bg-violet-500/10 text-violet-400",
-    pink: "bg-pink-500/10 text-pink-400",
-    teal: "bg-teal-500/10 text-teal-400",
-    red: "bg-red-500/10 text-red-300",
-    orange: "bg-orange-500/10 text-orange-400",
-  };
   return (
-    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${map[color] || map.slate}`}>
+    <span className={`text-[11px] px-2.5 py-1 rounded-full font-medium ${chipClass(color)}`}>
       {children}
     </span>
   );

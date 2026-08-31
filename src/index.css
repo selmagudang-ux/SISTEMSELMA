@@ -1,3 +1,41 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans;
+  }
+  /* Fokus keyboard ala Material (state layer, bukan outline browser default). */
+  :focus-visible {
+    outline: 2px solid theme(colors.md.primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* Ripple ala Android — dipicu lewat komponen <Ripple/> di ui.jsx yang
+   menambahkan span ".md-ripple-dot" di titik klik lalu membesar+memudar. */
+@layer utilities {
+  .md-ripple-container {
+    position: relative;
+    overflow: hidden;
+  }
+  .md-ripple-dot {
+    position: absolute;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.28;
+    transform: scale(0);
+    animation: md-ripple-anim 550ms ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes md-ripple-anim {
+    to {
+      transform: scale(2.6);
+      opacity: 0;
+    }
+  }
+}

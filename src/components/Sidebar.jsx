@@ -1,33 +1,38 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
 import { NAV, roleLabel, navAncestorKeys, filterNavByAllowed } from "../lib/constants";
+import { rippleEffect, iconBtnClass } from "./ui";
 
 // Tombol untuk node "menu" (punya key yang dipakai sebagai nav.menu) — dipakai
 // baik untuk item top-level (Dashboard, Laporan, Pengaturan) MAUPUN untuk menu
 // yang berada di dalam sebuah group (mis. SKU & Harga di dalam Gudang). Kalau
 // hasChildren true, klik hanya toggle expand/collapse (bukan navigasi).
+// Gaya "Navigation Drawer" Material 3: item aktif ditandai indikator PIL bulat
+// penuh (bukan garis di kiri seperti sebelumnya) — ciri paling khas drawer
+// Android modern.
 function MenuButton({ node, isActive, isOpen, hasChildren, onClick, badgeValue }) {
   const Icon = node.icon;
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2.5 py-2 rounded-lg text-sm transition border-l-2 ${
+      onMouseDown={rippleEffect}
+      className={`md-ripple-container w-full flex items-center gap-3 h-11 px-4 rounded-full text-sm transition-colors ${
         isActive && !hasChildren
-          ? "border-amber-500 bg-slate-900 pl-[10px] pr-3 text-amber-400 font-semibold"
+          ? "bg-md-primary-container text-md-on-primary-container font-medium"
           : isActive
-          ? "border-transparent pl-[10px] pr-3 text-slate-100 font-medium"
-          : "border-transparent pl-[10px] pr-3 text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+          ? "text-md-on-surface font-medium hover:bg-md-on-surface/[0.08]"
+          : "text-md-on-surface-variant hover:bg-md-on-surface/[0.08]"
       }`}
     >
-      {Icon && <Icon size={16} className="flex-shrink-0" />}
-      <span className="flex-1 text-left">{node.label}</span>
+      {Icon && <Icon size={18} className="flex-shrink-0" />}
+      <span className="flex-1 text-left truncate">{node.label}</span>
       {typeof badgeValue === "number" && badgeValue > 0 && (
-        <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+        <span className="text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
           {badgeValue}
         </span>
       )}
       {hasChildren && (
-        <ChevronDown size={14} className={`transition-transform ${isOpen ? "rotate-180" : ""}`} />
+        <ChevronDown size={14} className={`transition-transform flex-shrink-0 ${isOpen ? "rotate-180" : ""}`} />
       )}
     </button>
   );
@@ -38,15 +43,16 @@ function SubButton({ label, isActive, onClick, badgeValue }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 text-left px-2.5 py-1.5 rounded-md text-[13px] transition ${
+      onMouseDown={rippleEffect}
+      className={`md-ripple-container w-full flex items-center gap-2 text-left h-9 px-3 rounded-full text-[13px] transition-colors ${
         isActive
-          ? "bg-amber-500/15 text-amber-400 font-medium"
-          : "text-slate-500 hover:text-slate-200 hover:bg-slate-900"
+          ? "bg-md-primary-container/60 text-md-primary font-medium"
+          : "text-md-on-surface-variant hover:bg-md-on-surface/[0.08]"
       }`}
     >
-      <span className="flex-1">{label}</span>
+      <span className="flex-1 truncate">{label}</span>
       {typeof badgeValue === "number" && badgeValue > 0 && (
-        <span className="text-[10px] font-bold bg-red-500 text-white rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+        <span className="text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
           {badgeValue}
         </span>
       )}
@@ -63,7 +69,7 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
   if (node.group) {
     const groupActive = node.children.some((c) => c.key === active.menu);
     return (
-      <div className="mb-0.5">
+      <div className="mb-1">
         <MenuButton
           node={node}
           isActive={groupActive}
@@ -73,7 +79,7 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
           badgeValue={badges[node.key]}
         />
         {isOpen && (
-          <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">
+          <div className="ml-[1.65rem] mt-0.5 border-l border-md-outline-variant pl-2.5 space-y-0.5">
             {node.children.map((child) => (
               <NavNode key={child.key} node={child} active={active} expanded={expanded} toggle={toggle} go={go} badges={badges} />
             ))}
@@ -87,7 +93,7 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
 
   if (hasChildren) {
     return (
-      <div className="mb-0.5">
+      <div className="mb-1">
         <MenuButton
           node={node}
           isActive={isActiveMenu}
@@ -97,7 +103,7 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
           badgeValue={badges[node.key]}
         />
         {isOpen && (
-          <div className="ml-[1.65rem] mt-0.5 border-l border-slate-800 pl-2.5 space-y-0.5">
+          <div className="ml-[1.65rem] mt-0.5 border-l border-md-outline-variant pl-2.5 space-y-0.5">
             {node.children.map((sub) => (
               <SubButton
                 key={sub.key}
@@ -114,7 +120,7 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
   }
 
   return (
-    <div className="mb-0.5">
+    <div className="mb-1">
       <MenuButton
         node={node}
         isActive={isActiveMenu}
@@ -176,55 +182,56 @@ export default function Sidebar({
           onClick={() => setMobileOpen(false)}
         />
       )}
+      {/* Navigation Drawer Material 3 — permanen (nempel, tanpa bayangan/sudut
+          bulat) di layar lebar, jadi "modal drawer" melayang dengan sudut
+          membulat & shadow di HP, sesuai spesifikasi drawer standar vs modal
+          Material. */}
       <aside
-        className={`print:hidden fixed lg:sticky top-0 left-0 h-screen w-64 flex-shrink-0 bg-slate-950 border-r border-slate-800 z-40 flex flex-col transition-transform duration-200 ${
+        className={`print:hidden fixed lg:sticky top-0 left-0 h-screen w-72 flex-shrink-0 bg-md-container-low z-40 flex flex-col transition-transform duration-200 rounded-r-md-xl lg:rounded-none shadow-elevation-2 lg:shadow-none ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         } lg:translate-x-0`}
       >
-        <div className="flex items-center justify-between gap-2.5 px-4 py-3.5 border-b border-slate-800">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
-              <Warehouse size={18} className="text-slate-950" />
+        <div className="flex items-center justify-between gap-2.5 px-5 py-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-md-md bg-md-primary flex items-center justify-center flex-shrink-0">
+              <Warehouse size={19} className="text-md-on-primary" />
             </div>
             <div className="min-w-0">
               {user && user.role !== "superadmin" && user.role !== "owner" ? (
                 <>
-                  <div className="font-bold text-sm leading-none truncate">{user.nama || user.username}</div>
-                  <div className="text-[11px] text-slate-500 leading-none mt-1 truncate">{roleLabel(user.role)}</div>
+                  <div className="font-medium text-sm leading-none truncate text-md-on-surface">{user.nama || user.username}</div>
+                  <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5 truncate">{roleLabel(user.role)}</div>
                 </>
               ) : (
                 <>
-                  <div className="font-bold text-sm leading-none">Sistem Selma</div>
-                  <div className="text-[11px] text-slate-500 leading-none mt-1">Manajemen inventori</div>
+                  <div className="font-medium text-sm leading-none text-md-on-surface">Sistem Selma</div>
+                  <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5">Manajemen inventori</div>
                 </>
               )}
             </div>
           </div>
-          <button
-            onClick={() => setMobileOpen(false)}
-            className="text-slate-500 hover:text-white lg:hidden"
-          >
+          <button onClick={() => setMobileOpen(false)} className={`${iconBtnClass} lg:hidden`} onMouseDown={rippleEffect}>
             <X size={18} />
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-2 px-2">
+        <nav className="flex-1 overflow-y-auto py-1 px-3 space-y-1">
           {visibleNav.map((item) => (
             <NavNode key={item.key} node={item} active={active} expanded={expanded} toggle={toggle} go={go} badges={badges} />
           ))}
         </nav>
 
         {user && (
-          <div className="border-t border-slate-800 px-3 py-3 flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0 text-xs font-bold text-slate-300">
+          <div className="mx-3 mb-3 mt-1 pt-3 border-t border-md-outline-variant flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-full bg-md-primary-container flex items-center justify-center flex-shrink-0 text-xs font-medium text-md-on-primary-container">
               {(user.nama || user.username || "?").slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-slate-200 truncate">{user.nama || user.username}</div>
-              <div className="text-[10px] text-slate-500 truncate flex items-center gap-1.5">
+              <div className="text-xs font-medium text-md-on-surface truncate">{user.nama || user.username}</div>
+              <div className="text-[10px] text-md-on-surface-variant truncate flex items-center gap-1.5">
                 {roleLabel(user.role)}
                 {user.role === "owner" && (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-800 text-amber-400 leading-none">
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-md-container-high text-md-primary leading-none">
                     Read-only
                   </span>
                 )}
@@ -233,14 +240,16 @@ export default function Sidebar({
             <button
               onClick={() => setModal?.({ type: "ganti-password" })}
               title="Ganti Password"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-900 flex-shrink-0"
+              onMouseDown={rippleEffect}
+              className="md-ripple-container w-8 h-8 flex items-center justify-center rounded-full text-md-on-surface-variant hover:text-md-primary hover:bg-md-on-surface/10 flex-shrink-0"
             >
               <KeyRound size={15} />
             </button>
             <button
               onClick={onLogout}
               title="Keluar"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-900 flex-shrink-0"
+              onMouseDown={rippleEffect}
+              className="md-ripple-container w-8 h-8 flex items-center justify-center rounded-full text-md-on-surface-variant hover:text-red-400 hover:bg-md-on-surface/10 flex-shrink-0"
             >
               <LogOut size={15} />
             </button>
@@ -253,11 +262,8 @@ export default function Sidebar({
 
 export function MobileMenuButton({ onClick }) {
   return (
-    <button
-      onClick={onClick}
-      className="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700 lg:hidden"
-    >
-      <Menu size={16} />
+    <button onClick={onClick} onMouseDown={rippleEffect} className={`${iconBtnClass} lg:hidden`}>
+      <Menu size={18} />
     </button>
   );
 }
