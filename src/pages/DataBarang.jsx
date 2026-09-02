@@ -11,12 +11,33 @@ import { rakForSku } from "./Rak";
 const JENIS_COLOR = { Pembelian: "emerald", Retur: "amber" };
 const jenisColor = (j) => JENIS_COLOR[j] || "slate";
 
-export default function DataBarang({ items, penempatan, setModal }) {
+export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
   const [q, setQ] = useState("");
 
   // Kode rak diambil dari data penempatan terbaru (sumber yang sama dengan Peta Rak),
   // BUKAN dari field items.rak_code yang bisa basi kalau SKU-nya sudah dipindah rak.
   const rakSaatIni = (i) => rakForSku(i.sku, penempatan);
+
+  // Untuk barang yang masih di tahap "Buat SKU" (belum resmi punya i.sku),
+  // cari tahu dulu apakah Model/Barcode Supplier-nya cocok PERSIS SATU SKU
+  // yang sudah pernah dibuat (sama seperti logika auto-hubung di form "Buat
+  // SKU", lihat SkuEntryForm di components/forms.jsx) — kalau ketemu, tabel
+  // ini langsung menampilkan SKU itu & tahapnya ditampilkan sebagai "Sudah
+  // Ada SKU · Isi Harga" (bukan "Buat SKU" lagi), supaya kelihatan dari sini
+  // saja kalau barang ini sebenarnya tinggal dikonfirmasi harga, tanpa perlu
+  // buka modalnya dulu. Kalau modelnya cocok ke lebih dari satu SKU, tidak
+  // ditebak sepihak — tetap tampil "Buat SKU" seperti biasa, biar dipilih
+  // manual di modalnya.
+  const skuCocokOtomatis = (i) => {
+    if (i.stage !== "sku" || i.sku) return null;
+    const kode = (i.barcode_supplier || "").trim().toLowerCase();
+    if (!kode) return null;
+    const cocok = (skuMaster || []).filter(
+      (s) => (s.barcode_supplier || "").trim().toLowerCase() === kode
+    );
+    return cocok.length === 1 ? cocok[0] : null;
+  };
+
   const filtered = items.filter((i) => {
     const s = q.toLowerCase();
     if (!s) return true;
@@ -107,6 +128,7 @@ export default function DataBarang({ items, penempatan, setModal }) {
             <tbody>
               {filtered.map((i) => {
                 const meta = STAGE_META[i.stage];
+                const skuCocok = skuCocokOtomatis(i);
                 return (
                   <tr
                     key={i.id}
@@ -123,7 +145,17 @@ export default function DataBarang({ items, penempatan, setModal }) {
                       )}
                     </td>
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{i.tanggal}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">
+                      {i.sku || (
+                        skuCocok ? (
+                          <span className="text-amber-400" title="Cocok otomatis dari Model/Barcode Supplier — belum resmi, tinggal isi harga di Buat SKU">
+                            {skuCocok.sku}
+                          </span>
+                        ) : (
+                          "—"
+                        )
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{i.barcode_supplier || "—"}</td>
                     <td className="px-4 py-2.5">
                       {i.jumlah}x
@@ -136,7 +168,11 @@ export default function DataBarang({ items, penempatan, setModal }) {
                     </td>
                     <td className="px-4 py-2.5 text-slate-400">{rakSaatIni(i) || "—"}</td>
                     <td className="px-4 py-2.5">
-                      <Badge color={meta.color}>{meta.label}</Badge>
+                      {skuCocok ? (
+                        <Badge color="sky">Sudah Ada SKU · Isi Harga</Badge>
+                      ) : (
+                        <Badge color={meta.color}>{meta.label}</Badge>
+                      )}
                     </td>
                   </tr>
                 );
