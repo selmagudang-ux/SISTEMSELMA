@@ -359,7 +359,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const showRestokDisetujui = panelTerbuka === "restok";
   const showModelBaru = panelTerbuka === "model-baru";
   const showMenunggu = panelTerbuka === "menunggu";
-  const [subTabDatang, setSubTabDatang] = useState("restok"); // "restok" | "model-baru" — dua pilihan di dalam tab "Barang yang Sudah Datang"
+  const [subTabDatang, setSubTabDatang] = useState(null); // null | "restok" | "model-baru" — null = semua panel tertutup by default, cuma satu yang boleh terbuka sekaligus
   const [showTotalBarangDatang, setShowTotalBarangDatang] = useState(false);
   const [halamanBarangDatang, setHalamanBarangDatang] = useState(1);
   const [halamanModelLama, setHalamanModelLama] = useState(1);
@@ -802,6 +802,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   iconColor="text-amber-500"
                   onClick={() => {
                     setShowTotalBarangDatang((v) => !v);
+                    setSubTabDatang(null);
                     setHalamanBarangDatang(1);
                   }}
                 />
@@ -812,7 +813,8 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   icon={Truck}
                   iconColor="text-amber-500"
                   onClick={() => {
-                    setSubTabDatang("restok");
+                    setSubTabDatang((v) => (v === "restok" ? null : "restok"));
+                    setShowTotalBarangDatang(false);
                     setHalamanModelLama(1);
                   }}
                 />
@@ -822,7 +824,10 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={LayoutGrid}
                   iconColor="text-amber-500"
-                  onClick={() => setSubTabDatang("model-baru")}
+                  onClick={() => {
+                    setSubTabDatang((v) => (v === "model-baru" ? null : "model-baru"));
+                    setShowTotalBarangDatang(false);
+                  }}
                 />
               </div>
 
