@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, Badge } from "../components/ui";
 import { generatePemesananSupplierPdf } from "../lib/PdfPemesananSupplier";
+import { labelFor } from "../lib/api";
 
 function hariIniIso() {
   return new Date().toISOString().slice(0, 10);
@@ -29,7 +30,7 @@ const TABS = [
 //    memilih mana yang mau masuk PDF kali ini, tidak mengubah status
 //    pengajuannya sama sekali.
 export default function PersetujuanRestock({
-  pengajuanRestock, session, setModal, filterJenis, onNavigate, skuMaster, items, suppliers, pesananMasuk,
+  pengajuanRestock, session, setModal, filterJenis, onNavigate, skuMaster, items, suppliers, pesananMasuk, master,
 }) {
   const [tab, setTab] = useState("tinjau");
 
@@ -77,6 +78,7 @@ export default function PersetujuanRestock({
           items={items}
           suppliers={suppliers}
           pesananMasuk={pesananMasuk}
+          master={master}
         />
       )}
     </div>
@@ -257,7 +259,7 @@ function TinjauPengajuan({ pengajuanRestock, session, setModal, filterJenis, onN
 // Centang mana yang mau masuk PDF kali ini, lalu download — TIDAK
 // mengubah status pengajuan sama sekali (Setujui/Tolak tetap lewat tab
 // "Tinjau Pengajuan" seperti biasa, setelah dapat balasan dari supplier).
-function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesananMasuk }) {
+function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesananMasuk, master }) {
   const [checked, setChecked] = useState(() => new Set());
   const [overrides, setOverrides] = useState({}); // { [pengajuanId]: { kodeSupplier?, namaToko? } }
   const [downloading, setDownloading] = useState(false);
@@ -279,12 +281,18 @@ function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesa
       ? (pesananMasuk || []).find((pm) => pm.kode_bon === itemTerbaru.kode_bon)
       : null;
     const ov = overrides[p.id] || {};
+    // Label subkategori dari Master Data (skuRow.subkategori masih berupa
+    // kode, mis. "JR" -> perlu labelFor supaya jadi "Jurai" dsb). Kalau
+    // kodenya belum terdaftar di Master Data, labelFor otomatis fallback
+    // menampilkan kodenya sendiri.
+    const subKategori = skuRow?.subkategori ? labelFor(master || {}, "subkategori", skuRow.subkategori) : "";
     return {
       id: p.id,
       kodeBarang: p.sku,
       fotoUrl: fotoItem?.foto_url || null,
       kodeSupplier: ov.kodeSupplier != null ? ov.kodeSupplier : skuRow?.barcode_supplier || "",
       namaToko: ov.namaToko != null ? ov.namaToko : pesananTerkait?.supplier || "",
+      subKategori,
     };
   };
 
@@ -386,7 +394,12 @@ function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesa
                     <ImageOff size={18} />
                   </div>
                 )}
-                <div className="text-xs font-mono text-slate-200 truncate mb-1.5">{b.kodeBarang}</div>
+                <div className="text-xs font-mono text-slate-200 truncate mb-1">{b.kodeBarang}</div>
+                {b.subKategori && (
+                  <div className="mb-1.5">
+                    <Badge color="slate">{b.subKategori}</Badge>
+                  </div>
+                )}
                 <input
                   value={b.kodeSupplier}
                   onChange={(e) => setOverride(p.id, "kodeSupplier", e.target.value)}

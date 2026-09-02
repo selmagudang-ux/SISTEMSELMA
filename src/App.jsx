@@ -619,6 +619,7 @@ function MainApp({ session, onLogout }) {
                   items={items}
                   suppliers={suppliers}
                   pesananMasuk={pesananMasuk}
+                  master={master}
                 />
               )}
               {nav.menu === "barang-datang" && (
