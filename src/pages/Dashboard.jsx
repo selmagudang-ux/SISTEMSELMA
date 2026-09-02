@@ -83,6 +83,7 @@ export default function Dashboard({
   absensiRows = [],
   karyawanList = [],
   pengajuanRestock = [],
+  skuMaster = [],
 }) {
   const [tab, setTab] = useState("monitoring");
 
@@ -128,6 +129,7 @@ export default function Dashboard({
           pengajuanRestock={pengajuanRestock}
           items={items}
           pesananMasuk={pesananMasuk}
+          skuMaster={skuMaster}
         />
       ) : tab === "monitoring" ? (
         <DashboardMonitoring
@@ -265,8 +267,9 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
   );
 }
 
-function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [] }) {
+function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [], skuMaster = [] }) {
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
+  const [showRestokDisetujui, setShowRestokDisetujui] = useState(false);
 
   const semuaPengajuan = pengajuanRestock || [];
 
@@ -281,6 +284,19 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     .filter((p) => p.jenis === "zona")
     .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
   const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
+
+  // Daftar barang restok (jenis SKU, bukan zona) yang statusnya sudah
+  // disetujui — ditampilkan saat kartu "Total Restok (SKU)" diklik, supaya
+  // owner/superadmin bisa langsung lihat SKU mana saja yang disetujui tanpa
+  // pindah halaman, dan buka detail SKU-nya langsung dari sini.
+  const restokDisetujui = semuaPengajuan
+    .filter((p) => p.jenis !== "zona" && p.status === "disetujui")
+    .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
+
+  const bukaDetailSku = (sku) => {
+    const s = skuMaster.find((m) => m.sku === sku);
+    if (s) setModal && setModal({ type: "detail-sku", item: s });
+  };
 
   const sedangDipesan = (pesananMasuk || [])
     .filter((p) => {
@@ -347,31 +363,74 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
           </div>
 
           {tabAlur === "diajukan" ? (
-            <div className="grid grid-cols-3 gap-3">
-              <StatCard
-                label="Total Restok (SKU)"
-                value={totalRestokSku}
-                accent="text-amber-400"
-                icon={Boxes}
-                iconColor="text-amber-500"
-                onClick={onNavigate ? () => onNavigate("persetujuan-restock", "sku") : undefined}
-              />
-              <StatCard
-                label="Total Model Baru (Rak Kosong)"
-                value={totalModelBaru}
-                accent="text-amber-400"
-                icon={LayoutGrid}
-                iconColor="text-amber-500"
-                onClick={onNavigate ? () => onNavigate("persetujuan-restock", "zona") : undefined}
-              />
-              <StatCard
-                label="Jumlah Disetujui"
-                value={totalDisetujui}
-                accent="text-emerald-400"
-                icon={PackageCheck}
-                iconColor="text-emerald-500"
-                onClick={onNavigate ? () => onNavigate("persetujuan-restock") : undefined}
-              />
+            <div>
+              <div className="grid grid-cols-3 gap-3">
+                <StatCard
+                  label="Total Restok (SKU)"
+                  value={totalRestokSku}
+                  accent="text-amber-400"
+                  icon={Boxes}
+                  iconColor="text-amber-500"
+                  onClick={() => setShowRestokDisetujui((v) => !v)}
+                />
+                <StatCard
+                  label="Total Model Baru (Rak Kosong)"
+                  value={totalModelBaru}
+                  accent="text-amber-400"
+                  icon={LayoutGrid}
+                  iconColor="text-amber-500"
+                  onClick={onNavigate ? () => onNavigate("persetujuan-restock", "zona") : undefined}
+                />
+                <StatCard
+                  label="Jumlah Disetujui"
+                  value={totalDisetujui}
+                  accent="text-emerald-400"
+                  icon={PackageCheck}
+                  iconColor="text-emerald-500"
+                  onClick={onNavigate ? () => onNavigate("persetujuan-restock") : undefined}
+                />
+              </div>
+
+              {showRestokDisetujui && (
+                <div className="mt-4 rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold">Restok (SKU) — Disetujui</div>
+                    <button
+                      onClick={() => onNavigate && onNavigate("persetujuan-restock", "sku")}
+                      className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                    >
+                      Buka Halaman Lengkap <ArrowRight size={12} />
+                    </button>
+                  </div>
+                  {restokDisetujui.length === 0 ? (
+                    <EmptyState label="Belum ada pengajuan restock SKU yang disetujui." />
+                  ) : (
+                    <div className="divide-y divide-slate-800/70">
+                      {restokDisetujui.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => bukaDetailSku(p.sku)}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-900/70 transition flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                              <Boxes size={14} className="text-emerald-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">
+                                {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
+                                {p.direspon_pada ? ` · disetujui ${p.direspon_pada.slice(0, 10)}` : ""}
+                              </div>
+                            </div>
+                          </div>
+                          <Badge color="emerald">Disetujui</Badge>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : tabAlur === "datang" ? (
             <SeksiMonitoring
