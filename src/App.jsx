@@ -615,6 +615,10 @@ function MainApp({ session, onLogout }) {
                   setModal={setModal}
                   filterJenis={nav.sub}
                   onNavigate={navigate}
+                  skuMaster={skuMaster}
+                  items={items}
+                  suppliers={suppliers}
+                  pesananMasuk={pesananMasuk}
                 />
               )}
               {nav.menu === "barang-datang" && (
