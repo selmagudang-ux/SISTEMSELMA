@@ -630,7 +630,7 @@ function DashboardGudang({
   const ALUR_TABS = [
     { key: "diajukan", label: "Barang yang di Pesan", icon: ClipboardList },
     { key: "datang", label: "Barang yang Sudah Datang", icon: Truck },
-    { key: "alur", label: "Alur Barang", icon: Boxes },
+    { key: "alur", label: "Tahapan Barang", icon: Boxes },
   ];
 
   return (
@@ -1140,7 +1140,7 @@ function DashboardGudang({
           ) : (
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold">Alur Barang — dari Buat SKU sampai Pemotretan</div>
+                <div className="text-sm font-semibold">Tahapan Barang — dari Buat SKU sampai Pemotretan</div>
                 <button
                   onClick={() => onNavigate && onNavigate("data-barang")}
                   className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
