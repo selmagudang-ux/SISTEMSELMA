@@ -426,18 +426,23 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     })
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-  // Total kuantitas barang (bukan cuma jumlah PO/supplier) dari pesanan yang
-  // masih ditunggu — ditampilkan sebagai kartu "Total Barang" di bagian
-  // Restok pada tab "Barang yang Sudah Datang".
-  const totalBarangDipesan = sedangDipesan.reduce((sum, p) => {
+  // Pesanan yang sudah selesai (semua model sudah datang penuh) — dipakai
+  // untuk kartu "Total Barang" di tab "Barang yang Sudah Datang".
+  const barangSelesai = (pesananMasuk || [])
+    .filter((p) => statusPesananMasuk(p) === "selesai")
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  // Total kuantitas barang dari pesanan yang sudah selesai — ditampilkan
+  // sebagai kartu "Total Barang".
+  const totalBarangDipesan = barangSelesai.reduce((sum, p) => {
     const detail = detailModelPesanan(p);
     return sum + detail.reduce((s, m) => s + (Number(m.jumlah) || 0), 0);
   }, 0);
 
-  // Rincian per-model (bukan per-PO) dari semua pesanan yang masih ditunggu —
+  // Rincian per-model (bukan per-PO) dari semua pesanan yang sudah selesai —
   // dipakai saat kartu "Total Barang" diklik, supaya langsung kelihatan
   // supplier, nama model, dan qty tiap barang tanpa perlu buka satu-satu PO.
-  const rincianBarangDipesan = sedangDipesan.flatMap((p) => {
+  const rincianBarangDipesan = barangSelesai.flatMap((p) => {
     const detail = detailModelPesanan(p);
     return detail.map((m, i) => ({
       key: `${p.id}-${i}`,
@@ -731,10 +736,10 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
               {showTotalBarangDatang && (
                 <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
-                    Total Barang — Rincian Pesanan yang Masih Ditunggu
+                    Total Barang — Rincian Pesanan yang Sudah Selesai
                   </div>
                   {rincianBarangDipesan.length === 0 ? (
-                    <EmptyState label="Tidak ada barang yang masih dipesan." />
+                    <EmptyState label="Belum ada pesanan yang sudah selesai." />
                   ) : (
                     <table className="w-full text-sm">
                       <thead className="bg-slate-900/70 text-slate-400 text-xs">
@@ -743,7 +748,6 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                           <th className="text-left px-4 py-2.5 font-medium">Model</th>
                           <th className="text-right px-4 py-2.5 font-medium">Qty</th>
                           <th className="text-right px-4 py-2.5 font-medium">Harga</th>
-                          <th className="text-left px-4 py-2.5 font-medium">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -757,9 +761,6 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                             <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
                             <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
                             <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.harga)}</td>
-                            <td className="px-4 py-2.5">
-                              <Badge color={r.datang ? "emerald" : "amber"}>{r.datang ? "Sudah Datang" : "Menunggu"}</Badge>
-                            </td>
                           </tr>
                         ))}
                       </tbody>
