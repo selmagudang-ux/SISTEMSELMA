@@ -273,6 +273,14 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const pengajuanRestokSku = pengajuanMenunggu.filter((p) => p.jenis !== "zona");
   const pengajuanModelBaru = pengajuanMenunggu.filter((p) => p.jenis === "zona");
 
+  // Total keseluruhan (semua status, bukan cuma yang masih menunggu) untuk
+  // kartu ringkasan di atas tab "Barang Diajukan" — restok dihitung dari
+  // jenis SKU, model baru dari jenis zona (rak kosong), dan jumlah yang
+  // sudah disetujui dari kedua jenis tersebut.
+  const totalRestokSku = semuaPengajuan.filter((p) => p.jenis !== "zona").length;
+  const totalModelBaru = semuaPengajuan.filter((p) => p.jenis === "zona").length;
+  const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
+
   const sedangDipesan = (pesananMasuk || [])
     .filter((p) => {
       const st = statusPesananMasuk(p);
@@ -338,7 +346,31 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
           </div>
 
           {tabAlur === "diajukan" ? (
-            <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <StatCard
+                  label="Total Restok (SKU)"
+                  value={totalRestokSku}
+                  accent="text-amber-400"
+                  icon={Boxes}
+                  iconColor="text-amber-500"
+                />
+                <StatCard
+                  label="Total Model Baru (Rak Kosong)"
+                  value={totalModelBaru}
+                  accent="text-amber-400"
+                  icon={LayoutGrid}
+                  iconColor="text-amber-500"
+                />
+                <StatCard
+                  label="Jumlah Disetujui"
+                  value={totalDisetujui}
+                  accent="text-emerald-400"
+                  icon={PackageCheck}
+                  iconColor="text-emerald-500"
+                />
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
               <SeksiMonitoring
                 icon={Boxes}
                 color="amber"
@@ -369,6 +401,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                 navTarget={{ menu: "persetujuan-restock", sub: "zona" }}
                 emptyLabel="Tidak ada pengajuan model baru."
               />
+              </div>
             </div>
           ) : tabAlur === "datang" ? (
             <SeksiMonitoring
