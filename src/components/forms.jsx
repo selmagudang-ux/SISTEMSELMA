@@ -968,6 +968,28 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [selectedId, setSelectedId] = useState("");
   const [hargaBaru, setHargaBaru] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
 
+  // Auto-hubung ke SKU lama berdasarkan Model/Barcode Supplier — kalau model
+  // yang sama pernah dipakai bikin SKU sebelumnya (barang datang lagi dari
+  // supplier untuk model yang sama), langsung tersambung ke SKU itu begitu
+  // form dibuka, jadi user tinggal cek/isi harga & simpan (tidak perlu cari
+  // manual lagi). Cuma auto-pilih kalau PERSIS SATU SKU yang cocok — kalau
+  // model yang sama ternyata dipakai lebih dari satu SKU (mis. varian warna/
+  // ukuran beda tapi kode dari supplier sama), tidak ditebak sepihak, biarkan
+  // user pilih sendiri dari daftarnya (tetap dikasih tahu ada beberapa yang cocok).
+  const kodeModelItem = (item?.barcode_supplier || "").trim().toLowerCase();
+  const skuModelCocok = kodeModelItem
+    ? (skuMaster || []).filter((s) => (s.barcode_supplier || "").trim().toLowerCase() === kodeModelItem)
+    : [];
+  const [autoLinked, setAutoLinked] = useState(false);
+  useEffect(() => {
+    if (skuModelCocok.length === 1) {
+      setSelectedId(skuModelCocok[0].id);
+      setHargaBaru(Number(item?.harga) > 0 ? String(item.harga) : "");
+      setAutoLinked(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const selected = skuMaster.find((s) => String(s.id) === String(selectedId)) || null;
   const skuOptions = skuMaster.map((s) => ({ value: s.id, label: `${s.sku} · stok ${s.stok}` }));
 
@@ -1147,6 +1169,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           value={selectedId}
           onChange={(id) => {
             setSelectedId(id);
+            setAutoLinked(false);
             // Auto-isi dari harga bon (item.harga, hasil input di Konfirmasi
             // Datang) — user tinggal cek/koreksi, tidak perlu ketik ulang.
             // Kalau kebetulan sama dengan harga lama SKU, tetap aman: saat
@@ -1158,6 +1181,34 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           placeholder="Cari kode SKU…"
         />
       </Field>
+
+      {autoLinked && selected && (
+        <div className="mb-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 text-[11px] text-emerald-300 flex items-start justify-between gap-2">
+          <span>
+            Otomatis tersambung ke SKU <span className="font-mono font-semibold">{selected.sku}</span> — model/barcode
+            supplier <span className="font-mono">{item.barcode_supplier}</span> ini pernah dipakai untuk SKU itu. Tinggal
+            cek/isi harga di bawah lalu simpan.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedId("");
+              setAutoLinked(false);
+              setHargaBaru(Number(item?.harga) > 0 ? String(item.harga) : "");
+            }}
+            className="flex-shrink-0 text-emerald-400 hover:text-emerald-200 underline underline-offset-2"
+          >
+            Bukan ini
+          </button>
+        </div>
+      )}
+      {!autoLinked && skuModelCocok.length > 1 && !selected && (
+        <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-[11px] text-amber-300">
+          Model/barcode supplier <span className="font-mono">{item.barcode_supplier}</span> ini cocok dengan{" "}
+          {skuModelCocok.length} SKU berbeda ({skuModelCocok.map((s) => s.sku).join(", ")}) — pilih sendiri yang mana
+          di kolom di atas, tidak bisa ditebak otomatis.
+        </div>
+      )}
 
       {selected && (
         <>
