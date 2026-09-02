@@ -378,6 +378,7 @@ function DashboardGudang({
   const [halamanModelLama, setHalamanModelLama] = useState(1);
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
+  const [stageTerbuka, setStageTerbuka] = useState(null); // null | salah satu key STAGE_ORDER — tahap yang listnya sedang ditampilkan di tab "Tahapan Barang"
 
   // Terapkan filter Bulan & Tahun (dari header Dashboard) ke data yang
   // sifatnya berbasis tanggal kejadian — pesanan/kedatangan barang
@@ -1153,11 +1154,14 @@ function DashboardGudang({
                   const meta = STAGE_META[s];
                   const c = COLOR[meta.color];
                   const Icon = meta.icon;
+                  const aktif = stageTerbuka === s;
                   return (
                     <button
                       key={s}
-                      onClick={() => onNavigate && onNavigate("data-barang")}
-                      className={`rounded-xl border border-slate-800 p-3 text-left ${c.bg} hover:brightness-110 transition`}
+                      onClick={() => setStageTerbuka((v) => (v === s ? null : s))}
+                      className={`rounded-xl border p-3 text-left ${c.bg} hover:brightness-110 transition ${
+                        aktif ? "border-amber-500/70" : "border-slate-800"
+                      }`}
                     >
                       <Icon size={16} className={c.text} />
                       <div className="text-xl font-bold mt-2">{byStage(s).length}</div>
@@ -1166,6 +1170,58 @@ function DashboardGudang({
                   );
                 })}
               </div>
+
+              {stageTerbuka && (
+                <div className="border-t border-slate-800">
+                  <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-xs font-semibold text-slate-300">
+                      {STAGE_META[stageTerbuka]?.label} — {byStage(stageTerbuka).length} barang
+                    </div>
+                    <button
+                      onClick={() => onNavigate && onNavigate("data-barang")}
+                      className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                    >
+                      Buka Halaman Lengkap <ArrowRight size={12} />
+                    </button>
+                  </div>
+                  {byStage(stageTerbuka).length === 0 ? (
+                    <EmptyState label="Belum ada barang di tahap ini." />
+                  ) : (
+                    <div className="divide-y divide-slate-800/70 max-h-96 overflow-y-auto">
+                      {byStage(stageTerbuka).map((i) => (
+                        <button
+                          key={i.id}
+                          onClick={() => setModal && setModal({ type: "detail-item", item: i })}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-900/70 transition flex items-center gap-3"
+                        >
+                          {i.foto_url ? (
+                            <img
+                              src={i.foto_url}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="w-8 h-8 object-cover rounded-md border border-slate-800 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-md border border-dashed border-slate-800 flex items-center justify-center text-slate-700 shrink-0">
+                              <Boxes size={12} />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-mono text-xs font-semibold text-slate-100 truncate">
+                              {i.sku || i.barcode_supplier || "—"}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                              {i.jumlah || 0}x{i.tanggal ? ` · ${i.tanggal}` : ""}
+                              {i.gudang ? ` · ${i.gudang}` : ""}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
