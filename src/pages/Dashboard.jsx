@@ -20,7 +20,7 @@ import {
   detailModelPesanan,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
-import { StatCard, PageHeader, EmptyState, Badge } from "../components/ui";
+import { StatCard, PageHeader, EmptyState, Badge, inputClass } from "../components/ui";
 import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
@@ -49,6 +49,58 @@ function awalBulanIni() {
 }
 function hariIniIso() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Nama bulan panjang berbahasa Indonesia, dipakai untuk label & dropdown
+// filter periode Dashboard (mengikuti pola yang sama seperti di Keuangan.jsx).
+const BULAN_LABEL_PANJANG = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+// Tanggal pertama & terakhir dari bulan+tahun tertentu, format "YYYY-MM-DD" —
+// dipakai sebagai rentang "dari"/"sampai" untuk semua ringkasan yang mengikuti
+// filter Bulan & Tahun di atas Dashboard.
+function awalBulanPeriode(tahun, bulan) {
+  return `${tahun}-${pad2(bulan)}-01`;
+}
+function akhirBulanPeriode(tahun, bulan) {
+  const lastDay = new Date(tahun, bulan, 0).getDate();
+  return `${tahun}-${pad2(bulan)}-${pad2(lastDay)}`;
+}
+
+// Dropdown filter "Bulan" & "Tahun" yang tampil di kanan atas Dashboard (semua
+// tab) — dipakai untuk menggeser rentang ringkasan bulanan (Keuangan, Grosir,
+// Monitoring, Absensi) ke bulan/tahun tertentu, bukan cuma bulan berjalan.
+// Rentang tahun: 4 tahun ke belakang s/d 1 tahun ke depan dari tahun berjalan.
+function FilterBulanTahun({ bulan, tahun, onChangeBulan, onChangeTahun }) {
+  const tahunSekarang = new Date().getFullYear();
+  const daftarTahun = Array.from({ length: 6 }, (_, i) => tahunSekarang - 4 + i);
+  return (
+    <div className="flex items-center gap-1.5">
+      <select
+        value={bulan}
+        onChange={(e) => onChangeBulan(Number(e.target.value))}
+        className={`${inputClass} w-auto text-xs py-1.5`}
+      >
+        {BULAN_LABEL_PANJANG.map((l, i) => (
+          <option key={l} value={i + 1}>{l}</option>
+        ))}
+      </select>
+      <select
+        value={tahun}
+        onChange={(e) => onChangeTahun(Number(e.target.value))}
+        className={`${inputClass} w-auto text-xs py-1.5`}
+      >
+        {daftarTahun.map((y) => (
+          <option key={y} value={y}>{y}</option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 function isToday(dateStr) {
@@ -86,6 +138,17 @@ export default function Dashboard({
 }) {
   const [tab, setTab] = useState("monitoring");
 
+  // Filter periode global "Bulan & Tahun" — dipakai oleh ringkasan yang
+  // sifatnya berbasis periode (Keuangan, Grosir, Monitoring, Absensi). Default
+  // ke bulan & tahun berjalan supaya perilaku dashboard tetap sama seperti
+  // sebelumnya kalau belum diubah.
+  const now = new Date();
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const periodeDari = awalBulanPeriode(tahun, bulan);
+  const periodeSampai = akhirBulanPeriode(tahun, bulan);
+  const periodeLabel = `${BULAN_LABEL_PANJANG[bulan - 1]} ${tahun}`;
+
   return (
     <div>
       <PageHeader
@@ -100,6 +163,14 @@ export default function Dashboard({
             : tab === "monitoring"
             ? "Pantau tiap tahap alur barang — dari pesanan ke supplier sampai siap dijual — plus akses cepat ke laporan keuangan & penjualan grosir."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
+        }
+        action={
+          <FilterBulanTahun
+            bulan={bulan}
+            tahun={tahun}
+            onChangeBulan={setBulan}
+            onChangeTahun={setTahun}
+          />
         }
       />
 
@@ -138,6 +209,9 @@ export default function Dashboard({
           pesananGrosir={pesananGrosir}
           onNavigate={onNavigate}
           setModal={setModal}
+          periodeDari={periodeDari}
+          periodeSampai={periodeSampai}
+          periodeLabel={periodeLabel}
         />
       ) : tab === "grosir" ? (
         <DashboardGrosir
@@ -146,39 +220,47 @@ export default function Dashboard({
           depositGrosir={depositGrosir}
           pelangganGrosir={pelangganGrosir}
           onNavigate={onNavigate}
+          tahun={tahun}
+          periodeDari={periodeDari}
+          periodeSampai={periodeSampai}
+          periodeLabel={periodeLabel}
         />
       ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
           master={master}
           onNavigate={onNavigate}
+          periodeDari={periodeDari}
+          periodeSampai={periodeSampai}
+          periodeLabel={periodeLabel}
         />
       ) : (
         <DashboardAbsensi
           absensiRows={absensiRows}
           karyawanList={karyawanList}
           onNavigate={onNavigate}
+          bulan={bulan}
+          tahun={tahun}
+          periodeLabel={periodeLabel}
         />
       )}
     </div>
   );
 }
 
-function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
+function DashboardKeuangan({ keuanganTransaksi, master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
   const [detailKategori, setDetailKategori] = useState(null);
-  const dari = awalBulanIni();
-  const sampai = hariIniIso();
+  const dari = periodeDari || awalBulanIni();
+  const sampai = periodeSampai || hariIniIso();
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
 
-  // Arus kas 60 hari terakhir supaya grafik dashboard fokus ke tren terkini,
-  // bukan sejak awal berdirinya usaha (itu ranahnya Laporan Keuangan).
-  const batasAwal = new Date();
-  batasAwal.setDate(batasAwal.getDate() - 60);
-  const batasAwalIso = batasAwal.toISOString().slice(0, 10);
-  const transaksi60Hari = keuanganTransaksi.filter((t) => t.tanggal >= batasAwalIso);
-  const { mode, data: dataArusKas } = arusKasPerPeriode(transaksi60Hari);
+  // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
+  // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
+  // kartu ringkasan "Kas Masuk/Keluar (bulan terpilih)" di bawahnya.
+  const transaksiPeriode = keuanganTransaksi.filter((t) => t.tanggal >= dari && t.tanggal <= sampai);
+  const { mode, data: dataArusKas } = arusKasPerPeriode(transaksiPeriode);
 
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
   const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
@@ -189,10 +271,10 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
     <div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label="Saldo Kas Saat Ini" value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
-        <StatCard label="Kas Masuk (Bulan Ini)" value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label="Kas Keluar (Bulan Ini)" value={fmtRp(ringkasanBulanIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+        <StatCard label={`Kas Masuk (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label={`Kas Keluar (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
         <StatCard
-          label="Laba (Rugi) Bulan Ini"
+          label={`Laba (Rugi) ${periodeLabel}`}
           value={fmtRp(ringkasanBulanIni.saldo)}
           accent={ringkasanBulanIni.saldo >= 0 ? "text-emerald-400" : "text-red-400"}
           icon={Wallet}
@@ -221,7 +303,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
           tipe={detailKategori.tipe}
           list={ringkasanBulanIni.list}
           rekeningList={master.rekening || []}
-          subtitle="Bulan Ini"
+          subtitle={periodeLabel}
           onClose={() => setDetailKategori(null)}
         />
       )}
@@ -251,7 +333,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
         beban={labaRugiBulanIni.beban}
         labaRugi={labaRugiBulanIni.labaRugi}
         marginPersen={labaRugiBulanIni.marginPersen}
-        subtitle="Bulan Ini"
+        subtitle={periodeLabel}
         action={
           <button
             onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
@@ -609,7 +691,7 @@ function SeksiMonitoring({ icon: Icon, color = "slate", title, description, coun
   );
 }
 
-function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaksi, pesananGrosir, onNavigate, setModal }) {
+function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaksi, pesananGrosir, onNavigate, setModal, periodeDari, periodeSampai, periodeLabel }) {
   // 1) Barang yang sedang dipesan ke supplier (PO belum "selesai"/"batal").
   const sedangDipesan = (pesananMasuk || [])
     .filter((p) => {
@@ -636,14 +718,11 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
     onClick: setModal ? () => setModal({ type: "detail-item", item: i }) : undefined,
   });
 
-  // Ringkasan singkat Laporan Keuangan (bulan berjalan) — angka lengkap ada
-  // di menu Keuangan > Laporan Keuangan, di sini cuma jalan pintas.
-  const dari = awalBulanIni();
-  const sampai = hariIniIso();
+  // Ringkasan singkat Laporan Keuangan & Penjualan Grosir — mengikuti filter
+  // Bulan & Tahun di atas Dashboard, jalan pintas ke laporan lengkapnya.
+  const dari = periodeDari || awalBulanIni();
+  const sampai = periodeSampai || hariIniIso();
   const ringkasanKeuanganBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
-
-  // Ringkasan singkat Penjualan Grosir (bulan berjalan) — jalan pintas ke
-  // Laporan Grosir lengkap.
   const laporanGrosirBulanIni = ringkasanGrosir(pesananGrosir, dari, sampai);
 
   return (
@@ -758,11 +837,11 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
           </div>
           <div className="grid grid-cols-3 divide-x divide-slate-800">
             <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Kas Masuk (Bulan Ini)</div>
+              <div className="text-[11px] text-slate-500 mb-1">Kas Masuk ({periodeLabel})</div>
               <div className="text-sm font-bold text-emerald-400">{fmtRp(ringkasanKeuanganBulanIni.masuk)}</div>
             </div>
             <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Kas Keluar (Bulan Ini)</div>
+              <div className="text-[11px] text-slate-500 mb-1">Kas Keluar ({periodeLabel})</div>
               <div className="text-sm font-bold text-red-400">{fmtRp(ringkasanKeuanganBulanIni.keluar)}</div>
             </div>
             <div className="p-4">
@@ -791,7 +870,7 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
           </div>
           <div className="grid grid-cols-3 divide-x divide-slate-800">
             <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Omset (Bulan Ini)</div>
+              <div className="text-[11px] text-slate-500 mb-1">Omset ({periodeLabel})</div>
               <div className="text-sm font-bold text-emerald-400">{fmtRp(laporanGrosirBulanIni.omset)}</div>
             </div>
             <div className="p-4">
@@ -809,7 +888,7 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
   );
 }
 
-function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, onNavigate }) {
+function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
   const pesananAktif = pesananGrosir.filter((p) => p.status !== "Batal");
   const pesananHariIni = pesananAktif.filter((p) => isToday(p.created_at));
   const omsetHariIni = pesananHariIni.reduce((a, p) => a + (Number(p.total) || 0), 0);
@@ -830,12 +909,15 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
   // Laporan cepat harian/bulanan/tahunan — angka lengkapnya (grafik, tabel per
   // bulan/tahun, unduh CSV) ada di menu Grosir > Laporan Grosir; di sini cuma
   // ringkasan sekilas supaya tidak perlu pindah halaman untuk cek omset.
+  // "Hari Ini" tetap hari berjalan (status langsung), sedangkan "Bulanan" &
+  // "Tahunan" mengikuti filter Bulan & Tahun di atas Dashboard.
   const hariIniStr = hariIniIso();
-  const bulanIniAwal = awalBulanIni();
-  const tahunIniAwal = `${new Date().getFullYear()}-01-01`;
+  const tahunTerpilih = tahun || new Date().getFullYear();
+  const awalTahunTerpilih = `${tahunTerpilih}-01-01`;
+  const akhirTahunTerpilih = `${tahunTerpilih}-12-31`;
   const laporanHarian = ringkasanGrosir(pesananGrosir, hariIniStr, hariIniStr);
-  const laporanBulanan = ringkasanGrosir(pesananGrosir, bulanIniAwal, hariIniStr);
-  const laporanTahunan = ringkasanGrosir(pesananGrosir, tahunIniAwal, hariIniStr);
+  const laporanBulanan = ringkasanGrosir(pesananGrosir, periodeDari, periodeSampai);
+  const laporanTahunan = ringkasanGrosir(pesananGrosir, awalTahunTerpilih, akhirTahunTerpilih);
 
   return (
     <div>
@@ -866,14 +948,14 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
           </div>
           <div className="p-4">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-              <CalendarRange size={12} /> Bulan Ini
+              <CalendarRange size={12} /> {periodeLabel}
             </div>
             <div className="text-lg font-bold text-amber-400">{fmtRp(laporanBulanan.omset)}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">{laporanBulanan.jumlahPesanan} pesanan</div>
           </div>
           <div className="p-4">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-              <BarChart3 size={12} /> Tahun Ini
+              <BarChart3 size={12} /> Tahun {tahunTerpilih}
             </div>
             <div className="text-lg font-bold text-amber-400">{fmtRp(laporanTahunan.omset)}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">{laporanTahunan.jumlahPesanan} pesanan</div>
@@ -942,7 +1024,7 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
   );
 }
 
-function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
+function DashboardAbsensi({ absensiRows, karyawanList, onNavigate, bulan, tahun, periodeLabel }) {
   const hariIniStr = hariIniIso();
 
   const rekapHarian = rekapHarianAbsensi(absensiRows);
@@ -952,7 +1034,10 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
   const hadirHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.masuk);
   const telatHariIni = hadirHariIni.filter((r) => r.telatMenit > 0).length;
 
-  const bulanIni = hariIniStr.slice(0, 7);
+  // Rekap Bulanan mengikuti filter Bulan & Tahun di atas Dashboard — "Hadir
+  // Hari Ini" & "Rekap Mingguan" tetap mengacu ke hari berjalan karena
+  // keduanya memang status kehadiran langsung, bukan rekap historis.
+  const bulanIni = `${tahun}-${String(bulan).padStart(2, "0")}`;
   const rekapBulanIni = rekapBulanan.filter((r) => r.bulan === bulanIni);
 
   return (
@@ -1046,7 +1131,7 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate }) {
       </div>
 
       <div className="rounded-xl border border-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Rekap Bulanan ({bulanIni})</div>
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Rekap Bulanan ({periodeLabel})</div>
         {rekapBulanIni.length === 0 ? (
           <div className="p-6">
             <EmptyState label="Belum ada data absensi bulan ini." />
