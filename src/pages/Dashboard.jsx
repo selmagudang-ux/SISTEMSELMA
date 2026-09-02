@@ -354,6 +354,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const showModelBaru = panelTerbuka === "model-baru";
   const showMenunggu = panelTerbuka === "menunggu";
   const [subTabDatang, setSubTabDatang] = useState("restok"); // "restok" | "model-baru" — dua pilihan di dalam tab "Barang yang Sudah Datang"
+  const [showTotalBarangDatang, setShowTotalBarangDatang] = useState(false);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -432,6 +433,22 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     const detail = detailModelPesanan(p);
     return sum + detail.reduce((s, m) => s + (Number(m.jumlah) || 0), 0);
   }, 0);
+
+  // Rincian per-model (bukan per-PO) dari semua pesanan yang masih ditunggu —
+  // dipakai saat kartu "Total Barang" diklik, supaya langsung kelihatan
+  // supplier, nama model, dan qty tiap barang tanpa perlu buka satu-satu PO.
+  const rincianBarangDipesan = sedangDipesan.flatMap((p) => {
+    const detail = detailModelPesanan(p);
+    return detail.map((m, i) => ({
+      key: `${p.id}-${i}`,
+      supplier: p.supplier || "—",
+      nama: m.nama || "—",
+      jumlah: Number(m.jumlah) || 0,
+      datang: m.datang,
+      tanggal: p.tanggal,
+      pesanan: p,
+    }));
+  });
 
   const byStage = (stage) => items.filter((i) => i.stage === stage);
   const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
@@ -683,45 +700,70 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
             </div>
           ) : tabAlur === "datang" ? (
             <div>
-              <div className="grid sm:grid-cols-3 gap-3 mb-4">
-                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant shrink-0">
-                    <Boxes size={17} />
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-amber-400 leading-none">{totalBarangDipesan}</div>
-                    <div className="text-xs font-medium text-slate-400 mt-1">Total Barang</div>
-                  </div>
-                </div>
-                <button
-                  type="button"
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <StatCard
+                  label="Total Barang"
+                  value={totalBarangDipesan}
+                  accent="text-amber-400"
+                  icon={Boxes}
+                  iconColor="text-amber-500"
+                  onClick={() => setShowTotalBarangDatang((v) => !v)}
+                />
+                <StatCard
+                  label="Restok"
+                  value={sedangDipesan.length}
+                  accent={subTabDatang === "restok" ? "text-amber-400" : undefined}
+                  icon={Truck}
+                  iconColor={subTabDatang === "restok" ? "text-amber-500" : undefined}
                   onClick={() => setSubTabDatang("restok")}
-                  className={`rounded-xl border p-4 text-left transition flex items-center gap-3 ${
-                    subTabDatang === "restok"
-                      ? "border-amber-500/50 bg-slate-900/70"
-                      : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
-                  }`}
-                >
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant shrink-0">
-                    <Boxes size={17} />
-                  </div>
-                  <div className="text-sm font-semibold text-slate-100">Restok</div>
-                </button>
-                <button
-                  type="button"
+                />
+                <StatCard
+                  label="Model Baru"
+                  value={0}
+                  accent={subTabDatang === "model-baru" ? "text-amber-400" : undefined}
+                  icon={LayoutGrid}
+                  iconColor={subTabDatang === "model-baru" ? "text-amber-500" : undefined}
                   onClick={() => setSubTabDatang("model-baru")}
-                  className={`rounded-xl border p-4 text-left transition flex items-center gap-3 ${
-                    subTabDatang === "model-baru"
-                      ? "border-amber-500/50 bg-slate-900/70"
-                      : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
-                  }`}
-                >
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant shrink-0">
-                    <LayoutGrid size={17} />
-                  </div>
-                  <div className="text-sm font-semibold text-slate-100">Model Baru</div>
-                </button>
+                />
               </div>
+
+              {showTotalBarangDatang && (
+                <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
+                    Total Barang — Rincian Pesanan yang Masih Ditunggu
+                  </div>
+                  {rincianBarangDipesan.length === 0 ? (
+                    <EmptyState label="Tidak ada barang yang masih dipesan." />
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-900/70 text-slate-400 text-xs">
+                        <tr>
+                          <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
+                          <th className="text-left px-4 py-2.5 font-medium">Model</th>
+                          <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                          <th className="text-left px-4 py-2.5 font-medium">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rincianBarangDipesan.map((r) => (
+                          <tr
+                            key={r.key}
+                            onClick={setModal ? () => setModal({ type: "konfirmasi-datang", item: r.pesanan }) : undefined}
+                            className={`border-t border-slate-800/70 ${setModal ? "cursor-pointer hover:bg-slate-900/50" : ""}`}
+                          >
+                            <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
+                            <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
+                            <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
+                            <td className="px-4 py-2.5">
+                              <Badge color={r.datang ? "emerald" : "amber"}>{r.datang ? "Sudah Datang" : "Menunggu"}</Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
 
               {subTabDatang === "restok" ? (
                 <SeksiMonitoring
