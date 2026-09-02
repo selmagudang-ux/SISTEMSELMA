@@ -391,7 +391,7 @@ function DashboardGudang({
     return t >= periodeDari && t <= periodeSampai;
   };
 
-  const pesananMasukPeriode = (pesananMasuk || []).filter((p) => dalamPeriode(p.tanggal));
+  const pesananMasukPeriode = (pesananMasuk || []).filter((p) => dalamPeriode(p.tanggal_pesan));
   const pengajuanRestockPeriode = (pengajuanRestock || []).filter((p) => dalamPeriode(p.created_at));
 
   const semuaPengajuan = pengajuanRestockPeriode;
@@ -481,8 +481,7 @@ function DashboardGudang({
       jumlah: Number(m.jumlah) || 0,
       harga: Number(m.harga) || 0,
       datang: m.datang,
-      tanggal: p.tanggal,
-      pesanan: p,
+      tanggal: p.tanggal_pesan,
     }));
   });
 
@@ -546,8 +545,8 @@ function DashboardGudang({
           existing.jumlah += jumlah;
           existing.kaliDatang += 1;
           if (p.supplier) existing.supplierSet.add(p.supplier);
-          if (new Date(p.tanggal || 0) > new Date(existing.tanggalTerakhir || 0)) {
-            existing.tanggalTerakhir = p.tanggal;
+          if (new Date(p.tanggal_pesan || 0) > new Date(existing.tanggalTerakhir || 0)) {
+            existing.tanggalTerakhir = p.tanggal_pesan;
           }
         } else {
           modelLamaMap.set(skuRow.id, {
@@ -557,7 +556,7 @@ function DashboardGudang({
             jumlah,
             kaliDatang: 1,
             supplierSet: new Set(p.supplier ? [p.supplier] : []),
-            tanggalTerakhir: p.tanggal,
+            tanggalTerakhir: p.tanggal_pesan,
           });
         }
       });
@@ -598,8 +597,8 @@ function DashboardGudang({
           existing.jumlah += jumlah;
           existing.kaliDatang += 1;
           if (p.supplier) existing.supplierSet.add(p.supplier);
-          if (new Date(p.tanggal || 0) > new Date(existing.tanggalTerakhir || 0)) {
-            existing.tanggalTerakhir = p.tanggal;
+          if (new Date(p.tanggal_pesan || 0) > new Date(existing.tanggalTerakhir || 0)) {
+            existing.tanggalTerakhir = p.tanggal_pesan;
           }
           if (!existing.sku && skuRow) existing.sku = skuRow.sku;
         } else {
@@ -610,7 +609,7 @@ function DashboardGudang({
             jumlah,
             kaliDatang: 1,
             supplierSet: new Set(p.supplier ? [p.supplier] : []),
-            tanggalTerakhir: p.tanggal,
+            tanggalTerakhir: p.tanggal_pesan,
           });
         }
       });
@@ -1305,7 +1304,7 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
           return {
             key: p.id,
             label: p.supplier || "—",
-            subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
+            subLabel: `${detail.length} model · dipesan ${p.tanggal_pesan || "—"}`,
             rightLabel: meta?.label,
             onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
           };
