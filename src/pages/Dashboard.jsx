@@ -461,35 +461,85 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   // selesai — ditampilkan sebagai kartu "Total Barang".
   const totalBarangDipesan = rincianBarangDipesan.length;
 
-  // "Model Lama" = barang yang sudah datang (dari pesanan yang sudah selesai)
-  // yang model/barcode suppliernya SUDAH PERNAH dipakai bikin SKU sebelumnya
-  // — dicocokkan ke sku_master.barcode_supplier (trim + lowercase), sama
-  // seperti pola auto-hubung SKU lama di SkuEntryForm (components/forms.jsx).
-  const kodeBonSelesaiSet = new Set(barangSelesai.map((p) => p.kode_bon).filter(Boolean));
-  const supplierByKodeBon = {};
-  barangSelesai.forEach((p) => {
-    if (p.kode_bon) supplierByKodeBon[p.kode_bon] = p.supplier || "—";
-  });
-  const skuMasterKodeSet = new Set(
-    (skuMaster || [])
-      .map((s) => (s.barcode_supplier || "").trim().toLowerCase())
-      .filter(Boolean)
-  );
-  const itemsModelLama = (items || [])
-    .filter((i) => i.kode_bon && kodeBonSelesaiSet.has(i.kode_bon))
-    .filter((i) => {
-      const kode = (i.barcode_supplier || "").trim().toLowerCase();
-      return kode && skuMasterKodeSet.has(kode);
+  // "Model Lama" = model yang, PAS DATANG/DIKONFIRMASI DITERIMA, ternyata
+  // supplier-nya sudah pernah dipakai bikin SKU kita sebelumnya (restock ke
+  // SKU lama) — bukan dari tabel items, tapi langsung dari data pesanan
+  // (detail_model per pesanan), disinkronkan ke sku_master.barcode_supplier
+  // (trim + lowercase), sama seperti pola auto-hubung SKU lama di
+  // SkuEntryForm (components/forms.jsx). Satu baris hasil = SATU SKU,
+  // gabungan qty dari semua kali model itu datang (bukan satu baris per
+  // kedatangan).
+  //
+  // Pesanan yang PERTAMA KALI membawa suatu kode model (yang jadi alasan SKU
+  // itu dibuat) DIKECUALIKAN dari hitungan restock — soalnya kode modelnya
+  // otomatis "cocok" dengan barcode_supplier SKU yang baru dibuat dari
+  // pesanan itu sendiri, padahal itu bukan restock. Origin (pesanan
+  // pertama) ditentukan dari tabel items, diurutkan kronologis per kode
+  // model (created_at, lalu tanggal, lalu id sebagai tie-break terakhir).
+  const kodeModelKeOriginKodeBon = {};
+  [...(items || [])]
+    .filter((i) => i.barcode_supplier && i.kode_bon)
+    .sort((a, b) => {
+      const byCreated = new Date(a.created_at || 0) - new Date(b.created_at || 0);
+      if (byCreated !== 0) return byCreated;
+      const byTanggal = new Date(a.tanggal || 0) - new Date(b.tanggal || 0);
+      if (byTanggal !== 0) return byTanggal;
+      return String(a.id).localeCompare(String(b.id));
     })
-    .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0));
+    .forEach((i) => {
+      const kode = (i.barcode_supplier || "").trim().toLowerCase();
+      if (kode && !(kode in kodeModelKeOriginKodeBon)) {
+        kodeModelKeOriginKodeBon[kode] = i.kode_bon;
+      }
+    });
 
-  const rincianModelLama = itemsModelLama.map((i) => ({
-    key: i.id,
-    supplier: supplierByKodeBon[i.kode_bon] || "—",
-    nama: i.barcode_supplier || i.sku || "—",
-    jumlah: Number(i.jumlah) || 0,
-    stage: i.stage,
-  }));
+  const skuMasterByKode = new Map();
+  (skuMaster || []).forEach((s) => {
+    const kode = (s.barcode_supplier || "").trim().toLowerCase();
+    if (kode && !skuMasterByKode.has(kode)) skuMasterByKode.set(kode, s);
+  });
+
+  const modelLamaMap = new Map(); // sku id -> baris gabungan
+  (pesananMasuk || []).forEach((p) => {
+    if (p.dibatalkan) return;
+    detailModelPesanan(p)
+      .filter((m) => m.datang && m.nama)
+      .forEach((m) => {
+        const kode = m.nama.trim().toLowerCase();
+        if (!kode) return;
+        const skuRow = skuMasterByKode.get(kode);
+        if (!skuRow) return; // belum ada SKU yang cocok -> bukan "Model Lama"
+        if (kodeModelKeOriginKodeBon[kode] === p.kode_bon) return; // origin, bukan restock
+
+        const jumlah = Number(m.jumlah) || 0;
+        const existing = modelLamaMap.get(skuRow.id);
+        if (existing) {
+          existing.jumlah += jumlah;
+          existing.kaliDatang += 1;
+          if (p.supplier) existing.supplierSet.add(p.supplier);
+          if (new Date(p.tanggal || 0) > new Date(existing.tanggalTerakhir || 0)) {
+            existing.tanggalTerakhir = p.tanggal;
+          }
+        } else {
+          modelLamaMap.set(skuRow.id, {
+            key: skuRow.id,
+            sku: skuRow.sku,
+            nama: m.nama,
+            jumlah,
+            kaliDatang: 1,
+            supplierSet: new Set(p.supplier ? [p.supplier] : []),
+            tanggalTerakhir: p.tanggal,
+          });
+        }
+      });
+  });
+
+  const rincianModelLama = Array.from(modelLamaMap.values())
+    .map((r) => ({
+      ...r,
+      supplier: r.supplierSet.size > 0 ? Array.from(r.supplierSet).join(", ") : "—",
+    }))
+    .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
 
   const totalModelLama = rincianModelLama.length;
 
@@ -857,10 +907,11 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                       <table className="w-full text-sm">
                         <thead className="bg-slate-900/70 text-slate-400 text-xs">
                           <tr>
-                            <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
+                            <th className="text-left px-4 py-2.5 font-medium">SKU</th>
                             <th className="text-left px-4 py-2.5 font-medium">Model</th>
-                            <th className="text-right px-4 py-2.5 font-medium">Qty</th>
-                            <th className="text-left px-4 py-2.5 font-medium">Tahapan</th>
+                            <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
+                            <th className="text-right px-4 py-2.5 font-medium">Total Qty</th>
+                            <th className="text-right px-4 py-2.5 font-medium">Kali Datang</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -869,19 +920,15 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                               (halamanModelLama - 1) * BARIS_PER_HALAMAN_BARANG_DATANG,
                               halamanModelLama * BARIS_PER_HALAMAN_BARANG_DATANG
                             )
-                            .map((r) => {
-                              const meta = STAGE_META[r.stage];
-                              return (
-                                <tr key={r.key} className="border-t border-slate-800/70">
-                                  <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
-                                  <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
-                                  <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
-                                  <td className="px-4 py-2.5">
-                                    <Badge color={meta?.color || "slate"}>{meta?.label || r.stage || "—"}</Badge>
-                                  </td>
-                                </tr>
-                              );
-                            })}
+                            .map((r) => (
+                              <tr key={r.key} className="border-t border-slate-800/70">
+                                <td className="px-4 py-2.5 font-mono text-slate-100">{r.sku}</td>
+                                <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
+                                <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
+                                <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
+                                <td className="px-4 py-2.5 text-right text-slate-400">{r.kaliDatang}x</td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                       {rincianModelLama.length > BARIS_PER_HALAMAN_BARANG_DATANG && (
