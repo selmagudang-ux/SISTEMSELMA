@@ -363,6 +363,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const [showTotalBarangDatang, setShowTotalBarangDatang] = useState(false);
   const [halamanBarangDatang, setHalamanBarangDatang] = useState(1);
   const [halamanModelLama, setHalamanModelLama] = useState(1);
+  const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -542,6 +543,59 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
 
   const totalModelLama = rincianModelLama.length;
+
+  // "Model Baru" = KEBALIKAN dari "Model Lama" — model yang datang tapi
+  // BUKAN restock ke SKU yang sudah ada. Ini mencakup dua kasus: (1) model
+  // yang kodenya belum cocok ke sku_master manapun sama sekali (belum
+  // pernah dibuatkan SKU), dan (2) pesanan origin/pencipta SKU itu sendiri
+  // (kedatangan pertama yang bikin SKU-nya dibuat, dikecualikan dari "Model
+  // Lama" — lihat kodeModelKeOriginKodeBon di atas). Digabung per KODE MODEL
+  // (bukan per SKU, karena kasus (1) belum tentu punya SKU), satu baris =
+  // satu kode model, qty dijumlah dari semua kali datang.
+  const modelBaruDatangMap = new Map(); // kode model (barcode_supplier dinormalisasi) -> baris gabungan
+  (pesananMasuk || []).forEach((p) => {
+    if (p.dibatalkan) return;
+    detailModelPesanan(p)
+      .filter((m) => m.datang && m.nama)
+      .forEach((m) => {
+        const kode = m.nama.trim().toLowerCase();
+        if (!kode) return;
+        const skuRow = skuMasterByKode.get(kode);
+        const sudahRestock = skuRow && kodeModelKeOriginKodeBon[kode] !== p.kode_bon;
+        if (sudahRestock) return; // sudah dihitung sebagai "Model Lama"
+
+        const jumlah = Number(m.jumlah) || 0;
+        const existing = modelBaruDatangMap.get(kode);
+        if (existing) {
+          existing.jumlah += jumlah;
+          existing.kaliDatang += 1;
+          if (p.supplier) existing.supplierSet.add(p.supplier);
+          if (new Date(p.tanggal || 0) > new Date(existing.tanggalTerakhir || 0)) {
+            existing.tanggalTerakhir = p.tanggal;
+          }
+          if (!existing.sku && skuRow) existing.sku = skuRow.sku;
+        } else {
+          modelBaruDatangMap.set(kode, {
+            key: kode,
+            sku: skuRow ? skuRow.sku : null,
+            nama: m.nama,
+            jumlah,
+            kaliDatang: 1,
+            supplierSet: new Set(p.supplier ? [p.supplier] : []),
+            tanggalTerakhir: p.tanggal,
+          });
+        }
+      });
+  });
+
+  const rincianModelBaruDatang = Array.from(modelBaruDatangMap.values())
+    .map((r) => ({
+      ...r,
+      supplier: r.supplierSet.size > 0 ? Array.from(r.supplierSet).join(", ") : "—",
+    }))
+    .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
+
+  const totalModelBaruDatang = rincianModelBaruDatang.length;
 
   const byStage = (stage) => items.filter((i) => i.stage === stage);
   const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
@@ -820,13 +874,14 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                 />
                 <StatCard
                   label="Total Model Baru"
-                  value={0}
+                  value={totalModelBaruDatang}
                   accent="text-amber-400"
                   icon={LayoutGrid}
                   iconColor="text-amber-500"
                   onClick={() => {
                     setSubTabDatang((v) => (v === "model-baru" ? null : "model-baru"));
                     setShowTotalBarangDatang(false);
+                    setHalamanModelBaru(1);
                   }}
                 />
               </div>
@@ -959,6 +1014,83 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                                 )
                               }
                               disabled={halamanModelLama >= Math.ceil(rincianModelLama.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
+                              className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                            >
+                              Berikutnya
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {subTabDatang === "model-baru" && (
+                <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
+                    Total Model Baru — Model yang Belum Punya SKU Kita
+                  </div>
+                  {rincianModelBaruDatang.length === 0 ? (
+                    <EmptyState label="Belum ada model baru yang datang." />
+                  ) : (
+                    <>
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-900/70 text-slate-400 text-xs">
+                          <tr>
+                            <th className="text-left px-4 py-2.5 font-medium">Model</th>
+                            <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
+                            <th className="text-right px-4 py-2.5 font-medium">Total Qty</th>
+                            <th className="text-right px-4 py-2.5 font-medium">Kali Datang</th>
+                            <th className="text-left px-4 py-2.5 font-medium">Status SKU</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rincianModelBaruDatang
+                            .slice(
+                              (halamanModelBaru - 1) * BARIS_PER_HALAMAN_BARANG_DATANG,
+                              halamanModelBaru * BARIS_PER_HALAMAN_BARANG_DATANG
+                            )
+                            .map((r) => (
+                              <tr key={r.key} className="border-t border-slate-800/70">
+                                <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
+                                <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
+                                <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
+                                <td className="px-4 py-2.5 text-right text-slate-400">{r.kaliDatang}x</td>
+                                <td className="px-4 py-2.5">
+                                  {r.sku ? (
+                                    <Badge color="emerald">SKU dibuat: {r.sku}</Badge>
+                                  ) : (
+                                    <Badge color="amber">Belum dibuat SKU</Badge>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                      {rincianModelBaruDatang.length > BARIS_PER_HALAMAN_BARANG_DATANG && (
+                        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
+                          <span>
+                            Halaman {halamanModelBaru} dari{" "}
+                            {Math.ceil(rincianModelBaruDatang.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHalamanModelBaru((h) => Math.max(1, h - 1))}
+                              disabled={halamanModelBaru <= 1}
+                              className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                            >
+                              Sebelumnya
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setHalamanModelBaru((h) =>
+                                  Math.min(Math.ceil(rincianModelBaruDatang.length / BARIS_PER_HALAMAN_BARANG_DATANG), h + 1)
+                                )
+                              }
+                              disabled={halamanModelBaru >= Math.ceil(rincianModelBaruDatang.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
                               className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
                             >
                               Berikutnya
