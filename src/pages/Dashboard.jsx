@@ -353,6 +353,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const showRestokDisetujui = panelTerbuka === "restok";
   const showModelBaru = panelTerbuka === "model-baru";
   const showMenunggu = panelTerbuka === "menunggu";
+  const [subTabDatang, setSubTabDatang] = useState("restok"); // "restok" | "model-baru" — dua pilihan di dalam tab "Barang yang Sudah Datang"
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -429,7 +430,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
 
   const ALUR_TABS = [
     { key: "diajukan", label: "Barang yang di Pesan", icon: ClipboardList },
-    { key: "datang", label: "Barang Datang", icon: Truck },
+    { key: "datang", label: "Barang yang Sudah Datang", icon: Truck },
     { key: "alur", label: "Alur Barang", icon: Boxes },
   ];
 
@@ -673,28 +674,70 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
               )}
             </div>
           ) : tabAlur === "datang" ? (
-            <SeksiMonitoring
-              icon={Truck}
-              color="amber"
-              title="Barang Sedang Dipesan"
-              description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
-              count={sedangDipesan.length}
-              rows={sedangDipesan.map((p) => {
-                const st = statusPesananMasuk(p);
-                const meta = PO_STATUS_META[st];
-                const detail = detailModelPesanan(p);
-                return {
-                  key: p.id,
-                  label: p.supplier || "—",
-                  subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
-                  rightLabel: meta?.label,
-                  onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
-                };
-              })}
-              onNavigate={onNavigate}
-              navTarget={{ menu: "barang-datang" }}
-              emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
-            />
+            <div>
+              <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setSubTabDatang("restok")}
+                  className={`rounded-xl border p-4 text-left transition flex items-center gap-3 ${
+                    subTabDatang === "restok"
+                      ? "border-amber-500/50 bg-slate-900/70"
+                      : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+                  }`}
+                >
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant shrink-0">
+                    <Boxes size={17} />
+                  </div>
+                  <div className="text-sm font-semibold text-slate-100">Restok</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubTabDatang("model-baru")}
+                  className={`rounded-xl border p-4 text-left transition flex items-center gap-3 ${
+                    subTabDatang === "model-baru"
+                      ? "border-amber-500/50 bg-slate-900/70"
+                      : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+                  }`}
+                >
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant shrink-0">
+                    <LayoutGrid size={17} />
+                  </div>
+                  <div className="text-sm font-semibold text-slate-100">Model Baru</div>
+                </button>
+              </div>
+
+              {subTabDatang === "restok" ? (
+                <SeksiMonitoring
+                  icon={Truck}
+                  color="amber"
+                  title="Barang Sedang Dipesan"
+                  description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
+                  count={sedangDipesan.length}
+                  rows={sedangDipesan.map((p) => {
+                    const st = statusPesananMasuk(p);
+                    const meta = PO_STATUS_META[st];
+                    const detail = detailModelPesanan(p);
+                    return {
+                      key: p.id,
+                      label: p.supplier || "—",
+                      subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
+                      rightLabel: meta?.label,
+                      onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
+                    };
+                  })}
+                  onNavigate={onNavigate}
+                  navTarget={{ menu: "barang-datang" }}
+                  emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
+                />
+              ) : (
+                <div className="rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Baru — Barang Sudah Datang</div>
+                  <div className="p-6">
+                    <EmptyState label="Bagian ini menyusul — akan dilengkapi sesuai detail berikutnya." />
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
