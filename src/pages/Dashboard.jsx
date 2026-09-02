@@ -444,6 +444,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
       supplier: p.supplier || "—",
       nama: m.nama || "—",
       jumlah: Number(m.jumlah) || 0,
+      harga: Number(m.harga) || 0,
       datang: m.datang,
       tanggal: p.tanggal,
       pesanan: p,
@@ -741,6 +742,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                           <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
                           <th className="text-left px-4 py-2.5 font-medium">Model</th>
                           <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                          <th className="text-right px-4 py-2.5 font-medium">Harga</th>
                           <th className="text-left px-4 py-2.5 font-medium">Status</th>
                         </tr>
                       </thead>
@@ -754,6 +756,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                             <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
                             <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
                             <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
+                            <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.harga)}</td>
                             <td className="px-4 py-2.5">
                               <Badge color={r.datang ? "emerald" : "amber"}>{r.datang ? "Sudah Datang" : "Menunggu"}</Badge>
                             </td>
