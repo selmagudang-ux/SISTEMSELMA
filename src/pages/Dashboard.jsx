@@ -415,7 +415,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
 
   const ALUR_TABS = [
-    { key: "diajukan", label: "Barang Diajukan", icon: ClipboardList },
+    { key: "diajukan", label: "Barang yang di Pesan", icon: ClipboardList },
     { key: "datang", label: "Barang Datang", icon: Truck },
     { key: "alur", label: "Alur Barang", icon: Boxes },
   ];
