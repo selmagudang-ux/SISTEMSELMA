@@ -268,24 +268,48 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
 function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [] }) {
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
   const [showRestokDisetujui, setShowRestokDisetujui] = useState(false);
+  const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
+
+  // Nama toko/supplier untuk sebuah SKU ditelusuri dari barang masuk
+  // TERBARU dengan SKU tsb (items.kode_bon -> pesanan_masuk.kode_bon ->
+  // pesanan_masuk.supplier) — pola yang sama dipakai di modal "Tinjau
+  // Pengajuan Restock" (lihat ModalRouter.jsx).
+  const cariSupplier = (sku) => {
+    const itemTerbaru = items
+      .filter((i) => i.sku === sku && i.kode_bon)
+      .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
+    if (!itemTerbaru) return null;
+    const pesanan = pesananMasuk.find((pm) => pm.kode_bon === itemTerbaru.kode_bon);
+    return pesanan?.supplier || null;
+  };
 
   // Daftar barang restok (jenis SKU, bukan zona) yang statusnya sudah
   // disetujui — ditampilkan saat kartu "Total Restok (SKU)" diklik, supaya
   // owner/superadmin bisa langsung lihat SKU mana saja yang disetujui tanpa
-  // pindah halaman, dan buka detail SKU-nya langsung dari sini.
-  const restokDisetujui = semuaPengajuan
+  // pindah halaman, dan buka detail SKU-nya langsung dari sini. Tiap baris
+  // dilengkapi nama supplier supaya bisa difilter per toko/supplier.
+  const restokDisetujuiSemua = semuaPengajuan
     .filter((p) => p.jenis !== "zona" && p.status === "disetujui")
+    .map((p) => ({ ...p, _supplier: cariSupplier(p.sku) }))
     .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
 
+  const daftarSupplier = [...new Set(restokDisetujuiSemua.map((p) => p._supplier).filter(Boolean))].sort();
+
+  const restokDisetujui = filterSupplier
+    ? restokDisetujuiSemua.filter((p) => p._supplier === filterSupplier)
+    : restokDisetujuiSemua;
+
   // Kartu ringkasan di atas tab "Barang Diajukan" — "Total Restok (SKU)"
-  // dihitung dari restokDisetujui supaya angkanya selalu sama dengan jumlah
-  // baris yang tampil saat kartu ini diklik (cuma yang sudah disetujui,
-  // bukan gabungan menunggu + ditolak). Model baru dihitung dari total rak
-  // kosong yang diajukan lewat pengajuan zona (semua status, jumlah_rak_kosong
-  // dijumlah — satu pengajuan zona bisa berisi beberapa rak kosong).
-  const totalRestokSku = restokDisetujui.length;
+  // dihitung dari restokDisetujuiSemua (bukan hasil filter supplier) supaya
+  // angkanya tetap mewakili total keseluruhan, sama dengan jumlah baris
+  // yang tampil saat kartu ini diklik sebelum difilter (cuma yang sudah
+  // disetujui, bukan gabungan menunggu + ditolak). Model baru dihitung dari
+  // total rak kosong yang diajukan lewat pengajuan zona (semua status,
+  // jumlah_rak_kosong dijumlah — satu pengajuan zona bisa berisi beberapa
+  // rak kosong).
+  const totalRestokSku = restokDisetujuiSemua.length;
   const totalModelBaru = semuaPengajuan
     .filter((p) => p.jenis === "zona")
     .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
@@ -393,17 +417,37 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
 
               {showRestokDisetujui && (
                 <div className="mt-4 rounded-xl border border-slate-800 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
                     <div className="text-sm font-semibold">Restok (SKU) — Disetujui</div>
-                    <button
-                      onClick={() => onNavigate && onNavigate("persetujuan-restock", "sku")}
-                      className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-                    >
-                      Buka Halaman Lengkap <ArrowRight size={12} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {daftarSupplier.length > 0 && (
+                        <select
+                          value={filterSupplier}
+                          onChange={(e) => setFilterSupplier(e.target.value)}
+                          className="text-[11px] bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
+                        >
+                          <option value="">Semua Supplier</option>
+                          {daftarSupplier.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        onClick={() => onNavigate && onNavigate("persetujuan-restock", "sku")}
+                        className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                      >
+                        Buka Halaman Lengkap <ArrowRight size={12} />
+                      </button>
+                    </div>
                   </div>
                   {restokDisetujui.length === 0 ? (
-                    <EmptyState label="Belum ada pengajuan restock SKU yang disetujui." />
+                    <EmptyState
+                      label={
+                        filterSupplier
+                          ? `Tidak ada pengajuan restock SKU disetujui dari supplier "${filterSupplier}".`
+                          : "Belum ada pengajuan restock SKU yang disetujui."
+                      }
+                    />
                   ) : (
                     <div className="divide-y divide-slate-800/70">
                       {restokDisetujui.map((p) => (
@@ -420,6 +464,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                               <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
                               <div className="text-[11px] text-slate-500 mt-0.5">
                                 {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
+                                {p._supplier ? ` · ${p._supplier}` : ""}
                                 {p.direspon_pada ? ` · disetujui ${p.direspon_pada.slice(0, 10)}` : ""}
                               </div>
                             </div>
