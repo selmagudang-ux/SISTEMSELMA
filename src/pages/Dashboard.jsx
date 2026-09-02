@@ -115,6 +115,10 @@ function isToday(dateStr) {
   );
 }
 
+// Jumlah baris per halaman untuk tabel "Total Barang — Rincian Pesanan yang
+// Sudah Selesai" di Dashboard Gudang, supaya listnya tidak terlalu panjang.
+const BARIS_PER_HALAMAN_BARANG_DATANG = 10;
+
 export default function Dashboard({
   stageCounts,
   skuCount,
@@ -355,6 +359,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const showMenunggu = panelTerbuka === "menunggu";
   const [subTabDatang, setSubTabDatang] = useState("restok"); // "restok" | "model-baru" — dua pilihan di dalam tab "Barang yang Sudah Datang"
   const [showTotalBarangDatang, setShowTotalBarangDatang] = useState(false);
+  const [halamanBarangDatang, setHalamanBarangDatang] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -710,7 +715,10 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={Boxes}
                   iconColor="text-amber-500"
-                  onClick={() => setShowTotalBarangDatang((v) => !v)}
+                  onClick={() => {
+                    setShowTotalBarangDatang((v) => !v);
+                    setHalamanBarangDatang(1);
+                  }}
                 />
                 <StatCard
                   label="Total Model Lama"
@@ -738,30 +746,67 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   {rincianBarangDipesan.length === 0 ? (
                     <EmptyState label="Belum ada pesanan yang sudah selesai." />
                   ) : (
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-900/70 text-slate-400 text-xs">
-                        <tr>
-                          <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
-                          <th className="text-left px-4 py-2.5 font-medium">Model</th>
-                          <th className="text-right px-4 py-2.5 font-medium">Qty</th>
-                          <th className="text-right px-4 py-2.5 font-medium">Harga</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rincianBarangDipesan.map((r) => (
-                          <tr
-                            key={r.key}
-                            onClick={setModal ? () => setModal({ type: "konfirmasi-datang", item: r.pesanan }) : undefined}
-                            className={`border-t border-slate-800/70 ${setModal ? "cursor-pointer hover:bg-slate-900/50" : ""}`}
-                          >
-                            <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
-                            <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
-                            <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
-                            <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.harga)}</td>
+                    <>
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-900/70 text-slate-400 text-xs">
+                          <tr>
+                            <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
+                            <th className="text-left px-4 py-2.5 font-medium">Model</th>
+                            <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                            <th className="text-right px-4 py-2.5 font-medium">Harga</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {rincianBarangDipesan
+                            .slice(
+                              (halamanBarangDatang - 1) * BARIS_PER_HALAMAN_BARANG_DATANG,
+                              halamanBarangDatang * BARIS_PER_HALAMAN_BARANG_DATANG
+                            )
+                            .map((r) => (
+                              <tr
+                                key={r.key}
+                                onClick={setModal ? () => setModal({ type: "konfirmasi-datang", item: r.pesanan }) : undefined}
+                                className={`border-t border-slate-800/70 ${setModal ? "cursor-pointer hover:bg-slate-900/50" : ""}`}
+                              >
+                                <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
+                                <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
+                                <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
+                                <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.harga)}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                      {rincianBarangDipesan.length > BARIS_PER_HALAMAN_BARANG_DATANG && (
+                        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
+                          <span>
+                            Halaman {halamanBarangDatang} dari{" "}
+                            {Math.ceil(rincianBarangDipesan.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setHalamanBarangDatang((h) => Math.max(1, h - 1))}
+                              disabled={halamanBarangDatang <= 1}
+                              className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                            >
+                              Sebelumnya
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setHalamanBarangDatang((h) =>
+                                  Math.min(Math.ceil(rincianBarangDipesan.length / BARIS_PER_HALAMAN_BARANG_DATANG), h + 1)
+                                )
+                              }
+                              disabled={halamanBarangDatang >= Math.ceil(rincianBarangDipesan.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
+                              className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                            >
+                              Berikutnya
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
