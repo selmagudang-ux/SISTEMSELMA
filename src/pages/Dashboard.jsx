@@ -625,7 +625,7 @@ function DashboardGudang({
   const totalModelBaruDatang = rincianModelBaruDatang.length;
 
   const byStage = (stage) => items.filter((i) => i.stage === stage);
-  const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
+  const TAHAP_ALUR = STAGE_ORDER; // semua tahap — rincian dari halaman "Alur Barang" di sidebar (DataBarang.jsx)
 
   const ALUR_TABS = [
     { key: "diajukan", label: "Barang yang di Pesan", icon: ClipboardList },
@@ -1140,7 +1140,7 @@ function DashboardGudang({
           ) : (
             <div className="rounded-xl border border-slate-800 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold">Tahapan Barang — dari Buat SKU sampai Pemotretan</div>
+                <div className="text-sm font-semibold">Tahapan Barang — rincian dari Alur Barang</div>
                 <button
                   onClick={() => onNavigate && onNavigate("data-barang")}
                   className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
@@ -1148,7 +1148,7 @@ function DashboardGudang({
                   Buka Halaman <ArrowRight size={12} />
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4">
                 {TAHAP_ALUR.map((s) => {
                   const meta = STAGE_META[s];
                   const c = COLOR[meta.color];
