@@ -763,11 +763,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                               halamanBarangDatang * BARIS_PER_HALAMAN_BARANG_DATANG
                             )
                             .map((r) => (
-                              <tr
-                                key={r.key}
-                                onClick={setModal ? () => setModal({ type: "konfirmasi-datang", item: r.pesanan }) : undefined}
-                                className={`border-t border-slate-800/70 ${setModal ? "cursor-pointer hover:bg-slate-900/50" : ""}`}
-                              >
+                              <tr key={r.key} className="border-t border-slate-800/70">
                                 <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
                                 <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
                                 <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
