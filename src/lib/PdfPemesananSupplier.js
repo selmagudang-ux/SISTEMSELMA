@@ -14,7 +14,7 @@ const COLS = 3;
 const GUTTER = 6;
 
 const CARD_W = (PAGE_W - MARGIN * 2 - GUTTER * (COLS - 1)) / COLS;
-const CARD_H = CARD_W + 22;
+const CARD_H = CARD_W + 26; // +4mm dari sebelumnya untuk baris subkategori
 const IMG_PAD = 2;
 const IMG_W = CARD_W - IMG_PAD * 2;
 const IMG_H = IMG_W; // foto persegi 1:1
@@ -102,6 +102,14 @@ function drawCard(doc, box, fotoDataUrl, x, y) {
   doc.setFontSize(9);
   doc.setTextColor(30, 41, 59);
   doc.text(String(box.kodeBarang || "—"), x + 3, ty, { maxWidth: CARD_W - 6 });
+
+  if (box.subKategori) {
+    ty += 4;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text(String(box.subKategori), x + 3, ty, { maxWidth: CARD_W - 6 });
+  }
 
   ty += 4.5;
   doc.setFont("helvetica", "normal");
