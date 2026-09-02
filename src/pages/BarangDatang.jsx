@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock, Pencil } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock, Pencil, Search, Truck } from "lucide-react";
 import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
 import { detailModelPesanan, fmtRp, statusPesananMasuk } from "../lib/api";
 import { PO_STATUS_META } from "../lib/constants";
@@ -170,7 +170,17 @@ function FotoBonLightbox({ url, onClose }) {
   );
 }
 
-export default function BarangDatang({ pesananMasuk, setModal }) {
+// Router halaman "Barang Datang" — punya 2 sub-menu di sidebar sekarang:
+// "Daftar Barang Datang" (riwayat pesan/konfirmasi, sudah ada dari dulu) dan
+// "Supplier" (master data supplier, baru — disimpan ke tabel "suppliers" di
+// database, bukan cuma teks bebas lagi). Pola sama seperti Grosir.jsx yang
+// pisahkan "Semua Pesanan" vs "Toko Pengirim" lewat prop `sub`.
+export default function BarangDatang({ sub, pesananMasuk, suppliers, setModal }) {
+  if (sub === "supplier") return <SupplierList suppliers={suppliers} setModal={setModal} />;
+  return <DaftarBarangDatang pesananMasuk={pesananMasuk} setModal={setModal} />;
+}
+
+function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const [fotoLightbox, setFotoLightbox] = useState(null);
   const toggle = (id) =>
@@ -187,7 +197,7 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
   return (
     <div>
       <PageHeader
-        title="Barang Datang"
+        title="Pesanan Barang"
         description={`Baru tahu toko & harga saat pesan? Pakai "Pesan Barang" dulu, lalu "Konfirmasi Datang" di baris itu begitu barangnya sampai — riwayatnya tetap satu, nyambung dari pesan sampai datang. Kalau barang sudah langsung di tangan (tanpa pesan dulu), pakai "Input Barang Datang" langsung.`}
         action={
           <div className="flex items-center gap-2">
@@ -361,6 +371,113 @@ export default function BarangDatang({ pesananMasuk, setModal }) {
       )}
 
       <FotoBonLightbox url={fotoLightbox} onClose={() => setFotoLightbox(null)} />
+    </div>
+  );
+}
+
+// =========================================================
+// SUPPLIER — master data supplier/distributor barang datang, disimpan di
+// tabel "suppliers" (lihat App.jsx loadCore & ModalRouter "supplier-form" /
+// "hapus-supplier"). Dipakai sebagai daftar saran (datalist) di kolom
+// Supplier/Toko pada form Input Barang Datang, Pesan Barang, dan Edit Riwayat
+// — supaya nama supplier konsisten & tidak beda ejaan tiap dicatat ulang.
+function SupplierList({ suppliers, setModal }) {
+  const [q, setQ] = useState("");
+  const filtered = (suppliers || []).filter((s) => {
+    const query = q.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      s.nama?.toLowerCase().includes(query) ||
+      s.kode?.toLowerCase().includes(query) ||
+      s.telepon?.toLowerCase().includes(query)
+    );
+  });
+
+  return (
+    <div>
+      <PageHeader
+        title="Data Supplier"
+        description="Daftar supplier/distributor untuk pemesanan & pencatatan barang datang."
+        action={
+          <button
+            onClick={() => setModal({ type: "supplier-form", item: null })}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs px-3 py-2 rounded-lg"
+          >
+            <Plus size={14} /> Tambah Supplier
+          </button>
+        }
+      />
+
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari nama, kode, atau telepon…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState label={q ? "Tidak ada supplier yang cocok." : "Belum ada supplier."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {filtered.map((s, i) => (
+            <div
+              key={s.id}
+              className={`flex items-start justify-between gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 text-slate-500">
+                  <Truck size={14} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] text-amber-400">{s.kode}</span>
+                    <span className="text-sm text-slate-200 truncate">{s.nama}</span>
+                    {Array.isArray(s.models) && s.models.length > 0 && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-400 flex-shrink-0">
+                        {s.models.length} model
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {[s.telepon, s.alamat].filter(Boolean).join(" · ") || "—"}
+                  </div>
+                  {Array.isArray(s.models) && s.models.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {s.models.map((m, mi) => (
+                        <span
+                          key={`${m}-${mi}`}
+                          className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded-full"
+                        >
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={() => setModal({ type: "supplier-form", item: s })}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                  title="Edit"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  onClick={() => setModal({ type: "hapus-supplier", item: s })}
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800"
+                  title="Hapus"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

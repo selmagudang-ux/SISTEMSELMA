@@ -107,7 +107,17 @@ export const NAV = [
   {
     key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
     children: [
-      { key: "barang-datang", label: "Barang Datang", icon: Truck },
+      {
+        key: "barang-datang", label: "Pengadaan Barang", icon: Truck,
+        children: [
+          { key: "datang", label: "Pesanan Barang" },
+          // Master data Supplier — disimpan di tabel "suppliers" sendiri
+          // (bukan cuma teks bebas di kolom pesanan_masuk.supplier lagi),
+          // supaya bisa dipilih ulang & tidak beda-beda ejaan tiap kali
+          // catat barang datang (sama pola dengan "Toko Pengirim" di Grosir).
+          { key: "supplier", label: "Data Supplier" },
+        ],
+      },
       { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
       {
         key: "sku-harga", label: "SKU & Harga", icon: Tag,

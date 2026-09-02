@@ -9,7 +9,7 @@ import {
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
-  GantiPasswordForm, PelangganForm, TokoForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
+  GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
   BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
@@ -38,6 +38,48 @@ function ModalLoading({ onClose }) {
       </div>
     </ModalShell>
   );
+}
+
+// Sinkronkan nama supplier & nama model yang diketik di form-form Pesanan
+// Barang (Pesan Barang, Input Barang Datang, Konfirmasi Datang, Edit Riwayat)
+// ke master data Supplier (tabel "suppliers"), supaya tidak perlu didaftarkan
+// manual dua kali di menu "Data Supplier". Kalau nama supplier belum ada di
+// master, dibuatkan baru (langsung dengan model yang baru diketik). Kalau
+// sudah ada, model yang belum tercatat ditambahkan ke daftar models supplier
+// itu (dedup case-insensitive, model lama tidak dihapus/ditimpa). Nama
+// supplier kosong tidak melakukan apa-apa. Best-effort & senyap — gagal sync
+// di sini TIDAK boleh menggagalkan penyimpanan pesanan/barang datang itu
+// sendiri (makanya errornya ditelan, cuma dicatat ke console).
+async function syncSupplierMaster(suppliers, namaSupplier, modelNames = []) {
+  const nama = (namaSupplier || "").trim();
+  if (!nama) return;
+  const modelBaru = [...new Set((modelNames || []).map((m) => (m || "").trim()).filter(Boolean))];
+
+  try {
+    const existing = (suppliers || []).find(
+      (s) => s.nama?.trim().toLowerCase() === nama.toLowerCase()
+    );
+
+    if (!existing) {
+      await sb("suppliers", {
+        method: "POST",
+        body: JSON.stringify({ kode: nextKode(suppliers, "kode", "SUP-"), nama, models: modelBaru }),
+      });
+      return;
+    }
+
+    const modelLama = Array.isArray(existing.models) ? existing.models : [];
+    const modelLamaLower = new Set(modelLama.map((m) => m.toLowerCase()));
+    const tambahan = modelBaru.filter((m) => !modelLamaLower.has(m.toLowerCase()));
+    if (tambahan.length === 0) return;
+
+    await sb(`suppliers?id=eq.${existing.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ models: [...modelLama, ...tambahan] }),
+    });
+  } catch (e) {
+    console.error("Gagal sinkronkan supplier/model ke master data:", e);
+  }
 }
 
 // Modal Detail Barang — dipisah jadi komponen sendiri karena butuh state lokal
@@ -373,7 +415,7 @@ function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, pesananMasuk, keuanganTransaksi, saving, setSaving, reload, showToast, session,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, pesananMasuk, suppliers, keuanganTransaksi, saving, setSaving, reload, showToast, session,
   quickAdvance,
   pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
@@ -786,6 +828,69 @@ export default function ModalRouter({
           }, t ? "Toko diperbarui" : "Toko ditambahkan")
         }
       />
+    );
+  }
+
+  // SUPPLIER — master data supplier/distributor (tabel "suppliers"), dipakai
+  // sebagai saran nama di form Pesan Barang / Input Barang Datang / Edit
+  // Riwayat Barang Datang. Pola sama persis dengan "grosir-toko-form" di atas.
+  if (modal.type === "supplier-form") {
+    const s = modal.item;
+    return (
+      <SupplierForm
+        supplier={s}
+        kodeBaru={s ? null : nextKode(suppliers, "kode", "SUP-")}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            if (s) {
+              await sb(`suppliers?id=eq.${s.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ nama: data.nama, alamat: data.alamat, telepon: data.telepon, catatan: data.catatan, models: data.models }),
+              });
+            } else {
+              await sb("suppliers", { method: "POST", body: JSON.stringify(data) });
+            }
+          }, s ? "Supplier diperbarui" : "Supplier ditambahkan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "hapus-supplier") {
+    const s = modal.item;
+    return (
+      <ModalShell title="Hapus Supplier" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Supplier <span className="font-mono">{s.kode}</span> ({s.nama}) akan dihapus permanen. Riwayat barang
+            datang yang sudah pernah mencatat nama supplier ini TIDAK ikut berubah (nama disimpan sebagai teks di
+            riwayatnya sendiri) — supplier ini cuma tidak akan muncul lagi sebagai saran.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`suppliers?id=eq.${s.id}`, { method: "DELETE" });
+              }, "Supplier dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 
@@ -2001,8 +2106,10 @@ export default function ModalRouter({
         onClose={close}
         saving={saving}
         initial={prefill || undefined}
+        suppliers={suppliers}
         onSubmit={({ tanggal, supplier, jenis, totalHarga, catatan }) =>
           run(async () => {
+            await syncSupplierMaster(suppliers, supplier);
             const kodePesan = nextKode(pesananMasuk, "kode_bon", "PSN-");
             await sb("pesanan_masuk", {
               method: "POST",
@@ -2056,8 +2163,10 @@ export default function ModalRouter({
         pesanan={p}
         onClose={close}
         saving={saving}
+        suppliers={suppliers}
         onSubmit={({ tanggal, fotoBon, models, catatan, hargaKesepakatan, keteranganSelisih }) =>
           run(async () => {
+            await syncSupplierMaster(suppliers, p.supplier, models.map((m) => m.nama));
             let fotoBonUrl = p.foto_bon_url || null;
             if (fotoBon) {
               const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
@@ -2145,8 +2254,10 @@ export default function ModalRouter({
         pesanan={p}
         onClose={close}
         saving={saving}
+        suppliers={suppliers}
         onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan }) =>
           run(async () => {
+            await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
             let fotoBonUrl = p.foto_bon_url || null;
             if (fotoBon) {
               const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
@@ -2175,8 +2286,10 @@ export default function ModalRouter({
       <BarangDatangForm
         onClose={close}
         saving={saving}
+        suppliers={suppliers}
         onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan }) =>
           run(async () => {
+            await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
             // Foto bon (opsional) — satu foto untuk seluruh transaksi ini,
             // dipakai di tiap baris penerimaan per model.
             let fotoBonUrl = null;

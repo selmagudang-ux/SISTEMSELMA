@@ -195,6 +195,7 @@ function MainApp({ session, onLogout }) {
 
   const [items, setItems] = useState([]);
   const [pesananMasuk, setPesananMasuk] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [skuMaster, setSkuMaster] = useState([]);
   const [rak, setRak] = useState([]);
   const [master, setMaster] = useState({});
@@ -333,9 +334,10 @@ function MainApp({ session, onLogout }) {
   // TIDAK ada perubahan di situ. Yang berubah cuma pemicu OTOMATIS saat
   // pindah-pindah menu (lihat loadForMenu & fungsi navigate di bawah).
   const loadCore = useCallback(async () => {
-    const [itemsRes, pesananMasukRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
+    const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
       sbAll("items?select=*&order=created_at.desc"),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
+      sbAll("suppliers?select=*&order=nama"),
       sbAll("sku_master?select=*&order=created_at.desc"),
       sbAll("rak?select=*&order=code"),
       sbAll("master_data?select=*&order=label"),
@@ -349,6 +351,7 @@ function MainApp({ session, onLogout }) {
     ]);
     setItems(itemsRes || []);
     setPesananMasuk(pesananMasukRes || []);
+    setSuppliers(supplierRes || []);
     setSkuMaster(skuRes || []);
     setRak(rakRes || []);
     const grouped = {};
@@ -613,7 +616,12 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "barang-datang" && (
-                <BarangDatang pesananMasuk={pesananMasuk} setModal={setModal} />
+                <BarangDatang
+                  sub={nav.sub || "datang"}
+                  pesananMasuk={pesananMasuk}
+                  suppliers={suppliers}
+                  setModal={setModal}
+                />
               )}
               {nav.menu === "barang-masuk" && (
                 <BarangMasuk items={items} setModal={setModal} />
@@ -734,6 +742,7 @@ function MainApp({ session, onLogout }) {
           penempatan={penempatan}
           items={items}
           pesananMasuk={pesananMasuk}
+          suppliers={suppliers}
           keuanganTransaksi={keuanganTransaksi}
           saving={saving}
           setSaving={setSaving}

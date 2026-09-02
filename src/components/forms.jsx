@@ -10,6 +10,41 @@ import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } fr
 // dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
 export const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
 
+// Datalist HTML bersama untuk kolom Supplier/Toko di form-form Barang Datang
+// (Pesan Barang, Input Barang Datang, Edit Riwayat) — dropdown saran diambil
+// dari tabel "suppliers" (master data, lihat SupplierForm & ModalRouter
+// "supplier-form"), tapi kolomnya tetap teks bebas (boleh ketik nama baru)
+// supaya tidak memblokir input kalau supplier belum sempat didaftarkan dulu.
+function SupplierDatalist({ suppliers }) {
+  return (
+    <datalist id="supplier-datalist">
+      {(suppliers || []).map((s) => (
+        <option key={s.id} value={s.nama} />
+      ))}
+    </datalist>
+  );
+}
+
+// Datalist saran "Nama Model" — diambil dari daftar model yang sudah
+// didaftarkan di data Supplier (field `models`, lihat SupplierForm), TAPI
+// cuma untuk supplier yang namanya cocok dengan yang sedang diisi di kolom
+// Supplier/Toko form ini (pencocokan case-insensitive, karena kolom Supplier
+// masih teks bebas). Kalau belum ada yang cocok, datalist-nya kosong saja —
+// kolom "Nama Model" tetap teks bebas seperti biasa.
+function ModelNamaDatalist({ id, suppliers, supplierNama }) {
+  const s = (suppliers || []).find(
+    (x) => x.nama?.trim().toLowerCase() === (supplierNama || "").trim().toLowerCase()
+  );
+  const models = Array.isArray(s?.models) ? s.models : [];
+  return (
+    <datalist id={id}>
+      {models.map((m, i) => (
+        <option key={`${m}-${i}`} value={m} />
+      ))}
+    </datalist>
+  );
+}
+
 // Satu baris input barang masuk (dipakai berulang saat mode banyak-sekaligus).
 function baris(tanggal) {
   return { tanggal, jenis: "Pembelian", jenisLainnya: "", jumlah: 1 };
@@ -185,7 +220,7 @@ function barisBarangDatang() {
   return { nama: "", jumlahDatang: 1, jumlahRusak: 0, alasanRusak: "", harga: "" };
 }
 
-export function BarangDatangForm({ onClose, onSubmit, saving }) {
+export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
   const [fotoBon, setFotoBon] = useState(null);
@@ -255,8 +290,11 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
           value={supplier}
           onChange={(e) => setSupplier(e.target.value)}
           placeholder="Nama supplier/distributor"
+          list="supplier-datalist"
         />
+        <SupplierDatalist suppliers={suppliers} />
       </Field>
+      <ModelNamaDatalist id="barang-datang-model-datalist" suppliers={suppliers} supplierNama={supplier} />
       <Field label="Jenis Barang Datang">
         <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
           {JENIS_BARANG_MASUK.map((j) => (
@@ -290,6 +328,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
                   value={m.nama}
                   onChange={(e) => updateModel(idx, { nama: e.target.value })}
                   placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                  list="barang-datang-model-datalist"
                 />
                 <div className="flex gap-2">
                   <Field label="Qty Datang (total)">
@@ -406,7 +445,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving }) {
 // `initial` (opsional) dipakai untuk pre-fill saat form dibuka dari pengajuan
 // restock yang sudah disetujui — supplier/catatan diisi otomatis dari riwayat
 // SKU tersebut, tapi tetap bisa diubah manual sebelum disimpan.
-export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
+export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppliers }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
   const [supplier, setSupplier] = useState(initial.supplier || "");
@@ -440,7 +479,9 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
           onChange={(e) => setSupplier(e.target.value)}
           placeholder="Nama toko/supplier"
           autoFocus
+          list="supplier-datalist"
         />
+        <SupplierDatalist suppliers={suppliers} />
       </Field>
       <Field label="Jenis">
         <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
@@ -502,7 +543,7 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {} }) {
 // sampai datang. Total harga kesepakatan waktu pesan ditampilkan sebagai info
 // di atas (BUKAN harga per pcs — itu memang beda satuan), jadi harga per pcs
 // tiap model tetap harus diisi manual di sini setelah rinciannya jelas.
-export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
+export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppliers }) {
   const today = new Date().toISOString().slice(0, 10);
   // harga_kesepakatan = kolom baru (persisten, tidak hilang setelah konfirmasi).
   // Fallback ke detail_model[0].harga_total_pesan untuk pesanan lama yang
@@ -609,6 +650,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
       )}
 
       <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang yang Datang</p>
+      <ModelNamaDatalist id="konfirmasi-datang-model-datalist" suppliers={suppliers} supplierNama={pesanan?.supplier} />
       <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1 mb-1">
         {models.map((m, idx) => {
           const totalQtyBaris = Number(m.jumlahDatang) || 0;
@@ -621,6 +663,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
                   value={m.nama}
                   onChange={(e) => updateModel(idx, { nama: e.target.value })}
                   placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                  list="konfirmasi-datang-model-datalist"
                 />
                 <div className="flex gap-2">
                   <Field label="Qty Datang (total)">
@@ -756,7 +799,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving }) {
 // dibuat, riwayat & stok jadi tidak nyambung lagi. Kalau qty-nya memang
 // salah, cara paling aman: hapus riwayat ini (otomatis ikut hapus barang
 // turunannya) lalu input ulang dari awal.
-export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving }) {
+export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppliers }) {
   const detailAwal = pesanan?.detail_model || [];
   const jenisAwal = pesanan?.jenis || "Pembelian";
   const jenisDikenal = JENIS_BARANG_MASUK.includes(jenisAwal);
@@ -817,8 +860,11 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving }) {
           value={supplier}
           onChange={(e) => setSupplier(e.target.value)}
           placeholder="Nama supplier/distributor"
+          list="supplier-datalist"
         />
+        <SupplierDatalist suppliers={suppliers} />
       </Field>
+      <ModelNamaDatalist id="edit-barang-datang-model-datalist" suppliers={suppliers} supplierNama={supplier} />
       <Field label="Jenis Barang Datang">
         <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
           {JENIS_BARANG_MASUK.map((j) => (
@@ -853,6 +899,7 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving }) {
                     value={m.nama || ""}
                     onChange={(e) => updateModel(idx, { nama: e.target.value })}
                     placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                    list="edit-barang-datang-model-datalist"
                   />
                   <div className="flex items-center gap-2 text-[11px] text-slate-500">
                     <span className="rounded-md bg-slate-950 border border-slate-800 px-2 py-1 text-slate-400">
@@ -2751,6 +2798,103 @@ export function TokoForm({ toko, tokoList, kodeBaru, onClose, onSubmit, saving }
             alamat: alamat.trim() || null,
             telepon: telepon.trim() || null,
             jenis_toko: jenisToko.trim() || null,
+          })
+        }
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Form Tambah/Edit Supplier — master data supplier disimpan di tabel
+// "suppliers" sendiri (lihat ModalRouter "supplier-form"), dipakai sebagai
+// saran nama di kolom Supplier/Toko pada form-form Barang Datang di bawah.
+export function SupplierForm({ supplier, kodeBaru, onClose, onSubmit, saving }) {
+  const [nama, setNama] = useState(supplier?.nama || "");
+  const [alamat, setAlamat] = useState(supplier?.alamat || "");
+  const [telepon, setTelepon] = useState(supplier?.telepon || "");
+  const [catatan, setCatatan] = useState(supplier?.catatan || "");
+  const [models, setModels] = useState(() => (Array.isArray(supplier?.models) ? supplier.models : []));
+  const [modelInput, setModelInput] = useState("");
+  const kode = supplier?.kode || kodeBaru;
+
+  // Tambah satu nama model ke daftar (dedup, trim) — dipanggil dari tombol
+  // "+" maupun tekan Enter/koma di kolom ketiknya. Model-model ini nanti
+  // muncul sebagai saran (datalist) di kolom "Nama Model" pada form Input
+  // Barang Datang / Konfirmasi Datang / Edit Riwayat, begitu supplier yang
+  // sama dipilih di form itu (lihat SupplierDatalist & ModelNamaDatalist).
+  const tambahModel = () => {
+    const v = modelInput.trim();
+    if (!v) return;
+    setModels((rows) => (rows.some((r) => r.toLowerCase() === v.toLowerCase()) ? rows : [...rows, v]));
+    setModelInput("");
+  };
+  const hapusModel = (i) => setModels((rows) => rows.filter((_, idx) => idx !== i));
+
+  return (
+    <ModalShell title={supplier ? `Edit Supplier — ${kode}` : "Tambah Supplier"} onClose={onClose}>
+      <Field label="Nama Supplier/Distributor"><input className={inputClass} value={nama} onChange={(e) => setNama(e.target.value)} autoFocus /></Field>
+      <Field label="Alamat"><input className={inputClass} value={alamat} onChange={(e) => setAlamat(e.target.value)} /></Field>
+      <Field label="Telepon"><input className={inputClass} value={telepon} onChange={(e) => setTelepon(e.target.value)} /></Field>
+      <Field label="Catatan"><input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Opsional" /></Field>
+
+      <Field label="Model dari Supplier Ini (opsional)">
+        <div className="flex gap-2">
+          <input
+            className={inputClass}
+            value={modelInput}
+            onChange={(e) => setModelInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                e.preventDefault();
+                tambahModel();
+              }
+            }}
+            placeholder="Ketik nama/kode model, lalu Enter"
+          />
+          <button
+            type="button"
+            onClick={tambahModel}
+            disabled={!modelInput.trim()}
+            className="px-3 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 flex-shrink-0"
+          >
+            + Tambah
+          </button>
+        </div>
+        {models.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {models.map((m, i) => (
+              <span
+                key={`${m}-${i}`}
+                className="inline-flex items-center gap-1 bg-slate-800 text-slate-200 text-[11px] px-2 py-1 rounded-full"
+              >
+                {m}
+                <button
+                  type="button"
+                  onClick={() => hapusModel(i)}
+                  className="text-slate-500 hover:text-red-400"
+                  title="Hapus model ini"
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </Field>
+
+      <button
+        disabled={!nama.trim() || saving}
+        onClick={() =>
+          onSubmit({
+            kode,
+            nama: nama.trim(),
+            alamat: alamat.trim() || null,
+            telepon: telepon.trim() || null,
+            catatan: catatan.trim() || null,
+            models,
           })
         }
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
