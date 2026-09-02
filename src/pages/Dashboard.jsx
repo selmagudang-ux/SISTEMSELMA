@@ -269,16 +269,17 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
 
   const semuaPengajuan = pengajuanRestock || [];
-  const pengajuanMenunggu = semuaPengajuan.filter((p) => p.status === "menunggu");
-  const pengajuanRestokSku = pengajuanMenunggu.filter((p) => p.jenis !== "zona");
-  const pengajuanModelBaru = pengajuanMenunggu.filter((p) => p.jenis === "zona");
 
   // Total keseluruhan (semua status, bukan cuma yang masih menunggu) untuk
   // kartu ringkasan di atas tab "Barang Diajukan" — restok dihitung dari
-  // jenis SKU, model baru dari jenis zona (rak kosong), dan jumlah yang
-  // sudah disetujui dari kedua jenis tersebut.
+  // jumlah baris pengajuan jenis SKU, model baru dihitung dari total rak
+  // kosong yang diajukan (jumlah_rak_kosong dijumlah, bukan jumlah baris
+  // pengajuannya — satu pengajuan zona bisa berisi beberapa rak kosong),
+  // dan jumlah yang sudah disetujui dari kedua jenis tersebut.
   const totalRestokSku = semuaPengajuan.filter((p) => p.jenis !== "zona").length;
-  const totalModelBaru = semuaPengajuan.filter((p) => p.jenis === "zona").length;
+  const totalModelBaru = semuaPengajuan
+    .filter((p) => p.jenis === "zona")
+    .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
   const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
 
   const sedangDipesan = (pesananMasuk || [])
@@ -346,62 +347,31 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
           </div>
 
           {tabAlur === "diajukan" ? (
-            <div>
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <StatCard
-                  label="Total Restok (SKU)"
-                  value={totalRestokSku}
-                  accent="text-amber-400"
-                  icon={Boxes}
-                  iconColor="text-amber-500"
-                />
-                <StatCard
-                  label="Total Model Baru (Rak Kosong)"
-                  value={totalModelBaru}
-                  accent="text-amber-400"
-                  icon={LayoutGrid}
-                  iconColor="text-amber-500"
-                />
-                <StatCard
-                  label="Jumlah Disetujui"
-                  value={totalDisetujui}
-                  accent="text-emerald-400"
-                  icon={PackageCheck}
-                  iconColor="text-emerald-500"
-                />
-              </div>
-              <div className="grid md:grid-cols-2 gap-4">
-              <SeksiMonitoring
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard
+                label="Total Restok (SKU)"
+                value={totalRestokSku}
+                accent="text-amber-400"
                 icon={Boxes}
-                color="amber"
-                title="Restok (SKU)"
-                description="Pengajuan restock per SKU yang masih menunggu persetujuan."
-                count={pengajuanRestokSku.length}
-                rows={pengajuanRestokSku.map((p) => ({
-                  key: p.id,
-                  label: p.sku,
-                  subLabel: `${p.dibuat_oleh_nama || "—"} · stok saat itu ${p.stok_saat_ajuan}`,
-                }))}
-                onNavigate={onNavigate}
-                navTarget={{ menu: "persetujuan-restock", sub: "sku" }}
-                emptyLabel="Tidak ada pengajuan restock SKU."
+                iconColor="text-amber-500"
+                onClick={onNavigate ? () => onNavigate("persetujuan-restock", "sku") : undefined}
               />
-              <SeksiMonitoring
+              <StatCard
+                label="Total Model Baru (Rak Kosong)"
+                value={totalModelBaru}
+                accent="text-amber-400"
                 icon={LayoutGrid}
-                color="amber"
-                title="Model Baru (Rak Kosong)"
-                description="Pengajuan zona rak kosong untuk model baru yang masih menunggu persetujuan."
-                count={pengajuanModelBaru.length}
-                rows={pengajuanModelBaru.map((p) => ({
-                  key: p.id,
-                  label: `Zona: ${p.zona}`,
-                  subLabel: `${p.dibuat_oleh_nama || "—"} · ${p.jumlah_rak_kosong} rak kosong`,
-                }))}
-                onNavigate={onNavigate}
-                navTarget={{ menu: "persetujuan-restock", sub: "zona" }}
-                emptyLabel="Tidak ada pengajuan model baru."
+                iconColor="text-amber-500"
+                onClick={onNavigate ? () => onNavigate("persetujuan-restock", "zona") : undefined}
               />
-              </div>
+              <StatCard
+                label="Jumlah Disetujui"
+                value={totalDisetujui}
+                accent="text-emerald-400"
+                icon={PackageCheck}
+                iconColor="text-emerald-500"
+                onClick={onNavigate ? () => onNavigate("persetujuan-restock") : undefined}
+              />
             </div>
           ) : tabAlur === "datang" ? (
             <SeksiMonitoring
