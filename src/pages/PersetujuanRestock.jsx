@@ -261,8 +261,9 @@ function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesa
   const [checked, setChecked] = useState(() => new Set());
   const [overrides, setOverrides] = useState({}); // { [pengajuanId]: { kodeSupplier?, namaToko? } }
   const [downloading, setDownloading] = useState(false);
+  const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
-  const menunggu = (pengajuanRestock || [])
+  const menungguSemua = (pengajuanRestock || [])
     .filter((p) => p.status === "menunggu" && p.jenis !== "zona")
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -286,6 +287,22 @@ function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesa
       namaToko: ov.namaToko != null ? ov.namaToko : pesananTerkait?.supplier || "",
     };
   };
+
+  // Daftar nama toko/supplier yang dipakai buat opsi filter — gabungan dari
+  // master data Supplier DAN nama toko yang ketebak otomatis di pengajuan
+  // yang sedang menunggu (supaya toko yang belum terdaftar di master data
+  // tapi sudah ketahuan dari riwayat barang masuk tetap muncul sebagai
+  // opsi filter).
+  const opsiSupplier = Array.from(
+    new Set([
+      ...(suppliers || []).map((s) => s.nama),
+      ...menungguSemua.map((p) => dataUntuk(p).namaToko).filter(Boolean),
+    ])
+  ).sort((a, b) => a.localeCompare(b));
+
+  const menunggu = filterSupplier
+    ? menungguSemua.filter((p) => dataUntuk(p).namaToko === filterSupplier)
+    : menungguSemua;
 
   const setOverride = (id, field, value) =>
     setOverrides((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
@@ -311,8 +328,30 @@ function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesa
 
   return (
     <div>
+      <div className="flex items-center gap-2 mb-4">
+        <label className="text-[11px] text-slate-500">Filter Supplier:</label>
+        <select
+          value={filterSupplier}
+          onChange={(e) => setFilterSupplier(e.target.value)}
+          className="bg-slate-950 border border-slate-800 rounded-md px-2.5 py-1.5 text-xs outline-none focus:border-amber-500 max-w-[220px]"
+        >
+          <option value="">Semua Supplier ({menungguSemua.length})</option>
+          {opsiSupplier.map((nama) => (
+            <option key={nama} value={nama}>
+              {nama}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {menunggu.length === 0 ? (
-        <EmptyState label="Tidak ada pengajuan yang menunggu persetujuan — belum ada barang untuk ditawarkan ke supplier." />
+        <EmptyState
+          label={
+            filterSupplier
+              ? `Tidak ada pengajuan menunggu untuk supplier "${filterSupplier}".`
+              : "Tidak ada pengajuan yang menunggu persetujuan — belum ada barang untuk ditawarkan ke supplier."
+          }
+        />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-24">
           {menunggu.map((p) => {
