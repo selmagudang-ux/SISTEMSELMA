@@ -711,7 +711,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   onClick={() => setShowTotalBarangDatang((v) => !v)}
                 />
                 <StatCard
-                  label="Restok"
+                  label="Total Model Lama"
                   value={sedangDipesan.length}
                   accent={subTabDatang === "restok" ? "text-amber-400" : undefined}
                   icon={Truck}
@@ -719,7 +719,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   onClick={() => setSubTabDatang("restok")}
                 />
                 <StatCard
-                  label="Model Baru"
+                  label="Total Model Baru"
                   value={0}
                   accent={subTabDatang === "model-baru" ? "text-amber-400" : undefined}
                   icon={LayoutGrid}
@@ -769,28 +769,12 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
               )}
 
               {subTabDatang === "restok" ? (
-                <SeksiMonitoring
-                  icon={Truck}
-                  color="amber"
-                  title="Barang Sedang Dipesan"
-                  description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
-                  count={sedangDipesan.length}
-                  rows={sedangDipesan.map((p) => {
-                    const st = statusPesananMasuk(p);
-                    const meta = PO_STATUS_META[st];
-                    const detail = detailModelPesanan(p);
-                    return {
-                      key: p.id,
-                      label: p.supplier || "—",
-                      subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
-                      rightLabel: meta?.label,
-                      onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
-                    };
-                  })}
-                  onNavigate={onNavigate}
-                  navTarget={{ menu: "barang-datang" }}
-                  emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
-                />
+                <div className="rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Lama — Barang Sudah Datang</div>
+                  <div className="p-6">
+                    <EmptyState label="Bagian ini menyusul — akan dilengkapi sesuai detail berikutnya." />
+                  </div>
+                </div>
               ) : (
                 <div className="rounded-xl border border-slate-800 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Baru — Barang Sudah Datang</div>
