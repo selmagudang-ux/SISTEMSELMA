@@ -713,17 +713,17 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                 <StatCard
                   label="Total Model Lama"
                   value={sedangDipesan.length}
-                  accent={subTabDatang === "restok" ? "text-amber-400" : undefined}
+                  accent="text-amber-400"
                   icon={Truck}
-                  iconColor={subTabDatang === "restok" ? "text-amber-500" : undefined}
+                  iconColor="text-amber-500"
                   onClick={() => setSubTabDatang("restok")}
                 />
                 <StatCard
                   label="Total Model Baru"
                   value={0}
-                  accent={subTabDatang === "model-baru" ? "text-amber-400" : undefined}
+                  accent="text-amber-400"
                   icon={LayoutGrid}
-                  iconColor={subTabDatang === "model-baru" ? "text-amber-500" : undefined}
+                  iconColor="text-amber-500"
                   onClick={() => setSubTabDatang("model-baru")}
                 />
               </div>
