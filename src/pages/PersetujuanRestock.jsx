@@ -21,12 +21,16 @@ function hariIniIso() {
 // (arahan user: mirip badge "Habis" di Katalog, sekadar penanda, bukan alur
 // otomatis) — gudang yang nanti bikin PO manual lewat Pesan Barang kalau mau
 // ditindaklanjuti.
-export default function PersetujuanRestock({ pengajuanRestock, session, setModal }) {
+export default function PersetujuanRestock({ pengajuanRestock, session, setModal, filterJenis, onNavigate }) {
   const bisaSetujui = ["owner", "superadmin"].includes(session?.role);
 
   const semua = pengajuanRestock || [];
+  // filterJenis datang dari klik popover "Barang Diajukan" di Dashboard
+  // Gudang ("sku" atau "zona") — hanya menyaring daftar "Menunggu
+  // Persetujuan" di bawah, riwayat tetap menampilkan semuanya.
   const menunggu = [...semua]
     .filter((p) => p.status === "menunggu")
+    .filter((p) => !filterJenis || (filterJenis === "zona" ? p.jenis === "zona" : p.jenis !== "zona"))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   const riwayat = [...semua]
     .filter((p) => p.status !== "menunggu")
@@ -56,8 +60,19 @@ export default function PersetujuanRestock({ pengajuanRestock, session, setModal
 
       <div className="grid lg:grid-cols-2 gap-6">
         <div>
-          <div className="text-xs font-semibold text-slate-400 mb-2">
+          <div className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-2">
             Menunggu Persetujuan{!bisaSetujui && " (diajukan tim gudang)"}
+            {filterJenis && (
+              <>
+                <Badge color="amber">{filterJenis === "zona" ? "Rak Kosong" : "Restok"}</Badge>
+                <button
+                  onClick={() => onNavigate && onNavigate("persetujuan-restock")}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+                >
+                  Lihat Semua
+                </button>
+              </>
+            )}
           </div>
           {menunggu.length === 0 ? (
             <EmptyState label="Tidak ada pengajuan yang menunggu persetujuan." />

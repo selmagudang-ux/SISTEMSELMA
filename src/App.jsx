@@ -600,6 +600,7 @@ function MainApp({ session, onLogout }) {
                   master={master}
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
+                  pengajuanRestock={pengajuanRestock}
                 />
               )}
               {nav.menu === "persetujuan-restock" && (
@@ -607,6 +608,8 @@ function MainApp({ session, onLogout }) {
                   pengajuanRestock={pengajuanRestock}
                   session={session}
                   setModal={setModal}
+                  filterJenis={nav.sub}
+                  onNavigate={navigate}
                 />
               )}
               {nav.menu === "barang-datang" && (

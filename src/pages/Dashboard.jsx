@@ -3,7 +3,7 @@ import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
-  Activity, Truck, ShoppingBag, DollarSign,
+  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -82,6 +82,7 @@ export default function Dashboard({
   master = {},
   absensiRows = [],
   karyawanList = [],
+  pengajuanRestock = [],
 }) {
   const [tab, setTab] = useState("monitoring");
 
@@ -122,14 +123,11 @@ export default function Dashboard({
 
       {tab === "gudang" ? (
         <DashboardGudang
-          stageCounts={stageCounts}
-          skuCount={skuCount}
-          totalStok={totalStok}
-          rakCount={rakCount}
-          rakKosong={rakKosong}
-          items={items}
           onNavigate={onNavigate}
           setModal={setModal}
+          pengajuanRestock={pengajuanRestock}
+          items={items}
+          pesananMasuk={pesananMasuk}
         />
       ) : tab === "monitoring" ? (
         <DashboardMonitoring
@@ -267,82 +265,167 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
   );
 }
 
-function DashboardGudang({ stageCounts, skuCount, totalStok, rakCount, rakKosong, items, onNavigate, setModal }) {
-  const recent = items.slice(0, 6);
-  const daftarRakKosong = rakKosong || [];
+function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [] }) {
+  const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
+
+  const semuaPengajuan = pengajuanRestock || [];
+  const pengajuanMenunggu = semuaPengajuan.filter((p) => p.status === "menunggu");
+  const pengajuanRestokSku = pengajuanMenunggu.filter((p) => p.jenis !== "zona");
+  const pengajuanModelBaru = pengajuanMenunggu.filter((p) => p.jenis === "zona");
+
+  const sedangDipesan = (pesananMasuk || [])
+    .filter((p) => {
+      const st = statusPesananMasuk(p);
+      return st === "menunggu" || st === "sebagian";
+    })
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const byStage = (stage) => items.filter((i) => i.stage === stage);
+  const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
+
+  const ALUR_TABS = [
+    { key: "diajukan", label: "Barang Diajukan", icon: ClipboardList },
+    { key: "datang", label: "Barang Datang", icon: Truck },
+    { key: "alur", label: "Alur Barang", icon: Boxes },
+  ];
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Total SKU" value={skuCount} icon={Tag} />
-        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} icon={Boxes} />
-        <StatCard label="Rak Terpakai" value={rakCount} icon={MapPin} />
-        <StatCard label="Rak Kosong" value={daftarRakKosong.length} accent="text-emerald-400" icon={PackageCheck} iconColor="text-emerald-500" />
-        <StatCard label="Barang Aktif" value={items.filter((i) => i.stage !== "selesai").length} icon={ClipboardList} />
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
-        {STAGE_ORDER.map((s) => {
-          const meta = STAGE_META[s];
-          const c = COLOR[meta.color];
-          const Icon = meta.icon;
-          return (
-            <button
-              key={s}
-              onClick={() => onNavigate && onNavigate("data-barang", "semua")}
-              className={`rounded-xl border border-slate-800 p-3 text-left ${c.bg} hover:brightness-110 transition`}
-            >
-              <Icon size={16} className={c.text} />
-              <div className="text-xl font-bold mt-2">{stageCounts[s]}</div>
-              <div className="text-[11px] text-slate-400">{meta.label}</div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="rounded-xl border border-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Barang terbaru</div>
-        {recent.length === 0 ? (
-          <div className="p-6">
-            <EmptyState label="Belum ada barang masuk." />
+      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+        <button
+          type="button"
+          onClick={() => setTabAlur((v) => (v ? null : "diajukan"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            tabAlur ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Truck size={17} />
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody>
-              {recent.map((i) => {
-                const meta = STAGE_META[i.stage];
-                const c = COLOR[meta.color];
-                return (
-                  <tr key={i.id} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2.5">
-                      {i.foto_url ? (
-                        <img
-                          src={i.foto_url}
-                          alt={i.sku || "foto barang"}
-                          loading="lazy"
-                          decoding="async"
-                          onClick={() => setModal({ type: "lihat-foto", item: i })}
-                          className="w-10 h-10 object-cover rounded-md border border-slate-800 cursor-pointer hover:opacity-80"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-md border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
-                          <Camera size={14} />
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{i.tanggal}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
-                    <td className="px-4 py-2.5 text-slate-400">{i.jumlah}x</td>
-                    <td className="px-4 py-2.5">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full ${c.bg} ${c.text}`}>{meta.label}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+          <div className="text-base font-semibold text-slate-100">Alur Barang</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {}}
+          className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-left hover:border-slate-700 hover:bg-slate-900/70 transition min-h-[180px] flex flex-col"
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Boxes size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Data Barang</div>
+        </button>
       </div>
+
+      {tabAlur && (
+        <div>
+          <div className="flex flex-wrap items-center gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+            {ALUR_TABS.map((t) => {
+              const Icon = t.icon;
+              const active = tabAlur === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTabAlur(t.key)}
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+                    active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <Icon size={13} /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {tabAlur === "diajukan" ? (
+            <div className="grid md:grid-cols-2 gap-4">
+              <SeksiMonitoring
+                icon={Boxes}
+                color="amber"
+                title="Restok (SKU)"
+                description="Pengajuan restock per SKU yang masih menunggu persetujuan."
+                count={pengajuanRestokSku.length}
+                rows={pengajuanRestokSku.map((p) => ({
+                  key: p.id,
+                  label: p.sku,
+                  subLabel: `${p.dibuat_oleh_nama || "—"} · stok saat itu ${p.stok_saat_ajuan}`,
+                }))}
+                onNavigate={onNavigate}
+                navTarget={{ menu: "persetujuan-restock", sub: "sku" }}
+                emptyLabel="Tidak ada pengajuan restock SKU."
+              />
+              <SeksiMonitoring
+                icon={LayoutGrid}
+                color="amber"
+                title="Model Baru (Rak Kosong)"
+                description="Pengajuan zona rak kosong untuk model baru yang masih menunggu persetujuan."
+                count={pengajuanModelBaru.length}
+                rows={pengajuanModelBaru.map((p) => ({
+                  key: p.id,
+                  label: `Zona: ${p.zona}`,
+                  subLabel: `${p.dibuat_oleh_nama || "—"} · ${p.jumlah_rak_kosong} rak kosong`,
+                }))}
+                onNavigate={onNavigate}
+                navTarget={{ menu: "persetujuan-restock", sub: "zona" }}
+                emptyLabel="Tidak ada pengajuan model baru."
+              />
+            </div>
+          ) : tabAlur === "datang" ? (
+            <SeksiMonitoring
+              icon={Truck}
+              color="amber"
+              title="Barang Sedang Dipesan"
+              description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
+              count={sedangDipesan.length}
+              rows={sedangDipesan.map((p) => {
+                const st = statusPesananMasuk(p);
+                const meta = PO_STATUS_META[st];
+                const detail = detailModelPesanan(p);
+                return {
+                  key: p.id,
+                  label: p.supplier || "—",
+                  subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
+                  rightLabel: meta?.label,
+                  onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
+                };
+              })}
+              onNavigate={onNavigate}
+              navTarget={{ menu: "barang-datang" }}
+              emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
+            />
+          ) : (
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold">Alur Barang — dari Buat SKU sampai Pemotretan</div>
+                <button
+                  onClick={() => onNavigate && onNavigate("data-barang")}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                >
+                  Buka Halaman <ArrowRight size={12} />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4">
+                {TAHAP_ALUR.map((s) => {
+                  const meta = STAGE_META[s];
+                  const c = COLOR[meta.color];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => onNavigate && onNavigate("data-barang")}
+                      className={`rounded-xl border border-slate-800 p-3 text-left ${c.bg} hover:brightness-110 transition`}
+                    >
+                      <Icon size={16} className={c.text} />
+                      <div className="text-xl font-bold mt-2">{byStage(s).length}</div>
+                      <div className="text-[11px] text-slate-400">{meta.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
