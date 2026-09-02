@@ -351,6 +351,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
   const [showRestokDisetujui, setShowRestokDisetujui] = useState(false);
   const [showModelBaru, setShowModelBaru] = useState(false);
+  const [showMenunggu, setShowMenunggu] = useState(false);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -398,6 +399,10 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
   const totalModelBaru = pengajuanZonaSemua.reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
   const totalMenunggu = semuaPengajuan.filter((p) => p.status === "menunggu").length;
+  const pengajuanMenungguSemua = semuaPengajuan
+    .filter((p) => p.status === "menunggu")
+    .map((p) => (p.jenis === "zona" ? p : { ...p, _supplier: cariSupplier(p.sku) }))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const STATUS_MODEL_BARU_META = {
     disetujui: { label: "Disetujui", color: "emerald" },
@@ -500,7 +505,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={PackageCheck}
                   iconColor="text-amber-500"
-                  onClick={onNavigate ? () => onNavigate("persetujuan-restock") : undefined}
+                  onClick={() => setShowMenunggu((v) => !v)}
                 />
               </div>
 
@@ -605,6 +610,62 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {showMenunggu && (
+                <div className="mt-4 rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-sm font-semibold">Menunggu Persetujuan Owner</div>
+                    <button
+                      onClick={() => onNavigate && onNavigate("persetujuan-restock")}
+                      className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                    >
+                      Buka Halaman Lengkap <ArrowRight size={12} />
+                    </button>
+                  </div>
+                  {pengajuanMenungguSemua.length === 0 ? (
+                    <EmptyState label="Tidak ada pengajuan yang sedang menunggu persetujuan owner." />
+                  ) : (
+                    <div className="divide-y divide-slate-800/70">
+                      {pengajuanMenungguSemua.map((p) => (
+                        <button
+                          key={p.id}
+                          onClick={() => bukaDetailPengajuan(p)}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-900/70 transition flex items-center justify-between gap-3"
+                        >
+                          <div className="min-w-0 flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                              {p.jenis === "zona" ? (
+                                <LayoutGrid size={14} className="text-amber-500" />
+                              ) : (
+                                <Boxes size={14} className="text-amber-500" />
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              {p.jenis === "zona" ? (
+                                <>
+                                  <div className="text-xs font-semibold text-slate-100 truncate">Zona: {p.zona}</div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    {p.jumlah_rak_kosong} rak kosong · {p.dibuat_oleh_nama || "—"}
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="font-mono text-xs font-semibold text-slate-100 truncate">{p.sku}</div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    {p.dibuat_oleh_nama || "—"} · stok saat itu {p.stok_saat_ajuan}
+                                    {p._supplier ? ` · ${p._supplier}` : ""}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <Badge color="amber">Menunggu</Badge>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
