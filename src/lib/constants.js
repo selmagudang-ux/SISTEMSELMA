@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
-  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck,
+  Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -189,6 +189,9 @@ export const NAV = [
           { key: "laporan", label: "Laporan Grosir" },
         ],
       },
+      // Halaman terpisah dari "Grosir" tapi masih di dalam group "ADMIN GROSIR" —
+      // belum ada isinya, menyusul.
+      { key: "store-selma", label: "Store Selma", icon: Building2 },
     ],
   },
   {
@@ -355,7 +358,7 @@ export const ROLE_MENUS = {
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma
   // "Marketplace", dengan semua sub-nya — Belum/Sudah/Riwayat Upload).
   marketplace: ["marketplace"],
-  grosir: ["grosir"],
+  grosir: ["grosir", "store-selma"],
   // Admin Keuangan: hanya menu "Keuangan" (Transaksi + Rekening & Kategori),
   // sama seperti pola role operasional lain — tidak dapat "dashboard" (langsung
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya

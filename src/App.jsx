@@ -29,6 +29,7 @@ const FotoProduk = lazy(() => import("./pages/FotoProduk"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
 import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs, computeRakPindahNotifs, computeRakKosongNotifs } from "./lib/marketplaceNotif";
 const Grosir = lazy(() => import("./pages/Grosir"));
+const StoreSelma = lazy(() => import("./pages/StoreSelma"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
 const Absensi = lazy(() => import("./pages/Absensi"));
@@ -711,6 +712,7 @@ function MainApp({ session, onLogout }) {
                   setModal={setModal}
                 />
               )}
+              {nav.menu === "store-selma" && <StoreSelma />}
               {nav.menu === "keuangan" && (
                 <Keuangan
                   sub={nav.sub || "transaksi"}
