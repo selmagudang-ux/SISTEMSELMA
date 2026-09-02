@@ -3,7 +3,7 @@ import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
-  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid,
+  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid, Search,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -18,6 +18,7 @@ import {
   ringkasanGrosir,
   statusPesananMasuk,
   detailModelPesanan,
+  labelFor,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass } from "../components/ui";
@@ -205,6 +206,7 @@ export default function Dashboard({
           items={items}
           pesananMasuk={pesananMasuk}
           skuMaster={skuMaster}
+          master={master}
           periodeDari={periodeDari}
           periodeSampai={periodeSampai}
           periodeLabel={periodeLabel}
@@ -363,6 +365,7 @@ function DashboardGudang({
   items = [],
   pesananMasuk = [],
   skuMaster = [],
+  master = {},
   periodeDari,
   periodeSampai,
   periodeLabel,
@@ -379,6 +382,9 @@ function DashboardGudang({
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
   const [stageTerbuka, setStageTerbuka] = useState(null); // null | salah satu key STAGE_ORDER — tahap yang listnya sedang ditampilkan di tab "Tahapan Barang"
+  const [showDataBarang, setShowDataBarang] = useState(false); // panel "Data Barang" (sumber: skuMaster, sama seperti Master Barang di menu SKU & Harga)
+  const [qDataBarang, setQDataBarang] = useState("");
+  const [kategoriDataBarang, setKategoriDataBarang] = useState("");
 
   // Terapkan filter Bulan & Tahun (dari header Dashboard) ke data yang
   // sifatnya berbasis tanggal kejadian — pesanan/kedatangan barang
@@ -634,12 +640,45 @@ function DashboardGudang({
     { key: "alur", label: "Tahapan Barang", icon: Boxes },
   ];
 
+  // Panel "Data Barang" — sumber datanya SAMA PERSIS dengan Master Barang di
+  // menu SKU & Harga (tabel sku_master via prop skuMaster), bukan data
+  // terpisah. Ringkasan & pencarian di sini cuma jendela cepat dari
+  // Dashboard; daftar lengkap dengan semua filter/fitur (download CSV/foto,
+  // katalog PDF, dll) tetap di halaman SKU & Harga (lihat tombol "Buka
+  // Halaman Lengkap" di bawah).
+  const kategoriLabelDataBarang = (kode) => labelFor(master || {}, "kategori", kode);
+  const skuAktif = skuMaster.filter((s) => !s.nonaktif);
+  const totalStokSemua = skuAktif.reduce((sum, s) => sum + (Number(s.stok) || 0), 0);
+  const jumlahPerubahanHargaSemua = skuAktif.filter(
+    (s) => s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli
+  ).length;
+  const kategoriOptionsDataBarang = Array.from(
+    new Set(skuAktif.map((s) => s.kategori).filter(Boolean))
+  ).sort();
+
+  const MAX_TAMPIL_DATA_BARANG = 12;
+  const filteredDataBarangSemua = skuAktif.filter((s) => {
+    const ql = qDataBarang.trim().toLowerCase();
+    const cocokQ =
+      !ql ||
+      (s.sku || "").toLowerCase().includes(ql) ||
+      (s.barcode_supplier || "").toLowerCase().includes(ql);
+    if (!cocokQ) return false;
+    if (kategoriDataBarang && s.kategori !== kategoriDataBarang) return false;
+    return true;
+  });
+  const filteredDataBarang = filteredDataBarangSemua.slice(0, MAX_TAMPIL_DATA_BARANG);
+  const lebihDataBarang = filteredDataBarangSemua.length - filteredDataBarang.length;
+
   return (
     <div>
       <div className="grid sm:grid-cols-2 gap-4 mb-4">
         <button
           type="button"
-          onClick={() => setTabAlur((v) => (v ? null : "diajukan"))}
+          onClick={() => {
+            setTabAlur((v) => (v ? null : "diajukan"));
+            setShowDataBarang(false);
+          }}
           className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
             tabAlur ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
           }`}
@@ -652,8 +691,13 @@ function DashboardGudang({
 
         <button
           type="button"
-          onClick={() => {}}
-          className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-left hover:border-slate-700 hover:bg-slate-900/70 transition min-h-[180px] flex flex-col"
+          onClick={() => {
+            setShowDataBarang((v) => !v);
+            setTabAlur(null);
+          }}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            showDataBarang ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
         >
           <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
             <Boxes size={17} />
@@ -661,6 +705,82 @@ function DashboardGudang({
           <div className="text-base font-semibold text-slate-100">Data Barang</div>
         </button>
       </div>
+
+      {showDataBarang && (
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold">Data Barang</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Sumber data sama dengan Master Barang di menu SKU & Harga.
+              </div>
+            </div>
+            <button
+              onClick={() => onNavigate && onNavigate("sku-harga")}
+              className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              Buka Halaman Lengkap <ArrowRight size={12} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b border-slate-800">
+            <StatCard label="Total SKU Aktif" value={skuAktif.length} icon={Boxes} accent="text-amber-400" iconColor="text-amber-500" />
+            <StatCard label="Total Stok" value={totalStokSemua} icon={Package} accent="text-sky-400" iconColor="text-sky-500" />
+            <StatCard label="Ada Perubahan Harga" value={jumlahPerubahanHargaSemua} icon={DollarSign} accent="text-red-400" iconColor="text-red-500" />
+            <StatCard label="Kategori" value={kategoriOptionsDataBarang.length} icon={Tag} accent="text-teal-400" iconColor="text-teal-500" />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 p-4 border-b border-slate-800">
+            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[180px]">
+              <Search size={14} className="text-slate-500" />
+              <input
+                value={qDataBarang}
+                onChange={(e) => setQDataBarang(e.target.value)}
+                placeholder="Cari SKU atau barcode supplier…"
+                className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+              />
+            </div>
+            <select
+              value={kategoriDataBarang}
+              onChange={(e) => setKategoriDataBarang(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none"
+            >
+              <option value="">Semua Kategori</option>
+              {kategoriOptionsDataBarang.map((k) => (
+                <option key={k} value={k}>{kategoriLabelDataBarang(k)}</option>
+              ))}
+            </select>
+          </div>
+
+          {filteredDataBarang.length === 0 ? (
+            <EmptyState label="Tidak ada barang yang cocok." />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
+                {filteredDataBarang.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setModal && setModal({ type: "detail-sku", item: s })}
+                    className="text-left rounded-xl border border-slate-800 hover:border-amber-500/40 bg-slate-900/50 p-3 transition"
+                  >
+                    <div className="font-mono text-xs font-semibold text-slate-100 truncate">{s.sku}</div>
+                    <div className="text-[11px] text-slate-500 mt-1 truncate">{kategoriLabelDataBarang(s.kategori) || "—"}</div>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-[11px] text-slate-400">Stok {s.stok || 0}</span>
+                      <span className="text-[11px] font-medium text-slate-300">{fmtRp(s.harga_asli)}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {lebihDataBarang > 0 && (
+                <div className="px-4 pb-4 text-[11px] text-slate-500">
+                  +{lebihDataBarang} barang lainnya — buka halaman lengkap untuk lihat semua.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {tabAlur && (
         <div>
