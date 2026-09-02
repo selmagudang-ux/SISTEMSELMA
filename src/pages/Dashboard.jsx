@@ -769,21 +769,6 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                 </div>
               )}
 
-              {subTabDatang === "restok" ? (
-                <div className="rounded-xl border border-slate-800 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Lama — Barang Sudah Datang</div>
-                  <div className="p-6">
-                    <EmptyState label="Bagian ini menyusul — akan dilengkapi sesuai detail berikutnya." />
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-800 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Baru — Barang Sudah Datang</div>
-                  <div className="p-6">
-                    <EmptyState label="Bagian ini menyusul — akan dilengkapi sesuai detail berikutnya." />
-                  </div>
-                </div>
-              )}
             </div>
           ) : (
             <div className="rounded-xl border border-slate-800 overflow-hidden">
