@@ -350,6 +350,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate, periodeDari,
 function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [] }) {
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
   const [showRestokDisetujui, setShowRestokDisetujui] = useState(false);
+  const [showModelBaru, setShowModelBaru] = useState(false);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -392,10 +393,16 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   // jumlah_rak_kosong dijumlah — satu pengajuan zona bisa berisi beberapa
   // rak kosong).
   const totalRestokSku = restokDisetujuiSemua.length;
-  const totalModelBaru = semuaPengajuan
+  const pengajuanZonaSemua = semuaPengajuan
     .filter((p) => p.jenis === "zona")
-    .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
+    .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
+  const totalModelBaru = pengajuanZonaSemua.reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
   const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
+
+  const STATUS_MODEL_BARU_META = {
+    disetujui: { label: "Disetujui", color: "emerald" },
+    ditolak: { label: "Ditolak", color: "red" },
+  };
 
   // Buka modal detail pengajuan restock (read-only karena statusnya sudah
   // disetujui) — komponen yang sama dipakai untuk "Tinjau" di halaman
@@ -485,7 +492,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={LayoutGrid}
                   iconColor="text-amber-500"
-                  onClick={onNavigate ? () => onNavigate("persetujuan-restock", "zona") : undefined}
+                  onClick={() => setShowModelBaru((v) => !v)}
                 />
                 <StatCard
                   label="Jumlah Disetujui"
@@ -554,6 +561,50 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                           <Badge color="emerald">Disetujui</Badge>
                         </button>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {showModelBaru && (
+                <div className="mt-4 rounded-xl border border-slate-800 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-sm font-semibold">Model Baru (Rak Kosong) — per Zona</div>
+                    <button
+                      onClick={() => onNavigate && onNavigate("persetujuan-restock", "zona")}
+                      className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                    >
+                      Buka Halaman Lengkap <ArrowRight size={12} />
+                    </button>
+                  </div>
+                  {pengajuanZonaSemua.length === 0 ? (
+                    <EmptyState label="Belum ada pengajuan model baru (zona) yang diajukan." />
+                  ) : (
+                    <div className="divide-y divide-slate-800/70">
+                      {pengajuanZonaSemua.map((p) => {
+                        const meta = STATUS_MODEL_BARU_META[p.status];
+                        return (
+                          <button
+                            key={p.id}
+                            onClick={() => bukaDetailPengajuan(p)}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-900/70 transition flex items-center justify-between gap-3"
+                          >
+                            <div className="min-w-0 flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                                <LayoutGrid size={14} className="text-amber-500" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-slate-100 truncate">Zona: {p.zona}</div>
+                                <div className="text-[11px] text-slate-500 mt-0.5">
+                                  {p.jumlah_rak_kosong} rak kosong · {p.dibuat_oleh_nama || "—"}
+                                  {p.direspon_pada ? ` · direspon ${p.direspon_pada.slice(0, 10)}` : ""}
+                                </div>
+                              </div>
+                            </div>
+                            <Badge color={meta?.color || "amber"}>{meta?.label || "Menunggu"}</Badge>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
