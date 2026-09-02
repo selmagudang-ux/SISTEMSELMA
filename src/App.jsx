@@ -591,6 +591,7 @@ function MainApp({ session, onLogout }) {
                   rakCount={rakTerpakaiCount}
                   rakKosong={rakKosong}
                   items={items}
+                  skuMaster={skuMaster}
                   onNavigate={navigate}
                   setModal={setModal}
                   pesananMasuk={pesananMasuk}
