@@ -683,7 +683,16 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
             </div>
           ) : tabAlur === "datang" ? (
             <div>
-              <div className="grid sm:grid-cols-2 gap-3 mb-4">
+              <div className="grid sm:grid-cols-3 gap-3 mb-4">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant shrink-0">
+                    <Boxes size={17} />
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-amber-400 leading-none">{totalBarangDipesan}</div>
+                    <div className="text-xs font-medium text-slate-400 mt-1">Total Barang</div>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => setSubTabDatang("restok")}
@@ -715,39 +724,28 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
               </div>
 
               {subTabDatang === "restok" ? (
-                <div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                    <StatCard
-                      label="Total Barang"
-                      value={totalBarangDipesan}
-                      accent="text-amber-400"
-                      icon={Boxes}
-                      iconColor="text-amber-500"
-                    />
-                  </div>
-                  <SeksiMonitoring
-                    icon={Truck}
-                    color="amber"
-                    title="Barang Sedang Dipesan"
-                    description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
-                    count={sedangDipesan.length}
-                    rows={sedangDipesan.map((p) => {
-                      const st = statusPesananMasuk(p);
-                      const meta = PO_STATUS_META[st];
-                      const detail = detailModelPesanan(p);
-                      return {
-                        key: p.id,
-                        label: p.supplier || "—",
-                        subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
-                        rightLabel: meta?.label,
-                        onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
-                      };
-                    })}
-                    onNavigate={onNavigate}
-                    navTarget={{ menu: "barang-datang" }}
-                    emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
-                  />
-                </div>
+                <SeksiMonitoring
+                  icon={Truck}
+                  color="amber"
+                  title="Barang Sedang Dipesan"
+                  description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
+                  count={sedangDipesan.length}
+                  rows={sedangDipesan.map((p) => {
+                    const st = statusPesananMasuk(p);
+                    const meta = PO_STATUS_META[st];
+                    const detail = detailModelPesanan(p);
+                    return {
+                      key: p.id,
+                      label: p.supplier || "—",
+                      subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
+                      rightLabel: meta?.label,
+                      onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
+                    };
+                  })}
+                  onNavigate={onNavigate}
+                  navTarget={{ menu: "barang-datang" }}
+                  emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
+                />
               ) : (
                 <div className="rounded-xl border border-slate-800 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Baru — Barang Sudah Datang</div>
