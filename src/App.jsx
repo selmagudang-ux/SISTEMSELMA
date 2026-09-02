@@ -627,7 +627,7 @@ function MainApp({ session, onLogout }) {
                 <BarangMasuk items={items} setModal={setModal} />
               )}
               {nav.menu === "data-barang" && (
-                <DataBarang items={items} penempatan={penempatan} setModal={setModal} />
+                <DataBarang items={items} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />
               )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga
