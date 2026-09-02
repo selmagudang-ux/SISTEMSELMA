@@ -121,7 +121,7 @@ function drawCard(doc, box, fotoDataUrl, x, y) {
 // - boxes: array { kodeBarang, kodeSupplier, namaToko, fotoUrl }
 // -----------------------------------------------------------------
 export async function generatePemesananSupplierPdf(boxes, opts = {}) {
-  const { judul = "Pemesanan Barang ke Supplier", onProgress } = opts;
+  const { judul = "Pemesanan Barang", onProgress } = opts;
   const total = boxes.length;
   if (total === 0) return;
 
