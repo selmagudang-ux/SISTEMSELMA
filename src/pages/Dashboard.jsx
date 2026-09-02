@@ -273,18 +273,6 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
 
   const semuaPengajuan = pengajuanRestock || [];
 
-  // Total keseluruhan (semua status, bukan cuma yang masih menunggu) untuk
-  // kartu ringkasan di atas tab "Barang Diajukan" — restok dihitung dari
-  // jumlah baris pengajuan jenis SKU, model baru dihitung dari total rak
-  // kosong yang diajukan (jumlah_rak_kosong dijumlah, bukan jumlah baris
-  // pengajuannya — satu pengajuan zona bisa berisi beberapa rak kosong),
-  // dan jumlah yang sudah disetujui dari kedua jenis tersebut.
-  const totalRestokSku = semuaPengajuan.filter((p) => p.jenis !== "zona").length;
-  const totalModelBaru = semuaPengajuan
-    .filter((p) => p.jenis === "zona")
-    .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
-  const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
-
   // Daftar barang restok (jenis SKU, bukan zona) yang statusnya sudah
   // disetujui — ditampilkan saat kartu "Total Restok (SKU)" diklik, supaya
   // owner/superadmin bisa langsung lihat SKU mana saja yang disetujui tanpa
@@ -292,6 +280,18 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const restokDisetujui = semuaPengajuan
     .filter((p) => p.jenis !== "zona" && p.status === "disetujui")
     .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
+
+  // Kartu ringkasan di atas tab "Barang Diajukan" — "Total Restok (SKU)"
+  // dihitung dari restokDisetujui supaya angkanya selalu sama dengan jumlah
+  // baris yang tampil saat kartu ini diklik (cuma yang sudah disetujui,
+  // bukan gabungan menunggu + ditolak). Model baru dihitung dari total rak
+  // kosong yang diajukan lewat pengajuan zona (semua status, jumlah_rak_kosong
+  // dijumlah — satu pengajuan zona bisa berisi beberapa rak kosong).
+  const totalRestokSku = restokDisetujui.length;
+  const totalModelBaru = semuaPengajuan
+    .filter((p) => p.jenis === "zona")
+    .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
+  const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
 
   const bukaDetailSku = (sku) => {
     const s = skuMaster.find((m) => m.sku === sku);
