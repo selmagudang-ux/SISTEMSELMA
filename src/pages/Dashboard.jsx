@@ -205,6 +205,9 @@ export default function Dashboard({
           items={items}
           pesananMasuk={pesananMasuk}
           skuMaster={skuMaster}
+          periodeDari={periodeDari}
+          periodeSampai={periodeSampai}
+          periodeLabel={periodeLabel}
         />
       ) : tab === "monitoring" ? (
         <DashboardMonitoring
@@ -353,7 +356,17 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate, periodeDari,
   );
 }
 
-function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [], skuMaster = [] }) {
+function DashboardGudang({
+  onNavigate,
+  setModal,
+  pengajuanRestock = [],
+  items = [],
+  pesananMasuk = [],
+  skuMaster = [],
+  periodeDari,
+  periodeSampai,
+  periodeLabel,
+}) {
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
   const [panelTerbuka, setPanelTerbuka] = useState(null); // null | "restok" | "model-baru" | "menunggu" — cuma satu yang boleh terbuka sekaligus
   const showRestokDisetujui = panelTerbuka === "restok";
@@ -366,7 +379,22 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
-  const semuaPengajuan = pengajuanRestock || [];
+  // Terapkan filter Bulan & Tahun (dari header Dashboard) ke data yang
+  // sifatnya berbasis tanggal kejadian — pesanan/kedatangan barang
+  // (pesananMasuk, per tanggal PO) & pengajuan restock (per tanggal
+  // diajukan). Kalau periodeDari/periodeSampai belum diisi (mis. dipanggil
+  // dari tempat lain tanpa filter), semua data tetap ditampilkan seperti
+  // sebelumnya.
+  const dalamPeriode = (tanggal) => {
+    if (!periodeDari || !periodeSampai || !tanggal) return true;
+    const t = String(tanggal).slice(0, 10);
+    return t >= periodeDari && t <= periodeSampai;
+  };
+
+  const pesananMasukPeriode = (pesananMasuk || []).filter((p) => dalamPeriode(p.tanggal));
+  const pengajuanRestockPeriode = (pengajuanRestock || []).filter((p) => dalamPeriode(p.created_at));
+
+  const semuaPengajuan = pengajuanRestockPeriode;
 
   // Nama toko/supplier untuk sebuah SKU ditelusuri dari barang masuk
   // TERBARU dengan SKU tsb (items.kode_bon -> pesanan_masuk.kode_bon ->
@@ -428,7 +456,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     setModal && setModal({ type: "respon-pengajuan-restock", item: p });
   };
 
-  const sedangDipesan = (pesananMasuk || [])
+  const sedangDipesan = pesananMasukPeriode
     .filter((p) => {
       const st = statusPesananMasuk(p);
       return st === "menunggu" || st === "sebagian";
@@ -437,7 +465,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
 
   // Pesanan yang sudah selesai (semua model sudah datang penuh) — dipakai
   // untuk kartu "Total Barang" di tab "Barang yang Sudah Datang".
-  const barangSelesai = (pesananMasuk || [])
+  const barangSelesai = pesananMasukPeriode
     .filter((p) => statusPesananMasuk(p) === "selesai")
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
@@ -501,7 +529,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   });
 
   const modelLamaMap = new Map(); // sku id -> baris gabungan
-  (pesananMasuk || []).forEach((p) => {
+  pesananMasukPeriode.forEach((p) => {
     if (p.dibatalkan) return;
     detailModelPesanan(p)
       .filter((m) => m.datang && m.nama)
@@ -553,7 +581,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
   // (bukan per SKU, karena kasus (1) belum tentu punya SKU), satu baris =
   // satu kode model, qty dijumlah dari semua kali datang.
   const modelBaruDatangMap = new Map(); // kode model (barcode_supplier dinormalisasi) -> baris gabungan
-  (pesananMasuk || []).forEach((p) => {
+  pesananMasukPeriode.forEach((p) => {
     if (p.dibatalkan) return;
     detailModelPesanan(p)
       .filter((m) => m.datang && m.nama)
@@ -656,6 +684,9 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
 
           {tabAlur === "diajukan" ? (
             <div>
+              {periodeLabel && (
+                <div className="text-[11px] text-slate-500 mb-2">Periode: {periodeLabel}</div>
+              )}
               <div className="grid grid-cols-3 gap-3">
                 <StatCard
                   label="Total Restok (SKU)"
@@ -847,6 +878,9 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
             </div>
           ) : tabAlur === "datang" ? (
             <div>
+              {periodeLabel && (
+                <div className="text-[11px] text-slate-500 mb-2">Periode: {periodeLabel}</div>
+              )}
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <StatCard
                   label="Total Barang"
