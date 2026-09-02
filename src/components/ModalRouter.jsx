@@ -550,6 +550,11 @@ export default function ModalRouter({
             });
           }, "Pengajuan ditolak")
         }
+        onBuatPesanBarang={
+          p.status === "disetujui" && p.jenis !== "zona"
+            ? () => setModal({ type: "pesan-barang", item: { dariRestock: true, sku: p.sku, catatanRestock: p.catatan } })
+            : undefined
+        }
       />
     );
   }

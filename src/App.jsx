@@ -604,7 +604,6 @@ function MainApp({ session, onLogout }) {
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
                   pengajuanRestock={pengajuanRestock}
-                  skuMaster={skuMaster}
                 />
               )}
               {nav.menu === "persetujuan-restock" && (

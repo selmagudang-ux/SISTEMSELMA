@@ -83,7 +83,6 @@ export default function Dashboard({
   absensiRows = [],
   karyawanList = [],
   pengajuanRestock = [],
-  skuMaster = [],
 }) {
   const [tab, setTab] = useState("monitoring");
 
@@ -129,7 +128,6 @@ export default function Dashboard({
           pengajuanRestock={pengajuanRestock}
           items={items}
           pesananMasuk={pesananMasuk}
-          skuMaster={skuMaster}
         />
       ) : tab === "monitoring" ? (
         <DashboardMonitoring
@@ -267,7 +265,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate }) {
   );
 }
 
-function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [], skuMaster = [] }) {
+function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [] }) {
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
   const [showRestokDisetujui, setShowRestokDisetujui] = useState(false);
 
@@ -293,9 +291,11 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     .reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
   const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
 
-  const bukaDetailSku = (sku) => {
-    const s = skuMaster.find((m) => m.sku === sku);
-    if (s) setModal && setModal({ type: "detail-sku", item: s });
+  // Buka modal detail pengajuan restock (read-only karena statusnya sudah
+  // disetujui) — komponen yang sama dipakai untuk "Tinjau" di halaman
+  // Persetujuan Restok, cuma tanpa tombol Setujui/Tolak.
+  const bukaDetailPengajuan = (p) => {
+    setModal && setModal({ type: "respon-pengajuan-restock", item: p });
   };
 
   const sedangDipesan = (pesananMasuk || [])
@@ -409,7 +409,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                       {restokDisetujui.map((p) => (
                         <button
                           key={p.id}
-                          onClick={() => bukaDetailSku(p.sku)}
+                          onClick={() => bukaDetailPengajuan(p)}
                           className="w-full text-left px-4 py-3 hover:bg-slate-900/70 transition flex items-center justify-between gap-3"
                         >
                           <div className="min-w-0 flex items-center gap-2.5">

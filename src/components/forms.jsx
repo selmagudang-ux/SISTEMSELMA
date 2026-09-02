@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search } from "lucide-react";
-import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput } from "./ui";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag } from "lucide-react";
+import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
@@ -3724,13 +3724,17 @@ export function AjukanRestockZonaForm({ zona, jumlahKosong, onClose, onSubmit, s
 // Pengajuan bisa dua jenis: "sku" (dari Stok Menipis, per SKU) atau "zona"
 // (dari Peta Rak, jumlah rak kosong di satu zona) — tampilannya beda karena
 // datanya beda, tapi alur setuju/tolak-nya sama persis.
-export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, namaSupplier, onLihatFoto, onClose, onSubmitSetujui, onSubmitTolak, saving }) {
+export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, namaSupplier, onLihatFoto, onClose, onSubmitSetujui, onSubmitTolak, onBuatPesanBarang, saving }) {
   const [mauTolak, setMauTolak] = useState(false);
   const [catatanOwner, setCatatanOwner] = useState("");
   const isZona = p.jenis === "zona";
+  // Pengajuan yang sudah direspon (disetujui/ditolak) ditampilkan read-only
+  // — cuma detailnya, tanpa tombol Setujui/Tolak — dipakai saat SKU diklik
+  // dari daftar "Restok (SKU) — Disetujui" di Dashboard Gudang.
+  const sudahDirespon = p.status && p.status !== "menunggu";
 
   return (
-    <ModalShell title="Tinjau Pengajuan Restock" onClose={onClose}>
+    <ModalShell title={sudahDirespon ? "Detail Pengajuan Restock" : "Tinjau Pengajuan Restock"} onClose={onClose}>
       {!isZona && (fotoUrl ? (
         <img
           src={fotoUrl}
@@ -3783,10 +3787,39 @@ export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, na
             Catatan: <span className="text-slate-300">{p.catatan}</span>
           </div>
         )}
+        {sudahDirespon && (
+          <>
+            <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              Status: <Badge color={p.status === "disetujui" ? "emerald" : "red"}>
+                {p.status === "disetujui" ? "Disetujui" : "Ditolak"}
+              </Badge>
+            </div>
+            {p.direspon_oleh_nama && (
+              <div className="text-[11px] text-slate-500">
+                Direspon oleh <span className="text-slate-300">{p.direspon_oleh_nama}</span>
+                {p.direspon_pada ? ` · ${p.direspon_pada.slice(0, 10)}` : ""}
+              </div>
+            )}
+            {p.catatan_owner && (
+              <div className="text-[11px] text-slate-500">
+                Catatan owner: <span className="text-slate-300">{p.catatan_owner}</span>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
 
-      {mauTolak ? (
+      {sudahDirespon ? (
+        p.status === "disetujui" && !isZona && onBuatPesanBarang ? (
+          <button
+            onClick={onBuatPesanBarang}
+            className="w-full flex items-center justify-center gap-1.5 text-sm font-medium py-2.5 rounded-lg border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+          >
+            <ShoppingBag size={14} /> Buat Pesan Barang
+          </button>
+        ) : null
+      ) : mauTolak ? (
         <>
           <Field label="Alasan ditolak (opsional)">
             <input
