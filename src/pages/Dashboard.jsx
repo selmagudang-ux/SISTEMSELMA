@@ -425,6 +425,14 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     })
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
+  // Total kuantitas barang (bukan cuma jumlah PO/supplier) dari pesanan yang
+  // masih ditunggu — ditampilkan sebagai kartu "Total Barang" di bagian
+  // Restok pada tab "Barang yang Sudah Datang".
+  const totalBarangDipesan = sedangDipesan.reduce((sum, p) => {
+    const detail = detailModelPesanan(p);
+    return sum + detail.reduce((s, m) => s + (Number(m.jumlah) || 0), 0);
+  }, 0);
+
   const byStage = (stage) => items.filter((i) => i.stage === stage);
   const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
 
@@ -707,28 +715,39 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
               </div>
 
               {subTabDatang === "restok" ? (
-                <SeksiMonitoring
-                  icon={Truck}
-                  color="amber"
-                  title="Barang Sedang Dipesan"
-                  description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
-                  count={sedangDipesan.length}
-                  rows={sedangDipesan.map((p) => {
-                    const st = statusPesananMasuk(p);
-                    const meta = PO_STATUS_META[st];
-                    const detail = detailModelPesanan(p);
-                    return {
-                      key: p.id,
-                      label: p.supplier || "—",
-                      subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
-                      rightLabel: meta?.label,
-                      onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
-                    };
-                  })}
-                  onNavigate={onNavigate}
-                  navTarget={{ menu: "barang-datang" }}
-                  emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
-                />
+                <div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                    <StatCard
+                      label="Total Barang"
+                      value={totalBarangDipesan}
+                      accent="text-amber-400"
+                      icon={Boxes}
+                      iconColor="text-amber-500"
+                    />
+                  </div>
+                  <SeksiMonitoring
+                    icon={Truck}
+                    color="amber"
+                    title="Barang Sedang Dipesan"
+                    description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
+                    count={sedangDipesan.length}
+                    rows={sedangDipesan.map((p) => {
+                      const st = statusPesananMasuk(p);
+                      const meta = PO_STATUS_META[st];
+                      const detail = detailModelPesanan(p);
+                      return {
+                        key: p.id,
+                        label: p.supplier || "—",
+                        subLabel: `${detail.length} model · dipesan ${p.tanggal || "—"}`,
+                        rightLabel: meta?.label,
+                        onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
+                      };
+                    })}
+                    onNavigate={onNavigate}
+                    navTarget={{ menu: "barang-datang" }}
+                    emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
+                  />
+                </div>
               ) : (
                 <div className="rounded-xl border border-slate-800 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Model Baru — Barang Sudah Datang</div>
