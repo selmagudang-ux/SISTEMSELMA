@@ -349,9 +349,10 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate, periodeDari,
 
 function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = [], pesananMasuk = [] }) {
   const [tabAlur, setTabAlur] = useState(null); // null = panel tertutup
-  const [showRestokDisetujui, setShowRestokDisetujui] = useState(false);
-  const [showModelBaru, setShowModelBaru] = useState(false);
-  const [showMenunggu, setShowMenunggu] = useState(false);
+  const [panelTerbuka, setPanelTerbuka] = useState(null); // null | "restok" | "model-baru" | "menunggu" — cuma satu yang boleh terbuka sekaligus
+  const showRestokDisetujui = panelTerbuka === "restok";
+  const showModelBaru = panelTerbuka === "model-baru";
+  const showMenunggu = panelTerbuka === "menunggu";
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
 
   const semuaPengajuan = pengajuanRestock || [];
@@ -489,7 +490,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={Boxes}
                   iconColor="text-amber-500"
-                  onClick={() => setShowRestokDisetujui((v) => !v)}
+                  onClick={() => setPanelTerbuka((v) => (v === "restok" ? null : "restok"))}
                 />
                 <StatCard
                   label="Total Model Baru (Rak Kosong)"
@@ -497,7 +498,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={LayoutGrid}
                   iconColor="text-amber-500"
-                  onClick={() => setShowModelBaru((v) => !v)}
+                  onClick={() => setPanelTerbuka((v) => (v === "model-baru" ? null : "model-baru"))}
                 />
                 <StatCard
                   label="Menunggu Persetujuan Owner"
@@ -505,7 +506,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   accent="text-amber-400"
                   icon={PackageCheck}
                   iconColor="text-amber-500"
-                  onClick={() => setShowMenunggu((v) => !v)}
+                  onClick={() => setPanelTerbuka((v) => (v === "menunggu" ? null : "menunggu"))}
                 />
               </div>
 
