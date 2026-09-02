@@ -397,7 +397,7 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     .filter((p) => p.jenis === "zona")
     .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
   const totalModelBaru = pengajuanZonaSemua.reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
-  const totalDisetujui = semuaPengajuan.filter((p) => p.status === "disetujui").length;
+  const totalMenunggu = semuaPengajuan.filter((p) => p.status === "menunggu").length;
 
   const STATUS_MODEL_BARU_META = {
     disetujui: { label: "Disetujui", color: "emerald" },
@@ -495,11 +495,11 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
                   onClick={() => setShowModelBaru((v) => !v)}
                 />
                 <StatCard
-                  label="Jumlah Disetujui"
-                  value={totalDisetujui}
-                  accent="text-emerald-400"
+                  label="Menunggu Persetujuan Owner"
+                  value={totalMenunggu}
+                  accent="text-amber-400"
                   icon={PackageCheck}
-                  iconColor="text-emerald-500"
+                  iconColor="text-amber-500"
                   onClick={onNavigate ? () => onNavigate("persetujuan-restock") : undefined}
                 />
               </div>
