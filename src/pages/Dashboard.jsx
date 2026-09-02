@@ -432,13 +432,6 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
     .filter((p) => statusPesananMasuk(p) === "selesai")
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-  // Total kuantitas barang dari pesanan yang sudah selesai — ditampilkan
-  // sebagai kartu "Total Barang".
-  const totalBarangDipesan = barangSelesai.reduce((sum, p) => {
-    const detail = detailModelPesanan(p);
-    return sum + detail.reduce((s, m) => s + (Number(m.jumlah) || 0), 0);
-  }, 0);
-
   // Rincian per-model (bukan per-PO) dari semua pesanan yang sudah selesai —
   // dipakai saat kartu "Total Barang" diklik, supaya langsung kelihatan
   // supplier, nama model, dan qty tiap barang tanpa perlu buka satu-satu PO.
@@ -455,6 +448,10 @@ function DashboardGudang({ onNavigate, setModal, pengajuanRestock = [], items = 
       pesanan: p,
     }));
   });
+
+  // Total MODEL (jumlah baris/model, bukan qty) dari pesanan yang sudah
+  // selesai — ditampilkan sebagai kartu "Total Barang".
+  const totalBarangDipesan = rincianBarangDipesan.length;
 
   const byStage = (stage) => items.filter((i) => i.stage === stage);
   const TAHAP_ALUR = STAGE_ORDER.slice(0, 4); // sku, rak, menunggu-harga, verifikasi (Buat SKU s/d Pemotretan)
