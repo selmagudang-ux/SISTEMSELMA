@@ -1454,7 +1454,12 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
   const ringkasanKeuanganBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
-  const laporanGrosirBulanIni = ringkasanGrosir(pesananGrosir, dari, sampai);
+  // Cuma pesanan Grosir asli — Reseller Toko/Cekout dihitung terpisah, bukan
+  // di sini (sama seperti Semua Pesanan & Laporan Grosir).
+  const pesananGrosirSajaMonitoring = (pesananGrosir || []).filter(
+    (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
+  );
+  const laporanGrosirBulanIni = ringkasanGrosir(pesananGrosirSajaMonitoring, dari, sampai);
 
   return (
     <div>
@@ -1620,7 +1625,12 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
 }
 
 function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
-  const pesananAktif = pesananGrosir.filter((p) => p.status !== "Batal");
+  // Cuma pesanan Grosir asli — Reseller Toko/Cekout tidak ikut kehitung di
+  // widget Dashboard Grosir ini (riwayat & angkanya sendiri, di menu Reseller).
+  const pesananGrosir_ = (pesananGrosir || []).filter(
+    (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
+  );
+  const pesananAktif = pesananGrosir_.filter((p) => p.status !== "Batal");
   const pesananHariIni = pesananAktif.filter((p) => isToday(p.created_at));
   const omsetHariIni = pesananHariIni.reduce((a, p) => a + (Number(p.total) || 0), 0);
 
@@ -1646,9 +1656,9 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
   const tahunTerpilih = tahun || new Date().getFullYear();
   const awalTahunTerpilih = `${tahunTerpilih}-01-01`;
   const akhirTahunTerpilih = `${tahunTerpilih}-12-31`;
-  const laporanHarian = ringkasanGrosir(pesananGrosir, hariIniStr, hariIniStr);
-  const laporanBulanan = ringkasanGrosir(pesananGrosir, periodeDari, periodeSampai);
-  const laporanTahunan = ringkasanGrosir(pesananGrosir, awalTahunTerpilih, akhirTahunTerpilih);
+  const laporanHarian = ringkasanGrosir(pesananGrosir_, hariIniStr, hariIniStr);
+  const laporanBulanan = ringkasanGrosir(pesananGrosir_, periodeDari, periodeSampai);
+  const laporanTahunan = ringkasanGrosir(pesananGrosir_, awalTahunTerpilih, akhirTahunTerpilih);
 
   return (
     <div>

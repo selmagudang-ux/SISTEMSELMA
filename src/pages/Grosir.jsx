@@ -228,7 +228,17 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setMod
 
   const namaPelanggan = (id) => pelangganGrosir.find((p) => p.id === id)?.nama || "—";
 
-  const filtered = (pesananGrosir || []).filter((p) => {
+  // Halaman ini khusus pesanan Grosir asli — pesanan Reseller Toko
+  // (jenis_transaksi='reseller') & Reseller Cekout (jenis_transaksi=
+  // 'reseller_cekout') punya riwayat sendiri masing-masing di menu Reseller
+  // (lihat pages/Reseller.jsx: SemuaPesananReseller & SemuaPesananCekout).
+  // Baris lama yang belum pernah diisi jenis_transaksi-nya (null/undefined)
+  // dianggap Grosir juga, sesuai default kolomnya.
+  const pesananGrosirSaja = (pesananGrosir || []).filter(
+    (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
+  );
+
+  const filtered = pesananGrosirSaja.filter((p) => {
     const s = q.trim().toLowerCase();
     const matchQ =
       !s ||
@@ -566,7 +576,14 @@ function LaporanGrosir({ pesananGrosir, pelangganGrosir, pembayaranGrosir }) {
   const [dari, setDari] = useState(awalBulanIniGrosir());
   const [sampai, setSampai] = useState(hariIniIsoGrosir());
 
-  const { omset, jumlahPesanan, rataRata, list } = ringkasanGrosir(pesananGrosir, dari || null, sampai || null);
+  // Sama seperti di SemuaPesanan: laporan ini cuma untuk transaksi Grosir
+  // asli, bukan Reseller Toko/Cekout (yang sudah punya laporan/riwayat
+  // sendiri di menu Reseller).
+  const pesananGrosirSaja = (pesananGrosir || []).filter(
+    (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
+  );
+
+  const { omset, jumlahPesanan, rataRata, list } = ringkasanGrosir(pesananGrosirSaja, dari || null, sampai || null);
   const totalPiutangRange = list.reduce((a, p) => a + sisaHutangPesanan(p, pembayaranGrosir), 0);
   const { mode, data } = omsetGrosirPerPeriode(list);
 
@@ -649,7 +666,7 @@ function LaporanGrosir({ pesananGrosir, pelangganGrosir, pembayaranGrosir }) {
         )}
       </div>
 
-      <LaporanBulananTahunanGrosir pesananGrosir={pesananGrosir} />
+      <LaporanBulananTahunanGrosir pesananGrosir={pesananGrosirSaja} />
     </div>
   );
 }
