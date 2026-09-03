@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, Megaphone, Wallet, Plus, Banknote, Trash2, Store, ArrowLeft, ChevronRight } from "lucide-react";
+import { TrendingUp, Megaphone, Wallet, Plus, Banknote, Trash2, Store, ArrowLeft, ChevronRight, Pencil } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID } from "../components/ui";
 import { fmtRp, saldoMarketplace, daftarTokoMarketplace } from "../lib/api";
 
@@ -110,12 +110,11 @@ function DaftarToko({ platform, label, daftarToko, onPilih, setModal }) {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {daftarToko.map((t) => (
-            <button
+            <div
               key={t.kode ?? "tanpa-toko"}
-              onClick={() => onPilih(t)}
               className="flex items-center justify-between text-left rounded-md-lg bg-md-container-low p-4 shadow-elevation-1 hover:shadow-elevation-2 transition-shadow"
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <button onClick={() => onPilih(t)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-md-on-surface/[0.06] ${PLATFORM_COLOR[platform]}`}>
                   <Store size={16} />
                 </div>
@@ -123,9 +122,22 @@ function DaftarToko({ platform, label, daftarToko, onPilih, setModal }) {
                   <div className="text-sm font-medium text-md-on-surface truncate">{t.label}</div>
                   <div className="text-xs text-md-on-surface-variant mt-0.5">{fmtRp(t.saldo)}</div>
                 </div>
+              </button>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                {t.kode && (
+                  <button
+                    onClick={() => setModal({ type: "marketplace-toko-form", platform, toko: t })}
+                    className="p-1.5 text-md-on-surface-variant hover:text-md-on-surface"
+                    title="Ganti nama toko"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
+                <button onClick={() => onPilih(t)} className="p-1.5 text-md-on-surface-variant">
+                  <ChevronRight size={16} />
+                </button>
               </div>
-              <ChevronRight size={16} className="text-md-on-surface-variant flex-shrink-0" />
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -153,12 +165,22 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, setMo
 
   return (
     <div>
-      <button
-        onClick={onKembali}
-        className="flex items-center gap-1.5 text-xs text-md-on-surface-variant hover:text-md-on-surface mb-3"
-      >
-        <ArrowLeft size={13} /> Daftar Toko {label}
-      </button>
+      <div className="flex items-center justify-between mb-3">
+        <button
+          onClick={onKembali}
+          className="flex items-center gap-1.5 text-xs text-md-on-surface-variant hover:text-md-on-surface"
+        >
+          <ArrowLeft size={13} /> Daftar Toko {label}
+        </button>
+        {toko.kode && (
+          <button
+            onClick={() => setModal({ type: "marketplace-toko-form", platform, toko })}
+            className="flex items-center gap-1.5 text-xs text-md-on-surface-variant hover:text-md-on-surface"
+          >
+            <Pencil size={12} /> Ganti Nama Toko
+          </button>
+        )}
+      </div>
 
       <PageHeader
         title={`${label} — ${toko.label}`}

@@ -1104,24 +1104,51 @@ export default function ModalRouter({
   // =========================================================
 
   if (modal.type === "marketplace-toko-form") {
-    // modal.platform = "shopee"|"tiktok"|"lazada" — dibuat sebagai
+    // modal.platform = "shopee"|"tiktok"|"lazada" — dibuat/diedit sebagai
     // master_data tipe "toko_<platform>" (lihat daftarTokoMarketplace di
     // lib/api.js). Kode dibuat otomatis, sequential per platform.
+    // modal.toko diisi ({kode,label}) kalau mode EDIT (ganti nama toko yang
+    // sudah ada) — kalau kosong berarti mode TAMBAH baru.
     const tipeMaster = `toko_${modal.platform}`;
+    const isEdit = !!modal.toko;
     return (
       <MarketplaceTokoForm
         platform={modal.platform}
-        kodeBaru={nextKode(master?.[tipeMaster] || [], "kode", "TOKO-")}
+        toko={modal.toko}
+        kodeBaru={isEdit ? null : nextKode(master?.[tipeMaster] || [], "kode", "TOKO-")}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
           run(async () => {
-            await sb("master_data", {
-              method: "POST",
-              body: JSON.stringify({ tipe: tipeMaster, kode: data.kode, label: data.nama }),
-            });
-            await reload();
-          }, "Toko ditambahkan")
+            // Cek dulu ke master_data (bukan cuma andalkan state `master` yang
+            // ada di tangan sekarang) — supaya tetap kedeteksi kalau toko yang
+            // sama baru saja dibuat dari device/tab lain dan belum sempat
+            // ter-reload di sini. Dibandingkan case-insensitive + trim biar
+            // "Toko A" dan "toko a " dianggap sama. Waktu EDIT, toko yang lagi
+            // diedit sendiri dikecualikan dari pengecekan ini (boleh "ganti
+            // nama" ke nama yang persis sama seperti sebelumnya).
+            const existing = await sb(
+              `master_data?tipe=eq.${tipeMaster}&select=id,kode,label`
+            );
+            const namaBaru = data.nama.trim().toLowerCase();
+            const bentrok = (existing || []).find(
+              (m) => (m.label || "").trim().toLowerCase() === namaBaru && m.kode !== data.kode
+            );
+            if (bentrok) {
+              throw new Error(`Toko "${data.nama}" sudah ada di master data (kode: ${bentrok.kode}).`);
+            }
+            if (isEdit) {
+              await sb(`master_data?tipe=eq.${tipeMaster}&kode=eq.${data.kode}`, {
+                method: "PATCH",
+                body: JSON.stringify({ label: data.nama }),
+              });
+            } else {
+              await sb("master_data", {
+                method: "POST",
+                body: JSON.stringify({ tipe: tipeMaster, kode: data.kode, label: data.nama }),
+              });
+            }
+          }, isEdit ? "Nama toko diperbarui" : "Toko ditambahkan")
         }
       />
     );

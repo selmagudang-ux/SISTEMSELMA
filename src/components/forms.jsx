@@ -4057,10 +4057,11 @@ const PLATFORM_LABEL_FORM = { shopee: "Shopee", tiktok: "TikTok", lazada: "Lazad
 // daftarTokoMarketplace() di lib/api.js). Kode dibuat otomatis di belakang
 // layar (lihat prop `kodeBaru`, dibuat ModalRouter lewat nextKode — pola
 // sama seperti PelangganForm/TokoForm/SupplierForm), tidak diminta ke user.
-export function MarketplaceTokoForm({ platform, kodeBaru, onClose, onSubmit, saving }) {
-  const [nama, setNama] = useState("");
+export function MarketplaceTokoForm({ platform, toko, kodeBaru, onClose, onSubmit, saving }) {
+  const [nama, setNama] = useState(toko?.label || "");
+  const isEdit = !!toko;
   return (
-    <ModalShell title={`Tambah Toko — ${PLATFORM_LABEL_FORM[platform] || platform}`} onClose={onClose}>
+    <ModalShell title={`${isEdit ? "Edit" : "Tambah"} Toko — ${PLATFORM_LABEL_FORM[platform] || platform}`} onClose={onClose}>
       <p className="text-xs text-slate-500 mb-3">
         Tiap toko dihitung terpisah — pemasukan, iklan, dan saldonya tidak digabung dengan toko lain di platform ini.
       </p>
@@ -4069,13 +4070,13 @@ export function MarketplaceTokoForm({ platform, kodeBaru, onClose, onSubmit, sav
           className={inputClass}
           value={nama}
           onChange={(e) => setNama(e.target.value)}
-          placeholder={`mis. ${PLATFORM_LABEL_FORM[platform] || ""} Selma Official`}
+          placeholder={`mis. ${PLATFORM_LABEL_FORM[platform] || "Toko"} Selma Official`}
           autoFocus
         />
       </Field>
       <button
         disabled={!nama.trim() || saving}
-        onClick={() => onSubmit({ kode: kodeBaru, nama: nama.trim() })}
+        onClick={() => onSubmit({ kode: isEdit ? toko.kode : kodeBaru, nama: nama.trim() })}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan"}
