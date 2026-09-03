@@ -2304,6 +2304,7 @@ export default function ModalRouter({
       <CairkanDepositForm
         pelanggan={p}
         saldoDeposit={saldoDeposit}
+        master={master}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -2313,6 +2314,31 @@ export default function ModalRouter({
             if (jumlah > saldoDeposit + 0.0001) {
               throw new Error(`Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk dicairkan sebesar ${fmtRp(jumlah)}`);
             }
+            if (!data.rekening || !data.kategoriKode) {
+              throw new Error('Pilih rekening & pastikan kategori "PENGEMBALIAN DEPOSIT" sudah ada di Keuangan');
+            }
+
+            // Uang beneran keluar dari rekening Keuangan waktu deposit
+            // dicairkan ke pelanggan — dicatat sebagai baris pengeluaran
+            // DULU (biar konsisten dengan pola pemasukan di
+            // BayarHutangForm/marketplace-pencairan), baru grosir_deposit
+            // dikurangi. Berlaku sama persis untuk pelanggan Grosir,
+            // Reseller Toko, maupun Reseller Cekout — depositnya boleh
+            // asalnya beda-beda, tapi begitu dicairkan ke pelanggan uangnya
+            // selalu dianggap keluar dari Keuangan (bukan dari saldo
+            // Marketplace/Gudang).
+            await sb("keuangan_transaksi", {
+              method: "POST",
+              body: JSON.stringify({
+                tanggal: new Date().toISOString().slice(0, 10),
+                tipe: "keluar",
+                rekening: data.rekening,
+                kategori: data.kategoriKode,
+                jumlah,
+                keterangan: `Pengembalian deposit — ${p.nama}${data.catatan ? ` · ${data.catatan}` : ""}`,
+              }),
+            });
+
             await sb("grosir_deposit", {
               method: "POST",
               body: JSON.stringify({
@@ -2322,7 +2348,7 @@ export default function ModalRouter({
                 keterangan: `Dicairkan ke pelanggan (${data.metodeBayar})${data.catatan ? ` · ${data.catatan}` : ""}`,
               }),
             });
-          }, "Deposit dicairkan ke pelanggan")
+          }, "Deposit dicairkan ke pelanggan — tercatat juga di Keuangan")
         }
       />
     );
