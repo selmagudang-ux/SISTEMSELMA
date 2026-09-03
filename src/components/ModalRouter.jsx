@@ -1187,12 +1187,14 @@ export default function ModalRouter({
     // modal.platform, modal.toko (kode toko), modal.tokoLabel, modal.saldo
     // (saldo toko ini saat tombol diklik)
     const rekeningList = master?.rekening || [];
+    const kategoriList = master?.kategori_masuk || [];
     return (
       <MarketplacePencairanForm
         platform={modal.platform}
         tokoLabel={modal.tokoLabel}
         saldo={modal.saldo}
         rekeningList={rekeningList}
+        kategoriList={kategoriList}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -1215,7 +1217,7 @@ export default function ModalRouter({
                 tanggal: data.tanggal,
                 tipe: "masuk",
                 rekening: data.rekening,
-                kategori: null,
+                kategori: data.kategori,
                 jumlah: data.jumlah,
                 keterangan: keteranganKeuangan,
               }),
