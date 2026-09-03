@@ -24,6 +24,14 @@ import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 // kodenya cuma diambil browser saat salah satu modal ini benar-benar dibuka.
 const EditPesananForm = lazy(() => import("../pages/Grosir").then((m) => ({ default: m.EditPesananForm })));
 const BuatPesanan = lazy(() => import("../pages/Grosir").then((m) => ({ default: m.BuatPesanan })));
+// Reseller Toko — varian BuatPesanan yang selalu hutang & nomor manual
+// (lihat catatan panjang di pages/Reseller.jsx). Sama pola lazy-load-nya.
+const BuatPesananReseller = lazy(() => import("../pages/Reseller").then((m) => ({ default: m.BuatPesananReseller })));
+// Reseller Cekout — kebalikan Reseller Toko: dibayar sesuai nominal yang
+// cair dari marketplace (bukan selalu hutang), kelebihannya jadi deposit
+// pelanggan (lihat catatan panjang di pages/Reseller.jsx). Sama pola
+// lazy-load-nya juga.
+const BuatPesananResellerCekout = lazy(() => import("../pages/Reseller").then((m) => ({ default: m.BuatPesananResellerCekout })));
 const NotaPesananModal = lazy(() => import("../pages/NotaGrosir").then((m) => ({ default: m.NotaPesananModal })));
 const LabelPengirimanModal = lazy(() => import("../pages/NotaGrosir").then((m) => ({ default: m.LabelPengirimanModal })));
 
@@ -624,7 +632,7 @@ export default function ModalRouter({
             if (p) {
               await sb(`grosir_pelanggan?id=eq.${p.id}`, {
                 method: "PATCH",
-                body: JSON.stringify({ nama: data.nama, wa: data.wa, alamat: data.alamat, kota: data.kota, catatan: data.catatan }),
+                body: JSON.stringify({ nama: data.nama, kategori: data.kategori, wa: data.wa, alamat: data.alamat, kota: data.kota, catatan: data.catatan }),
               });
             } else {
               await sb("grosir_pelanggan", { method: "POST", body: JSON.stringify(data) });
@@ -1241,7 +1249,8 @@ export default function ModalRouter({
           <div>
             Pesanan ini akan dihapus <span className="font-semibold">permanen</span> beserta seluruh riwayat
             pembayarannya, termasuk saldo deposit yang tercatat dari pesanan ini (mis. kelebihan bayar atau
-            pembayaran yang dikembalikan saat pesanan dibatalkan). Tindakan ini tidak bisa dibatalkan.
+            pembayaran yang dikembalikan saat pesanan dibatalkan), dan baris transaksi pemasukan yang tercatat
+            di Laporan Keuangan dari pesanan ini. Tindakan ini tidak bisa dibatalkan.
             {skuTerpakai.length > 0 && (
               <div className="mt-1.5 text-red-200/90">
                 SKU yang dipakai di pesanan ini ({skuTerpakai.join(", ")}) akan lepas dari riwayat pesanan, jadi
@@ -1262,6 +1271,21 @@ export default function ModalRouter({
             disabled={saving}
             onClick={() =>
               run(async () => {
+                // Ambil dulu baris grosir_pembayaran milik pesanan ini SEBELUM
+                // dihapus, supaya tahu baris keuangan_transaksi mana saja yang
+                // pernah menerima kontribusi dari pesanan ini — baik dari
+                // "Catat Pembayaran" per-pesanan maupun dari Penagihan Hutang
+                // gabungan (Grosir/Reseller) — dan berapa porsinya
+                // masing-masing (lihat keuangan_transaksi_id yang ditautkan
+                // waktu pembayaran dicatat).
+                const pembayaranPesananIni = (pembayaranGrosir || []).filter((b) => b.pesanan_id === p.id);
+                const porsiPerKeuangan = new Map(); // keuangan_transaksi_id -> total jumlah dari pesanan ini
+                for (const b of pembayaranPesananIni) {
+                  if (!b.keuangan_transaksi_id) continue;
+                  const sebelumnya = porsiPerKeuangan.get(b.keuangan_transaksi_id) || 0;
+                  porsiPerKeuangan.set(b.keuangan_transaksi_id, sebelumnya + (Number(b.jumlah) || 0));
+                }
+
                 // Urutan hapus mengikuti relasi foreign key ke grosir_pesanan.id:
                 // semua baris deposit yang tercatat dari pesanan ini (kelebihan
                 // bayar, deposit yang dipakai buat bayar, atau pembayaran yang
@@ -1271,6 +1295,44 @@ export default function ModalRouter({
                 await sb(`grosir_deposit?pesanan_id_terkait=eq.${p.id}`, { method: "DELETE" });
                 await sb(`grosir_pembayaran?pesanan_id=eq.${p.id}`, { method: "DELETE" });
                 await sb(`grosir_detail_pesanan?pesanan_id=eq.${p.id}`, { method: "DELETE" });
+
+                // Baris keuangan_transaksi yang keterangannya langsung menyebut
+                // nomor_pesanan ini (dari "Catat Pembayaran" per-pesanan, format
+                // lama sebelum ada keuangan_transaksi_id) — hapus penuh seperti
+                // sebelumnya. Data lama yang dibuat sebelum kolom
+                // keuangan_transaksi_id ada cuma bisa dikenali lewat cara ini.
+                const penandaTransaksi = `Grosir · ${p.nomor_pesanan} —`;
+                const transaksiTerkait = (keuanganTransaksi || []).filter(
+                  (t) => typeof t.keterangan === "string" && t.keterangan.startsWith(penandaTransaksi)
+                );
+                const idSudahDihapus = new Set();
+                for (const t of transaksiTerkait) {
+                  await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "DELETE" });
+                  idSudahDihapus.add(t.id);
+                }
+
+                // Baris keuangan_transaksi gabungan (mis. "Grosir/Reseller ·
+                // Bayar Hutang" dari Penagihan Hutang, mencakup beberapa
+                // pesanan pelanggan sekaligus) — dikurangi sebesar porsi
+                // pesanan ini saja, atau dihapus penuh kalau porsi pesanan ini
+                // ternyata SATU-SATUNYA isi baris itu. Ini yang bikin uang
+                // pesanan lain di baris yang sama tetap aman waktu pesanan ini
+                // dihapus.
+                for (const [keuanganId, porsi] of porsiPerKeuangan) {
+                  if (idSudahDihapus.has(keuanganId)) continue; // sudah kehapus di atas
+                  const t = (keuanganTransaksi || []).find((x) => x.id === keuanganId);
+                  if (!t) continue;
+                  const jumlahBaru = (Number(t.jumlah) || 0) - porsi;
+                  if (jumlahBaru <= 0.0001) {
+                    await sb(`keuangan_transaksi?id=eq.${keuanganId}`, { method: "DELETE" });
+                  } else {
+                    await sb(`keuangan_transaksi?id=eq.${keuanganId}`, {
+                      method: "PATCH",
+                      body: JSON.stringify({ jumlah: jumlahBaru }),
+                    });
+                  }
+                }
+
                 await sb(`grosir_pesanan?id=eq.${p.id}`, { method: "DELETE" });
               }, "Pesanan dihapus permanen")
             }
@@ -1335,6 +1397,47 @@ export default function ModalRouter({
           produkManualGrosir={produkManualGrosir}
           skuMaster={skuMaster}
           penempatan={penempatan}
+          master={master}
+          reload={reload}
+          showToast={showToast}
+          onClose={close}
+        />
+      </Suspense>
+    );
+  }
+
+  // Buat Pesanan Reseller — pola sama persis dengan "grosir-buat-pesanan" di
+  // atas, cuma komponennya beda (BuatPesananReseller, di pages/Reseller.jsx)
+  // & butuh tambahan pesananGrosir (dipakai buat validasi nomor pesanan
+  // manual tidak boleh bentrok dengan pesanan lain, grosir maupun reseller).
+  if (modal.type === "reseller-buat-pesanan") {
+    return (
+      <Suspense fallback={<ModalLoading onClose={close} />}>
+        <BuatPesananReseller
+          pelangganGrosir={pelangganGrosir}
+          produkManualGrosir={produkManualGrosir}
+          skuMaster={skuMaster}
+          penempatan={penempatan}
+          pesananGrosir={pesananGrosir}
+          reload={reload}
+          showToast={showToast}
+          onClose={close}
+        />
+      </Suspense>
+    );
+  }
+
+  // Buat Pesanan Reseller Cekout — pola sama persis dengan "reseller-buat-
+  // pesanan" di atas, cuma komponennya beda (BuatPesananResellerCekout).
+  if (modal.type === "reseller-cekout-buat-pesanan") {
+    return (
+      <Suspense fallback={<ModalLoading onClose={close} />}>
+        <BuatPesananResellerCekout
+          pelangganGrosir={pelangganGrosir}
+          produkManualGrosir={produkManualGrosir}
+          skuMaster={skuMaster}
+          penempatan={penempatan}
+          pesananGrosir={pesananGrosir}
           reload={reload}
           showToast={showToast}
           onClose={close}
@@ -1490,6 +1593,7 @@ export default function ModalRouter({
         pesanan={p}
         sisaHutang={sisaHutang}
         saldoDeposit={saldoDeposit}
+        master={master}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -1511,6 +1615,49 @@ export default function ModalRouter({
             }
 
             const nomorBayar = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
+
+            // Kalau pembayaran ini bikin baris pemasukan baru di Keuangan
+            // (Cash/Transfer), buat baris itu DULU supaya dapat id-nya, lalu
+            // tautkan id itu ke baris grosir_pembayaran lewat kolom
+            // keuangan_transaksi_id. Tujuannya: waktu pesanan ini dihapus
+            // permanen nanti, sistem tahu persis baris Keuangan mana yang
+            // terkait — termasuk kalau baris itu ternyata gabungan dari
+            // Penagihan Hutang beberapa pesanan sekaligus (lihat
+            // grosir-hapus-pesanan).
+            let keuanganTransaksiId = null;
+            if (metode !== "Deposit" && data.rekening && data.kategoriKode) {
+              const namaPelangganBayar = pelanggan?.nama || "Pelanggan";
+              // Label beda tergantung jenis pesanan: "R.T" (Reseller Toko),
+              // "R.CO" (Reseller Cekout — pelunasan sisa piutang setelah
+              // pesanan dibuat, bukan nominal yang cair dari marketplace di
+              // awal, itu sengaja tidak masuk Keuangan lewat sini, lihat
+              // catatan di pages/Reseller.jsx), atau "Grosir" buat pesanan
+              // grosir biasa — supaya kelihatan asalnya waktu dicek di
+              // Laporan Keuangan.
+              const labelJenis =
+                p.jenis_transaksi === "reseller"
+                  ? "R.T"
+                  : p.jenis_transaksi === "reseller_cekout"
+                  ? "R.CO"
+                  : "Grosir";
+              const keteranganKeuangan =
+                p.jenis_transaksi === "reseller" || p.jenis_transaksi === "reseller_cekout"
+                  ? `${labelJenis} · ${p.nomor_pesanan} · ${namaPelangganBayar}`
+                  : `${labelJenis} · ${p.nomor_pesanan} — ${namaPelangganBayar}`;
+              const [rowKeuangan] = await sb("keuangan_transaksi", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  tipe: "masuk",
+                  rekening: data.rekening,
+                  kategori: data.kategoriKode,
+                  jumlah: jumlahDiterima,
+                  keterangan: keteranganKeuangan,
+                }),
+              });
+              keuanganTransaksiId = rowKeuangan?.id ?? null;
+            }
+
             if (bayarKePesanan > 0.0001) {
               await sb("grosir_pembayaran", {
                 method: "POST",
@@ -1521,6 +1668,7 @@ export default function ModalRouter({
                   jumlah: bayarKePesanan,
                   metode_bayar: metode,
                   catatan: data.catatan || null,
+                  keuangan_transaksi_id: keuanganTransaksiId,
                 }),
               });
               const totalDibayarBaru = totalDibayarPesanan(p.id, pembayaranGrosir) + bayarKePesanan;
@@ -1576,12 +1724,20 @@ export default function ModalRouter({
       .sort((a, b) => new Date(a.ps.created_at) - new Date(b.ps.created_at));
     const totalHutang = pesananHutang.reduce((a, x) => a + x.sisa, 0);
     const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+    const daftarPesananHutang = pesananHutang.map((x) => ({
+      id: x.ps.id,
+      nomor_pesanan: x.ps.nomor_pesanan,
+      created_at: x.ps.created_at,
+      sisa: x.sisa,
+    }));
 
     return (
       <BayarHutangPelangganForm
         pelanggan={p}
         totalHutang={totalHutang}
+        daftarPesanan={daftarPesananHutang}
         saldoDeposit={saldoDeposit}
+        master={master}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -1600,6 +1756,31 @@ export default function ModalRouter({
             }
 
             const nomorBayarBase = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
+
+            // Sama seperti "grosir-bayar-hutang" (per-pesanan): kalau
+            // Cash/Transfer, baris pemasukan di Keuangan dibuat DULU supaya
+            // dapat id-nya, lalu ditautkan ke tiap baris grosir_pembayaran
+            // lewat keuangan_transaksi_id. Baris ini gabungan beberapa
+            // pesanan sekaligus — dengan link ini, waktu salah satu pesanan
+            // dihapus permanen nanti, sistem cuma mengurangi porsi pesanan
+            // itu dari baris Keuangan (bukan ikut menghapus uang milik
+            // pesanan lain yang masih ditagih di baris yang sama).
+            let keuanganTransaksiId = null;
+            if (metode !== "Deposit" && data.rekening && data.kategoriKode) {
+              const [rowKeuangan] = await sb("keuangan_transaksi", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  tipe: "masuk",
+                  rekening: data.rekening,
+                  kategori: data.kategoriKode,
+                  jumlah: jumlahDiterima,
+                  keterangan: `Grosir · Bayar Hutang — ${p.nama}`,
+                }),
+              });
+              keuanganTransaksiId = rowKeuangan?.id ?? null;
+            }
+
             let sisa = bayarKeHutang;
             let idx = 0;
             for (const { ps, sisa: sisaPs } of pesananHutang) {
@@ -1615,6 +1796,7 @@ export default function ModalRouter({
                   jumlah: bayarKePs,
                   metode_bayar: metode,
                   catatan: data.catatan || null,
+                  keuangan_transaksi_id: keuanganTransaksiId,
                 }),
               });
               const totalDibayarBaru = totalDibayarPesanan(ps.id, pembayaranGrosir) + bayarKePs;
@@ -1648,6 +1830,151 @@ export default function ModalRouter({
               });
             }
           }, "Pembayaran hutang tercatat")
+        }
+      />
+    );
+  }
+
+  // Penagihan Hutang Reseller — sama persis polanya dengan
+  // "grosir-bayar-hutang-pelanggan" di atas (alokasi ke pesanan yang paling
+  // lama dulu, dukung Cash/Transfer/Deposit, kelebihan bayar jadi deposit),
+  // BEDANYA cuma satu: pesananHutang di sini difilter dulu ke
+  // jenis_transaksi === "reseller" saja — supaya "Penagihan Hutang" di
+  // Reseller Toko tidak ikut melunasi hutang pesanan Grosir biasa milik
+  // pelanggan yang sama secara tidak sengaja. Kolom keterangan di Keuangan
+  // juga dibedakan (format "R.T · {nomor invoice} · {nama pelanggan}",
+  // bukan "Grosir · ...") supaya kelihatan asalnya waktu dicek di Laporan
+  // Keuangan.
+  if (modal.type === "reseller-bayar-hutang-pelanggan") {
+    const p = modal.item; // p = pelanggan
+    const pesananHutang = (pesananGrosir || [])
+      .filter((ps) => ps.pelanggan_id === p.id && ps.status !== "Batal" && ps.jenis_transaksi === "reseller")
+      .map((ps) => ({ ps, sisa: sisaHutangPesanan(ps, pembayaranGrosir) }))
+      .filter((x) => x.sisa > 0.0001)
+      .sort((a, b) => new Date(a.ps.created_at) - new Date(b.ps.created_at));
+    const totalHutang = pesananHutang.reduce((a, x) => a + x.sisa, 0);
+    const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+    const daftarPesananHutang = pesananHutang.map((x) => ({
+      id: x.ps.id,
+      nomor_pesanan: x.ps.nomor_pesanan,
+      created_at: x.ps.created_at,
+      sisa: x.sisa,
+    }));
+
+    return (
+      <BayarHutangPelangganForm
+        pelanggan={p}
+        totalHutang={totalHutang}
+        daftarPesanan={daftarPesananHutang}
+        saldoDeposit={saldoDeposit}
+        master={master}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            const jumlahDiterima = Number(data.jumlah) || 0;
+            if (jumlahDiterima <= 0) throw new Error("Jumlah pembayaran harus lebih dari 0");
+            const metode = data.metodeBayar || "Cash";
+
+            const bayarKeHutang = Math.min(jumlahDiterima, totalHutang);
+            const kelebihan = metode === "Deposit" ? 0 : Math.max(0, jumlahDiterima - totalHutang);
+
+            if (metode === "Deposit" && bayarKeHutang > saldoDeposit + 0.0001) {
+              throw new Error(
+                `Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk membayar ${fmtRp(bayarKeHutang)}`
+              );
+            }
+
+            const nomorBayarBase = `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`;
+
+            // Simulasikan dulu alokasi bayarKeHutang ke pesananHutang (tanpa
+            // efek samping apa-apa) cuma buat tahu nomor invoice mana saja
+            // yang bakal ikut kebayar di transaksi ini — dipakai buat
+            // keterangan baris Keuangan ("R.T · {nomor invoice} · {nama}").
+            // Alokasi SUNGGUHAN tetap di loop bawah, ini cuma pratinjau.
+            let sisaPratinjau = bayarKeHutang;
+            const nomorInvoiceTerbayar = [];
+            for (const { ps, sisa: sisaPs } of pesananHutang) {
+              if (sisaPratinjau <= 0.0001) break;
+              const bayarKePsPratinjau = Math.min(sisaPratinjau, sisaPs);
+              if (bayarKePsPratinjau > 0.0001) nomorInvoiceTerbayar.push(ps.nomor_pesanan);
+              sisaPratinjau -= bayarKePsPratinjau;
+            }
+
+            // Sama seperti versi Grosir di atas: baris pemasukan Keuangan
+            // dibuat DULU (kalau Cash/Transfer) supaya id-nya bisa ditautkan
+            // ke tiap baris grosir_pembayaran lewat keuangan_transaksi_id —
+            // supaya waktu satu pesanan reseller dihapus permanen, cuma
+            // porsi pesanan itu yang dikurangi dari baris "R.T · Bayar
+            // Hutang" ini, bukan seluruh baris (yang bisa mencakup pesanan
+            // reseller lain milik pelanggan yang sama).
+            let keuanganTransaksiId = null;
+            if (metode !== "Deposit" && data.rekening && data.kategoriKode) {
+              const daftarInvoice =
+                nomorInvoiceTerbayar.length > 0 ? nomorInvoiceTerbayar.join(", ") : "Bayar Hutang";
+              const [rowKeuangan] = await sb("keuangan_transaksi", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  tipe: "masuk",
+                  rekening: data.rekening,
+                  kategori: data.kategoriKode,
+                  jumlah: jumlahDiterima,
+                  keterangan: `R.T · ${daftarInvoice} · ${p.nama}`,
+                }),
+              });
+              keuanganTransaksiId = rowKeuangan?.id ?? null;
+            }
+
+            let sisa = bayarKeHutang;
+            let idx = 0;
+            for (const { ps, sisa: sisaPs } of pesananHutang) {
+              if (sisa <= 0.0001) break;
+              const bayarKePs = Math.min(sisa, sisaPs);
+              idx += 1;
+              await sb("grosir_pembayaran", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_bayar: `${nomorBayarBase}-${idx}`,
+                  pesanan_id: ps.id,
+                  pelanggan_id: p.id,
+                  jumlah: bayarKePs,
+                  metode_bayar: metode,
+                  catatan: data.catatan || null,
+                  keuangan_transaksi_id: keuanganTransaksiId,
+                }),
+              });
+              const totalDibayarBaru = totalDibayarPesanan(ps.id, pembayaranGrosir) + bayarKePs;
+              const statusBaru = hitungStatusBayar(Number(ps.total) || 0, totalDibayarBaru);
+              await sb(`grosir_pesanan?id=eq.${ps.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ status_bayar: statusBaru }),
+              });
+              sisa -= bayarKePs;
+            }
+
+            if (metode === "Deposit" && bayarKeHutang > 0.0001) {
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.id,
+                  jumlah: -bayarKeHutang,
+                  keterangan: "Dipakai bayar hutang reseller",
+                }),
+              });
+            } else if (kelebihan > 0.0001) {
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.id,
+                  jumlah: kelebihan,
+                  keterangan: "Kelebihan bayar hutang reseller",
+                }),
+              });
+            }
+          }, "Pembayaran hutang reseller tercatat")
         }
       />
     );

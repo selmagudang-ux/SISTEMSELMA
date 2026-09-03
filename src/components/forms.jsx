@@ -2770,8 +2770,20 @@ export function TambahRakForm({ onClose, onSubmit, saving }) {
 // edit (kode tidak bisa diubah, sudah dipakai sebagai referensi di pesanan
 // nanti); kalau kosong berarti tambah baru (kode dibuat otomatis oleh
 // pemanggil / ModalRouter sebelum form ini tampil, lihat prop `kodeBaru`).
+// Kategori pelanggan grosir — dipakai buat pisahin daftar Pelanggan jadi 3
+// tab (lihat PelangganList di pages/Grosir.jsx). "grosir" jadi default resmi
+// (juga default kolom "kategori" di database) supaya pelanggan lama/yang
+// dibuat inline dari Buat Pesanan (belum pernah pilih kategori) otomatis
+// masuk situ, bukan hilang tanpa kategori.
+export const KATEGORI_PELANGGAN = [
+  { value: "grosir", label: "Grosir" },
+  { value: "tengah", label: "Tengah" },
+  { value: "ecer", label: "Ecer" },
+];
+
 export function PelangganForm({ pelanggan, pelangganList, kodeBaru, onClose, onSubmit, saving }) {
   const [nama, setNama] = useState(pelanggan?.nama || "");
+  const [kategori, setKategori] = useState(pelanggan?.kategori || "grosir");
   const [wa, setWa] = useState(pelanggan?.wa || "");
   const [alamat, setAlamat] = useState(pelanggan?.alamat || "");
   const [kota, setKota] = useState(pelanggan?.kota || "");
@@ -2788,6 +2800,13 @@ export function PelangganForm({ pelanggan, pelangganList, kodeBaru, onClose, onS
   return (
     <ModalShell title={pelanggan ? `Edit Pelanggan — ${kode}` : "Tambah Pelanggan"} onClose={onClose}>
       <Field label="Nama"><input className={inputClass} value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Nama pelanggan / toko" autoFocus /></Field>
+      <Field label="Kategori">
+        <select className={inputClass} value={kategori} onChange={(e) => setKategori(e.target.value)}>
+          {KATEGORI_PELANGGAN.map((k) => (
+            <option key={k.value} value={k.value}>{k.label}</option>
+          ))}
+        </select>
+      </Field>
       <Field label="No. WA">
         <input
           className={`${inputClass} ${bentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
@@ -2810,6 +2829,7 @@ export function PelangganForm({ pelanggan, pelangganList, kodeBaru, onClose, onS
           onSubmit({
             kode,
             nama: nama.trim(),
+            kategori,
             wa: wa.trim() || null,
             alamat: alamat.trim() || null,
             kota: kota.trim() || null,
@@ -2957,15 +2977,55 @@ export function SupplierForm({ supplier, kodeBaru, onClose, onSubmit, saving }) 
 }
 
 // Form catat cicilan/pembayaran hutang untuk satu pesanan grosir.
-export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, onSubmit, saving }) {
+// Helper kategori pemasukan Grosir (Cash/Transfer) — sama persis dengan yang
+// dipakai di BuatPesanan (pages/Grosir.jsx) & Toko Offline. Diduplikasi di
+// sini (bukan di-import) karena forms.jsx & pages/Grosir.jsx sengaja tidak
+// saling import satu sama lain (lihat pola file lain di project ini).
+const LABEL_KATEGORI_GROSIR_CASH = "GROSIR CASH";
+const LABEL_KATEGORI_GROSIR_TRANSFER = "GROSIR TRANSFER";
+function normalisasiLabelBayar(s) {
+  return (s || "").toLowerCase().replace(/\s+/g, "").trim();
+}
+function cariKategoriByLabelBayar(daftarKategori, label) {
+  const target = normalisasiLabelBayar(label);
+  return (daftarKategori || []).find((k) => normalisasiLabelBayar(k.label) === target) || null;
+}
+
+export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onClose, onSubmit, saving }) {
+  // Reseller Cekout: uang masuk lewat pencairan marketplace, BUKAN
+  // langsung ke rekening kas/bank seperti Grosir/Reseller Toko — jadi opsi
+  // "Cash"/"Transfer" (yang wajib pilih Rekening Penampung & langsung
+  // tercatat di Keuangan) diganti satu opsi "Pencairan Marketplace" yang
+  // TIDAK menyentuh Keuangan sama sekali (sama seperti nominal cair di
+  // "Buat Pesanan Reseller Cekout" — nanti direkap agregat lewat menu
+  // Marketplace > Pemasukan Bulanan, bukan per-pesanan di sini, lihat
+  // catatan panjang di pages/Reseller.jsx).
+  const isCekout = pesanan.jenis_transaksi === "reseller_cekout";
   const [jumlah, setJumlah] = useState(sisaHutang);
-  const [metodeBayar, setMetodeBayar] = useState("Cash");
+  const [metodeBayar, setMetodeBayar] = useState(isCekout ? "Marketplace" : "Cash");
+  const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+
+  const daftarRekening = master?.rekening || [];
+  const daftarKategoriMasuk = master?.kategori_masuk || [];
+  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const kategoriGrosirObj =
+    metodeBayar === "Transfer"
+      ? cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_TRANSFER)
+      : cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_CASH);
 
   const jumlahNum = Number(jumlah) || 0;
   const kelebihan = metodeBayar !== "Deposit" && jumlahNum > sisaHutang ? jumlahNum - sisaHutang : 0;
   const depositTidakCukup = metodeBayar === "Deposit" && jumlahNum > saldoDeposit;
-  const canSubmit = jumlahNum > 0 && !depositTidakCukup && !saving;
+  // Cash/Transfer wajib pilih rekening + kategorinya harus ada dulu di
+  // Keuangan > Rekening & Kategori, supaya uang yang diterima otomatis
+  // kecatat sebagai pemasukan (sama seperti alur Langsung Bayar di Buat
+  // Pesanan) — Deposit & Pencairan Marketplace tidak butuh ini: Deposit
+  // karena bukan uang baru masuk, Pencairan Marketplace karena sengaja
+  // tidak dibukukan otomatis per-pesanan (lihat catatan di atas).
+  const catatKeKeuangan = metodeBayar !== "Deposit" && metodeBayar !== "Marketplace";
+  const siapDicatat = !catatKeKeuangan || (rekening && kategoriGrosirObj);
+  const canSubmit = jumlahNum > 0 && !depositTidakCukup && siapDicatat && !saving;
 
   return (
     <ModalShell title={`Catat Pembayaran — ${pesanan.nomor_pesanan}`} onClose={onClose}>
@@ -2981,12 +3041,52 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
       </div>
 
       <Field label="Metode Bayar">
-        <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
-          <option value="Cash">Cash</option>
-          <option value="Transfer">Transfer</option>
+        <select
+          value={metodeBayar}
+          onChange={(e) => { setMetodeBayar(e.target.value); setRekening(""); }}
+          className={inputClass}
+        >
+          {isCekout ? (
+            <option value="Marketplace">Pencairan Marketplace</option>
+          ) : (
+            <>
+              <option value="Cash">Cash</option>
+              <option value="Transfer">Transfer</option>
+            </>
+          )}
           <option value="Deposit">Pakai Saldo Deposit</option>
         </select>
       </Field>
+
+      {metodeBayar === "Marketplace" && (
+        <div className="text-[11px] text-slate-500 mb-3 -mt-2">
+          Tidak langsung tercatat di Keuangan — direkap belakangan secara agregat lewat menu Marketplace {">"}
+          {" "}Pemasukan Bulanan.
+        </div>
+      )}
+
+      {catatKeKeuangan && (
+        <Field label="Rekening Penampung">
+          <SearchableSelect
+            value={rekening}
+            onChange={setRekening}
+            options={rekeningOptions}
+            placeholder={metodeBayar === "Transfer" ? "Pilih rekening tujuan…" : "Pilih rekening kas…"}
+          />
+          {kategoriGrosirObj ? (
+            <div className="text-[11px] text-slate-500 mt-1">
+              Tercatat di Keuangan sebagai pemasukan kategori{" "}
+              <span className="text-slate-300 font-medium">{kategoriGrosirObj.label}</span>.
+            </div>
+          ) : (
+            <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              Kategori "{metodeBayar === "Transfer" ? LABEL_KATEGORI_GROSIR_TRANSFER : LABEL_KATEGORI_GROSIR_CASH}"
+              belum ada. Buat dulu di Keuangan {">"} Rekening & Kategori dengan nama persis ini.
+            </div>
+          )}
+        </Field>
+      )}
 
       <Field label="Jumlah Dibayar">
         <input
@@ -3021,7 +3121,15 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, catatan: catatan.trim() })}
+        onClick={() =>
+          onSubmit({
+            jumlah: jumlahNum,
+            metodeBayar,
+            catatan: catatan.trim(),
+            rekening: catatKeKeuangan ? rekening : null,
+            kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
+          })
+        }
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan Pembayaran"}
@@ -3035,15 +3143,26 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, onClose, on
 // Uang yang masuk otomatis dialokasikan ke pesanan yang masih hutang, dari
 // yang paling lama dulu, sampai jumlahnya habis atau semua hutang lunas;
 // kalau masih ada sisa setelah semua hutang lunas, otomatis masuk saldo deposit.
-export function BayarHutangPelangganForm({ pelanggan, totalHutang, saldoDeposit, onClose, onSubmit, saving }) {
+export function BayarHutangPelangganForm({ pelanggan, totalHutang, daftarPesanan, saldoDeposit, master, onClose, onSubmit, saving }) {
   const [jumlah, setJumlah] = useState(totalHutang);
   const [metodeBayar, setMetodeBayar] = useState("Cash");
+  const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+
+  const daftarRekening = master?.rekening || [];
+  const daftarKategoriMasuk = master?.kategori_masuk || [];
+  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const kategoriGrosirObj =
+    metodeBayar === "Transfer"
+      ? cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_TRANSFER)
+      : cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_CASH);
 
   const jumlahNum = Number(jumlah) || 0;
   const kelebihan = metodeBayar !== "Deposit" && jumlahNum > totalHutang ? jumlahNum - totalHutang : 0;
   const depositTidakCukup = metodeBayar === "Deposit" && Math.min(jumlahNum, totalHutang) > saldoDeposit + 0.0001;
-  const canSubmit = jumlahNum > 0 && !depositTidakCukup && !saving;
+  const catatKeKeuangan = metodeBayar !== "Deposit";
+  const siapDicatat = !catatKeKeuangan || (rekening && kategoriGrosirObj);
+  const canSubmit = jumlahNum > 0 && !depositTidakCukup && siapDicatat && !saving;
 
   return (
     <ModalShell title={`Bayar Hutang — ${pelanggan.nama}`} onClose={onClose}>
@@ -3058,18 +3177,66 @@ export function BayarHutangPelangganForm({ pelanggan, totalHutang, saldoDeposit,
         </div>
       </div>
 
+      {daftarPesanan && daftarPesanan.length > 0 && (
+        <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+          <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-900 border-b border-slate-800">
+            Rincian Pesanan ({daftarPesanan.length})
+          </div>
+          <div className="max-h-40 overflow-y-auto divide-y divide-slate-800/70">
+            {daftarPesanan.map((ps) => (
+              <div key={ps.id} className="flex items-center justify-between px-3 py-2 text-xs bg-slate-950">
+                <div className="min-w-0">
+                  <div className="text-slate-200 font-medium truncate">{ps.nomor_pesanan}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {ps.created_at ? new Date(ps.created_at).toLocaleString("id-ID") : ""}
+                  </div>
+                </div>
+                <span className="text-red-400 font-semibold shrink-0 ml-2">{fmtRp(ps.sisa)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-slate-500 mb-3">
         Uang yang masuk otomatis dialokasikan ke pesanan yang paling lama belum lunas dulu, sampai semua hutang
         terbayar atau jumlahnya habis.
       </p>
 
       <Field label="Metode Bayar">
-        <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
+        <select
+          value={metodeBayar}
+          onChange={(e) => { setMetodeBayar(e.target.value); setRekening(""); }}
+          className={inputClass}
+        >
           <option value="Cash">Cash</option>
           <option value="Transfer">Transfer</option>
           <option value="Deposit">Pakai Saldo Deposit</option>
         </select>
       </Field>
+
+      {catatKeKeuangan && (
+        <Field label="Rekening Penampung">
+          <SearchableSelect
+            value={rekening}
+            onChange={setRekening}
+            options={rekeningOptions}
+            placeholder={metodeBayar === "Transfer" ? "Pilih rekening tujuan…" : "Pilih rekening kas…"}
+          />
+          {kategoriGrosirObj ? (
+            <div className="text-[11px] text-slate-500 mt-1">
+              Tercatat di Keuangan sebagai pemasukan kategori{" "}
+              <span className="text-slate-300 font-medium">{kategoriGrosirObj.label}</span>.
+            </div>
+          ) : (
+            <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              Kategori "{metodeBayar === "Transfer" ? LABEL_KATEGORI_GROSIR_TRANSFER : LABEL_KATEGORI_GROSIR_CASH}"
+              belum ada. Buat dulu di Keuangan {">"} Rekening & Kategori dengan nama persis ini.
+            </div>
+          )}
+        </Field>
+      )}
 
       <Field label="Jumlah Dibayar">
         <input
@@ -3103,7 +3270,15 @@ export function BayarHutangPelangganForm({ pelanggan, totalHutang, saldoDeposit,
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, catatan: catatan.trim() })}
+        onClick={() =>
+          onSubmit({
+            jumlah: jumlahNum,
+            metodeBayar,
+            catatan: catatan.trim(),
+            rekening: catatKeKeuangan ? rekening : null,
+            kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
+          })
+        }
         className="w-full bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan Pembayaran"}

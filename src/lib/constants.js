@@ -1,6 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
+  Home, Users, UserRound,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -176,22 +177,81 @@ export const NAV = [
       },
     ],
   },
+  // "ADMIN GROSIR" (lama) → "PENJUALAN" — bukan cuma ganti nama, tapi juga
+  // dirombak jadi 3 kelompok: Store Selma (Grosir lama + Toko Offline baru),
+  // Marketplace (input keuangan bulanan, TERPISAH dari menu "marketplace" di
+  // group "ADMIN MARKETPLACE" yang urusannya upload produk), dan Reseller
+  // (hutang/piutang, datanya nebeng ke Pelanggan Grosir yang sudah ada).
+  // "Store Selma" sengaja jadi GROUP BERSARANG (group di dalam group) supaya
+  // "Grosir" (menu lama, tidak diubah sama sekali) tetap bisa punya sub-nya
+  // sendiri sekaligus dikelompokkan bareng "Toko Offline" — lihat catatan di
+  // findMenuNode/navAncestorKeys/filterNavByAllowed yang sudah dibuat rekursif
+  // penuh supaya group bersarang seperti ini didukung.
   {
-    key: "grosir-group", label: "ADMIN GROSIR", icon: Store, group: true,
+    key: "penjualan-group", label: "PENJUALAN", icon: Store, group: true,
     children: [
       {
-        key: "grosir", label: "Grosir", icon: Store,
+        key: "store-selma-group", label: "Store Selma", icon: Building2, group: true,
         children: [
-          { key: "semua-pesanan", label: "Semua Pesanan" },
-          { key: "pelanggan", label: "Pelanggan" },
-          { key: "toko", label: "Toko Pengirim" },
-          { key: "produk-manual", label: "Produk Manual" },
-          { key: "laporan", label: "Laporan Grosir" },
+          {
+            key: "grosir", label: "Grosir", icon: Store,
+            children: [
+              { key: "semua-pesanan", label: "Semua Pesanan" },
+              { key: "produk-manual", label: "Produk Manual" },
+              { key: "laporan", label: "Laporan Grosir" },
+            ],
+          },
+          // Baru — input harian penjualan toko offline. Halaman "segera
+          // hadir" dulu, isinya menyusul.
+          {
+            key: "toko-offline", label: "Toko Offline", icon: Home,
+            children: [
+              { key: "input-harian", label: "Transaksi Offline" },
+            ],
+          },
         ],
       },
-      // Halaman terpisah dari "Grosir" tapi masih di dalam group "ADMIN GROSIR" —
-      // belum ada isinya, menyusul.
-      { key: "store-selma", label: "Store Selma", icon: Building2 },
+      // Baru — beda dari menu "Marketplace" di group "ADMIN MARKETPLACE"
+      // (yang urusannya upload produk). Ini khusus input keuangan: pemasukan
+      // bulanan tiap marketplace & pengeluaran iklan. Key sengaja dibedakan
+      // ("penjualan-marketplace") supaya tidak bentrok dengan key "marketplace"
+      // yang sudah dipakai. Halaman "segera hadir" dulu.
+      {
+        key: "penjualan-marketplace", label: "Marketplace", icon: ShoppingBag,
+        children: [
+          { key: "pemasukan-bulanan", label: "Pemasukan Bulanan" },
+          { key: "pengeluaran-iklan", label: "Pengeluaran Iklan" },
+        ],
+      },
+      // Baru — Reseller Toko (sistem hutang) & Reseller Cekout (sistem
+      // piutang), datanya numpang di data Pelanggan Grosir yang sudah ada.
+      // Halaman "segera hadir" dulu.
+      {
+        key: "reseller", label: "Reseller", icon: Users,
+        children: [
+          { key: "toko", label: "Reseller Toko" },
+          // Baru — daftar pelanggan reseller yang masih berhutang, dicek &
+          // ditagih tiap hari Kamis (lihat PenagihanHutangReseller di
+          // pages/Reseller.jsx). Bukan tabel/jadwal terpisah — cuma tampilan
+          // yang menghitung ulang hutang aktif tiap kali dibuka.
+          { key: "penagihan", label: "Penagihan Hutang" },
+          { key: "cekout", label: "Reseller Cekout" },
+        ],
+      },
+      // Dipindah ke sini — sejajar dengan "Store Selma", "Marketplace", &
+      // "Reseller" (bukan lagi di dalam "Store Selma"), ditaruh paling akhir.
+      // Berisi "Pelanggan" & "Toko Pengirim" — datanya TIDAK berubah sama
+      // sekali (tabel grosir_pelanggan & grosir_toko), cuma dikelompokkan
+      // secara visual — masing-masing tetap halaman leaf sendiri
+      // (nav.menu = "pelanggan" / "toko"). Lihat PelangganList & TokoList
+      // di pages/Grosir.jsx (diekspor terpisah, dipakai App.jsx).
+      {
+        key: "master-data-grosir-group", label: "Master Data Grosir", icon: Users, group: true,
+        children: [
+          { key: "pelanggan", label: "Pelanggan", icon: UserRound },
+          { key: "toko", label: "Toko Pengirim", icon: Truck },
+        ],
+      },
     ],
   },
   {
@@ -239,10 +299,12 @@ export const ALL_MENU_KEYS = collectMenuKeys(NAV);
 
 // Cari node "menu" (bukan group) berdasarkan key-nya, baik yang top-level
 // maupun yang ada di dalam sebuah group — dipakai findNavLabel di bawah.
-function findMenuNode(menuKey) {
-  for (const node of NAV) {
+// Rekursif penuh supaya group bersarang (group di dalam group, mis. "Store
+// Selma" di dalam "PENJUALAN") juga ketemu, bukan cuma satu level group.
+function findMenuNode(menuKey, nodes = NAV) {
+  for (const node of nodes) {
     if (node.group) {
-      const found = (node.children || []).find((c) => c.key === menuKey);
+      const found = findMenuNode(menuKey, node.children || []);
       if (found) return found;
     } else if (node.key === menuKey) {
       return node;
@@ -252,25 +314,30 @@ function findMenuNode(menuKey) {
 }
 
 // Rantai key yang perlu di-"expand" di sidebar supaya menu yang sedang aktif
-// selalu terlihat — untuk menu di dalam group, ini termasuk key group-nya juga.
-export function navAncestorKeys(menuKey) {
-  for (const node of NAV) {
-    if (node.group && (node.children || []).some((c) => c.key === menuKey)) {
-      return [node.key, menuKey];
+// selalu terlihat — untuk menu di dalam group, ini termasuk key SEMUA group
+// leluhurnya (bisa lebih dari satu tingkat kalau group bersarang).
+export function navAncestorKeys(menuKey, nodes = NAV, path = []) {
+  for (const node of nodes) {
+    if (node.group) {
+      const found = navAncestorKeys(menuKey, node.children || [], [...path, node.key]);
+      if (found) return found;
+    } else if (node.key === menuKey) {
+      return [...path, menuKey];
     }
   }
-  return [menuKey];
+  return path.length ? null : [menuKey];
 }
 
 // Saring NAV supaya hanya menampilkan menu (dan group yang masih punya isi)
 // yang diizinkan untuk role yang sedang login. allowedMenuKeys = null artinya
-// tidak dibatasi (tampilkan semua).
+// tidak dibatasi (tampilkan semua). Rekursif penuh supaya group bersarang
+// ikut disaring dengan benar di tiap tingkatnya.
 export function filterNavByAllowed(nodes, allowedMenuKeys) {
   if (!allowedMenuKeys) return nodes;
   return nodes
     .map((node) => {
       if (node.group) {
-        const children = (node.children || []).filter((c) => allowedMenuKeys.includes(c.key));
+        const children = filterNavByAllowed(node.children || [], allowedMenuKeys);
         return children.length ? { ...node, children } : null;
       }
       return allowedMenuKeys.includes(node.key) ? node : null;
@@ -358,7 +425,13 @@ export const ROLE_MENUS = {
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma
   // "Marketplace", dengan semua sub-nya — Belum/Sudah/Riwayat Upload).
   marketplace: ["marketplace"],
-  grosir: ["grosir", "store-selma"],
+  // "store-selma" (key group, bukan halaman) sudah tidak ada lagi — diganti
+  // dengan key menu asli di dalamnya ("grosir" tetap, "toko-offline" baru,
+  // "pelanggan" baru — sebelumnya sub dari "grosir", sekarang menu sendiri),
+  // ditambah 2 menu baru satu domain (Marketplace-keuangan & Reseller) yang
+  // untuk sementara masih halaman "segera hadir". Sesuaikan lagi kalau
+  // aksesnya mau dibedakan per menu.
+  grosir: ["grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller"],
   // Admin Keuangan: hanya menu "Keuangan" (Transaksi + Rekening & Kategori),
   // sama seperti pola role operasional lain — tidak dapat "dashboard" (langsung
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
@@ -378,9 +451,10 @@ export function allowedMenus(role) {
 // didaftarkan satu-satu, perilakunya tetap default penuh.
 export const ROLE_SUBMENUS = {
   grosir: {
-    // Admin Grosir sekarang juga diberi akses ke "Toko Pengirim" (master
-    // data toko), selain transaksi & pelanggan.
-    grosir: ["pesanan", "semua-pesanan", "pelanggan", "toko", "produk-manual", "laporan"],
+    // "pelanggan" dan "toko" (Toko Pengirim) sudah tidak di sini lagi —
+    // sekarang masing-masing jadi menu sendiri (lihat ROLE_MENUS.grosir),
+    // bukan sub dari "grosir".
+    grosir: ["pesanan", "semua-pesanan", "produk-manual", "laporan"],
   },
 };
 

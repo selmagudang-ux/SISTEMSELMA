@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Search, Plus, Minus, Pencil, Trash2, X, ShoppingCart,
   TrendingUp, Wallet, Download, CalendarRange, BarChart3, Receipt,
+  FileClock, Landmark, AlertTriangle,
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal } from "../components/ui";
 import {
@@ -13,19 +14,8 @@ import { rencanaKurangiRak } from "./Rak";
 export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
 }) {
-  if (sub === "toko") return <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />;
   if (sub === "produk-manual")
     return <ProdukManualList produkManualGrosir={produkManualGrosir} setModal={setModal} />;
-  if (sub === "pelanggan")
-    return (
-      <PelangganList
-        pelangganGrosir={pelangganGrosir}
-        pesananGrosir={pesananGrosir}
-        pembayaranGrosir={pembayaranGrosir}
-        depositGrosir={depositGrosir}
-        setModal={setModal}
-      />
-    );
   if (sub === "semua-pesanan")
     return (
       <SemuaPesanan
@@ -56,15 +46,36 @@ export default function Grosir({
   );
 }
 
-function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depositGrosir, setModal }) {
+// Diekspor terpisah (bukan lagi lewat sub === "pelanggan" di atas) — sekarang
+// jadi menu sendiri di sidebar, sejajar dengan "Grosir" & "Toko Offline"
+// (lihat NAV di lib/constants.js, dirender App.jsx saat nav.menu === "pelanggan").
+// Isi/logic-nya sendiri TIDAK berubah sama sekali, cuma cara motretnya.
+// Tab kategori pelanggan di halaman ini — cocok dengan KATEGORI_PELANGGAN di
+// components/forms.jsx (PelangganForm). Pelanggan lama/yang dibuat inline
+// dari Buat Pesanan yang belum punya kategori (kolom "kategori" null) dianggap
+// "grosir" secara default (lihat kategoriPelanggan() di bawah) — supaya tidak
+// ada pelanggan yang "hilang" gara-gara belum pernah diisi kategorinya.
+const TAB_KATEGORI_PELANGGAN = [
+  { key: "grosir", label: "Pelanggan Grosir" },
+  { key: "tengah", label: "Pelanggan Tengah" },
+  { key: "ecer", label: "Pelanggan Ecer" },
+];
+
+function kategoriPelanggan(p) {
+  return p?.kategori || "grosir";
+}
+
+export function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depositGrosir, setModal }) {
+  const [kategoriTab, setKategoriTab] = useState("grosir");
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("semua"); // 'semua' | 'piutang' | 'deposit'
   const hutangMap = totalHutangPerPelanggan(pesananGrosir, pembayaranGrosir);
   const depositMap = totalDepositPerPelanggan(depositGrosir);
-  const totalPiutang = Object.values(hutangMap).reduce((a, v) => a + v, 0);
-  const totalDepositSaya = Object.values(depositMap).reduce((a, v) => a + v, 0);
+
+  const tabAktif = TAB_KATEGORI_PELANGGAN.find((t) => t.key === kategoriTab) || TAB_KATEGORI_PELANGGAN[0];
 
   const filtered = (pelangganGrosir || []).filter((p) => {
+    if (kategoriPelanggan(p) !== kategoriTab) return false;
     const s = q.trim().toLowerCase();
     const matchQ =
       !s ||
@@ -81,8 +92,8 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
   return (
     <div>
       <PageHeader
-        title="Pelanggan Grosir"
-        description="Daftar pelanggan/toko langganan untuk transaksi grosir."
+        title="Pelanggan"
+        description="Daftar pelanggan/toko langganan, dipisah per kategori."
         action={
           <button
             onClick={() => setModal({ type: "grosir-pelanggan-form", item: null })}
@@ -93,21 +104,30 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 mb-4 max-w-lg">
-        <StatCard
-          label="Pelanggan hutang ke saya (piutang)"
-          value={fmtRp(totalPiutang)}
-          accent="text-emerald-400"
-          icon={Wallet}
-          iconColor="text-emerald-500"
-        />
-        <StatCard
-          label="Saya hutang ke pelanggan (Hutang)"
-          value={fmtRp(totalDepositSaya)}
-          accent="text-red-400"
-          icon={Wallet}
-          iconColor="text-red-500"
-        />
+      <div className="flex items-center gap-1.5 mb-4 border-b border-slate-800">
+        {TAB_KATEGORI_PELANGGAN.map((t) => {
+          const jumlah = (pelangganGrosir || []).filter((p) => kategoriPelanggan(p) === t.key).length;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setKategoriTab(t.key)}
+              className={`text-sm px-3.5 py-2.5 -mb-px border-b-2 font-medium flex items-center gap-1.5 ${
+                kategoriTab === t.key
+                  ? "border-amber-500 text-amber-400"
+                  : "border-transparent text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {t.label}
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                  kategoriTab === t.key ? "bg-amber-500/15 text-amber-400" : "bg-slate-800 text-slate-500"
+                }`}
+              >
+                {jumlah}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -150,7 +170,7 @@ function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depos
               ? "Tidak ada pelanggan yang berhutang."
               : filter === "deposit"
               ? "Tidak ada pelanggan dengan saldo deposit."
-              : "Belum ada pelanggan grosir."
+              : `Belum ada ${tabAktif.label.toLowerCase()}.`
           }
         />
       ) : (
@@ -634,7 +654,12 @@ function LaporanGrosir({ pesananGrosir, pelangganGrosir, pembayaranGrosir }) {
   );
 }
 
-function TokoList({ tokoGrosir, setModal }) {
+// Diekspor terpisah (bukan lagi lewat sub === "toko" di atas) — sekarang jadi
+// menu sendiri di sidebar, sejajar dengan "Grosir", "Pelanggan" & "Toko
+// Offline" (lihat NAV di lib/constants.js, dirender App.jsx saat
+// nav.menu === "toko"). Isi/logic-nya sendiri TIDAK berubah sama sekali,
+// cuma cara motretnya — pola sama persis seperti PelangganList di atas.
+export function TokoList({ tokoGrosir, setModal }) {
   const [q, setQ] = useState("");
   const filtered = (tokoGrosir || []).filter((t) => {
     const s = q.trim().toLowerCase();
@@ -788,22 +813,53 @@ export const newItemRow = (sumberProduk) => ({
   stokTersedia: null, // null = tidak relevan (item manual)
 });
 
-export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, penempatan, reload, showToast, onClose }) {
+// Pencatatan otomatis pesanan grosir yang langsung dibayar ke Keuangan —
+// pola sama persis dengan Toko Offline (lihat pages/Tokooffline.jsx):
+// dicocokkan by LABEL kategori pemasukan yang persis (whitespace & besar/
+// kecil huruf diabaikan), bukan disimpan manual. Kalau kategorinya belum ada
+// di Keuangan > Rekening & Kategori, pilihan "Langsung Bayar" akan menampilkan
+// peringatan dan pesanan cuma bisa disimpan sebagai draf dulu.
+const LABEL_KATEGORI_GROSIR_CASH = "GROSIR CASH";
+const LABEL_KATEGORI_GROSIR_TRANSFER = "GROSIR TRANSFER";
+const PENANDA_GROSIR = "Grosir ·";
+
+function normalisasiLabelGrosir(s) {
+  return (s || "").toLowerCase().replace(/\s+/g, "").trim();
+}
+function cariKategoriByLabelGrosir(daftarKategori, label) {
+  const target = normalisasiLabelGrosir(label);
+  return (daftarKategori || []).find((k) => normalisasiLabelGrosir(k.label) === target) || null;
+}
+
+export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, penempatan, master, reload, showToast, onClose }) {
   const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [pelangganId, setPelangganId] = useState("");
   const [pelangganNamaBaru, setPelangganNamaBaru] = useState(""); // dipakai kalau pelanggan belum ada di daftar
   const [pelangganWaBaru, setPelangganWaBaru] = useState("");
   const [pelangganAlamatBaru, setPelangganAlamatBaru] = useState("");
   const [pelangganKotaBaru, setPelangganKotaBaru] = useState("");
-  const [tokoId, setTokoId] = useState("");
-  const [statusBayar, setStatusBayar] = useState("Belum Bayar"); // 'Belum Bayar' | 'Lunas'
+  // Toko Pengirim dihilangkan dari form ini (2024) — pesanan baru selalu
+  // dibuat tanpa toko_id. Field & kolomnya masih ada di database dan di
+  // TokoList (menu Toko Pengirim) untuk pesanan lama yang sudah pakai ini.
+  // Pesanan grosir sekarang bisa disimpan sebagai draf (belum dibayar) atau
+  // langsung dibayar Cash/Transfer saat itu juga — kalau langsung dibayar,
+  // otomatis tercatat sebagai pemasukan di Keuangan (lihat submit() di bawah).
+  const [caraSimpan, setCaraSimpan] = useState("bayar"); // 'bayar' | 'draft'
   const [metodeBayar, setMetodeBayar] = useState("Cash");
+  const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const pelangganOptions = pelangganGrosir.map((p) => ({ value: p.id, label: `${p.nama} (${p.kode})` }));
-  const tokoOptions = tokoGrosir.map((t) => ({ value: t.id, label: `${t.nama_toko} (${t.kode})` }));
+
+  const daftarRekening = master?.rekening || [];
+  const daftarKategoriMasuk = master?.kategori_masuk || [];
+  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const kategoriGrosirObj =
+    metodeBayar === "Transfer"
+      ? cariKategoriByLabelGrosir(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_TRANSFER)
+      : cariKategoriByLabelGrosir(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_CASH);
 
   // Kalau user ketik nama pelanggan baru + WA yang ternyata sudah dipakai
   // pelanggan lain, tampilkan peringatan dan cegah simpan pesanan supaya
@@ -867,11 +923,13 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
   };
 
   const errors = rows.map(rowError);
+  const bayarSiapDicatat = caraSimpan !== "bayar" || (rekening && kategoriGrosirObj);
   const canSubmit =
     (pelangganId || pelangganNamaBaru.trim()) &&
     !pelangganBaruBentrok &&
     rows.length > 0 &&
     errors.every((e) => !e) &&
+    bayarSiapDicatat &&
     !saving;
 
   const resetForm = () => {
@@ -881,9 +939,9 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
     setPelangganWaBaru("");
     setPelangganAlamatBaru("");
     setPelangganKotaBaru("");
-    setTokoId("");
-    setStatusBayar("Belum Bayar");
+    setCaraSimpan("bayar");
     setMetodeBayar("Cash");
+    setRekening("");
     setCatatan("");
     setRows([]);
   };
@@ -931,21 +989,63 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
       });
       const nomorPesanan = prefix + String(maxSeq + 1).padStart(3, "0");
 
-      // 2. Simpan header pesanan.
+      // 2. Simpan header pesanan. Kalau caraSimpan === "draft", pesanan
+      //    disimpan dulu tanpa pembayaran (status "Belum Bayar") — bisa
+      //    dibayar belakangan lewat "Catat Pembayaran" di Semua Pesanan.
+      const bayarSekarang = caraSimpan === "bayar";
       const [pesanan] = await sb("grosir_pesanan", {
         method: "POST",
         body: JSON.stringify({
           nomor_pesanan: nomorPesanan,
           tanggal,
           pelanggan_id: pelangganIdFinal,
-          toko_id: tokoId || null,
-          status_bayar: statusBayar,
-          metode_bayar: metodeBayar,
+          toko_id: null,
+          status_bayar: bayarSekarang ? "Lunas" : "Belum Bayar",
+          metode_bayar: bayarSekarang ? metodeBayar : null,
           total,
           status: "Aktif",
           catatan: catatan.trim() || null,
         }),
       });
+
+      // 2b. Kalau dipilih "Langsung Bayar": catat pembayaran penuh saat itu
+      // juga (bukan cuma label status_bayar) — supaya sisa hutang yang
+      // dihitung dari grosir_pembayaran (dipakai di badge, Dashboard, dan
+      // Laporan) selalu konsisten dengan status "Lunas" di atas. Ditambah
+      // satu baris pemasukan di keuangan_transaksi (kategori GROSIR CASH /
+      // GROSIR TRANSFER, sama seperti pola Toko Offline) supaya langsung
+      // kelihatan di menu Keuangan tanpa harus dicatat manual lagi. Hanya
+      // insert kalau totalnya > 0 (menghindari baris 0 rupiah).
+      if (bayarSekarang && total > 0.0001) {
+        await sb("grosir_pembayaran", {
+          method: "POST",
+          body: JSON.stringify({
+            nomor_bayar: `BYR-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+            pesanan_id: pesanan.id,
+            pelanggan_id: pelangganIdFinal,
+            jumlah: total,
+            metode_bayar: metodeBayar,
+            catatan: "Dibayar penuh saat transaksi",
+          }),
+        });
+
+        if (rekening && kategoriGrosirObj) {
+          const namaPelangganFinal = pelangganIdFinal
+            ? pelangganGrosir.find((p) => p.id === pelangganIdFinal)?.nama || pelangganNamaBaru.trim()
+            : pelangganNamaBaru.trim();
+          await sb("keuangan_transaksi", {
+            method: "POST",
+            body: JSON.stringify({
+              tanggal,
+              tipe: "masuk",
+              rekening,
+              kategori: kategoriGrosirObj.kode,
+              jumlah: total,
+              keterangan: `${PENANDA_GROSIR} ${nomorPesanan} — ${namaPelangganFinal || "Pelanggan"}`,
+            }),
+          });
+        }
+      }
 
       // 3. Simpan tiap item + potong stok.
       // Salinan lokal daftar produk manual, di-update tiap kali ada produk
@@ -1059,7 +1159,7 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
 
-      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+      <div className="mb-4">
         <Field label="Pelanggan *">
           <SearchableSelect
             value={pelangganId}
@@ -1107,14 +1207,6 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
               )}
             </div>
           )}
-        </Field>
-        <Field label="Toko Pengirim (opsional)">
-          <SearchableSelect
-            value={tokoId}
-            onChange={setTokoId}
-            options={tokoOptions}
-            placeholder="Cari toko…"
-          />
         </Field>
       </div>
 
@@ -1167,28 +1259,77 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
 
       {rows.length > 0 && (
         <div>
-          <div className="grid sm:grid-cols-2 gap-3 mb-4">
-            <Field label="Status Bayar">
-              <select
-                value={statusBayar}
-                onChange={(e) => setStatusBayar(e.target.value)}
-                className={inputClass}
+          <Field label="Cara Simpan">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCaraSimpan("draft")}
+                className={`flex items-center justify-center gap-1.5 text-xs font-medium py-2.5 rounded-lg border ${
+                  caraSimpan === "draft"
+                    ? "bg-amber-500/15 border-amber-500 text-amber-400"
+                    : "border-slate-800 text-slate-400 hover:border-slate-700"
+                }`}
               >
-                <option value="Belum Bayar">Belum Bayar (Hutang)</option>
-                <option value="Lunas">Lunas</option>
-              </select>
-            </Field>
-            <Field label="Metode Bayar">
-              <select
-                value={metodeBayar}
-                onChange={(e) => setMetodeBayar(e.target.value)}
-                className={inputClass}
+                <FileClock size={14} /> Simpan sebagai Draf
+              </button>
+              <button
+                type="button"
+                onClick={() => setCaraSimpan("bayar")}
+                className={`flex items-center justify-center gap-1.5 text-xs font-medium py-2.5 rounded-lg border ${
+                  caraSimpan === "bayar"
+                    ? "bg-emerald-500/15 border-emerald-500 text-emerald-400"
+                    : "border-slate-800 text-slate-400 hover:border-slate-700"
+                }`}
               >
-                <option value="Cash">Cash</option>
-                <option value="Transfer">Transfer</option>
-              </select>
-            </Field>
-          </div>
+                <Wallet size={14} /> Langsung Bayar
+              </button>
+            </div>
+          </Field>
+
+          {caraSimpan === "draft" ? (
+            <div className="text-[11px] text-slate-500 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 mb-4">
+              Pesanan disimpan dengan status <span className="text-amber-400 font-medium">Belum Bayar</span>, stok tetap
+              langsung terpotong. Pembayarannya bisa dicatat belakangan lewat "Catat Pembayaran" di Semua Pesanan — nanti
+              otomatis tercatat juga di Keuangan.
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3 mb-4">
+              <Field label="Metode Bayar">
+                <select
+                  value={metodeBayar}
+                  onChange={(e) => { setMetodeBayar(e.target.value); setRekening(""); }}
+                  className={inputClass}
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="Transfer">Transfer</option>
+                </select>
+              </Field>
+              <Field label="Rekening Penampung">
+                <SearchableSelect
+                  value={rekening}
+                  onChange={setRekening}
+                  options={rekeningOptions}
+                  placeholder={metodeBayar === "Transfer" ? "Pilih rekening tujuan…" : "Pilih rekening kas…"}
+                />
+              </Field>
+              <div className="sm:col-span-2">
+                {kategoriGrosirObj ? (
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <Landmark size={12} />
+                    Tercatat di Keuangan sebagai pemasukan kategori{" "}
+                    <span className="text-slate-300 font-medium">{kategoriGrosirObj.label}</span>.
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-1.5 text-[11px] text-amber-400">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                    Kategori pemasukan "{metodeBayar === "Transfer" ? LABEL_KATEGORI_GROSIR_TRANSFER : LABEL_KATEGORI_GROSIR_CASH}"
+                    belum ada. Buat dulu di Keuangan {">"} Rekening & Kategori dengan nama persis ini, atau simpan sebagai draf dulu.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <Field label="Catatan (opsional)">
             <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
           </Field>
@@ -1211,7 +1352,8 @@ export function BuatPesanan({ pelangganGrosir, tokoGrosir, produkManualGrosir, s
               onClick={submit}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
             >
-              <ShoppingCart size={16} /> {saving ? "Menyimpan…" : "Simpan Pesanan"}
+              <ShoppingCart size={16} />
+              {saving ? "Menyimpan…" : caraSimpan === "draft" ? "Simpan sebagai Draf" : "Simpan & Catat Pembayaran"}
             </button>
           </div>
         </div>
@@ -1343,7 +1485,10 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
 export function EditPesananForm({
   pesanan, detailItems, tokoGrosir, skuMaster, produkManualGrosir, onClose, saving, onSubmit,
 }) {
-  const [tokoId, setTokoId] = useState(pesanan.toko_id || "");
+  // Toko Pengirim dihilangkan dari form ini juga — field-nya tidak dirender
+  // lagi, tapi nilai toko_id pesanan lama (kalau ada) tetap dipertahankan
+  // apa adanya lewat state ini (bukan ikut kehapus/ke-null-kan tiap edit).
+  const [tokoId] = useState(pesanan.toko_id || "");
   const [metodeBayar, setMetodeBayar] = useState(pesanan.metode_bayar || "Cash");
   const [catatan, setCatatan] = useState(pesanan.catatan || "");
   const [rows, setRows] = useState(() =>
@@ -1371,8 +1516,6 @@ export function EditPesananForm({
   const editableSkuMaster = (skuMaster || []).map((s) =>
     originalQtyPerSku[s.sku] ? { ...s, stok: (Number(s.stok) || 0) + originalQtyPerSku[s.sku] } : s
   );
-
-  const tokoOptions = (tokoGrosir || []).map((t) => ({ value: t.id, label: `${t.nama_toko} (${t.kode})` }));
 
   // Tambah cepat: sama seperti di Buat Pesanan — cari SKU sekali langsung
   // masuk daftar, kalau sudah ada tinggal qty-nya ditambah.
@@ -1447,10 +1590,7 @@ export function EditPesananForm({
 
   return (
     <ModalShell title={`Edit Pesanan ${pesanan.nomor_pesanan}`} onClose={onClose}>
-      <div className="grid sm:grid-cols-2 gap-3 mb-4">
-        <Field label="Toko Pengirim (opsional)">
-          <SearchableSelect value={tokoId} onChange={setTokoId} options={tokoOptions} placeholder="Cari toko…" />
-        </Field>
+      <div className="mb-4">
         <Field label="Metode Bayar">
           <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
             <option value="Cash">Cash</option>

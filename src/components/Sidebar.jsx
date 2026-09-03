@@ -67,7 +67,12 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
   const isOpen = expanded.has(node.key);
 
   if (node.group) {
-    const groupActive = node.children.some((c) => c.key === active.menu);
+    // Dulu cuma cek anak LANGSUNG (`node.children.some(...)`), jadi group
+    // paling luar tidak ikut ditandai aktif kalau menu aktifnya ada di dalam
+    // group bersarang (mis. "Grosir" di dalam "Store Selma" di dalam
+    // "Penjualan"). Pakai navAncestorKeys supaya group di tingkat manapun
+    // dalam rantai leluhur menu aktif tetap ditandai aktif.
+    const groupActive = navAncestorKeys(active.menu).includes(node.key);
     return (
       <div className="mb-1">
         <MenuButton

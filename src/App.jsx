@@ -29,7 +29,16 @@ const FotoProduk = lazy(() => import("./pages/FotoProduk"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
 import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs, computeRakPindahNotifs, computeRakKosongNotifs } from "./lib/marketplaceNotif";
 const Grosir = lazy(() => import("./pages/Grosir"));
-const StoreSelma = lazy(() => import("./pages/StoreSelma"));
+// "Pelanggan" sekarang menu sendiri (bukan sub "Grosir" lagi) tapi
+// komponennya tetap satu file dengan Grosir (named export) — lazy-load lewat
+// .then() supaya tetap satu chunk terpisah dari bundle utama.
+const PelangganList = lazy(() => import("./pages/Grosir").then((m) => ({ default: m.PelangganList })));
+// "Toko Pengirim" sekarang menu sendiri juga (bukan sub "Grosir" lagi),
+// pola sama persis seperti PelangganList di atas.
+const TokoList = lazy(() => import("./pages/Grosir").then((m) => ({ default: m.TokoList })));
+const TokoOffline = lazy(() => import("./pages/TokoOffline"));
+const PenjualanMarketplace = lazy(() => import("./pages/PenjualanMarketplace"));
+const Reseller = lazy(() => import("./pages/Reseller"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
 const Absensi = lazy(() => import("./pages/Absensi"));
@@ -427,7 +436,18 @@ function MainApp({ session, onLogout }) {
     (menu) => {
       if (menu === "dashboard") return runLoaders(loadCore, loadGrosir, loadKeuangan, loadAbsensi);
       if (menu === "grosir") return runLoaders(loadCore, loadGrosir);
+      // Pelanggan dulunya sub-menu "grosir" (jadi datanya otomatis ikut ke-load
+      // lewat baris di atas) — sekarang menu sendiri, jadi didaftarkan terpisah
+      // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
+      if (menu === "pelanggan") return runLoaders(loadCore, loadGrosir);
+      // Sama seperti "pelanggan" di atas — "toko" (Toko Pengirim) juga dulu
+      // sub-menu "grosir", sekarang menu sendiri, jadi didaftarkan terpisah
+      // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
+      if (menu === "toko") return runLoaders(loadCore, loadGrosir);
       if (menu === "keuangan") return runLoaders(loadCore, loadKeuangan);
+      // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
+      // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
+      if (menu === "toko-offline") return runLoaders(loadCore, loadKeuangan);
       return runLoaders(loadCore);
     },
     [runLoaders, loadCore, loadGrosir, loadKeuangan, loadAbsensi]
@@ -717,7 +737,46 @@ function MainApp({ session, onLogout }) {
                   setModal={setModal}
                 />
               )}
-              {nav.menu === "store-selma" && <StoreSelma />}
+              {nav.menu === "pelanggan" && (
+                <PelangganList
+                  pelangganGrosir={pelangganGrosir}
+                  pesananGrosir={pesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "toko" && (
+                <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />
+              )}
+              {nav.menu === "toko-offline" && (
+                <TokoOffline
+                  sub={nav.sub || "input-harian"}
+                  master={master}
+                  keuanganTransaksi={keuanganTransaksi}
+                  reload={loadAll}
+                  showToast={showToast}
+                />
+              )}
+              {nav.menu === "penjualan-marketplace" && (
+                <PenjualanMarketplace sub={nav.sub || "pemasukan-bulanan"} />
+              )}
+              {nav.menu === "reseller" && (
+                <Reseller
+                  sub={nav.sub || "toko"}
+                  pelangganGrosir={pelangganGrosir}
+                  produkManualGrosir={produkManualGrosir}
+                  skuMaster={skuMasterGrosir}
+                  penempatan={penempatan}
+                  pesananGrosir={pesananGrosir}
+                  detailPesananGrosir={detailPesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  reload={loadAll}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
               {nav.menu === "keuangan" && (
                 <Keuangan
                   sub={nav.sub || "transaksi"}
