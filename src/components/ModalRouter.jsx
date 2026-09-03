@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../li
 import {
   sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan,
+  detailModelPesanan, tokoShopeeGudang,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -1626,6 +1626,7 @@ export default function ModalRouter({
           skuMaster={skuMaster}
           penempatan={penempatan}
           pesananGrosir={pesananGrosir}
+          master={master}
           reload={reload}
           showToast={showToast}
           onClose={close}
@@ -1813,23 +1814,16 @@ export default function ModalRouter({
             // Penagihan Hutang beberapa pesanan sekaligus (lihat
             // grosir-hapus-pesanan).
             let keuanganTransaksiId = null;
-            if (metode !== "Deposit" && data.rekening && data.kategoriKode) {
+            if (metode !== "Deposit" && metode !== "Marketplace" && data.rekening && data.kategoriKode) {
               const namaPelangganBayar = pelanggan?.nama || "Pelanggan";
-              // Label beda tergantung jenis pesanan: "R.T" (Reseller Toko),
-              // "R.CO" (Reseller Cekout — pelunasan sisa piutang setelah
-              // pesanan dibuat, bukan nominal yang cair dari marketplace di
-              // awal, itu sengaja tidak masuk Keuangan lewat sini, lihat
-              // catatan di pages/Reseller.jsx), atau "Grosir" buat pesanan
-              // grosir biasa — supaya kelihatan asalnya waktu dicek di
-              // Laporan Keuangan.
-              const labelJenis =
-                p.jenis_transaksi === "reseller"
-                  ? "R.T"
-                  : p.jenis_transaksi === "reseller_cekout"
-                  ? "R.CO"
-                  : "Grosir";
+              // Label beda tergantung jenis pesanan: "R.T" (Reseller Toko)
+              // atau "Grosir" buat pesanan grosir biasa — supaya kelihatan
+              // asalnya waktu dicek di Laporan Keuangan. "R.CO" (Reseller
+              // Cekout) TIDAK pernah lewat sini — metode-nya selalu
+              // "Marketplace", ditangani di cabang else-if di bawah.
+              const labelJenis = p.jenis_transaksi === "reseller" ? "R.T" : "Grosir";
               const keteranganKeuangan =
-                p.jenis_transaksi === "reseller" || p.jenis_transaksi === "reseller_cekout"
+                p.jenis_transaksi === "reseller"
                   ? `${labelJenis} · ${p.nomor_pesanan} · ${namaPelangganBayar}`
                   : `${labelJenis} · ${p.nomor_pesanan} — ${namaPelangganBayar}`;
               const [rowKeuangan] = await sb("keuangan_transaksi", {
@@ -1844,6 +1838,32 @@ export default function ModalRouter({
                 }),
               });
               keuanganTransaksiId = rowKeuangan?.id ?? null;
+            } else if (metode === "Marketplace") {
+              // Pelunasan piutang Reseller Cekout lewat pencairan
+              // marketplace — uang ditampung dulu sebagai "pemasukan" di
+              // saldo toko Shopee "Gudang" (marketplace_transaksi), BUKAN
+              // langsung ke Keuangan seperti Reseller Toko/Grosir. Baru
+              // pindah ke Keuangan belakangan saat admin "Cairkan" saldo
+              // toko itu (menu Marketplace → Shopee → Gudang) — pola sama
+              // persis dengan nominal cair saat pesanan cekout pertama kali
+              // dibuat (lihat pages/Reseller.jsx).
+              const tokoGudang = tokoShopeeGudang(master);
+              if (!tokoGudang) {
+                throw new Error(
+                  'Toko Shopee "Gudang" belum ada di master data — buat dulu lewat menu Marketplace → Shopee → Tambah Toko (nama persis "Gudang"), baru catat pembayaran ini lagi.'
+                );
+              }
+              await sb("marketplace_transaksi", {
+                method: "POST",
+                body: JSON.stringify({
+                  platform: "shopee",
+                  toko: tokoGudang.kode,
+                  tipe: "pemasukan",
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  jumlah: jumlahDiterima,
+                  keterangan: `Pelunasan ${p.nomor_pesanan} · ${pelanggan?.nama || "Pelanggan"}`,
+                }),
+              });
             }
 
             if (bayarKePesanan > 0.0001) {

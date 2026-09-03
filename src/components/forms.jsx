@@ -2996,10 +2996,12 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   // langsung ke rekening kas/bank seperti Grosir/Reseller Toko — jadi opsi
   // "Cash"/"Transfer" (yang wajib pilih Rekening Penampung & langsung
   // tercatat di Keuangan) diganti satu opsi "Pencairan Marketplace" yang
-  // TIDAK menyentuh Keuangan sama sekali (sama seperti nominal cair di
-  // "Buat Pesanan Reseller Cekout" — nanti direkap agregat lewat menu
-  // Marketplace > Pemasukan Bulanan, bukan per-pesanan di sini, lihat
-  // catatan panjang di pages/Reseller.jsx).
+  // TIDAK langsung tercatat di Keuangan, melainkan ditampung dulu sebagai
+  // saldo di toko Shopee "Gudang" (menu Marketplace > Shopee) — sama
+  // seperti nominal cair di "Buat Pesanan Reseller Cekout". Baru pindah ke
+  // Keuangan belakangan saat admin "Cairkan" saldo toko itu (lihat catatan
+  // panjang di pages/Reseller.jsx & handler "grosir-bayar-hutang" di
+  // ModalRouter.jsx).
   const isCekout = pesanan.jenis_transaksi === "reseller_cekout";
   const [jumlah, setJumlah] = useState(sisaHutang);
   const [metodeBayar, setMetodeBayar] = useState(isCekout ? "Marketplace" : "Cash");
@@ -3021,8 +3023,9 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   // Keuangan > Rekening & Kategori, supaya uang yang diterima otomatis
   // kecatat sebagai pemasukan (sama seperti alur Langsung Bayar di Buat
   // Pesanan) — Deposit & Pencairan Marketplace tidak butuh ini: Deposit
-  // karena bukan uang baru masuk, Pencairan Marketplace karena sengaja
-  // tidak dibukukan otomatis per-pesanan (lihat catatan di atas).
+  // karena bukan uang baru masuk, Pencairan Marketplace karena masuknya ke
+  // saldo toko Shopee "Gudang" dulu, bukan ke rekening Keuangan langsung
+  // (lihat catatan di atas).
   const catatKeKeuangan = metodeBayar !== "Deposit" && metodeBayar !== "Marketplace";
   const siapDicatat = !catatKeKeuangan || (rekening && kategoriGrosirObj);
   const canSubmit = jumlahNum > 0 && !depositTidakCukup && siapDicatat && !saving;
@@ -3060,8 +3063,8 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
 
       {metodeBayar === "Marketplace" && (
         <div className="text-[11px] text-slate-500 mb-3 -mt-2">
-          Tidak langsung tercatat di Keuangan — direkap belakangan secara agregat lewat menu Marketplace {">"}
-          {" "}Pemasukan Bulanan.
+          Tidak langsung tercatat di Keuangan — ditampung dulu sebagai saldo toko Shopee "Gudang" lewat menu
+          Marketplace {">"} Shopee. Baru masuk Keuangan saat saldo toko itu di-"Cairkan".
         </div>
       )}
 

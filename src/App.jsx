@@ -37,7 +37,7 @@ const PelangganList = lazy(() => import("./pages/Grosir").then((m) => ({ default
 // pola sama persis seperti PelangganList di atas.
 const TokoList = lazy(() => import("./pages/Grosir").then((m) => ({ default: m.TokoList })));
 const TokoOffline = lazy(() => import("./pages/TokoOffline"));
-const PenjualanMarketplace = lazy(() => import("./pages/PenjualanMarketplace"));
+const PenjualanMarketplace = lazy(() => import("./pages/Penjualanmarketplace"));
 const Reseller = lazy(() => import("./pages/Reseller"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));

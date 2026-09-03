@@ -5,6 +5,7 @@ import {
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, InputTanggal, InputRupiah } from "../components/ui";
 import {
   sb, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
+  tokoShopeeGudang,
 } from "../lib/api";
 import { rencanaKurangiRak } from "./Rak";
 import { newItemRow, ItemRow } from "./Grosir";
@@ -54,11 +55,16 @@ import { newItemRow, ItemRow } from "./Grosir";
 //     belakangan lewat "Catat Pembayaran" di detail pesanan (modal
 //     grosir-bayar-hutang, generik, sudah otomatis jalan tanpa perlu
 //     diduplikasi — sama seperti Reseller Toko).
-// SENGAJA TIDAK bikin baris keuangan_transaksi otomatis di sini walau
-// uangnya "cair" beneran — supaya tidak dobel hitung dengan menu
-// "Marketplace > Pemasukan Bulanan Semua Marketplace" (masih "segera
-// hadir", nanti itu yang jadi sumber pencatatan pemasukan marketplace ke
-// Keuangan secara agregat per bulan, bukan per pesanan di sini).
+// BEDA dengan Reseller Toko (yang begitu dibayar langsung tercatat masuk
+// Keuangan lewat modal "Catat Pembayaran" generik): uang Reseller Cekout
+// TIDAK langsung masuk Keuangan sama sekali. Baik nominal yang cair waktu
+// pesanan dibuat (di sini) MAUPUN pelunasan sisa piutang belakangan (modal
+// grosir-bayar-hutang, metode "Pencairan Marketplace" — lihat ModalRouter)
+// sama-sama ditampung dulu sebagai "pemasukan" di saldo toko Shopee
+// "Gudang" (tabel marketplace_transaksi, lewat tokoShopeeGudang() di
+// lib/api.js) — pola yang SAMA PERSIS dengan pemasukan/pencairan toko
+// marketplace lain (lihat Penjualanmarketplace.jsx). Baru pindah ke
+// Keuangan belakangan saat admin klik "Cairkan" di toko Gudang itu.
 // =========================================================
 
 const HARI_LABEL = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -883,8 +889,9 @@ function SemuaPesananResellerCekout({ pesananCekout, pelangganGrosir, pembayaran
 // bagian "RESELLER CEKOUT" untuk aturan lengkapnya).
 // =========================================================
 export function BuatPesananResellerCekout({
-  pelangganGrosir, produkManualGrosir, skuMaster, penempatan, pesananGrosir, reload, showToast, onClose,
+  pelangganGrosir, produkManualGrosir, skuMaster, penempatan, pesananGrosir, master, reload, showToast, onClose,
 }) {
+  const tokoGudang = tokoShopeeGudang(master);
   const [nomorPesanan, setNomorPesanan] = useState("");
   const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [pelangganId, setPelangganId] = useState("");
@@ -959,6 +966,10 @@ export function BuatPesananResellerCekout({
   };
 
   const errors = rows.map(rowError);
+  // Kalau ada nominal cair tapi toko Shopee "Gudang" belum ada di master
+  // data, tahan submit dulu — daripada uangnya kesimpan sebagai "cair" di
+  // grosir_pembayaran tapi tidak kelihatan saldonya di manapun.
+  const butuhTokoGudang = jumlahCairNum > 0.0001 && !tokoGudang;
   const canSubmit =
     !!nomorPesananTrim &&
     !nomorBentrok &&
@@ -966,6 +977,7 @@ export function BuatPesananResellerCekout({
     !pelangganBaruBentrok &&
     rows.length > 0 &&
     errors.every((e) => !e) &&
+    !butuhTokoGudang &&
     !saving;
 
   const resetForm = () => {
@@ -1043,9 +1055,7 @@ export function BuatPesananResellerCekout({
 
       // 2b. Nominal yang cair dicatat sebagai grosir_pembayaran (bukan cuma
       //     label status_bayar) supaya sisa piutang yang dihitung ulang di
-      //     manapun (badge, Dashboard, Laporan) selalu konsisten. Sengaja
-      //     TIDAK bikin baris keuangan_transaksi di sini — lihat catatan
-      //     panjang di bagian atas file soal kenapa.
+      //     manapun (badge, Dashboard, Laporan) selalu konsisten.
       if (bayarKePesanan > 0.0001) {
         await sb("grosir_pembayaran", {
           method: "POST",
@@ -1056,6 +1066,28 @@ export function BuatPesananResellerCekout({
             jumlah: bayarKePesanan,
             metode_bayar: "Marketplace",
             catatan: "Dicairkan dari marketplace saat pesanan dibuat",
+          }),
+        });
+      }
+
+      // 2b-2. Uang yang BENERAN cair (jumlahCairNum — total dari
+      //     marketplace, bukan cuma bagian yang dipakai melunasi pesanan
+      //     ini) ditampung dulu sebagai "pemasukan" di saldo toko Shopee
+      //     "Gudang" (marketplace_transaksi) — BUKAN langsung ke Keuangan.
+      //     Baru pindah ke Keuangan belakangan saat admin "Cairkan" saldo
+      //     toko itu (menu Marketplace → Shopee → Gudang). `canSubmit`
+      //     sudah menahan submit kalau toko ini belum ada & jumlahCairNum >
+      //     0, jadi `tokoGudang` di sini seharusnya selalu ada.
+      if (jumlahCairNum > 0.0001 && tokoGudang) {
+        await sb("marketplace_transaksi", {
+          method: "POST",
+          body: JSON.stringify({
+            platform: "shopee",
+            toko: tokoGudang.kode,
+            tipe: "pemasukan",
+            tanggal,
+            jumlah: jumlahCairNum,
+            keterangan: `Cair pesanan reseller cekout ${nomorPesananTrim}`,
           }),
         });
       }
@@ -1168,9 +1200,11 @@ export function BuatPesananResellerCekout({
       <div className="flex items-start gap-2 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] px-3 py-2 rounded-lg mb-3">
         <Wallet size={13} className="mt-0.5 shrink-0" />
         Isi nominal yang benar-benar <span className="font-semibold">cair dari marketplace</span> untuk pesanan
-        ini. Kalau cair lebih besar dari total, kelebihannya otomatis jadi <span className="font-semibold">saldo
-        deposit</span> pelanggan. Kalau kurang (atau belum cair sama sekali), sisanya tetap tercatat sebagai
-        piutang, dilunasi belakangan lewat "Catat Pembayaran" di detail pesanan.
+        ini — otomatis ditampung dulu sebagai saldo di toko Shopee <span className="font-semibold">"Gudang"</span>
+        {" "}(Marketplace → Shopee), bukan langsung ke Keuangan. Kalau cair lebih besar dari total, kelebihannya
+        otomatis jadi <span className="font-semibold">saldo deposit</span> pelanggan. Kalau kurang (atau belum
+        cair sama sekali), sisanya tetap tercatat sebagai piutang, dilunasi belakangan lewat "Catat Pembayaran"
+        di detail pesanan.
       </div>
 
       <Field label="Nomor Pesanan *">
@@ -1289,6 +1323,14 @@ export function BuatPesananResellerCekout({
           <Field label="Jumlah Cair dari Marketplace">
             <InputRupiah value={jumlahCair} onChange={setJumlahCair} placeholder="0" />
           </Field>
+
+          {butuhTokoGudang && (
+            <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] px-3 py-2 rounded-lg mb-3">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              Toko Shopee "Gudang" belum ada di master data — nominal cair ini tidak bisa ditampung ke saldo
+              marketplace. Buat dulu lewat menu Marketplace → Shopee → Tambah Toko (nama persis "Gudang").
+            </div>
+          )}
 
           <Field label="Catatan (opsional)">
             <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />

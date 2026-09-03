@@ -784,6 +784,23 @@ export function saldoMarketplace(marketplaceTransaksi, platform, toko) {
     }, 0);
 }
 
+// Toko Shopee "Gudang" — toko marketplace khusus yang dipakai sebagai
+// penampung sementara uang Reseller Cekout (baik nominal yang cair waktu
+// pesanan dibuat, maupun pelunasan piutang belakangan lewat "Catat
+// Pembayaran") SEBELUM benar-benar dicairkan ke rekening Keuangan. Dicatat
+// sebagai baris "pemasukan" biasa di marketplace_transaksi (platform
+// "shopee", toko = kode toko ini) — persis pola pemasukan/pencairan toko
+// marketplace lain (lihat Penjualanmarketplace.jsx), jadi otomatis kelihatan
+// saldonya di menu Marketplace > Shopee > Gudang, dan baru masuk Keuangan
+// saat admin klik "Cairkan" di toko itu. Dicari dari master_data tipe
+// "toko_shopee" (lihat daftarTokoMarketplace di atas) berdasarkan nama
+// PERSIS "Gudang" (tidak case-sensitive) — kalau belum ada, harus dibuat
+// dulu manual lewat menu Marketplace > Shopee > "Tambah Toko".
+export function tokoShopeeGudang(master) {
+  const daftar = master?.toko_shopee || [];
+  return daftar.find((t) => (t.label || "").trim().toLowerCase() === "gudang") || null;
+}
+
 // Daftar toko untuk satu platform (dari master_data tipe "toko_<platform>"),
 // masing-masing dilengkapi saldonya sendiri (lihat saldoMarketplace di
 // atas). Toko yang belum pernah punya transaksi tetap muncul dengan saldo
