@@ -4042,3 +4042,160 @@ export function ResponPengajuanForm({ pengajuan: p, fotoUrl, barcodeSupplier, na
     </ModalShell>
   );
 }
+// =========================================================
+// MARKETPLACE (Shopee/TikTok/Lazada) — lihat catatan lengkap soal desain
+// datanya di saldoMarketplace() (lib/api.js). Dua form di bawah ini dipakai
+// ModalRouter untuk 3 jenis transaksi: Pemasukan, Iklan (form yang sama,
+// dibedakan lewat prop `tipe`), dan Pencairan (form terpisah karena butuh
+// pilih rekening tujuan di Keuangan).
+// =========================================================
+
+const PLATFORM_LABEL_FORM = { shopee: "Shopee", tiktok: "TikTok", lazada: "Lazada" };
+
+// Toko baru untuk satu platform (Shopee/TikTok/Lazada bisa punya beberapa
+// toko sendiri-sendiri, masing-masing saldonya dihitung terpisah — lihat
+// daftarTokoMarketplace() di lib/api.js). Kode dibuat otomatis di belakang
+// layar (lihat prop `kodeBaru`, dibuat ModalRouter lewat nextKode — pola
+// sama seperti PelangganForm/TokoForm/SupplierForm), tidak diminta ke user.
+export function MarketplaceTokoForm({ platform, kodeBaru, onClose, onSubmit, saving }) {
+  const [nama, setNama] = useState("");
+  return (
+    <ModalShell title={`Tambah Toko — ${PLATFORM_LABEL_FORM[platform] || platform}`} onClose={onClose}>
+      <p className="text-xs text-slate-500 mb-3">
+        Tiap toko dihitung terpisah — pemasukan, iklan, dan saldonya tidak digabung dengan toko lain di platform ini.
+      </p>
+      <Field label="Nama Toko">
+        <input
+          className={inputClass}
+          value={nama}
+          onChange={(e) => setNama(e.target.value)}
+          placeholder={`mis. ${PLATFORM_LABEL_FORM[platform] || ""} Selma Official`}
+          autoFocus
+        />
+      </Field>
+      <button
+        disabled={!nama.trim() || saving}
+        onClick={() => onSubmit({ kode: kodeBaru, nama: nama.trim() })}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, onClose, onSubmit, saving }) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [tanggal, setTanggal] = useState(todayIso);
+  const [jumlah, setJumlah] = useState("");
+  const [keterangan, setKeterangan] = useState("");
+
+  const jumlahNum = Number(jumlah) || 0;
+  const canSubmit = !saving && tanggal && jumlahNum > 0;
+  const isPemasukan = tipe === "pemasukan";
+  const judul = isPemasukan ? "Tambah Pemasukan" : "Tambah Pengeluaran Iklan";
+  const namaPlatform = PLATFORM_LABEL_FORM[platform] || platform;
+
+  return (
+    <ModalShell title={`${judul} — ${namaPlatform}${tokoLabel ? ` (${tokoLabel})` : ""}`} onClose={onClose}>
+      <p className="text-xs text-slate-500 mb-3">
+        {isPemasukan
+          ? "Dicatat sebagai penambah saldo marketplace — belum masuk ke Keuangan sampai dicairkan."
+          : "Otomatis dipotong dari saldo marketplace (dianggap auto-debit dari saldo, bukan dibayar dari rekening Keuangan)."}
+      </p>
+
+      <Field label="Tanggal">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+
+      <Field label="Jumlah">
+        <InputRupiah value={jumlah} onChange={setJumlah} placeholder="0" />
+      </Field>
+
+      <Field label={isPemasukan ? "Keterangan (mis. Pemasukan Agustus 2026)" : "Keterangan (mis. Iklan Gimmick 8.8)"}>
+        <input
+          className={inputClass}
+          value={keterangan}
+          onChange={(e) => setKeterangan(e.target.value)}
+          placeholder="Opsional"
+        />
+      </Field>
+
+      <button
+        disabled={!canSubmit}
+        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, keterangan: keterangan.trim() })}
+        className={`w-full disabled:opacity-40 text-sm font-semibold py-2.5 rounded-lg ${
+          isPemasukan ? "bg-emerald-500 hover:bg-emerald-400 text-slate-950" : "bg-amber-500 hover:bg-amber-400 text-slate-950"
+        }`}
+      >
+        {saving ? "Menyimpan…" : "Simpan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningList, onClose, onSubmit, saving }) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [tanggal, setTanggal] = useState(todayIso);
+  const [jumlah, setJumlah] = useState(saldo > 0 ? saldo : "");
+  const [rekening, setRekening] = useState("");
+  const [keterangan, setKeterangan] = useState("");
+
+  const jumlahNum = Number(jumlah) || 0;
+  const melebihi = jumlahNum > saldo + 0.0001;
+  const rekeningOptions = (rekeningList || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const canSubmit = !saving && tanggal && jumlahNum > 0 && !melebihi && rekening;
+  const namaPlatform = PLATFORM_LABEL_FORM[platform] || platform;
+
+  return (
+    <ModalShell title={`Cairkan Saldo — ${namaPlatform}${tokoLabel ? ` (${tokoLabel})` : ""}`} onClose={onClose}>
+      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+        <div className="flex items-center justify-between px-3 py-2 text-sm bg-slate-900">
+          <span className="text-slate-500 text-xs">Saldo Tersedia</span>
+          <span className="text-md-primary font-semibold">{fmtRp(saldo)}</span>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-500 mb-3">
+        Catat kalau uangnya benar-benar sudah cair ke rekening bank. Ini otomatis tercatat juga sebagai transaksi
+        Pemasukan di Keuangan, ke rekening yang dipilih di bawah.
+      </p>
+
+      <Field label="Tanggal">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+
+      <Field label="Jumlah Dicairkan">
+        <InputRupiah value={jumlah} onChange={setJumlah} placeholder="0" />
+      </Field>
+
+      {melebihi && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>Jumlah melebihi saldo yang tersedia.</div>
+        </div>
+      )}
+
+      <Field label="Rekening Tujuan (di Keuangan)">
+        <SearchableSelect
+          value={rekening}
+          onChange={setRekening}
+          options={rekeningOptions}
+          placeholder="Pilih rekening bank…"
+        />
+      </Field>
+
+      <Field label="Keterangan (opsional)">
+        <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
+      </Field>
+
+      <button
+        disabled={!canSubmit}
+        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, keterangan: keterangan.trim() })}
+        className="w-full bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Cairkan"}
+      </button>
+    </ModalShell>
+  );
+}

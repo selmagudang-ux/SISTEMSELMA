@@ -223,6 +223,7 @@ function MainApp({ session, onLogout }) {
   const [pembayaranGrosir, setPembayaranGrosir] = useState([]);
   const [depositGrosir, setDepositGrosir] = useState([]);
   const [keuanganTransaksi, setKeuanganTransaksi] = useState([]);
+  const [marketplaceTransaksi, setMarketplaceTransaksi] = useState([]);
   const [absensiRows, setAbsensiRows] = useState([]);
   const [karyawanList, setKaryawanList] = useState([]);
   const [pengajuanRestock, setPengajuanRestock] = useState([]);
@@ -403,6 +404,14 @@ function MainApp({ session, onLogout }) {
     setKeuanganTransaksi(keuanganRes || []);
   }, []);
 
+  // Data modul Marketplace (Shopee/TikTok/Lazada) — lihat catatan lengkap di
+  // saldoMarketplace() (lib/api.js). Tabel sendiri, terpisah dari
+  // keuangan_transaksi, cuma ditarik kalau lagi buka menu ini (atau dashboard).
+  const loadMarketplace = useCallback(async () => {
+    const res = await sbAll("marketplace_transaksi?select=*&order=tanggal.desc");
+    setMarketplaceTransaksi(res || []);
+  }, []);
+
   const loadAbsensi = useCallback(async () => {
     const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(), listKaryawan()]);
     setAbsensiRows(absensiRes || []);
@@ -424,8 +433,8 @@ function MainApp({ session, onLogout }) {
   }, []);
 
   const loadAll = useCallback(
-    () => runLoaders(loadCore, loadGrosir, loadKeuangan, loadAbsensi),
-    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadAbsensi]
+    () => runLoaders(loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi),
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
   );
 
   // Data apa saja yang perlu ditarik tergantung menu yang dituju — dashboard
@@ -434,7 +443,7 @@ function MainApp({ session, onLogout }) {
   // data gabungan seperti skuMasterGrosir), sisanya cukup loadCore saja.
   const loadForMenu = useCallback(
     (menu) => {
-      if (menu === "dashboard") return runLoaders(loadCore, loadGrosir, loadKeuangan, loadAbsensi);
+      if (menu === "dashboard") return runLoaders(loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi);
       if (menu === "grosir") return runLoaders(loadCore, loadGrosir);
       // Pelanggan dulunya sub-menu "grosir" (jadi datanya otomatis ikut ke-load
       // lewat baris di atas) — sekarang menu sendiri, jadi didaftarkan terpisah
@@ -448,9 +457,14 @@ function MainApp({ session, onLogout }) {
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
       if (menu === "toko-offline") return runLoaders(loadCore, loadKeuangan);
+      // Marketplace butuh master (rekening, buat form Pencairan) + data
+      // marketplace_transaksi sendiri. loadKeuangan TIDAK perlu ditarik di
+      // sini — pencairan cuma nulis satu baris baru ke keuangan_transaksi,
+      // tidak perlu baca isinya dulu.
+      if (menu === "penjualan-marketplace") return runLoaders(loadCore, loadMarketplace);
       return runLoaders(loadCore);
     },
-    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadAbsensi]
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
   );
 
   useEffect(() => {
@@ -759,7 +773,14 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "penjualan-marketplace" && (
-                <PenjualanMarketplace sub={nav.sub || "pemasukan-bulanan"} />
+                <PenjualanMarketplace
+                  sub={nav.sub || "shopee"}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  master={master}
+                  reload={loadAll}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
               )}
               {nav.menu === "reseller" && (
                 <Reseller
@@ -811,6 +832,7 @@ function MainApp({ session, onLogout }) {
           pesananMasuk={pesananMasuk}
           suppliers={suppliers}
           keuanganTransaksi={keuanganTransaksi}
+          marketplaceTransaksi={marketplaceTransaksi}
           saving={saving}
           setSaving={setSaving}
           reload={loadAll}

@@ -85,8 +85,9 @@ export default function Reseller({
 
   if (sub === "penagihan")
     return (
-      <PenagihanHutangReseller
+      <PencairanDanPenagihanReseller
         pesananReseller={pesananReseller}
+        pesananCekout={pesananCekout}
         pelangganGrosir={pelangganGrosir}
         pembayaranGrosir={pembayaranGrosir}
         setModal={setModal}
@@ -140,7 +141,7 @@ function SemuaPesananReseller({ pesananReseller, pelangganGrosir, pembayaranGros
     <div>
       <PageHeader
         title="Reseller Toko"
-        description="Pesanan reseller — selalu tercatat sebagai hutang saat dibuat, nomor pesanan diisi manual. Ditagih rutin tiap hari Kamis (lihat menu Penagihan Hutang)."
+        description="Pesanan reseller — selalu tercatat sebagai hutang saat dibuat, nomor pesanan diisi manual. Ditagih rutin tiap hari Kamis (lihat menu Penagihan atau Pencairan)."
         action={
           <button
             onClick={() => setModal({ type: "reseller-buat-pesanan" })}
@@ -210,6 +211,58 @@ function SemuaPesananReseller({ pesananReseller, pelangganGrosir, pembayaranGros
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// =========================================================
+// PENCAIRAN DAN PENAGIHAN RESELLER — menu gabungan (dulu "Penagihan Hutang"
+// & "Reseller Cekout" dua submenu terpisah, lihat catatan di constants.js).
+// Cuma pembungkus tab internal, dua tab-nya (PenagihanHutangReseller &
+// SemuaPesananResellerCekout di bawah) TIDAK berubah sama sekali — cuma
+// dipindah cara aksesnya.
+// =========================================================
+function PencairanDanPenagihanReseller({
+  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, setModal,
+}) {
+  const [tab, setTab] = useState("penagihan");
+
+  const TABS = [
+    { key: "penagihan", label: "Penagihan Hutang" },
+    { key: "cekout", label: "Pencairan" },
+  ];
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              tab === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "cekout" ? (
+        <SemuaPesananResellerCekout
+          pesananCekout={pesananCekout}
+          pelangganGrosir={pelangganGrosir}
+          pembayaranGrosir={pembayaranGrosir}
+          setModal={setModal}
+        />
+      ) : (
+        <PenagihanHutangReseller
+          pesananReseller={pesananReseller}
+          pelangganGrosir={pelangganGrosir}
+          pembayaranGrosir={pembayaranGrosir}
+          setModal={setModal}
+        />
       )}
     </div>
   );

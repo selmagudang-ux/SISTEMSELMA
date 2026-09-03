@@ -11,6 +11,7 @@ import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
   BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
+  MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
@@ -423,7 +424,7 @@ function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
 }
 
 export default function ModalRouter({
-  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, pesananMasuk, suppliers, keuanganTransaksi, saving, setSaving, reload, showToast, session,
+  modal, setModal, master, settings, rakList, skuMaster, penempatan, items, pesananMasuk, suppliers, keuanganTransaksi, marketplaceTransaksi, saving, setSaving, reload, showToast, session,
   quickAdvance,
   pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
@@ -1086,6 +1087,166 @@ export default function ModalRouter({
             onClick={() =>
               run(async () => {
                 await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "DELETE" });
+              }, "Transaksi dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  // =========================================================
+  // MARKETPLACE (Shopee/TikTok/Lazada) — lihat catatan lengkap soal desain
+  // datanya di saldoMarketplace() (lib/api.js) & Penjualanmarketplace.jsx.
+  // =========================================================
+
+  if (modal.type === "marketplace-toko-form") {
+    // modal.platform = "shopee"|"tiktok"|"lazada" — dibuat sebagai
+    // master_data tipe "toko_<platform>" (lihat daftarTokoMarketplace di
+    // lib/api.js). Kode dibuat otomatis, sequential per platform.
+    const tipeMaster = `toko_${modal.platform}`;
+    return (
+      <MarketplaceTokoForm
+        platform={modal.platform}
+        kodeBaru={nextKode(master?.[tipeMaster] || [], "kode", "TOKO-")}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            await sb("master_data", {
+              method: "POST",
+              body: JSON.stringify({ tipe: tipeMaster, kode: data.kode, label: data.nama }),
+            });
+            await reload();
+          }, "Toko ditambahkan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "marketplace-transaksi-form") {
+    // modal.tipe = "pemasukan" | "iklan", modal.platform = "shopee"|"tiktok"|"lazada",
+    // modal.toko = kode toko (dari master_data toko_<platform>) yang lagi dibuka
+    return (
+      <MarketplaceTransaksiForm
+        tipe={modal.tipe}
+        platform={modal.platform}
+        tokoLabel={modal.tokoLabel}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            await sb("marketplace_transaksi", {
+              method: "POST",
+              body: JSON.stringify({
+                platform: modal.platform,
+                toko: modal.toko || null,
+                tipe: modal.tipe,
+                tanggal: data.tanggal,
+                jumlah: data.jumlah,
+                keterangan: data.keterangan || null,
+              }),
+            });
+          }, modal.tipe === "pemasukan" ? "Pemasukan ditambahkan" : "Pengeluaran iklan ditambahkan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "marketplace-pencairan") {
+    // modal.platform, modal.toko (kode toko), modal.tokoLabel, modal.saldo
+    // (saldo toko ini saat tombol diklik)
+    const rekeningList = master?.rekening || [];
+    return (
+      <MarketplacePencairanForm
+        platform={modal.platform}
+        tokoLabel={modal.tokoLabel}
+        saldo={modal.saldo}
+        rekeningList={rekeningList}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            if (data.jumlah > modal.saldo + 0.0001) {
+              throw new Error(`Saldo ${modal.tokoLabel || modal.platform} (${fmtRp(modal.saldo)}) tidak cukup untuk dicairkan sebesar ${fmtRp(data.jumlah)}`);
+            }
+            const rekeningLabel = rekeningList.find((r) => r.kode === data.rekening)?.label || data.rekening;
+            const namaSumber = modal.tokoLabel
+              ? `${modal.tokoLabel} (${modal.platform.charAt(0).toUpperCase() + modal.platform.slice(1)})`
+              : modal.platform.charAt(0).toUpperCase() + modal.platform.slice(1);
+            const keteranganKeuangan = `Pencairan ${namaSumber}${data.keterangan ? ` — ${data.keterangan}` : ""}`;
+            // Baris keuangan_transaksi dibuat DULU, baru marketplace_transaksi
+            // ditautkan ke id-nya (keuangan_transaksi_id) — supaya kalau baris
+            // pencairan ini dihapus lagi nanti, baris Keuangan yang nyambung
+            // bisa ikut dihapus (lihat "hapus-marketplace-transaksi" di bawah).
+            const [rowKeuangan] = await sb("keuangan_transaksi", {
+              method: "POST",
+              body: JSON.stringify({
+                tanggal: data.tanggal,
+                tipe: "masuk",
+                rekening: data.rekening,
+                kategori: null,
+                jumlah: data.jumlah,
+                keterangan: keteranganKeuangan,
+              }),
+            });
+            await sb("marketplace_transaksi", {
+              method: "POST",
+              body: JSON.stringify({
+                platform: modal.platform,
+                toko: modal.toko || null,
+                tipe: "pencairan",
+                tanggal: data.tanggal,
+                jumlah: data.jumlah,
+                rekening: data.rekening,
+                keterangan: data.keterangan || `Dicairkan ke ${rekeningLabel}`,
+                keuangan_transaksi_id: rowKeuangan?.id || null,
+              }),
+            });
+          }, "Saldo dicairkan — tercatat juga di Keuangan")
+        }
+      />
+    );
+  }
+
+  if (modal.type === "hapus-marketplace-transaksi") {
+    const t = modal.item;
+    const labelTipe = t.tipe === "pemasukan" ? "Pemasukan" : t.tipe === "iklan" ? "Iklan" : "Pencairan";
+    const tokoLabelHapus = t.toko
+      ? (master?.[`toko_${t.platform}`] || []).find((tk) => tk.kode === t.toko)?.label || t.toko
+      : null;
+    return (
+      <ModalShell title="Hapus Transaksi Marketplace" onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            {labelTipe}{tokoLabelHapus ? ` (${tokoLabelHapus})` : ""} sebesar <span className="font-semibold">{fmtRp(t.jumlah)}</span> ({t.tanggal}) akan dihapus
+            permanen.
+            {t.tipe === "pencairan" && t.keuangan_transaksi_id && (
+              <> Baris transaksi terkait di Keuangan juga akan ikut dihapus.</>
+            )}{" "}
+            Tindakan ini tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                if (t.tipe === "pencairan" && t.keuangan_transaksi_id) {
+                  await sb(`keuangan_transaksi?id=eq.${t.keuangan_transaksi_id}`, { method: "DELETE" }).catch(() => {});
+                }
+                await sb(`marketplace_transaksi?id=eq.${t.id}`, { method: "DELETE" });
               }, "Transaksi dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"

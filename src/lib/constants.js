@@ -213,14 +213,18 @@ export const NAV = [
       },
       // Baru — beda dari menu "Marketplace" di group "ADMIN MARKETPLACE"
       // (yang urusannya upload produk). Ini khusus input keuangan: pemasukan
-      // bulanan tiap marketplace & pengeluaran iklan. Key sengaja dibedakan
-      // ("penjualan-marketplace") supaya tidak bentrok dengan key "marketplace"
-      // yang sudah dipakai. Halaman "segera hadir" dulu.
+      // bulanan & pengeluaran iklan PER platform, plus pencairan saldo ke
+      // Keuangan. Key sengaja dibedakan ("penjualan-marketplace") supaya
+      // tidak bentrok dengan key "marketplace" yang sudah dipakai. Tiap
+      // platform (shopee/tiktok/lazada) submenu sendiri, tapi dirender satu
+      // komponen yang sama (lihat pages/Penjualanmarketplace.jsx) — sub
+      // dipakai buat filter platform-nya.
       {
         key: "penjualan-marketplace", label: "Marketplace", icon: ShoppingBag,
         children: [
-          { key: "pemasukan-bulanan", label: "Pemasukan Bulanan" },
-          { key: "pengeluaran-iklan", label: "Pengeluaran Iklan" },
+          { key: "shopee", label: "Shopee" },
+          { key: "tiktok", label: "TikTok" },
+          { key: "lazada", label: "Lazada" },
         ],
       },
       // Baru — Reseller Toko (sistem hutang) & Reseller Cekout (sistem
@@ -230,12 +234,12 @@ export const NAV = [
         key: "reseller", label: "Reseller", icon: Users,
         children: [
           { key: "toko", label: "Reseller Toko" },
-          // Baru — daftar pelanggan reseller yang masih berhutang, dicek &
-          // ditagih tiap hari Kamis (lihat PenagihanHutangReseller di
-          // pages/Reseller.jsx). Bukan tabel/jadwal terpisah — cuma tampilan
-          // yang menghitung ulang hutang aktif tiap kali dibuka.
-          { key: "penagihan", label: "Penagihan Hutang" },
           { key: "cekout", label: "Reseller Cekout" },
+          // Dulu "Penagihan Hutang" — sekarang jadi rekap gabungan dengan
+          // dua tab internal (lihat PencairanDanPenagihanReseller di
+          // pages/Reseller.jsx): tab "Penagihan Hutang" (hutang Reseller
+          // Toko) & tab "Pencairan" (status pencairan Reseller Cekout).
+          { key: "penagihan", label: "Penagihan atau Pencairan" },
         ],
       },
       // Dipindah ke sini — sejajar dengan "Store Selma", "Marketplace", &

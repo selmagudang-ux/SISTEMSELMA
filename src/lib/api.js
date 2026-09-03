@@ -747,6 +747,67 @@ export function ringkasanKeuangan(transaksi, dari, sampai) {
   return { masuk, keluar, saldo: masuk - keluar, list };
 }
 
+// =========================================================
+// SALDO MARKETPLACE (Shopee/TikTok/Lazada) — lihat pages/Penjualanmarketplace.jsx
+// & constants.js NAV "penjualan-marketplace". Data disimpan TERPISAH dari
+// keuangan_transaksi, di tabel sendiri "marketplace_transaksi" (kolom:
+// platform, tanggal, tipe ["pemasukan"|"iklan"|"pencairan"], jumlah,
+// keterangan, rekening, toko, keuangan_transaksi_id) — SENGAJA begitu supaya
+// saldo marketplace TIDAK ikut nongol sebagai "rekening" di Keuangan
+// (beda pola dari Toko Offline yang catat langsung ke keuangan_transaksi).
+// Cuma saat PENCAIRAN yang bikin baris baru di keuangan_transaksi (tipe
+// "masuk", ke rekening bank yang dipilih) — itulah satu-satunya titik
+// sambung ke Keuangan, dicatat linknya lewat keuangan_transaksi_id supaya
+// waktu baris pencairan dihapus, baris keuangan_transaksi yang nyambung
+// bisa ikut dihapus juga (lihat ModalRouter "hapus-marketplace-transaksi").
+// Saldo = akumulasi pemasukan - iklan - pencairan, DARI AWAL (bukan per
+// bulan) — pola sama seperti saldoPerRekening() di bawah.
+//
+// Per-toko: satu platform (mis. Shopee) bisa punya beberapa toko sendiri
+// (kode disimpan di kolom "toko", master datanya di master_data tipe
+// "toko_<platform>" — lihat daftarTokoMarketplace() di bawah & ModalRouter
+// "marketplace-toko-form"). Saldo TIDAK lagi digabung satu platform, tapi
+// dihitung terpisah per toko — param `toko` di bawah opsional: kalau
+// diisi (termasuk `null` eksplisit untuk kelompok "tanpa toko"/transaksi
+// lama), saldo cuma dihitung dari baris yang toko-nya cocok; kalau
+// argumennya sama sekali tidak dikirim (undefined), tetap menghitung
+// SEMUA toko digabung (dipakai untuk total keseluruhan platform, bukan
+// tampilan utama lagi).
+export function saldoMarketplace(marketplaceTransaksi, platform, toko) {
+  return (marketplaceTransaksi || [])
+    .filter((t) => t.platform === platform && (toko === undefined || (t.toko || null) === (toko || null)))
+    .reduce((saldo, t) => {
+      const jumlah = Number(t.jumlah) || 0;
+      if (t.tipe === "pemasukan") return saldo + jumlah;
+      if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
+      return saldo;
+    }, 0);
+}
+
+// Daftar toko untuk satu platform (dari master_data tipe "toko_<platform>"),
+// masing-masing dilengkapi saldonya sendiri (lihat saldoMarketplace di
+// atas). Toko yang belum pernah punya transaksi tetap muncul dengan saldo
+// 0. Kalau ada transaksi lama yang belum diberi toko (kolom "toko" kosong
+// — dari sebelum fitur per-toko ada), dikelompokkan jadi satu entri
+// terpisah "Tanpa Nama Toko (transaksi lama)" (kode: null) supaya saldonya
+// tetap kelihatan, bukan hilang begitu saja.
+export function daftarTokoMarketplace(marketplaceTransaksi, tokoMasterList, platform) {
+  const daftar = (tokoMasterList || []).map((tk) => ({
+    kode: tk.kode,
+    label: tk.label,
+    saldo: saldoMarketplace(marketplaceTransaksi, platform, tk.kode),
+  }));
+  const adaTanpaToko = (marketplaceTransaksi || []).some((t) => t.platform === platform && !t.toko);
+  if (adaTanpaToko) {
+    daftar.push({
+      kode: null,
+      label: "Tanpa Nama Toko (transaksi lama)",
+      saldo: saldoMarketplace(marketplaceTransaksi, platform, null),
+    });
+  }
+  return daftar;
+}
+
 // Saldo per rekening, dihitung dari SELURUH transaksi (tidak dibatasi rentang
 // tanggal — saldo itu akumulasi dari awal, bukan angka per periode):
 //   - masuk   -> saldo rekening (sumber dana) bertambah
