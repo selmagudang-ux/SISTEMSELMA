@@ -37,6 +37,104 @@ const BuatPesananResellerCekout = lazy(() => import("../pages/Reseller").then((m
 const NotaPesananModal = lazy(() => import("../pages/NotaGrosir").then((m) => ({ default: m.NotaPesananModal })));
 const LabelPengirimanModal = lazy(() => import("../pages/NotaGrosir").then((m) => ({ default: m.LabelPengirimanModal })));
 
+// Reseller Cekout: hapus (atau kurangi) baris marketplace_transaksi
+// "pemasukan" milik SATU pesanan tertentu dari saldo toko Shopee "Gudang"
+// (dicocokkan lewat keterangan yang menyebut nomor_pesanan ini persis —
+// lihat pages/Reseller.jsx & modal "grosir-bayar-hutang" metode
+// Marketplace). Kalau saldo Gudang jadi minus gara-gara sebagian uang itu
+// sudah kadung ikut "dicairkan" ke Keuangan sebelum ini dipanggil, riwayat
+// pencairan yang paling BARU dikurangi (LIFO) sebesar kekurangannya, dan
+// baris keuangan_transaksi yang nyambung ke pencairan itu
+// (keuangan_transaksi_id) ikut dikurangi/dihapus dengan jumlah yang sama —
+// supaya saldo Gudang & Keuangan tidak pernah "nyangkut" uang dari pesanan
+// yang sudah batal/dihapus.
+//
+// Dipakai BARENG oleh dua alur:
+//  1. "grosir-batalkan-pesanan" — begitu pesanan dibatalkan, uang yang
+//     sempat "cair" langsung dilepas dari saldo Gudang di saat yang sama
+//     dengan uangnya dijadiin deposit pelanggan (supaya tidak kehitung
+//     dobel: sekali sebagai deposit pelanggan, sekali lagi masih nangkring
+//     di saldo Gudang seolah beneran diterima dari Shopee).
+//  2. "grosir-hapus-pesanan" — sebagai jaring pengaman kalau pesanan ini
+//     dibatalkan SEBELUM perbaikan ini ada (data lama), jadi baris Gudang-
+//     nya belum sempat dibersihkan waktu batalkan.
+// Aman dipanggil dua kali (idempotent) — kalau baris pemasukannya sudah
+// tidak ada lagi (karena sudah dibersihkan sebelumnya), fungsi ini cuma
+// diam saja tanpa efek apa-apa.
+async function lepasPemasukanCekoutDariGudang(p, { master, marketplaceTransaksi, keuanganTransaksi }) {
+  if (p.jenis_transaksi !== "reseller_cekout") return;
+  const tokoGudang = tokoShopeeGudang(master);
+  const pemasukanTerkait = (marketplaceTransaksi || []).filter(
+    (t) =>
+      t.platform === "shopee" &&
+      t.tipe === "pemasukan" &&
+      (!tokoGudang || (t.toko || null) === tokoGudang.kode) &&
+      typeof t.keterangan === "string" &&
+      (t.keterangan === `Cair pesanan reseller cekout ${p.nomor_pesanan}` ||
+        t.keterangan.startsWith(`Pelunasan ${p.nomor_pesanan} ·`))
+  );
+  if (pemasukanTerkait.length === 0) return;
+
+  for (const t of pemasukanTerkait) {
+    await sb(`marketplace_transaksi?id=eq.${t.id}`, { method: "DELETE" });
+  }
+
+  if (!tokoGudang) return;
+
+  const sisaTransaksiGudang = (marketplaceTransaksi || []).filter(
+    (t) =>
+      t.platform === "shopee" &&
+      (t.toko || null) === tokoGudang.kode &&
+      !pemasukanTerkait.some((x) => x.id === t.id)
+  );
+  const saldoSetelahHapus = sisaTransaksiGudang.reduce((saldo, t) => {
+    const jumlah = Number(t.jumlah) || 0;
+    if (t.tipe === "pemasukan") return saldo + jumlah;
+    if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
+    return saldo;
+  }, 0);
+
+  if (saldoSetelahHapus >= -0.0001) return;
+
+  let kekurangan = -saldoSetelahHapus;
+  const riwayatPencairan = sisaTransaksiGudang
+    .filter((t) => t.tipe === "pencairan")
+    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+
+  for (const pencairan of riwayatPencairan) {
+    if (kekurangan <= 0.0001) break;
+    const jumlahPencairan = Number(pencairan.jumlah) || 0;
+    const potong = Math.min(jumlahPencairan, kekurangan);
+    const jumlahBaru = jumlahPencairan - potong;
+
+    if (jumlahBaru <= 0.0001) {
+      await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, { method: "DELETE" });
+    } else {
+      await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ jumlah: jumlahBaru }),
+      });
+    }
+
+    if (pencairan.keuangan_transaksi_id) {
+      const tKeuangan = (keuanganTransaksi || []).find((x) => x.id === pencairan.keuangan_transaksi_id);
+      if (tKeuangan) {
+        const jumlahKeuanganBaru = (Number(tKeuangan.jumlah) || 0) - potong;
+        if (jumlahKeuanganBaru <= 0.0001) {
+          await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, { method: "DELETE" });
+        } else {
+          await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ jumlah: jumlahKeuanganBaru }),
+          });
+        }
+      }
+    }
+
+    kekurangan -= potong;
+  }
+}
+
 // Fallback singkat dipakai selagi modal-modal yang di-lazy-load (Grosir/
 // NotaGrosir) sedang didownload — biasanya cuma sekejap sekali, tapi harus
 // tetap ada supaya tidak blank kalau koneksinya lambat.
@@ -1532,103 +1630,13 @@ export default function ModalRouter({
                   }
                 }
 
-                // Khusus Reseller Cekout: uang yang sempat "cair" dari
-                // pesanan ini (baik waktu pesanan dibuat maupun pelunasan
-                // sisa piutang lewat metode "Marketplace") ditampung dulu
-                // sebagai baris "pemasukan" di saldo toko Shopee "Gudang"
-                // (marketplace_transaksi) — TIDAK lewat grosir_pembayaran
-                // .keuangan_transaksi_id seperti kasus di atas, jadi harus
-                // dicari terpisah lewat keterangannya yang menyebut nomor
-                // pesanan ini persis (lihat pages/Reseller.jsx & modal
-                // "grosir-bayar-hutang" metode Marketplace). Baris ini ikut
-                // dihapus, supaya saldo Gudang tidak "nyangkut" uang dari
-                // pesanan yang sudah tidak ada lagi.
-                if (p.jenis_transaksi === "reseller_cekout") {
-                  const tokoGudang = tokoShopeeGudang(master);
-                  const pemasukanTerkait = (marketplaceTransaksi || []).filter(
-                    (t) =>
-                      t.platform === "shopee" &&
-                      t.tipe === "pemasukan" &&
-                      (!tokoGudang || (t.toko || null) === tokoGudang.kode) &&
-                      typeof t.keterangan === "string" &&
-                      (t.keterangan === `Cair pesanan reseller cekout ${p.nomor_pesanan}` ||
-                        t.keterangan.startsWith(`Pelunasan ${p.nomor_pesanan} ·`))
-                  );
-
-                  if (pemasukanTerkait.length > 0) {
-                    for (const t of pemasukanTerkait) {
-                      await sb(`marketplace_transaksi?id=eq.${t.id}`, { method: "DELETE" });
-                    }
-
-                    // Kalau saldo Gudang SETELAH baris pemasukan di atas
-                    // dihapus jadi minus — artinya sebagian uang pesanan
-                    // ini sudah kadung ikut "dicairkan" (dipindah ke
-                    // Keuangan) sebelum pesanan ini dihapus — kurangi
-                    // riwayat pencairan yang paling BARU dulu (LIFO)
-                    // sebesar kekurangannya sampai saldo Gudang balik ke
-                    // >= 0, dan baris Keuangan yang nyambung ke pencairan
-                    // itu (keuangan_transaksi_id) ikut dikurangi/dihapus
-                    // dengan jumlah yang sama.
-                    if (tokoGudang) {
-                      const sisaTransaksiGudang = (marketplaceTransaksi || []).filter(
-                        (t) =>
-                          t.platform === "shopee" &&
-                          (t.toko || null) === tokoGudang.kode &&
-                          !pemasukanTerkait.some((x) => x.id === t.id)
-                      );
-                      const saldoSetelahHapus = sisaTransaksiGudang.reduce((saldo, t) => {
-                        const jumlah = Number(t.jumlah) || 0;
-                        if (t.tipe === "pemasukan") return saldo + jumlah;
-                        if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
-                        return saldo;
-                      }, 0);
-
-                      if (saldoSetelahHapus < -0.0001) {
-                        let kekurangan = -saldoSetelahHapus;
-                        const riwayatPencairan = sisaTransaksiGudang
-                          .filter((t) => t.tipe === "pencairan")
-                          .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
-
-                        for (const pencairan of riwayatPencairan) {
-                          if (kekurangan <= 0.0001) break;
-                          const jumlahPencairan = Number(pencairan.jumlah) || 0;
-                          const potong = Math.min(jumlahPencairan, kekurangan);
-                          const jumlahBaru = jumlahPencairan - potong;
-
-                          if (jumlahBaru <= 0.0001) {
-                            await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, { method: "DELETE" });
-                          } else {
-                            await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, {
-                              method: "PATCH",
-                              body: JSON.stringify({ jumlah: jumlahBaru }),
-                            });
-                          }
-
-                          if (pencairan.keuangan_transaksi_id) {
-                            const tKeuangan = (keuanganTransaksi || []).find(
-                              (x) => x.id === pencairan.keuangan_transaksi_id
-                            );
-                            if (tKeuangan) {
-                              const jumlahKeuanganBaru = (Number(tKeuangan.jumlah) || 0) - potong;
-                              if (jumlahKeuanganBaru <= 0.0001) {
-                                await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, {
-                                  method: "DELETE",
-                                });
-                              } else {
-                                await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, {
-                                  method: "PATCH",
-                                  body: JSON.stringify({ jumlah: jumlahKeuanganBaru }),
-                                });
-                              }
-                            }
-                          }
-
-                          kekurangan -= potong;
-                        }
-                      }
-                    }
-                  }
-                }
+                // Khusus Reseller Cekout: sebagai jaring pengaman, tetap coba
+                // lepas uang yang sempat "cair" dari pesanan ini dari saldo
+                // Gudang di sini juga (idempotent — kalau sudah dibersihkan
+                // waktu "Batalkan Pesanan" tadi, ini tidak akan menemukan apa-
+                // apa lagi dan tidak melakukan apa-apa). Lihat catatan di
+                // lepasPemasukanCekoutDariGudang di atas.
+                await lepasPemasukanCekoutDariGudang(p, { master, marketplaceTransaksi, keuanganTransaksi });
 
                 await sb(`grosir_pesanan?id=eq.${p.id}`, { method: "DELETE" });
               }, "Pesanan dihapus permanen")
@@ -2434,6 +2442,14 @@ export default function ModalRouter({
                 pelanggan (bukan hangus), karena pesanannya batal.
               </div>
             )}
+            {p.jenis_transaksi === "reseller_cekout" && (
+              <div className="mt-1.5 text-red-200/90">
+                Karena ini pesanan Reseller Cekout, uang yang sempat tercatat "cair" dari pesanan ini juga akan
+                dilepas dari saldo Marketplace (toko Shopee "Gudang"), supaya tidak kehitung dobel dengan saldo
+                deposit di atas. Kalau uang itu sudah kadung ikut dicairkan ke Keuangan, riwayat pencairan yang
+                paling baru akan otomatis dikurangi (atau dihapus kalau habis) sebesar nilai pesanan ini.
+              </div>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -2470,6 +2486,14 @@ export default function ModalRouter({
                     }),
                   });
                 }
+                // Khusus Reseller Cekout: lepas dulu uang yang sempat "cair" dari
+                // pesanan ini dari saldo Gudang (marketplace_transaksi) — supaya
+                // begitu sudahDibayar di bawah ini dijadikan deposit pelanggan,
+                // uang yang sama tidak masih nangkring dobel di saldo Gudang
+                // seolah-olah beneran diterima dari Shopee (lihat catatan di
+                // lepasPemasukanCekoutDariGudang di atas).
+                await lepasPemasukanCekoutDariGudang(p, { master, marketplaceTransaksi, keuanganTransaksi });
+
                 // Uang yang sudah terlanjur dibayar untuk pesanan ini (kalau ada)
                 // tidak hangus — otomatis dicatat sebagai saldo deposit pelanggan,
                 // karena pesanan Batal tidak lagi dihitung sebagai hutang/lunas.
