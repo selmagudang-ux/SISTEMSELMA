@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
-  Home, Users, UserRound,
+  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -158,13 +158,13 @@ export const NAV = [
     ],
   },
   {
-    key: "pemotretan-group", label: "ADMIN PEMOTRETAN", icon: Camera, group: true,
+    key: "pemotretan-group", label: "PEMOTRETAN", icon: Image, group: true,
     children: [
       { key: "foto", label: "Foto Produk", icon: Camera },
     ],
   },
   {
-    key: "marketplace-group", label: "ADMIN MARKETPLACE", icon: ShoppingBag, group: true,
+    key: "marketplace-group", label: "MARKETPLACE", icon: Globe, group: true,
     children: [
       {
         key: "marketplace", label: "Marketplace", icon: ShoppingBag,
@@ -250,7 +250,7 @@ export const NAV = [
       // (nav.menu = "pelanggan" / "toko"). Lihat PelangganList & TokoList
       // di pages/Grosir.jsx (diekspor terpisah, dipakai App.jsx).
       {
-        key: "master-data-grosir-group", label: "Master Data Grosir", icon: Users, group: true,
+        key: "master-data-grosir-group", label: "Master Data Grosir", icon: Database, group: true,
         children: [
           { key: "pelanggan", label: "Pelanggan", icon: UserRound },
           { key: "toko", label: "Toko Pengirim", icon: Truck },
@@ -259,7 +259,7 @@ export const NAV = [
     ],
   },
   {
-    key: "keuangan-group", label: "ADMIN KEUANGAN", icon: Wallet, group: true,
+    key: "keuangan-group", label: "ADMIN KEUANGAN", icon: Landmark, group: true,
     children: [
       {
         key: "keuangan", label: "Keuangan", icon: Wallet,
@@ -273,7 +273,7 @@ export const NAV = [
     ],
   },
   {
-    key: "absensi-group", label: "ABSENSI", icon: Clock, group: true,
+    key: "absensi-group", label: "ABSENSI", icon: CalendarClock, group: true,
     children: [
       {
         key: "absensi", label: "Absensi", icon: Clock,
