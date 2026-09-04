@@ -2442,7 +2442,7 @@ export default function ModalRouter({
   // pages/Reseller.jsx). Pola & efeknya SAMA PERSIS dengan
   // "grosir-cairkan-deposit" di atas (saldo deposit pelanggan berkurang,
   // uangnya dicatat sebagai pengeluaran DULU di Keuangan) — satu-satunya
-  // beda: kategori pengeluarannya dipisah ("Reseller Checkout Toko Gudang",
+  // beda: kategori pengeluarannya dipisah ("Reseller Checkout",
   // bukan "PENGEMBALIAN DEPOSIT") supaya kelihatan beda di Laporan
   // Keuangan, dan keterangannya dikasih prefix "R.CO" (sama pola dengan
   // "R.T" di reseller-bayar-hutang-pelanggan) supaya kelihatan asalnya.

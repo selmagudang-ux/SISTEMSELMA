@@ -3004,7 +3004,7 @@ const LABEL_KATEGORI_KEMBALIAN_DEPOSIT = "PENGEMBALIAN DEPOSIT";
 // dicatat sebagai pengeluaran (tipe "keluar") begitu dicairkan — cuma
 // kategorinya beda, lewat kategoriLabel di CairkanDepositForm (lihat
 // ModalRouter.jsx, modal "reseller-cekout-cairkan-deposit").
-export const LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT = "Reseller Checkout Toko Gudang";
+export const LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT = "Reseller Checkout";
 function normalisasiLabelBayar(s) {
   return (s || "").toLowerCase().replace(/\s+/g, "").trim();
 }
