@@ -51,7 +51,10 @@ function uraiKeterangan(keterangan) {
   return { jenis: jenisPart.trim(), catatan: catatanPart.join(" — ").trim() };
 }
 
-function isEntriTokoOffline(t) {
+// Diexport supaya Dashboard (tab "Dashboard Penjualan") bisa ikut menghitung
+// omset Toko Offline dari keuangan_transaksi dengan kriteria yang SAMA persis
+// (satu sumber kebenaran, tidak dobel logic).
+export function isEntriTokoOffline(t) {
   return t.tipe === "masuk" && typeof t.keterangan === "string" && t.keterangan.startsWith(PENANDA);
 }
 

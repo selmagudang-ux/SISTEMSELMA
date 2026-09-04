@@ -23,23 +23,31 @@ import {
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass } from "../components/ui";
 import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
+import { isEntriTokoOffline } from "./TokoOffline";
 
-// Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Grosir vs Keuangan
-// vs Absensi supaya masing-masing tetap fokus (angka gudang tidak nyampur sama
-// angka grosir/keuangan/absensi), tapi tetap satu halaman "Dashboard" (pola
-// sama seperti halaman Laporan), bukan menu terpisah di sidebar.
-// Menu "dashboard" sendiri HANYA bisa diakses role owner & superadmin (lihat
-// ROLE_MENUS di lib/constants.js). Tab "Stok Menipis" (ajukan restock) sudah
-// dipindah jadi sub-menu di dalam Gudang → Stok, supaya gudang mengajukan
-// restock dari halaman kerjanya sendiri tanpa perlu akses dashboard. Tab
-// "Menunggu Persetujuan" (sisi approve dari alur yang sama) juga sudah
-// dipindah keluar dari sini — sekarang jadi menu sidebar tersendiri, halaman
-// "Persetujuan Restok" (lihat pages/PersetujuanRestock.jsx), supaya tidak
-// perlu masuk Dashboard dulu buat menindaklanjuti pengajuan.
+// Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Penjualan vs
+// Keuangan vs Absensi supaya masing-masing tetap fokus (angka gudang tidak
+// nyampur sama angka penjualan/keuangan/absensi), tapi tetap satu halaman
+// "Dashboard" (pola sama seperti halaman Laporan), bukan menu terpisah di
+// sidebar. Menu "dashboard" sendiri HANYA bisa diakses role owner &
+// superadmin (lihat ROLE_MENUS di lib/constants.js). Tab "Stok Menipis"
+// (ajukan restock) sudah dipindah jadi sub-menu di dalam Gudang → Stok,
+// supaya gudang mengajukan restock dari halaman kerjanya sendiri tanpa perlu
+// akses dashboard. Tab "Menunggu Persetujuan" (sisi approve dari alur yang
+// sama) juga sudah dipindah keluar dari sini — sekarang jadi menu sidebar
+// tersendiri, halaman "Persetujuan Restok" (lihat pages/PersetujuanRestock.jsx),
+// supaya tidak perlu masuk Dashboard dulu buat menindaklanjuti pengajuan.
+//
+// Tab "Dashboard Penjualan" (key "penjualan") dulu bernama "Dashboard Grosir"
+// dan cuma menghitung pesanan Grosir. Sekarang diperluas jadi ringkasan
+// SEMUA channel penjualan: Grosir, Reseller (Toko + Cekout), Marketplace
+// (Shopee/TikTok/Lazada — dari marketplace_transaksi tipe "pemasukan"), dan
+// Toko Offline (dari keuangan_transaksi yang ditandai isEntriTokoOffline —
+// lihat pages/TokoOffline.jsx). Lihat fungsi DashboardPenjualan di bawah.
 const TABS = [
   { key: "monitoring", label: "Dashboard Monitoring", icon: Activity },
   { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
-  { key: "grosir", label: "Dashboard Grosir", icon: Store },
+  { key: "penjualan", label: "Dashboard Penjualan", icon: Store },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
   { key: "absensi", label: "Dashboard Absensi", icon: Clock },
 ];
@@ -136,6 +144,7 @@ export default function Dashboard({
   depositGrosir = [],
   pelangganGrosir = [],
   keuanganTransaksi = [],
+  marketplaceTransaksi = [],
   master = {},
   absensiRows = [],
   karyawanList = [],
@@ -160,8 +169,8 @@ export default function Dashboard({
       <PageHeader
         title="Dashboard"
         description={
-          tab === "grosir"
-            ? "Ringkasan penjualan, piutang, dan deposit pelanggan grosir."
+          tab === "penjualan"
+            ? "Ringkasan penjualan dari semua channel — Grosir, Reseller, Marketplace, dan Toko Offline — plus piutang & deposit pelanggan grosir."
             : tab === "keuangan"
             ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
@@ -224,12 +233,14 @@ export default function Dashboard({
           periodeSampai={periodeSampai}
           periodeLabel={periodeLabel}
         />
-      ) : tab === "grosir" ? (
-        <DashboardGrosir
+      ) : tab === "penjualan" ? (
+        <DashboardPenjualan
           pesananGrosir={pesananGrosir}
           pembayaranGrosir={pembayaranGrosir}
           depositGrosir={depositGrosir}
           pelangganGrosir={pelangganGrosir}
+          keuanganTransaksi={keuanganTransaksi}
+          marketplaceTransaksi={marketplaceTransaksi}
           onNavigate={onNavigate}
           tahun={tahun}
           periodeDari={periodeDari}
@@ -1624,12 +1635,31 @@ function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaks
   );
 }
 
-function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
-  // Cuma pesanan Grosir asli — Reseller Toko/Cekout tidak ikut kehitung di
-  // widget Dashboard Grosir ini (riwayat & angkanya sendiri, di menu Reseller).
+// Jumlah nominal marketplace_transaksi/keuangan_transaksi bertipe tertentu
+// yang tanggalnya jatuh di rentang [dari, sampai] (format "YYYY-MM-DD",
+// inklusif) — dipakai untuk menghitung omset channel Marketplace & Toko
+// Offline, pola sama seperti ringkasanGrosir() di lib/api.js.
+function jumlahDalamRentang(list, dari, sampai, predikat) {
+  return (list || []).reduce((a, t) => {
+    if (predikat && !predikat(t)) return a;
+    if (dari && t.tanggal < dari) return a;
+    if (sampai && t.tanggal > sampai) return a;
+    return a + (Number(t.jumlah) || 0);
+  }, 0);
+}
+
+function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
+  // Pisahkan pesanan grosir_pesanan berdasarkan jenis_transaksi-nya — dipakai
+  // baik untuk widget "Grosir" (khusus jenis_transaksi='grosir'/kosong) yang
+  // sudah ada dari dulu, maupun untuk breakdown per-channel di bawah (yang
+  // menggabungkan Reseller Toko + Cekout jadi satu channel "Reseller").
   const pesananGrosir_ = (pesananGrosir || []).filter(
     (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
   );
+  const pesananResellerGabungan = (pesananGrosir || []).filter(
+    (p) => p.jenis_transaksi === "reseller" || p.jenis_transaksi === "reseller_cekout"
+  );
+
   const pesananAktif = pesananGrosir_.filter((p) => p.status !== "Batal");
   const pesananHariIni = pesananAktif.filter((p) => isToday(p.created_at));
   const omsetHariIni = pesananHariIni.reduce((a, p) => a + (Number(p.total) || 0), 0);
@@ -1647,11 +1677,12 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
 
   const namaPelanggan = (id) => pelangganGrosir.find((c) => c.id === id)?.nama || "—";
 
-  // Laporan cepat harian/bulanan/tahunan — angka lengkapnya (grafik, tabel per
-  // bulan/tahun, unduh CSV) ada di menu Grosir > Laporan Grosir; di sini cuma
-  // ringkasan sekilas supaya tidak perlu pindah halaman untuk cek omset.
-  // "Hari Ini" tetap hari berjalan (status langsung), sedangkan "Bulanan" &
-  // "Tahunan" mengikuti filter Bulan & Tahun di atas Dashboard.
+  // Laporan cepat harian/bulanan/tahunan (khusus Grosir) — angka lengkapnya
+  // (grafik, tabel per bulan/tahun, unduh CSV) ada di menu Grosir > Laporan
+  // Grosir; di sini cuma ringkasan sekilas supaya tidak perlu pindah halaman
+  // untuk cek omset. "Hari Ini" tetap hari berjalan (status langsung),
+  // sedangkan "Bulanan" & "Tahunan" mengikuti filter Bulan & Tahun di atas
+  // Dashboard.
   const hariIniStr = hariIniIso();
   const tahunTerpilih = tahun || new Date().getFullYear();
   const awalTahunTerpilih = `${tahunTerpilih}-01-01`;
@@ -1660,13 +1691,115 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
   const laporanBulanan = ringkasanGrosir(pesananGrosir_, periodeDari, periodeSampai);
   const laporanTahunan = ringkasanGrosir(pesananGrosir_, awalTahunTerpilih, akhirTahunTerpilih);
 
+  // ============================================================
+  // BREAKDOWN OMSET PER CHANNEL PENJUALAN — Grosir, Reseller (Toko +
+  // Cekout digabung), Marketplace (Shopee/TikTok/Lazada, dari
+  // marketplace_transaksi tipe "pemasukan"), dan Toko Offline (dari
+  // keuangan_transaksi yang ditandai isEntriTokoOffline, lihat
+  // pages/TokoOffline.jsx). Semua dihitung untuk 3 rentang yang sama:
+  // Hari Ini, periode Bulan&Tahun terpilih, dan Tahun terpilih penuh.
+  // ============================================================
+  const isMarketplacePemasukan = (t) => t.tipe === "pemasukan";
+  const channels = [
+    {
+      key: "grosir",
+      label: "Grosir",
+      icon: Store,
+      hariIni: ringkasanGrosir(pesananGrosir_, hariIniStr, hariIniStr).omset,
+      bulan: laporanBulanan.omset,
+      tahunTotal: laporanTahunan.omset,
+      navTarget: { menu: "grosir", sub: "laporan" },
+    },
+    {
+      key: "reseller",
+      label: "Reseller",
+      icon: Truck,
+      hariIni: ringkasanGrosir(pesananResellerGabungan, hariIniStr, hariIniStr).omset,
+      bulan: ringkasanGrosir(pesananResellerGabungan, periodeDari, periodeSampai).omset,
+      tahunTotal: ringkasanGrosir(pesananResellerGabungan, awalTahunTerpilih, akhirTahunTerpilih).omset,
+      navTarget: { menu: "reseller", sub: "toko" },
+    },
+    {
+      key: "marketplace",
+      label: "Marketplace",
+      icon: ShoppingBag,
+      hariIni: jumlahDalamRentang(marketplaceTransaksi, hariIniStr, hariIniStr, isMarketplacePemasukan),
+      bulan: jumlahDalamRentang(marketplaceTransaksi, periodeDari, periodeSampai, isMarketplacePemasukan),
+      tahunTotal: jumlahDalamRentang(marketplaceTransaksi, awalTahunTerpilih, akhirTahunTerpilih, isMarketplacePemasukan),
+      navTarget: { menu: "penjualan-marketplace", sub: "shopee" },
+    },
+    {
+      key: "toko-offline",
+      label: "Toko Offline",
+      icon: LayoutGrid,
+      hariIni: jumlahDalamRentang(keuanganTransaksi, hariIniStr, hariIniStr, isEntriTokoOffline),
+      bulan: jumlahDalamRentang(keuanganTransaksi, periodeDari, periodeSampai, isEntriTokoOffline),
+      tahunTotal: jumlahDalamRentang(keuanganTransaksi, awalTahunTerpilih, akhirTahunTerpilih, isEntriTokoOffline),
+      navTarget: { menu: "toko-offline", sub: "input-harian" },
+    },
+  ];
+  const totalSemuaChannel = {
+    hariIni: channels.reduce((a, c) => a + c.hariIni, 0),
+    bulan: channels.reduce((a, c) => a + c.bulan, 0),
+    tahunTotal: channels.reduce((a, c) => a + c.tahunTotal, 0),
+  };
+
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <StatCard label="Omset Hari Ini" value={fmtRp(omsetHariIni)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label="Pesanan Hari Ini" value={pesananHariIni.length} icon={ShoppingCart} />
-        <StatCard label="Piutang Belum Lunas" value={fmtRp(totalPiutang)} accent="text-amber-400" icon={Wallet} iconColor="text-amber-500" />
-        <StatCard label="Total Saldo Deposit" value={fmtRp(totalDeposit)} icon={Package} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <StatCard label="Omset Semua Channel — Hari Ini" value={fmtRp(totalSemuaChannel.hariIni)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label={`Omset Semua Channel — ${periodeLabel}`} value={fmtRp(totalSemuaChannel.bulan)} icon={ShoppingCart} />
+        <StatCard label="Piutang Grosir Belum Lunas" value={fmtRp(totalPiutang)} accent="text-amber-400" iconColor="text-amber-500" icon={Wallet} />
+        <StatCard label="Total Saldo Deposit Grosir" value={fmtRp(totalDeposit)} icon={Package} />
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Omset per Channel Penjualan</div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-900/70 text-slate-400 text-xs">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium">Channel</th>
+                <th className="text-right px-4 py-2.5 font-medium">Hari Ini</th>
+                <th className="text-right px-4 py-2.5 font-medium">{periodeLabel}</th>
+                <th className="text-right px-4 py-2.5 font-medium">Tahun {tahunTerpilih}</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {channels.map((c) => {
+                const Icon = c.icon;
+                return (
+                  <tr key={c.key} className="border-t border-slate-800/70">
+                    <td className="px-4 py-2.5 font-medium flex items-center gap-2">
+                      <Icon size={14} className="text-slate-400" /> {c.label}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">{fmtRp(c.hariIni)}</td>
+                    <td className="px-4 py-2.5 text-right">{fmtRp(c.bulan)}</td>
+                    <td className="px-4 py-2.5 text-right">{fmtRp(c.tahunTotal)}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      {onNavigate && c.navTarget && (
+                        <button
+                          onClick={() => onNavigate(c.navTarget.menu, c.navTarget.sub)}
+                          className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+                        >
+                          Buka →
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr className="border-t-2 border-slate-700 bg-slate-900/40 font-semibold">
+                <td className="px-4 py-2.5">Total Semua Channel</td>
+                <td className="px-4 py-2.5 text-right text-emerald-400">{fmtRp(totalSemuaChannel.hariIni)}</td>
+                <td className="px-4 py-2.5 text-right text-emerald-400">{fmtRp(totalSemuaChannel.bulan)}</td>
+                <td className="px-4 py-2.5 text-right text-emerald-400">{fmtRp(totalSemuaChannel.tahunTotal)}</td>
+                <td className="px-4 py-2.5"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
@@ -1706,7 +1839,7 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
 
       <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Pesanan Belum Lunas</div>
+          <div className="text-sm font-semibold">Pesanan Grosir Belum Lunas</div>
           <button
             onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
             className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
@@ -1737,10 +1870,10 @@ function DashboardGrosir({ pesananGrosir, pembayaranGrosir, depositGrosir, pelan
       </div>
 
       <div className="rounded-xl border border-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Pesanan Hari Ini</div>
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Pesanan Grosir Hari Ini</div>
         {recentHariIni.length === 0 ? (
           <div className="p-6">
-            <EmptyState label="Belum ada pesanan hari ini." />
+            <EmptyState label="Belum ada pesanan grosir hari ini." />
           </div>
         ) : (
           <table className="w-full text-sm">

@@ -636,6 +636,7 @@ function MainApp({ session, onLogout }) {
                   depositGrosir={depositGrosir}
                   pelangganGrosir={pelangganGrosir}
                   keuanganTransaksi={keuanganTransaksi}
+                  marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
