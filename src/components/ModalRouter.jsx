@@ -2005,16 +2005,15 @@ export default function ModalRouter({
             let keuanganTransaksiId = null;
             if (metode !== "Deposit" && metode !== "Marketplace" && data.rekening && data.kategoriKode) {
               const namaPelangganBayar = pelanggan?.nama || "Pelanggan";
-              // Label beda tergantung jenis pesanan: "R.T" (Reseller Toko)
-              // atau "Grosir" buat pesanan grosir biasa — supaya kelihatan
-              // asalnya waktu dicek di Laporan Keuangan. "R.CO" (Reseller
-              // Cekout) TIDAK pernah lewat sini — metode-nya selalu
-              // "Marketplace", ditangani di cabang else-if di bawah.
-              const labelJenis = p.jenis_transaksi === "reseller" ? "R.T" : "Grosir";
+              // Reseller Toko: "nama pembeli · nomor pesanan (resi)" — TANPA
+              // prefix "R.T", nama duluan baru id pesanan/resi, supaya lebih
+              // gampang dibaca di Laporan Keuangan (nomor resi panjang-panjang
+              // jadi tidak jadi hal pertama yang keliatan). Grosir biasa masih
+              // pakai label "Grosir" seperti sebelumnya.
               const keteranganKeuangan =
                 p.jenis_transaksi === "reseller"
-                  ? `${labelJenis} · ${p.nomor_pesanan} · ${namaPelangganBayar}`
-                  : `${labelJenis} · ${p.nomor_pesanan} — ${namaPelangganBayar}`;
+                  ? `${namaPelangganBayar} · ${p.nomor_pesanan}`
+                  : `Grosir · ${p.nomor_pesanan} — ${namaPelangganBayar}`;
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
@@ -2240,9 +2239,9 @@ export default function ModalRouter({
   // jenis_transaksi === "reseller" saja — supaya "Penagihan Hutang" di
   // Reseller Toko tidak ikut melunasi hutang pesanan Grosir biasa milik
   // pelanggan yang sama secara tidak sengaja. Kolom keterangan di Keuangan
-  // juga dibedakan (format "R.T · {nomor invoice} · {nama pelanggan}",
-  // bukan "Grosir · ...") supaya kelihatan asalnya waktu dicek di Laporan
-  // Keuangan.
+  // juga dibedakan (format "{nama pelanggan} · {nomor invoice}", bukan
+  // "Grosir · {nomor} — {nama}") supaya kelihatan asalnya waktu dicek di
+  // Laporan Keuangan.
   if (modal.type === "reseller-bayar-hutang-pelanggan") {
     const p = modal.item; // p = pelanggan
     const pesananHutang = (pesananGrosir || [])
@@ -2289,7 +2288,7 @@ export default function ModalRouter({
             // Simulasikan dulu alokasi bayarKeHutang ke pesananHutang (tanpa
             // efek samping apa-apa) cuma buat tahu nomor invoice mana saja
             // yang bakal ikut kebayar di transaksi ini — dipakai buat
-            // keterangan baris Keuangan ("R.T · {nomor invoice} · {nama}").
+            // keterangan baris Keuangan ("{nama} · {nomor invoice}").
             // Alokasi SUNGGUHAN tetap di loop bawah, ini cuma pratinjau.
             let sisaPratinjau = bayarKeHutang;
             const nomorInvoiceTerbayar = [];
@@ -2304,13 +2303,15 @@ export default function ModalRouter({
             // dibuat DULU (kalau Cash/Transfer) supaya id-nya bisa ditautkan
             // ke tiap baris grosir_pembayaran lewat keuangan_transaksi_id —
             // supaya waktu satu pesanan reseller dihapus permanen, cuma
-            // porsi pesanan itu yang dikurangi dari baris "R.T · Bayar
-            // Hutang" ini, bukan seluruh baris (yang bisa mencakup pesanan
+            // porsi pesanan itu yang dikurangi dari baris "{nama} · {nomor
+            // invoice}" ini, bukan seluruh baris (yang bisa mencakup pesanan
             // reseller lain milik pelanggan yang sama).
             let keuanganTransaksiId = null;
             if (metode !== "Deposit" && data.rekening && data.kategoriKode) {
               const daftarInvoice =
                 nomorInvoiceTerbayar.length > 0 ? nomorInvoiceTerbayar.join(", ") : "Bayar Hutang";
+              // "nama pembeli · nomor pesanan (resi)" — nama duluan, TANPA
+              // prefix "R.T" — sama pola dengan versi per-pesanan di atas.
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
@@ -2319,7 +2320,7 @@ export default function ModalRouter({
                   rekening: data.rekening,
                   kategori: data.kategoriKode,
                   jumlah: jumlahDiterima,
-                  keterangan: `R.T · ${daftarInvoice} · ${p.nama}`,
+                  keterangan: `${p.nama} · ${daftarInvoice}`,
                 }),
               });
               keuanganTransaksiId = rowKeuangan?.id ?? null;
