@@ -10,6 +10,7 @@ import {
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
+  LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT,
   BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
@@ -2349,6 +2350,68 @@ export default function ModalRouter({
               }),
             });
           }, "Deposit dicairkan ke pelanggan — tercatat juga di Keuangan")
+        }
+      />
+    );
+  }
+
+  // Pencairan Reseller Cekout — dipicu dari tab "Pencairan" di menu Reseller
+  // > Penagihan atau Pencairan (lihat PencairanResellerCekout di
+  // pages/Reseller.jsx). Pola & efeknya SAMA PERSIS dengan
+  // "grosir-cairkan-deposit" di atas (saldo deposit pelanggan berkurang,
+  // uangnya dicatat sebagai pengeluaran DULU di Keuangan) — satu-satunya
+  // beda: kategori pengeluarannya dipisah ("Reseller Checkout Toko Gudang",
+  // bukan "PENGEMBALIAN DEPOSIT") supaya kelihatan beda di Laporan
+  // Keuangan, dan keterangannya dikasih prefix "R.CO" (sama pola dengan
+  // "R.T" di reseller-bayar-hutang-pelanggan) supaya kelihatan asalnya.
+  if (modal.type === "reseller-cekout-cairkan-deposit") {
+    const p = modal.item; // p = pelanggan
+    const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+
+    return (
+      <CairkanDepositForm
+        pelanggan={p}
+        saldoDeposit={saldoDeposit}
+        master={master}
+        onClose={close}
+        saving={saving}
+        kategoriLabel={LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT}
+        title={`Pencairan — ${p.nama}`}
+        description="Catat kalau uang ini benar-benar sudah dicairkan/dibayar ke pelanggan Reseller Cekout (cash atau transfer). Saldo deposit pelanggan akan berkurang sebesar jumlah yang dicairkan, dan uangnya tercatat sebagai pengeluaran di Keuangan."
+        submitLabel="Cairkan"
+        onSubmit={(data) =>
+          run(async () => {
+            const jumlah = Number(data.jumlah) || 0;
+            if (jumlah <= 0) throw new Error("Jumlah yang dicairkan harus lebih dari 0");
+            if (jumlah > saldoDeposit + 0.0001) {
+              throw new Error(`Saldo deposit pelanggan (${fmtRp(saldoDeposit)}) tidak cukup untuk dicairkan sebesar ${fmtRp(jumlah)}`);
+            }
+            if (!data.rekening || !data.kategoriKode) {
+              throw new Error(`Pilih rekening & pastikan kategori "${LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT}" sudah ada di Keuangan`);
+            }
+
+            await sb("keuangan_transaksi", {
+              method: "POST",
+              body: JSON.stringify({
+                tanggal: new Date().toISOString().slice(0, 10),
+                tipe: "keluar",
+                rekening: data.rekening,
+                kategori: data.kategoriKode,
+                jumlah,
+                keterangan: `R.CO · Pencairan — ${p.nama}${data.catatan ? ` · ${data.catatan}` : ""}`,
+              }),
+            });
+
+            await sb("grosir_deposit", {
+              method: "POST",
+              body: JSON.stringify({
+                nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                pelanggan_id: p.id,
+                jumlah: -jumlah,
+                keterangan: `Dicairkan ke pelanggan Reseller Cekout (${data.metodeBayar})${data.catatan ? ` · ${data.catatan}` : ""}`,
+              }),
+            });
+          }, "Pencairan tercatat — tercatat juga di Keuangan")
         }
       />
     );

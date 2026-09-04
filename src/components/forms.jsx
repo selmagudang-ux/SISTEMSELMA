@@ -2991,6 +2991,15 @@ const LABEL_KATEGORI_GROSIR_TRANSFER = "GROSIR TRANSFER";
 // sendiri asalnya boleh beda-beda, tapi begitu dicairkan ke pelanggan,
 // uangnya selalu dianggap keluar dari Keuangan.
 const LABEL_KATEGORI_KEMBALIAN_DEPOSIT = "PENGEMBALIAN DEPOSIT";
+// Kategori pengeluaran khusus buat "Pencairan" ke pelanggan Reseller Cekout
+// (tab "Pencairan" di menu Reseller > Penagihan atau Pencairan) — dipisah
+// dari LABEL_KATEGORI_KEMBALIAN_DEPOSIT supaya kelihatan beda di Laporan
+// Keuangan (arus kas keluar untuk Reseller Cekout Toko Gudang secara
+// spesifik, bukan pengembalian deposit pelanggan pada umumnya). Sama-sama
+// dicatat sebagai pengeluaran (tipe "keluar") begitu dicairkan — cuma
+// kategorinya beda, lewat kategoriLabel di CairkanDepositForm (lihat
+// ModalRouter.jsx, modal "reseller-cekout-cairkan-deposit").
+export const LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT = "Reseller Checkout Toko Gudang";
 function normalisasiLabelBayar(s) {
   return (s || "").toLowerCase().replace(/\s+/g, "").trim();
 }
@@ -3301,7 +3310,19 @@ export function BayarHutangPelangganForm({ pelanggan, totalHutang, daftarPesanan
 // Form cairkan (bayar tunai/transfer ke pelanggan) sebagian atau seluruh
 // saldo deposit — dipakai kalau TOKO yang berhutang ke pelanggan (kelebihan
 // bayar/titipan) dan mau dilunasi keluar, bukan dipakai lagi buat pesanan.
-export function CairkanDepositForm({ pelanggan, saldoDeposit, master, onClose, onSubmit, saving }) {
+export function CairkanDepositForm({
+  pelanggan, saldoDeposit, master, onClose, onSubmit, saving,
+  // Override opsional — dipakai modal "reseller-cekout-cairkan-deposit"
+  // (tab "Pencairan" di Reseller > Penagihan atau Pencairan) supaya form
+  // yang sama persis ini bisa dipakai ulang dengan kategori pengeluaran &
+  // judul/teks yang beda, tanpa menduplikasi seluruh komponen. Kalau tidak
+  // diisi, perilakunya identik dengan sebelumnya (kategori "PENGEMBALIAN
+  // DEPOSIT", dipakai dari modal "grosir-cairkan-deposit").
+  kategoriLabel = LABEL_KATEGORI_KEMBALIAN_DEPOSIT,
+  title,
+  description,
+  submitLabel,
+}) {
   const [jumlah, setJumlah] = useState(saldoDeposit);
   const [metodeBayar, setMetodeBayar] = useState("Cash");
   const [rekening, setRekening] = useState("");
@@ -3310,19 +3331,19 @@ export function CairkanDepositForm({ pelanggan, saldoDeposit, master, onClose, o
   const daftarRekening = master?.rekening || [];
   const daftarKategoriKeluar = master?.kategori_keluar || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
-  const kategoriObj = cariKategoriByLabelBayar(daftarKategoriKeluar, LABEL_KATEGORI_KEMBALIAN_DEPOSIT);
+  const kategoriObj = cariKategoriByLabelBayar(daftarKategoriKeluar, kategoriLabel);
 
   const jumlahNum = Number(jumlah) || 0;
   const melebihi = jumlahNum > saldoDeposit;
   // Uang beneran keluar dari rekening Keuangan waktu deposit dicairkan ke
-  // pelanggan, jadi wajib pilih rekening & kategori "PENGEMBALIAN DEPOSIT"
-  // harus sudah ada dulu di Keuangan > Rekening & Kategori (sama pola
-  // dengan LABEL_KATEGORI_GROSIR_CASH/TRANSFER di BayarHutangForm).
+  // pelanggan, jadi wajib pilih rekening & kategori pengeluarannya (label
+  // di atas) harus sudah ada dulu di Keuangan > Rekening & Kategori (sama
+  // pola dengan LABEL_KATEGORI_GROSIR_CASH/TRANSFER di BayarHutangForm).
   const siapDicatat = Boolean(rekening) && Boolean(kategoriObj);
   const canSubmit = jumlahNum > 0 && !melebihi && siapDicatat && !saving;
 
   return (
-    <ModalShell title={`Cairkan Deposit — ${pelanggan.nama}`} onClose={onClose}>
+    <ModalShell title={title || `Cairkan Deposit — ${pelanggan.nama}`} onClose={onClose}>
       <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
         <div className="flex items-center justify-between px-3 py-2 text-sm bg-slate-900">
           <span className="text-slate-500 text-xs">Saldo Deposit Saat Ini</span>
@@ -3331,8 +3352,8 @@ export function CairkanDepositForm({ pelanggan, saldoDeposit, master, onClose, o
       </div>
 
       <p className="text-xs text-slate-500 mb-3">
-        Catat kalau uang ini benar-benar sudah dibayar/dikembalikan ke pelanggan (cash atau transfer). Saldo deposit
-        pelanggan akan berkurang sebesar jumlah yang dicairkan, dan uangnya tercatat sebagai pengeluaran di Keuangan.
+        {description ||
+          "Catat kalau uang ini benar-benar sudah dibayar/dikembalikan ke pelanggan (cash atau transfer). Saldo deposit pelanggan akan berkurang sebesar jumlah yang dicairkan, dan uangnya tercatat sebagai pengeluaran di Keuangan."}
       </p>
 
       <Field label="Metode Bayar">
@@ -3361,7 +3382,7 @@ export function CairkanDepositForm({ pelanggan, saldoDeposit, master, onClose, o
         ) : (
           <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            Kategori pengeluaran "{LABEL_KATEGORI_KEMBALIAN_DEPOSIT}" belum ada. Buat dulu di Keuangan {">"} Rekening
+            Kategori pengeluaran "{kategoriLabel}" belum ada. Buat dulu di Keuangan {">"} Rekening
             & Kategori dengan nama persis ini.
           </div>
         )}
@@ -3393,7 +3414,7 @@ export function CairkanDepositForm({ pelanggan, saldoDeposit, master, onClose, o
         onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, rekening, kategoriKode: kategoriObj?.kode, catatan: catatan.trim() })}
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
-        {saving ? "Menyimpan…" : "Cairkan Deposit"}
+        {saving ? "Menyimpan…" : submitLabel || "Cairkan Deposit"}
       </button>
     </ModalShell>
   );

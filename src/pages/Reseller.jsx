@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, InputTanggal, InputRupiah } from "../components/ui";
 import {
-  sb, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
+  sb, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
   tokoShopeeGudang,
 } from "../lib/api";
 import { rencanaKurangiRak } from "./Rak";
@@ -96,6 +96,7 @@ export default function Reseller({
         pesananCekout={pesananCekout}
         pelangganGrosir={pelangganGrosir}
         pembayaranGrosir={pembayaranGrosir}
+        depositGrosir={depositGrosir}
         setModal={setModal}
       />
     );
@@ -225,12 +226,16 @@ function SemuaPesananReseller({ pesananReseller, pelangganGrosir, pembayaranGros
 // =========================================================
 // PENCAIRAN DAN PENAGIHAN RESELLER — menu gabungan (dulu "Penagihan Hutang"
 // & "Reseller Cekout" dua submenu terpisah, lihat catatan di constants.js).
-// Cuma pembungkus tab internal, dua tab-nya (PenagihanHutangReseller &
-// SemuaPesananResellerCekout di bawah) TIDAK berubah sama sekali — cuma
-// dipindah cara aksesnya.
+// Pembungkus tab internal — tab "Penagihan Hutang" (PenagihanHutangReseller)
+// tidak berubah. Tab "Pencairan" TADINYA cuma nampilin ulang daftar pesanan
+// Reseller Cekout (SemuaPesananResellerCekout, masih bisa diakses lewat menu
+// "Reseller Cekout" sendiri) — sekarang diganti PencairanResellerCekout di
+// bawah: rekap saldo yang harus dicairkan KE pelanggan, polanya sama persis
+// dengan PenagihanHutangReseller (rekap per pelanggan + klik buat aksi),
+// cuma kebalikannya — lihat catatan di PencairanResellerCekout.
 // =========================================================
 function PencairanDanPenagihanReseller({
-  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, setModal,
+  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir, setModal,
 }) {
   const [tab, setTab] = useState("penagihan");
 
@@ -256,10 +261,10 @@ function PencairanDanPenagihanReseller({
       </div>
 
       {tab === "cekout" ? (
-        <SemuaPesananResellerCekout
+        <PencairanResellerCekout
           pesananCekout={pesananCekout}
           pelangganGrosir={pelangganGrosir}
-          pembayaranGrosir={pembayaranGrosir}
+          depositGrosir={depositGrosir}
           setModal={setModal}
         />
       ) : (
@@ -363,6 +368,93 @@ function PenagihanHutangReseller({ pesananReseller, pelangganGrosir, pembayaranG
                 </div>
               </div>
               <div className="text-sm font-semibold text-red-400 flex-shrink-0 ml-2">{fmtRp(x.sisa)}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =========================================================
+// PENCAIRAN RESELLER CEKOUT — rekap saldo yang harus DICAIRKAN (dibayar
+// keluar) ke tiap pelanggan Reseller Cekout, kebalikan dari
+// PenagihanHutangReseller di atas: kalau Penagihan Hutang menagih uang
+// MASUK dari pelanggan yang masih berhutang, di sini yang direkap adalah
+// saldo deposit pelanggan (dari kelebihan nominal cair marketplace waktu
+// pesanan cekout dibuat/dilunasi — lihat totalDepositPerPelanggan di
+// lib/api.js) yang harus dibayar KELUAR ke pelanggan itu. Daftarnya
+// dibatasi hanya ke pelanggan yang punya pesanan Reseller Cekout (supaya
+// tidak ikut menampilkan saldo deposit dari Grosir/Reseller Toko biasa —
+// itu tetap dicairkan lewat modal "grosir-cairkan-deposit" generik di menu
+// Riwayat Pelanggan). Klik satu pelanggan membuka modal
+// "reseller-cekout-cairkan-deposit" (lihat ModalRouter) — begitu
+// dicairkan, uangnya tercatat sebagai PENGELUARAN di Keuangan (kategori
+// "Reseller Checkout Toko Gudang", sumber dana/rekening bebas dipilih),
+// bukan pemasukan seperti Penagihan Hutang.
+// =========================================================
+function PencairanResellerCekout({ pesananCekout, pelangganGrosir, depositGrosir, setModal }) {
+  const [q, setQ] = useState("");
+  const depositMap = totalDepositPerPelanggan(depositGrosir);
+  const pelangganCekoutIds = new Set((pesananCekout || []).map((p) => p.pelanggan_id));
+
+  const daftar = Object.entries(depositMap)
+    .filter(([pelangganId]) => pelangganCekoutIds.has(pelangganId))
+    .map(([pelangganId, saldo]) => ({
+      pelanggan: (pelangganGrosir || []).find((p) => p.id === pelangganId),
+      saldo,
+    }))
+    .filter((x) => x.pelanggan)
+    .filter((x) => {
+      const s = q.trim().toLowerCase();
+      return !s || x.pelanggan.nama.toLowerCase().includes(s) || x.pelanggan.kode?.toLowerCase().includes(s);
+    })
+    .sort((a, b) => b.saldo - a.saldo);
+
+  const totalSemua = daftar.reduce((a, x) => a + x.saldo, 0);
+
+  return (
+    <div>
+      <PageHeader
+        title="Pencairan — Reseller Cekout"
+        description="Rekap saldo yang harus dicairkan (dibayar keluar) ke pelanggan Reseller Cekout. Begitu dicairkan, tercatat sebagai pengeluaran di Keuangan."
+      />
+
+      <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm mb-4">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari nama atau kode pelanggan…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+
+      <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 mb-4">
+        <span className="text-sm text-slate-400">Total Harus Dicairkan</span>
+        <span className="text-lg font-bold text-emerald-400">{fmtRp(totalSemua)}</span>
+      </div>
+
+      {daftar.length === 0 ? (
+        <EmptyState label={q ? "Tidak ada pelanggan yang cocok." : "Tidak ada saldo yang perlu dicairkan saat ini."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {daftar.map((x, i) => (
+            <button
+              key={x.pelanggan.id}
+              onClick={() => setModal({ type: "reseller-cekout-cairkan-deposit", item: x.pelanggan })}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-left ${
+                i % 2 ? "bg-slate-950" : "bg-slate-900"
+              } hover:bg-slate-800/60`}
+            >
+              <div className="min-w-0">
+                <div className="text-sm text-slate-200 truncate">{x.pelanggan.nama}</div>
+                <div className="text-[11px] text-slate-500 truncate">
+                  {x.pelanggan.kode}
+                  {x.pelanggan.wa ? ` · ${x.pelanggan.wa}` : ""}
+                </div>
+              </div>
+              <div className="text-sm font-semibold text-emerald-400 flex-shrink-0 ml-2">{fmtRp(x.saldo)}</div>
             </button>
           ))}
         </div>
