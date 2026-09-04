@@ -2178,6 +2178,7 @@ export default function ModalRouter({
               keuanganTransaksiId = rowKeuangan?.id ?? null;
             }
 
+
             let sisa = bayarKeHutang;
             let idx = 0;
             for (const { ps, sisa: sisaPs } of pesananHutang) {
@@ -2265,6 +2266,7 @@ export default function ModalRouter({
         daftarPesanan={daftarPesananHutang}
         saldoDeposit={saldoDeposit}
         master={master}
+        isReseller
         onClose={close}
         saving={saving}
         onSubmit={(data) =>

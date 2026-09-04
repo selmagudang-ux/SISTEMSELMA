@@ -2983,6 +2983,11 @@ export function SupplierForm({ supplier, kodeBaru, onClose, onSubmit, saving }) 
 // saling import satu sama lain (lihat pola file lain di project ini).
 const LABEL_KATEGORI_GROSIR_CASH = "GROSIR CASH";
 const LABEL_KATEGORI_GROSIR_TRANSFER = "GROSIR TRANSFER";
+// Bayar Hutang pesanan Reseller Toko (baik per-pesanan maupun gabungan per-
+// pelanggan) TIDAK pakai GROSIR CASH/GROSIR TRANSFER — satu kategori
+// pemasukan saja ("Reseller Toko") terlepas dari metode Cash/Transfer-nya,
+// karena kategori ini sudah ada duluan di Keuangan > Rekening & Kategori.
+const LABEL_KATEGORI_RESELLER_TOKO = "Reseller Toko";
 // Kategori pengeluaran khusus buat "Cairkan Deposit ke Pelanggan" — uang
 // beneran keluar dari rekening Keuangan (Cash/Transfer) waktu deposit
 // pelanggan dibayar balik, jadi harus tercatat sebagai baris pengeluaran,
@@ -3028,10 +3033,15 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   const daftarRekening = master?.rekening || [];
   const daftarKategoriMasuk = master?.kategori_masuk || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
-  const kategoriGrosirObj =
-    metodeBayar === "Transfer"
-      ? cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_TRANSFER)
-      : cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_CASH);
+  const isReseller = pesanan.jenis_transaksi === "reseller";
+  // Reseller Toko: satu kategori "Reseller Toko" saja, tidak dipecah
+  // Cash/Transfer seperti Grosir biasa.
+  const labelKategoriDipakai = isReseller
+    ? LABEL_KATEGORI_RESELLER_TOKO
+    : metodeBayar === "Transfer"
+      ? LABEL_KATEGORI_GROSIR_TRANSFER
+      : LABEL_KATEGORI_GROSIR_CASH;
+  const kategoriGrosirObj = cariKategoriByLabelBayar(daftarKategoriMasuk, labelKategoriDipakai);
 
   const jumlahNum = Number(jumlah) || 0;
   const kelebihan = metodeBayar !== "Deposit" && jumlahNum > sisaHutang ? jumlahNum - sisaHutang : 0;
@@ -3101,7 +3111,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
           ) : (
             <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
               <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              Kategori "{metodeBayar === "Transfer" ? LABEL_KATEGORI_GROSIR_TRANSFER : LABEL_KATEGORI_GROSIR_CASH}"
+              Kategori "{labelKategoriDipakai}"
               belum ada. Buat dulu di Keuangan {">"} Rekening & Kategori dengan nama persis ini.
             </div>
           )}
@@ -3163,7 +3173,15 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
 // Uang yang masuk otomatis dialokasikan ke pesanan yang masih hutang, dari
 // yang paling lama dulu, sampai jumlahnya habis atau semua hutang lunas;
 // kalau masih ada sisa setelah semua hutang lunas, otomatis masuk saldo deposit.
-export function BayarHutangPelangganForm({ pelanggan, totalHutang, daftarPesanan, saldoDeposit, master, onClose, onSubmit, saving }) {
+export function BayarHutangPelangganForm({
+  pelanggan, totalHutang, daftarPesanan, saldoDeposit, master, onClose, onSubmit, saving,
+  // true kalau dipanggil dari modal "reseller-bayar-hutang-pelanggan"
+  // (Penagihan Hutang Reseller Toko) — daftarPesanan-nya sudah difilter
+  // cuma pesanan reseller, jadi kategori Keuangan-nya pakai "Reseller Toko"
+  // (satu kategori, tidak dipecah Cash/Transfer), bukan GROSIR CASH/GROSIR
+  // TRANSFER seperti pesanan Grosir biasa.
+  isReseller = false,
+}) {
   const [jumlah, setJumlah] = useState(totalHutang);
   const [metodeBayar, setMetodeBayar] = useState("Cash");
   const [rekening, setRekening] = useState("");
@@ -3172,10 +3190,12 @@ export function BayarHutangPelangganForm({ pelanggan, totalHutang, daftarPesanan
   const daftarRekening = master?.rekening || [];
   const daftarKategoriMasuk = master?.kategori_masuk || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
-  const kategoriGrosirObj =
-    metodeBayar === "Transfer"
-      ? cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_TRANSFER)
-      : cariKategoriByLabelBayar(daftarKategoriMasuk, LABEL_KATEGORI_GROSIR_CASH);
+  const labelKategoriDipakai = isReseller
+    ? LABEL_KATEGORI_RESELLER_TOKO
+    : metodeBayar === "Transfer"
+      ? LABEL_KATEGORI_GROSIR_TRANSFER
+      : LABEL_KATEGORI_GROSIR_CASH;
+  const kategoriGrosirObj = cariKategoriByLabelBayar(daftarKategoriMasuk, labelKategoriDipakai);
 
   const jumlahNum = Number(jumlah) || 0;
   const kelebihan = metodeBayar !== "Deposit" && jumlahNum > totalHutang ? jumlahNum - totalHutang : 0;
@@ -3251,7 +3271,7 @@ export function BayarHutangPelangganForm({ pelanggan, totalHutang, daftarPesanan
           ) : (
             <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
               <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              Kategori "{metodeBayar === "Transfer" ? LABEL_KATEGORI_GROSIR_TRANSFER : LABEL_KATEGORI_GROSIR_CASH}"
+              Kategori "{labelKategoriDipakai}"
               belum ada. Buat dulu di Keuangan {">"} Rekening & Kategori dengan nama persis ini.
             </div>
           )}
