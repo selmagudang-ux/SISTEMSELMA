@@ -242,6 +242,7 @@ function PencairanDanPenagihanReseller({
   const TABS = [
     { key: "penagihan", label: "Penagihan Hutang" },
     { key: "cekout", label: "Pencairan" },
+    { key: "riwayat", label: "Riwayat" },
   ];
 
   return (
@@ -267,6 +268,14 @@ function PencairanDanPenagihanReseller({
           depositGrosir={depositGrosir}
           setModal={setModal}
         />
+      ) : tab === "riwayat" ? (
+        <RiwayatPenagihanPencairan
+          pesananReseller={pesananReseller}
+          pesananCekout={pesananCekout}
+          pelangganGrosir={pelangganGrosir}
+          pembayaranGrosir={pembayaranGrosir}
+          depositGrosir={depositGrosir}
+        />
       ) : (
         <PenagihanHutangReseller
           pesananReseller={pesananReseller}
@@ -274,6 +283,190 @@ function PencairanDanPenagihanReseller({
           pembayaranGrosir={pembayaranGrosir}
           setModal={setModal}
         />
+      )}
+    </div>
+  );
+}
+
+// =========================================================
+// RIWAYAT PENAGIHAN & PENCAIRAN — linimasa gabungan, terbaru di atas, dari
+// data yang SUDAH ADA (tidak ada tabel baru) — cuma difilter & digabung
+// ulang dari grosir_pembayaran & grosir_deposit:
+//  - "Penagihan Hutang"       : grosir_pembayaran milik pesanan Reseller
+//    Toko (jenis_transaksi='reseller') — uang MASUK ditagih dari pelanggan,
+//    dicatat lewat modal "reseller-bayar-hutang-pelanggan".
+//  - "Cair dari Marketplace"  : grosir_pembayaran milik pesanan Reseller
+//    Cekout dengan metode_bayar "Marketplace" — nominal yang otomatis
+//    dipakai melunasi pesanan itu waktu dibuat (lihat BuatPesananReseller
+//    Cekout di bawah).
+//  - "Kelebihan → Deposit"    : grosir_deposit (jumlah positif) yang
+//    tertaut ke pesanan Reseller Cekout lewat pesanan_id_terkait.
+//  - "Dicairkan ke Pelanggan" : grosir_deposit (jumlah negatif) milik
+//    pelanggan Reseller Cekout — uang KELUAR waktu admin klik "Cairkan" di
+//    tab Pencairan (modal "reseller-cekout-cairkan-deposit").
+// Baris pelunasan piutang Reseller Cekout belakangan (modal
+// grosir-bayar-hutang generik, metode "Pencairan Marketplace") juga otomatis
+// ikut ke sini karena pesanan_id-nya tetap masuk cekoutIds — tidak perlu
+// dibedakan lagi jenisnya, cukup ikut label "Cair dari Marketplace".
+// =========================================================
+function RiwayatPenagihanPencairan({
+  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir,
+}) {
+  const [q, setQ] = useState("");
+  const [jenisFilter, setJenisFilter] = useState("");
+
+  const namaPelanggan = (id) => (pelangganGrosir || []).find((p) => p.id === id)?.nama || "—";
+  const nomorPesananReseller = (id) => (pesananReseller || []).find((p) => p.id === id)?.nomor_pesanan;
+  const nomorPesananCekout = (id) => (pesananCekout || []).find((p) => p.id === id)?.nomor_pesanan;
+
+  const resellerIds = new Set((pesananReseller || []).map((p) => p.id));
+  const cekoutIds = new Set((pesananCekout || []).map((p) => p.id));
+  const cekoutPelangganIds = new Set((pesananCekout || []).map((p) => p.pelanggan_id));
+
+  const entriPenagihan = (pembayaranGrosir || [])
+    .filter((b) => resellerIds.has(b.pesanan_id))
+    .map((b) => ({
+      id: `bayar-${b.id}`,
+      tanggal: b.created_at,
+      jenis: "Penagihan Hutang",
+      warna: "emerald",
+      arah: "masuk",
+      pelangganId: b.pelanggan_id,
+      nomor: nomorPesananReseller(b.pesanan_id),
+      metode: b.metode_bayar,
+      catatan: b.catatan,
+      jumlah: Number(b.jumlah) || 0,
+    }));
+
+  const entriCair = (pembayaranGrosir || [])
+    .filter((b) => cekoutIds.has(b.pesanan_id))
+    .map((b) => ({
+      id: `bayar-${b.id}`,
+      tanggal: b.created_at,
+      jenis: "Cair dari Marketplace",
+      warna: "emerald",
+      arah: "masuk",
+      pelangganId: b.pelanggan_id,
+      nomor: nomorPesananCekout(b.pesanan_id),
+      metode: b.metode_bayar,
+      catatan: b.catatan,
+      jumlah: Number(b.jumlah) || 0,
+    }));
+
+  const entriDeposit = (depositGrosir || [])
+    .filter((d) => cekoutPelangganIds.has(d.pelanggan_id))
+    .filter(
+      (d) =>
+        (d.pesanan_id_terkait && cekoutIds.has(d.pesanan_id_terkait)) ||
+        (d.keterangan || "").includes("Reseller Cekout")
+    )
+    .map((d) => {
+      const jumlah = Number(d.jumlah) || 0;
+      return {
+        id: `dep-${d.id}`,
+        tanggal: d.created_at,
+        jenis: jumlah >= 0 ? "Kelebihan → Deposit" : "Dicairkan ke Pelanggan",
+        warna: jumlah >= 0 ? "sky" : "red",
+        arah: jumlah >= 0 ? "masuk" : "keluar",
+        pelangganId: d.pelanggan_id,
+        nomor: d.pesanan_id_terkait ? nomorPesananCekout(d.pesanan_id_terkait) : null,
+        metode: null,
+        catatan: d.keterangan,
+        jumlah: Math.abs(jumlah),
+      };
+    });
+
+  const semua = [...entriPenagihan, ...entriCair, ...entriDeposit].sort(
+    (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
+  );
+
+  const JENIS_OPTIONS = ["Penagihan Hutang", "Cair dari Marketplace", "Kelebihan → Deposit", "Dicairkan ke Pelanggan"];
+
+  const filtered = semua.filter((x) => {
+    const s = q.trim().toLowerCase();
+    const matchQ =
+      !s || namaPelanggan(x.pelangganId).toLowerCase().includes(s) || (x.nomor || "").toLowerCase().includes(s);
+    const matchJenis = !jenisFilter || x.jenis === jenisFilter;
+    return matchQ && matchJenis;
+  });
+
+  const totalMasuk = filtered.filter((x) => x.arah === "masuk").reduce((a, x) => a + x.jumlah, 0);
+  const totalKeluar = filtered.filter((x) => x.arah === "keluar").reduce((a, x) => a + x.jumlah, 0);
+
+  return (
+    <div>
+      <PageHeader
+        title="Riwayat Penagihan & Pencairan"
+        description="Linimasa pembayaran hutang Reseller Toko yang sudah diterima, dan pencairan Reseller Cekout (masuk dari marketplace maupun keluar ke pelanggan), terbaru di atas."
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[200px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari nama pelanggan atau nomor pesanan…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <select value={jenisFilter} onChange={(e) => setJenisFilter(e.target.value)} className={`${inputClass} w-auto`}>
+          <option value="">Semua Jenis</option>
+          {JENIS_OPTIONS.map((j) => (
+            <option key={j} value={j}>
+              {j}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3">
+          <div className="text-[11px] text-slate-500">Total Masuk</div>
+          <div className="text-lg font-bold text-emerald-400">{fmtRp(totalMasuk)}</div>
+        </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3">
+          <div className="text-[11px] text-slate-500">Total Keluar</div>
+          <div className="text-lg font-bold text-red-400">{fmtRp(totalKeluar)}</div>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          label={q || jenisFilter ? "Tidak ada riwayat yang cocok." : "Belum ada riwayat penagihan atau pencairan."}
+        />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {filtered.map((x, i) => (
+            <div
+              key={x.id}
+              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Badge color={x.warna}>{x.jenis}</Badge>
+                  {x.nomor && <span className="font-mono text-[11px] text-amber-400">{x.nomor}</span>}
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                  {namaPelanggan(x.pelangganId)}
+                  {x.metode ? ` · ${x.metode}` : ""}
+                  {x.catatan ? ` · ${x.catatan}` : ""}
+                </div>
+                <div className="text-[10px] text-slate-600 mt-0.5">
+                  {x.tanggal ? new Date(x.tanggal).toLocaleString("id-ID") : "—"}
+                </div>
+              </div>
+              <div
+                className={`text-sm font-semibold flex-shrink-0 ml-2 ${
+                  x.arah === "masuk" ? "text-emerald-400" : "text-red-400"
+                }`}
+              >
+                {x.arah === "masuk" ? "+" : "−"}
+                {fmtRp(x.jumlah)}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
