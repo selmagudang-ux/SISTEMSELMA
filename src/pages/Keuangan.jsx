@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, Megaphone } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -86,12 +86,20 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
-export default function Keuangan({ sub, keuanganTransaksi = [], master = {}, reload, showToast, setModal }) {
+export default function Keuangan({ sub, keuanganTransaksi = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal }) {
   if (sub === "rekening") {
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
   }
   if (sub === "laporan") {
-    return <LaporanKeuangan keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
+    return (
+      <LaporanKeuangan
+        keuanganTransaksi={keuanganTransaksi}
+        marketplaceTransaksi={marketplaceTransaksi}
+        master={master}
+        reload={reload}
+        showToast={showToast}
+      />
+    );
   }
   if (sub === "log") {
     return <LogKeterangan keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
@@ -970,7 +978,7 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
 // pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
 // narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
 // ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
-function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
+function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
@@ -981,6 +989,16 @@ function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
   const kategoriKeluarList = master.kategori_keluar || [];
 
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
+
+  // Info tambahan (bukan transaksi Keuangan sungguhan): total iklan
+  // marketplace pada rentang tanggal yang sama. Iklan sudah otomatis
+  // dipotong dari saldo marketplace sebelum dicairkan (lihat catatan
+  // desain di Penjualanmarketplace.jsx), jadi ini murni tampilan supaya
+  // kelihatan tanpa perlu buka halaman Marketplace — TIDAK ikut dihitung
+  // ke saldo/rekening di atas.
+  const iklanPeriode = (marketplaceTransaksi || [])
+    .filter((t) => t.tipe === "iklan" && (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai))
+    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
@@ -1060,6 +1078,17 @@ function LaporanKeuangan({ keuanganTransaksi, master, reload, showToast }) {
           iconColor={saldo >= 0 ? "text-emerald-500" : "text-red-500"}
         />
       </div>
+
+      {iklanPeriode > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 px-4 py-2.5 mb-4 text-xs">
+          <Megaphone size={14} className="text-amber-400 flex-shrink-0" />
+          <span className="text-slate-300">
+            Info: Iklan Marketplace periode ini{" "}
+            <span className="font-semibold text-amber-400">{fmtRp(iklanPeriode)}</span> — sudah otomatis dipotong dari
+            saldo marketplace, <span className="text-slate-500">tidak ikut dihitung di Kas Masuk/Keluar di atas</span>.
+          </span>
+        </div>
+      )}
 
       <SaldoAwalBulan
         keuanganTransaksi={keuanganTransaksi}

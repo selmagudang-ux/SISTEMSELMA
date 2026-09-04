@@ -453,7 +453,10 @@ function MainApp({ session, onLogout }) {
       // sub-menu "grosir", sekarang menu sendiri, jadi didaftarkan terpisah
       // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
       if (menu === "toko") return runLoaders(loadCore, loadGrosir);
-      if (menu === "keuangan") return runLoaders(loadCore, loadKeuangan);
+      // loadMarketplace juga ditarik di sini supaya Laporan Keuangan bisa
+      // menampilkan info tambahan "Iklan Marketplace" periode berjalan
+      // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
+      if (menu === "keuangan") return runLoaders(loadCore, loadKeuangan, loadMarketplace);
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
       if (menu === "toko-offline") return runLoaders(loadCore, loadKeuangan);
@@ -803,6 +806,7 @@ function MainApp({ session, onLogout }) {
                 <Keuangan
                   sub={nav.sub || "transaksi"}
                   keuanganTransaksi={keuanganTransaksi}
+                  marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
                   reload={loadAll}
                   showToast={showToast}
