@@ -530,7 +530,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
           {iklanInfo > 0 && (
             <tr>
               <td colSpan={2} className="px-4 py-2 text-[11px] text-slate-500 border-t border-dashed border-slate-800">
-                <span className="text-amber-400 font-medium">Info:</span> Iklan Marketplace periode ini {fmtRp(iklanInfo)} — sudah kepotong di Pendapatan (lewat Pencairan netto), bukan pengurang tambahan di Beban.
+                <span className="text-amber-400 font-medium">Info:</span> Ada Iklan Marketplace {fmtRp(iklanInfo)} yang belum diselesaikan — belum masuk Beban di atas, baru tercatat sungguhan saat Pencairan berikutnya.
               </td>
             </tr>
           )}
@@ -997,15 +997,14 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
 
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
 
-  // Info tambahan (bukan transaksi Keuangan sungguhan): total iklan
-  // marketplace pada rentang tanggal yang sama. Iklan sudah otomatis
-  // dipotong dari saldo marketplace sebelum dicairkan (lihat catatan
-  // desain di Penjualanmarketplace.jsx), jadi ini murni tampilan supaya
-  // kelihatan tanpa perlu buka halaman Marketplace — TIDAK ikut dihitung
-  // ke saldo/rekening di atas.
-  const iklanPeriode = (marketplaceTransaksi || [])
-    .filter((t) => t.tipe === "iklan" && (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai))
-    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+  // Info tambahan (bukan transaksi Keuangan sungguhan): Iklan marketplace yang
+  // BELUM diselesaikan lewat Pencairan (belum jadi Biaya Iklan Marketplace
+  // sungguhan di Keuangan — lihat iklanBelumTercatat di lib/api.js & modal
+  // "marketplace-pencairan" di ModalRouter.jsx). Begitu Pencairan berikutnya
+  // terjadi, jumlah ini otomatis tercatat sebagai Beban sungguhan dan hilang
+  // dari sini — supaya tidak dihitung dua kali.
+  const iklanBelumSelesai = (marketplaceTransaksi || []).filter((t) => t.tipe === "iklan" && !t.keuangan_transaksi_id);
+  const totalIklanBelumSelesai = iklanBelumSelesai.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
@@ -1086,13 +1085,13 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
         />
       </div>
 
-      {iklanPeriode > 0 && (
+      {totalIklanBelumSelesai > 0 && (
         <div className="flex items-center gap-2 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 px-4 py-2.5 mb-4 text-xs">
           <Megaphone size={14} className="text-amber-400 flex-shrink-0" />
           <span className="text-slate-300">
-            Info: Iklan Marketplace periode ini{" "}
-            <span className="font-semibold text-amber-400">{fmtRp(iklanPeriode)}</span> — sudah otomatis dipotong dari
-            saldo marketplace, <span className="text-slate-500">tidak ikut dihitung di Kas Masuk/Keluar di atas</span>.
+            Info: Ada Iklan Marketplace{" "}
+            <span className="font-semibold text-amber-400">{fmtRp(totalIklanBelumSelesai)}</span> yang belum
+            diselesaikan — <span className="text-slate-500">baru tercatat sebagai Biaya Iklan sungguhan di Keuangan saat Pencairan berikutnya</span>.
           </span>
         </div>
       )}
@@ -1129,7 +1128,7 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
         labaRugi={labaRugi.labaRugi}
         marginPersen={labaRugi.marginPersen}
         subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
-        iklanInfo={iklanPeriode}
+        iklanInfo={totalIklanBelumSelesai}
       />
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />

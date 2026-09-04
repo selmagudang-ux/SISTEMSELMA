@@ -784,6 +784,18 @@ export function saldoMarketplace(marketplaceTransaksi, platform, toko) {
     }, 0);
 }
 
+// Entri Iklan yang belum "diselesaikan" ke Keuangan (kolom keuangan_transaksi_id
+// masih kosong) untuk satu toko/platform — dipakai saat Pencairan (lihat modal
+// "marketplace-pencairan" di ModalRouter.jsx): tiap Pencairan otomatis menyelesaikan
+// SEMUA Iklan yang masih menumpuk, dicatat sebagai Biaya Iklan Marketplace terpisah
+// di Keuangan, lalu Iklan itu ditandai (keuangan_transaksi_id diisi) supaya
+// Pencairan berikutnya tidak menghitungnya lagi.
+export function iklanBelumTercatat(marketplaceTransaksi, platform, toko) {
+  return (marketplaceTransaksi || []).filter(
+    (t) => t.platform === platform && (t.toko || null) === (toko || null) && t.tipe === "iklan" && !t.keuangan_transaksi_id
+  );
+}
+
 // Toko Shopee "Gudang" — toko marketplace khusus yang dipakai sebagai
 // penampung sementara uang Reseller Cekout (baik nominal yang cair waktu
 // pesanan dibuat, maupun pelunasan piutang belakangan lewat "Catat

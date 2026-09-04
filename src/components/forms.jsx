@@ -4223,19 +4223,17 @@ export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, onClose, o
   );
 }
 
-export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningList, kategoriList, onClose, onSubmit, saving }) {
+export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningList, iklanBelum = 0, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(todayIso);
   const [jumlah, setJumlah] = useState(saldo > 0 ? saldo : "");
   const [rekening, setRekening] = useState("");
-  const [kategori, setKategori] = useState("");
   const [keterangan, setKeterangan] = useState("");
 
   const jumlahNum = Number(jumlah) || 0;
   const melebihi = jumlahNum > saldo + 0.0001;
   const rekeningOptions = (rekeningList || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
-  const kategoriOptions = (kategoriList || []).map((k) => ({ value: k.kode, label: `${k.label} (${k.kode})` }));
-  const canSubmit = !saving && tanggal && jumlahNum > 0 && !melebihi && rekening && kategori;
+  const canSubmit = !saving && tanggal && jumlahNum > 0 && !melebihi && rekening;
   const namaPlatform = PLATFORM_LABEL_FORM[platform] || platform;
 
   return (
@@ -4248,9 +4246,20 @@ export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningL
       </div>
 
       <p className="text-xs text-slate-500 mb-3">
-        Catat kalau uangnya benar-benar sudah cair ke rekening bank. Ini otomatis tercatat juga sebagai transaksi
-        Pemasukan di Keuangan, ke rekening & kategori yang dipilih di bawah.
+        Catat kalau uangnya benar-benar sudah cair ke rekening bank. Ini otomatis tercatat sebagai Pemasukan di
+        Keuangan (kategori "Pencairan Marketplace").
       </p>
+
+      {iklanBelum > 0 && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Ada Iklan {fmtRp(iklanBelum)} yang belum tercatat di Keuangan — akan ikut diselesaikan sekarang sebagai
+            Biaya Iklan Marketplace. Pemasukan yang tercatat jadi {fmtRp(jumlahNum + iklanBelum)} (kotor), Biaya
+            Iklan {fmtRp(iklanBelum)}, bersih tetap {fmtRp(jumlahNum)} sesuai yang kamu cairkan.
+          </div>
+        </div>
+      )}
 
       <Field label="Tanggal">
         <InputTanggal value={tanggal} onChange={setTanggal} />
@@ -4276,28 +4285,13 @@ export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningL
         />
       </Field>
 
-      <Field label="Kategori Pemasukan (di Keuangan)">
-        <SearchableSelect
-          value={kategori}
-          onChange={setKategori}
-          options={kategoriOptions}
-          placeholder="Pilih kategori…"
-        />
-        {kategoriOptions.length === 0 && (
-          <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
-            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-            Belum ada kategori pemasukan di master data. Buat dulu lewat menu Keuangan {">"} Rekening & Kategori.
-          </div>
-        )}
-      </Field>
-
       <Field label="Keterangan (opsional)">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
       </Field>
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, kategori, keterangan: keterangan.trim() })}
+        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, keterangan: keterangan.trim() })}
         className="w-full bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Cairkan"}

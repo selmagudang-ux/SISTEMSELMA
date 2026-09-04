@@ -282,11 +282,12 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
   const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
 
-  // Info tambahan (bukan transaksi Keuangan sungguhan) — total iklan
-  // marketplace pada periode yang sama, sudah otomatis dipotong dari saldo
-  // marketplace sebelum dicairkan, jadi TIDAK ikut dihitung ke labaRugiBulanIni.
+  // Info tambahan (bukan transaksi Keuangan sungguhan) — Iklan marketplace
+  // yang belum diselesaikan lewat Pencairan (belum jadi Biaya Iklan Marketplace
+  // sungguhan). Begitu Pencairan berikutnya terjadi, otomatis jadi Beban
+  // sungguhan dan hilang dari sini (lihat iklanBelumTercatat di lib/api.js).
   const iklanPeriode = (marketplaceTransaksi || [])
-    .filter((t) => t.tipe === "iklan" && t.tanggal >= dari && t.tanggal <= sampai)
+    .filter((t) => t.tipe === "iklan" && !t.keuangan_transaksi_id)
     .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
