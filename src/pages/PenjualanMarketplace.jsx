@@ -26,8 +26,8 @@ import { fmtRp, saldoMarketplace, daftarTokoMarketplace } from "../lib/api";
 //     pilih satu toko baru masuk ke tampilan saldo & riwayat toko itu.
 // =========================================================
 
-const PLATFORM_LABEL = { shopee: "Shopee", tiktok: "TikTok", lazada: "Lazada" };
-const PLATFORM_COLOR = { shopee: "text-orange-400", tiktok: "text-slate-200", lazada: "text-indigo-400" };
+export const PLATFORM_LABEL = { shopee: "Shopee", tiktok: "TikTok", lazada: "Lazada" };
+export const PLATFORM_COLOR = { shopee: "text-orange-400", tiktok: "text-slate-200", lazada: "text-indigo-400" };
 
 const TIPE_LABEL = { pemasukan: "Pemasukan", iklan: "Iklan", pencairan: "Pencairan" };
 const TIPE_BADGE = { pemasukan: "emerald", iklan: "amber", pencairan: "sky" };

@@ -3,7 +3,7 @@ import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
-  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid, Search,
+  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -19,11 +19,13 @@ import {
   statusPesananMasuk,
   detailModelPesanan,
   labelFor,
+  daftarTokoMarketplace,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
-import { StatCard, PageHeader, EmptyState, Badge, inputClass } from "../components/ui";
+import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
 import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
 import { isEntriTokoOffline } from "./TokoOffline";
+import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Penjualan vs
 // Keuangan vs Absensi supaya masing-masing tetap fokus (angka gudang tidak
@@ -241,6 +243,7 @@ export default function Dashboard({
           pelangganGrosir={pelangganGrosir}
           keuanganTransaksi={keuanganTransaksi}
           marketplaceTransaksi={marketplaceTransaksi}
+          master={master}
           onNavigate={onNavigate}
           tahun={tahun}
           periodeDari={periodeDari}
@@ -1648,21 +1651,217 @@ function jumlahDalamRentang(list, dari, sampai, predikat) {
   }, 0);
 }
 
-function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
-  // Pisahkan pesanan grosir_pesanan berdasarkan jenis_transaksi-nya — dipakai
-  // baik untuk widget "Grosir" (khusus jenis_transaksi='grosir'/kosong) yang
-  // sudah ada dari dulu, maupun untuk breakdown per-channel di bawah (yang
-  // menggabungkan Reseller Toko + Cekout jadi satu channel "Reseller").
+// Ringkasan omset & jumlah entri Toko Offline (dari keuangan_transaksi yang
+// ditandai isEntriTokoOffline — lihat pages/TokoOffline.jsx), untuk rentang
+// [dari, sampai] tertentu — pola sama seperti ringkasanGrosir() di lib/api.js
+// supaya kartu "Laporan Toko Offline" bisa dibaca sejajar dengan "Laporan
+// Grosir" (sama-sama omset + jumlah pesanan/entri).
+function ringkasanTokoOffline(keuanganTransaksi, dari, sampai) {
+  const list = (keuanganTransaksi || []).filter((t) => {
+    if (!isEntriTokoOffline(t)) return false;
+    if (dari && t.tanggal < dari) return false;
+    if (sampai && t.tanggal > sampai) return false;
+    return true;
+  });
+  const omset = list.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+  return { omset, jumlahEntri: list.length };
+}
+
+// Kartu ringkas "Hari Ini / Periode / Tahun" yang dipakai berulang di dalam
+// kartu Store Selma (Laporan Grosir & Laporan Toko Offline) — satu komponen
+// kecil supaya kedua laporan itu selalu tampil sejajar & konsisten.
+function MiniLaporanPeriode({ hariIniStr, periodeLabel, tahunTerpilih, harian, bulanan, tahunan, satuanLabel = "pesanan" }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-800 border border-slate-800 rounded-lg overflow-hidden">
+      <div className="p-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+          <Clock size={11} /> Hari Ini ({hariIniStr.slice(8, 10)}/{hariIniStr.slice(5, 7)})
+        </div>
+        <div className="text-base font-bold text-amber-400">{fmtRp(harian.omset)}</div>
+        {satuanLabel && (
+          <div className="text-[11px] text-slate-500 mt-0.5">{harian.jumlahPesanan ?? harian.jumlahEntri} {satuanLabel}</div>
+        )}
+      </div>
+      <div className="p-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+          <CalendarRange size={11} /> {periodeLabel}
+        </div>
+        <div className="text-base font-bold text-amber-400">{fmtRp(bulanan.omset)}</div>
+        {satuanLabel && (
+          <div className="text-[11px] text-slate-500 mt-0.5">{bulanan.jumlahPesanan ?? bulanan.jumlahEntri} {satuanLabel}</div>
+        )}
+      </div>
+      <div className="p-3">
+        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+          <BarChart3 size={11} /> Tahun {tahunTerpilih}
+        </div>
+        <div className="text-base font-bold text-amber-400">{fmtRp(tahunan.omset)}</div>
+        {satuanLabel && (
+          <div className="text-[11px] text-slate-500 mt-0.5">{tahunan.jumlahPesanan ?? tahunan.jumlahEntri} {satuanLabel}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Uraikan lagi jenis (Cash/Transfer) dari keterangan entri Toko Offline —
+// re-export pola yang sama seperti uraiKeterangan() di pages/TokoOffline.jsx,
+// dipakai buat pecah Cash vs Transfer per hari di Riwayat Harian bawah ini.
+const PENANDA_TOKO_OFFLINE = "Toko Offline ·";
+function jenisEntriTokoOffline(keterangan) {
+  const sisa = (keterangan || "").slice(PENANDA_TOKO_OFFLINE.length).trim();
+  return sisa.split(" — ")[0]?.trim() || "";
+}
+
+// Riwayat Harian Toko Offline — rekap per tanggal (Cash, Transfer, Total),
+// dipakai di kartu "Laporan Toko Offline" pada Dashboard Penjualan supaya
+// sejajar dengan "Pesanan Grosir Hari Ini" di tab Grosir. Detail per baris
+// transaksi tetap di halaman Toko Offline (tombol "Buka Toko Offline").
+function riwayatHarianTokoOffline(keuanganTransaksi, limit = 10) {
+  const map = new Map();
+  (keuanganTransaksi || []).filter(isEntriTokoOffline).forEach((t) => {
+    const row = map.get(t.tanggal) || { tanggal: t.tanggal, cash: 0, transfer: 0, jumlahEntri: 0 };
+    const jenis = jenisEntriTokoOffline(t.keterangan);
+    if (jenis === "Cash") row.cash += Number(t.jumlah) || 0;
+    else if (jenis === "Transfer") row.transfer += Number(t.jumlah) || 0;
+    row.jumlahEntri += 1;
+    map.set(t.tanggal, row);
+  });
+  return Array.from(map.values())
+    .sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0))
+    .slice(0, limit);
+}
+
+// Daftar transaksi mentah satu toko marketplace (platform+kode), opsional
+// difilter tipe & rentang tanggal — dipakai buat panel "rincian" saat salah
+// satu dari 4 kartu (Saldo/Pemasukan/Iklan/Dicairkan) di kartu Marketplace
+// diklik. Tanpa tipe & rentang = riwayat lengkap toko itu (dipakai buat
+// rincian Saldo, karena saldo itu akumulasi dari awal, bukan per periode).
+function daftarEntriMarketplaceToko(marketplaceTransaksi, platform, tokoKode, tipe, dari, sampai) {
+  return (marketplaceTransaksi || [])
+    .filter((t) => {
+      if (t.platform !== platform) return false;
+      if ((t.toko || null) !== (tokoKode || null)) return false;
+      if (tipe && t.tipe !== tipe) return false;
+      if (dari && t.tanggal < dari) return false;
+      if (sampai && t.tanggal > sampai) return false;
+      return true;
+    })
+    .sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : (b.created_at || "").localeCompare(a.created_at || "")));
+}
+
+// Total satu tipe transaksi ("pemasukan" / "iklan" / "pencairan") untuk satu
+// toko marketplace (platform+kode) dalam rentang [dari, sampai] — dipakai
+// buat rincian Pemasukan/Iklan/Dicairkan di kartu Marketplace, pola sama
+// seperti jumlahByTipe() di Penjualanmarketplace.jsx (DetailToko).
+function jumlahMarketplaceByTipe(marketplaceTransaksi, platform, tokoKode, tipe, dari, sampai) {
+  return (marketplaceTransaksi || []).reduce((a, t) => {
+    if (t.platform !== platform) return a;
+    if ((t.toko || null) !== (tokoKode || null)) return a;
+    if (t.tipe !== tipe) return a;
+    if (dari && t.tanggal < dari) return a;
+    if (sampai && t.tanggal > sampai) return a;
+    return a + (Number(t.jumlah) || 0);
+  }, 0);
+}
+
+// Panel rincian transaksi saat salah satu dari 4 kartu (Saldo/Pemasukan/
+// Iklan/Dicairkan) di kartu Marketplace diklik — tabel Tanggal/Keterangan/
+// Jumlah, sumbernya SAMA PERSIS dengan tabel Riwayat di DetailToko
+// (Penjualanmarketplace.jsx). "Saldo" tidak difilter tanggal (akumulasi dari
+// awal), yang lain (Pemasukan/Iklan/Dicairkan) ikut filter periode Dashboard.
+function RincianMarketplaceToko({ platformAktif, rincianAktif, marketplaceTransaksi, periodeDari, periodeSampai, periodeLabel }) {
+  const KONFIG = {
+    saldo: { title: "Rincian Saldo (semua transaksi)", tipe: null, dari: null, sampai: null },
+    pemasukan: { title: `Rincian Pemasukan ${periodeLabel}`, tipe: "pemasukan", dari: periodeDari, sampai: periodeSampai },
+    iklan: { title: `Rincian Iklan ${periodeLabel}`, tipe: "iklan", dari: periodeDari, sampai: periodeSampai },
+    dicairkan: { title: `Rincian Dicairkan ${periodeLabel}`, tipe: "pencairan", dari: periodeDari, sampai: periodeSampai },
+  }[rincianAktif];
+
+  const list = daftarEntriMarketplaceToko(
+    marketplaceTransaksi, platformAktif.platform, platformAktif.kode, KONFIG.tipe, KONFIG.dari, KONFIG.sampai
+  );
+
+  return (
+    <div className="rounded-lg border border-slate-800 overflow-hidden mt-3">
+      <div className="px-4 py-2.5 border-b border-slate-800 text-xs font-semibold text-slate-300">{KONFIG.title}</div>
+      {list.length === 0 ? (
+        <div className="p-5">
+          <EmptyState label="Belum ada transaksi." />
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800">
+              <th className="px-4 py-2 font-medium">Tanggal</th>
+              <th className="px-4 py-2 font-medium">Tipe</th>
+              <th className="px-4 py-2 font-medium">Keterangan</th>
+              <th className="px-4 py-2 font-medium text-right">Jumlah</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.slice(0, 15).map((t) => (
+              <tr key={t.id} className="border-b border-slate-800/60 last:border-0">
+                <td className="px-4 py-2 whitespace-nowrap">{formatTanggalID(t.tanggal)}</td>
+                <td className="px-4 py-2">
+                  <Badge color={TIPE_BADGE_MARKETPLACE[t.tipe] || "slate"}>{TIPE_LABEL_MARKETPLACE[t.tipe] || t.tipe}</Badge>
+                </td>
+                <td className="px-4 py-2 text-slate-400">{t.keterangan || "—"}</td>
+                <td className={`px-4 py-2 text-right font-medium ${t.tipe === "pemasukan" ? "text-emerald-400" : "text-slate-300"}`}>
+                  {t.tipe === "pemasukan" ? "+" : "-"}{fmtRp(t.jumlah)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {list.length > 15 && (
+        <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+          Menampilkan 15 dari {list.length} transaksi — lihat semua di halaman Penjualan Marketplace.
+        </div>
+      )}
+    </div>
+  );
+}
+const TIPE_LABEL_MARKETPLACE = { pemasukan: "Pemasukan", iklan: "Iklan", pencairan: "Pencairan" };
+const TIPE_BADGE_MARKETPLACE = { pemasukan: "emerald", iklan: "amber", pencairan: "sky" };
+
+function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
+  // Cuma pesanan Grosir asli — Reseller Toko/Cekout belum ditampilkan di
+  // kartu Dashboard Penjualan ini (kartu "Reseller" masih "Segera Hadir"),
+  // riwayat & angkanya sendiri tetap ada di menu Reseller.
   const pesananGrosir_ = (pesananGrosir || []).filter(
     (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
-  );
-  const pesananResellerGabungan = (pesananGrosir || []).filter(
-    (p) => p.jenis_transaksi === "reseller" || p.jenis_transaksi === "reseller_cekout"
   );
 
   const pesananAktif = pesananGrosir_.filter((p) => p.status !== "Batal");
   const pesananHariIni = pesananAktif.filter((p) => isToday(p.created_at));
-  const omsetHariIni = pesananHariIni.reduce((a, p) => a + (Number(p.total) || 0), 0);
+
+  // Channel yang lagi "dibuka" panelnya di bawah kartu toggle (pola sama
+  // seperti tabAlur/showDataBarang di DashboardGudang) — null = semua
+  // tertutup, cuma satu channel yang bisa terbuka dalam satu waktu.
+  const [channelAktif, setChannelAktif] = useState(null);
+
+  // Tab aktif di dalam kartu "Store Selma" — pola pill-tab sama persis
+  // seperti ALUR_TABS di DashboardGudang ("Barang yang di Pesan" dkk):
+  // cuma satu laporan yang tampil dalam satu waktu, ganti dengan klik tab.
+  const [tabStoreSelma, setTabStoreSelma] = useState("grosir");
+  const STORE_SELMA_TABS = [
+    { key: "grosir", label: "Laporan Grosir", icon: Store },
+    { key: "toko-offline", label: "Laporan Toko Offline", icon: LayoutGrid },
+  ];
+
+  // Tab toko yang aktif di kartu Marketplace — pola pill-tab sama persis
+  // seperti STORE_SELMA_TABS di atas (nama toko sebagai tab, bukan daftar
+  // tombol bertumpuk).
+  const [tokoAktifKey, setTokoAktifKey] = useState(null);
+  // Platform yang dipilih di dalam satu grup nama toko (kalau nama tokonya
+  // sama di beberapa platform) — dipakai buat nentuin laporan mana yang
+  // ditampilkan di bawah badge platform.
+  const [platformAktifKey, setPlatformAktifKey] = useState(null);
+  // Kartu rincian yang lagi dibuka di kartu Marketplace: "saldo" | "pemasukan"
+  // | "iklan" | "dicairkan" | null (semua kartu tertutup).
+  const [rincianAktif, setRincianAktif] = useState(null);
 
   const totalPiutang = pesananAktif.reduce((a, p) => a + sisaHutangPesanan(p, pembayaranGrosir), 0);
   const totalDeposit = depositGrosir.reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
@@ -1691,209 +1890,433 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   const laporanBulanan = ringkasanGrosir(pesananGrosir_, periodeDari, periodeSampai);
   const laporanTahunan = ringkasanGrosir(pesananGrosir_, awalTahunTerpilih, akhirTahunTerpilih);
 
-  // ============================================================
-  // BREAKDOWN OMSET PER CHANNEL PENJUALAN — Grosir, Reseller (Toko +
-  // Cekout digabung), Marketplace (Shopee/TikTok/Lazada, dari
-  // marketplace_transaksi tipe "pemasukan"), dan Toko Offline (dari
-  // keuangan_transaksi yang ditandai isEntriTokoOffline, lihat
-  // pages/TokoOffline.jsx). Semua dihitung untuk 3 rentang yang sama:
-  // Hari Ini, periode Bulan&Tahun terpilih, dan Tahun terpilih penuh.
-  // ============================================================
-  const isMarketplacePemasukan = (t) => t.tipe === "pemasukan";
-  const channels = [
-    {
-      key: "grosir",
-      label: "Grosir",
-      icon: Store,
-      hariIni: ringkasanGrosir(pesananGrosir_, hariIniStr, hariIniStr).omset,
-      bulan: laporanBulanan.omset,
-      tahunTotal: laporanTahunan.omset,
-      navTarget: { menu: "grosir", sub: "laporan" },
-    },
-    {
-      key: "reseller",
-      label: "Reseller",
-      icon: Truck,
-      hariIni: ringkasanGrosir(pesananResellerGabungan, hariIniStr, hariIniStr).omset,
-      bulan: ringkasanGrosir(pesananResellerGabungan, periodeDari, periodeSampai).omset,
-      tahunTotal: ringkasanGrosir(pesananResellerGabungan, awalTahunTerpilih, akhirTahunTerpilih).omset,
-      navTarget: { menu: "reseller", sub: "toko" },
-    },
-    {
-      key: "marketplace",
-      label: "Marketplace",
-      icon: ShoppingBag,
-      hariIni: jumlahDalamRentang(marketplaceTransaksi, hariIniStr, hariIniStr, isMarketplacePemasukan),
-      bulan: jumlahDalamRentang(marketplaceTransaksi, periodeDari, periodeSampai, isMarketplacePemasukan),
-      tahunTotal: jumlahDalamRentang(marketplaceTransaksi, awalTahunTerpilih, akhirTahunTerpilih, isMarketplacePemasukan),
-      navTarget: { menu: "penjualan-marketplace", sub: "shopee" },
-    },
-    {
-      key: "toko-offline",
-      label: "Toko Offline",
-      icon: LayoutGrid,
-      hariIni: jumlahDalamRentang(keuanganTransaksi, hariIniStr, hariIniStr, isEntriTokoOffline),
-      bulan: jumlahDalamRentang(keuanganTransaksi, periodeDari, periodeSampai, isEntriTokoOffline),
-      tahunTotal: jumlahDalamRentang(keuanganTransaksi, awalTahunTerpilih, akhirTahunTerpilih, isEntriTokoOffline),
-      navTarget: { menu: "toko-offline", sub: "input-harian" },
-    },
-  ];
-  const totalSemuaChannel = {
-    hariIni: channels.reduce((a, c) => a + c.hariIni, 0),
-    bulan: channels.reduce((a, c) => a + c.bulan, 0),
-    tahunTotal: channels.reduce((a, c) => a + c.tahunTotal, 0),
-  };
+  // Laporan Toko Offline — sejajar polanya dengan Laporan Grosir di atas
+  // (omset + jumlah entri Hari Ini / periode terpilih / Tahun terpilih),
+  // dari keuangan_transaksi yang ditandai isEntriTokoOffline (lihat
+  // pages/TokoOffline.jsx).
+  const laporanTokoOfflineHarian = ringkasanTokoOffline(keuanganTransaksi, hariIniStr, hariIniStr);
+  const laporanTokoOfflineBulanan = ringkasanTokoOffline(keuanganTransaksi, periodeDari, periodeSampai);
+  const laporanTokoOfflineTahunan = ringkasanTokoOffline(keuanganTransaksi, awalTahunTerpilih, akhirTahunTerpilih);
+  const riwayatHarianTO = riwayatHarianTokoOffline(keuanganTransaksi, 10);
+
+  // Daftar semua toko marketplace (Shopee/TikTok/Lazada digabung) — dipakai
+  // di kartu "Marketplace" pada Dashboard Penjualan supaya nama toko +
+  // nama marketplace-nya kelihatan langsung, tanpa perlu pindah halaman.
+  // Sumber & pola hitungnya SAMA PERSIS dengan daftar toko di halaman
+  // Penjualan Marketplace (lihat DaftarToko di Penjualanmarketplace.jsx).
+  const daftarTokoSemuaPlatform = Object.keys(PLATFORM_LABEL).flatMap((platform) => {
+    const tokoMasterList = master?.[`toko_${platform}`] || [];
+    return daftarTokoMarketplace(marketplaceTransaksi, tokoMasterList, platform).map((t) => ({
+      ...t,
+      platform,
+      platformLabel: PLATFORM_LABEL[platform],
+      key: `${platform}-${t.kode ?? "tanpa-toko"}`,
+    }));
+  });
+
+  // Gabungkan toko yang NAMANYA SAMA lintas platform (mis. "Selma Acc" ada
+  // di Shopee & TikTok) jadi satu tab — di bawah tab itu baru ditampilkan
+  // platform mana saja yang punya toko dengan nama tersebut. Dicocokkan by
+  // label saja (tidak peduli besar/kecil huruf/spasi), bukan by kode, karena
+  // kode toko memang beda-beda per platform meski namanya sama.
+  const grupTokoByNama = new Map();
+  daftarTokoSemuaPlatform.forEach((t) => {
+    const namaKey = (t.label || "").trim().toLowerCase();
+    const grup = grupTokoByNama.get(namaKey) || { key: namaKey, label: t.label, platforms: [] };
+    grup.platforms.push(t);
+    grupTokoByNama.set(namaKey, grup);
+  });
+  const daftarNamaTokoUnik = Array.from(grupTokoByNama.values());
+
+  // Default tab yang aktif = nama toko pertama di daftar, biar pas kartu
+  // Marketplace dibuka langsung ada yang terpilih.
+  const tokoAktif = daftarNamaTokoUnik.find((t) => t.key === tokoAktifKey) || daftarNamaTokoUnik[0] || null;
+  // Default platform yang aktif di dalam grup = platform pertama grup itu.
+  const platformAktif = tokoAktif
+    ? tokoAktif.platforms.find((p) => p.key === platformAktifKey) || tokoAktif.platforms[0]
+    : null;
+
+  // Rincian Pemasukan / Iklan / Dicairkan untuk platform yang dipilih,
+  // mengikuti filter Bulan & Tahun di atas Dashboard (periodeDari-periodeSampai)
+  // — pola sama seperti StatCard "Pemasukan/Iklan/Dicairkan Bulan Ini" di
+  // DetailToko (Penjualanmarketplace.jsx), cuma di sini ikut filter periode
+  // Dashboard, bukan selalu bulan berjalan.
+  const pemasukanPeriodeMarketplace = platformAktif
+    ? jumlahMarketplaceByTipe(marketplaceTransaksi, platformAktif.platform, platformAktif.kode, "pemasukan", periodeDari, periodeSampai)
+    : 0;
+  const iklanPeriodeMarketplace = platformAktif
+    ? jumlahMarketplaceByTipe(marketplaceTransaksi, platformAktif.platform, platformAktif.kode, "iklan", periodeDari, periodeSampai)
+    : 0;
+  const dicairkanPeriodeMarketplace = platformAktif
+    ? jumlahMarketplaceByTipe(marketplaceTransaksi, platformAktif.platform, platformAktif.kode, "pencairan", periodeDari, periodeSampai)
+    : 0;
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Omset Semua Channel — Hari Ini" value={fmtRp(totalSemuaChannel.hariIni)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label={`Omset Semua Channel — ${periodeLabel}`} value={fmtRp(totalSemuaChannel.bulan)} icon={ShoppingCart} />
-        <StatCard label="Piutang Grosir Belum Lunas" value={fmtRp(totalPiutang)} accent="text-amber-400" iconColor="text-amber-500" icon={Wallet} />
-        <StatCard label="Total Saldo Deposit Grosir" value={fmtRp(totalDeposit)} icon={Package} />
+      {/* Kartu toggle per channel penjualan — pola sama persis seperti
+          "Alur Barang" / "Data Barang" di Dashboard Gudang: klik untuk
+          buka/tutup panel detail channel itu di bawah, klik lagi untuk
+          menutup. Cuma satu channel yang terbuka dalam satu waktu. */}
+      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+        <button
+          type="button"
+          onClick={() => setChannelAktif((v) => (v === "store-selma" ? null : "store-selma"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            channelAktif === "store-selma" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Store size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Store Selma</div>
+          <div className="text-[11px] text-slate-500 mt-1">Grosir & Toko Offline</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setChannelAktif((v) => (v === "marketplace" ? null : "marketplace"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            channelAktif === "marketplace" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <ShoppingBag size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Marketplace</div>
+          <div className="text-[11px] text-slate-500 mt-1">Segera Hadir</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setChannelAktif((v) => (v === "reseller" ? null : "reseller"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            channelAktif === "reseller" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Truck size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Reseller</div>
+          <div className="text-[11px] text-slate-500 mt-1">Segera Hadir</div>
+        </button>
       </div>
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Omset per Channel Penjualan</div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-900/70 text-slate-400 text-xs">
-              <tr>
-                <th className="text-left px-4 py-2.5 font-medium">Channel</th>
-                <th className="text-right px-4 py-2.5 font-medium">Hari Ini</th>
-                <th className="text-right px-4 py-2.5 font-medium">{periodeLabel}</th>
-                <th className="text-right px-4 py-2.5 font-medium">Tahun {tahunTerpilih}</th>
-                <th className="px-4 py-2.5"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {channels.map((c) => {
-                const Icon = c.icon;
-                return (
-                  <tr key={c.key} className="border-t border-slate-800/70">
-                    <td className="px-4 py-2.5 font-medium flex items-center gap-2">
-                      <Icon size={14} className="text-slate-400" /> {c.label}
-                    </td>
-                    <td className="px-4 py-2.5 text-right">{fmtRp(c.hariIni)}</td>
-                    <td className="px-4 py-2.5 text-right">{fmtRp(c.bulan)}</td>
-                    <td className="px-4 py-2.5 text-right">{fmtRp(c.tahunTotal)}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      {onNavigate && c.navTarget && (
-                        <button
-                          onClick={() => onNavigate(c.navTarget.menu, c.navTarget.sub)}
-                          className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
-                        >
-                          Buka →
-                        </button>
-                      )}
-                    </td>
+      {channelAktif === "marketplace" && (
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-slate-800">
+            <div className="text-sm font-semibold flex items-center gap-2 mb-3">
+              <ShoppingBag size={14} className="text-amber-400" /> Toko Marketplace
+            </div>
+            {daftarNamaTokoUnik.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+                {daftarNamaTokoUnik.map((t) => {
+                  const active = tokoAktif?.key === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      onClick={() => setTokoAktifKey(t.key)}
+                      className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+                        active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Store size={13} /> {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {daftarNamaTokoUnik.length === 0 ? (
+            <div className="p-6">
+              <EmptyState label="Belum ada toko marketplace. Tambah toko lewat menu Penjualan Marketplace." />
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="text-sm font-medium text-slate-100">{tokoAktif.label}</div>
+                {platformAktif && (
+                  <button
+                    onClick={() => onNavigate && onNavigate("penjualan-marketplace", platformAktif.platform)}
+                    className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
+                  >
+                    Buka Detail <ArrowRight size={11} />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-4">
+                {tokoAktif.platforms.map((p) => {
+                  const activePlatform = platformAktif?.key === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      onClick={() => setPlatformAktifKey(p.key)}
+                      className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-full border transition ${
+                        activePlatform
+                          ? "border-amber-500/50 bg-slate-900/70"
+                          : "border-slate-800 hover:border-slate-700 bg-slate-900/60"
+                      }`}
+                    >
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-md-on-surface/[0.06] ${PLATFORM_COLOR[p.platform]}`}>
+                        <Store size={12} />
+                      </div>
+                      <span className={`text-xs font-medium ${activePlatform ? "text-slate-100" : "text-slate-300"}`}>{p.platformLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 4 kartu ringkasan platform yang dipilih — Saldo (akumulasi
+                  dari awal) + Pemasukan/Iklan/Dicairkan (ikut filter Bulan &
+                  Tahun di atas Dashboard). Klik salah satu buka rincian
+                  transaksinya di bawah. */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard
+                  label="Saldo Saat Ini"
+                  value={fmtRp(platformAktif?.saldo || 0)}
+                  icon={Wallet}
+                  accent="text-md-primary"
+                  onClick={() => setRincianAktif((v) => (v === "saldo" ? null : "saldo"))}
+                />
+                <StatCard
+                  label={`Pemasukan ${periodeLabel}`}
+                  value={fmtRp(pemasukanPeriodeMarketplace)}
+                  icon={TrendingUp}
+                  iconColor="text-emerald-400"
+                  onClick={() => setRincianAktif((v) => (v === "pemasukan" ? null : "pemasukan"))}
+                />
+                <StatCard
+                  label={`Iklan ${periodeLabel}`}
+                  value={fmtRp(iklanPeriodeMarketplace)}
+                  icon={Megaphone}
+                  iconColor="text-amber-400"
+                  onClick={() => setRincianAktif((v) => (v === "iklan" ? null : "iklan"))}
+                />
+                <StatCard
+                  label={`Dicairkan ${periodeLabel}`}
+                  value={fmtRp(dicairkanPeriodeMarketplace)}
+                  icon={Banknote}
+                  iconColor="text-sky-400"
+                  onClick={() => setRincianAktif((v) => (v === "dicairkan" ? null : "dicairkan"))}
+                />
+              </div>
+
+              {rincianAktif && platformAktif && (
+                <RincianMarketplaceToko
+                  platformAktif={platformAktif}
+                  rincianAktif={rincianAktif}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  periodeDari={periodeDari}
+                  periodeSampai={periodeSampai}
+                  periodeLabel={periodeLabel}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {channelAktif === "reseller" && (
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+          <div className="flex flex-col items-center justify-center gap-2 py-12 px-4 text-center">
+            <div className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-800 text-slate-400">Segera Hadir</div>
+            <div className="text-[11px] text-slate-500 max-w-[260px]">Ringkasan Reseller di Dashboard Penjualan masih dalam pengembangan.</div>
+            <button
+              onClick={() => onNavigate && onNavigate("reseller", "toko")}
+              className="mt-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              Buka Halaman Reseller <ArrowRight size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {channelAktif === "store-selma" && (
+        <div>
+      {/* Pill-tab Laporan Grosir / Laporan Toko Offline — pola sama persis
+          seperti ALUR_TABS ("Barang yang di Pesan" dkk) di DashboardGudang:
+          cuma satu laporan yang tampil, ganti dengan klik tab. */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {STORE_SELMA_TABS.map((t) => {
+          const Icon = t.icon;
+          const active = tabStoreSelma === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTabStoreSelma(t.key)}
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+                active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Icon size={13} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tabStoreSelma === "grosir" && (
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <Store size={14} className="text-amber-400" /> Laporan Grosir
+            </div>
+            <button
+              onClick={() => onNavigate && onNavigate("grosir", "laporan")}
+              className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              Lihat Laporan Lengkap <ArrowRight size={11} />
+            </button>
+          </div>
+          <div className="p-4">
+            <MiniLaporanPeriode
+              hariIniStr={hariIniStr}
+              periodeLabel={periodeLabel}
+              tahunTerpilih={tahunTerpilih}
+              harian={laporanHarian}
+              bulanan={laporanBulanan}
+              tahunan={laporanTahunan}
+              satuanLabel="pesanan"
+            />
+          </div>
+        </div>
+      )}
+
+      {tabStoreSelma === "toko-offline" && (
+        <>
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <LayoutGrid size={14} className="text-amber-400" /> Laporan Toko Offline
+            </div>
+            <button
+              onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
+              className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              Buka Toko Offline <ArrowRight size={11} />
+            </button>
+          </div>
+          <div className="p-4">
+            <MiniLaporanPeriode
+              hariIniStr={hariIniStr}
+              periodeLabel={periodeLabel}
+              tahunTerpilih={tahunTerpilih}
+              harian={laporanTokoOfflineHarian}
+              bulanan={laporanTokoOfflineBulanan}
+              tahunan={laporanTokoOfflineTahunan}
+              satuanLabel=""
+            />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">Riwayat Harian Toko Offline</div>
+            <button
+              onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
+              className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+            >
+              Lihat Semua Riwayat →
+            </button>
+          </div>
+          {riwayatHarianTO.length === 0 ? (
+            <div className="p-6">
+              <EmptyState label="Belum ada input harian toko offline." />
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-slate-500 border-b border-slate-800">
+                  <th className="px-4 py-2.5 font-medium">Tanggal</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Cash</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Transfer</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riwayatHarianTO.map((r) => (
+                  <tr key={r.tanggal} className="border-b border-slate-800/60 last:border-0">
+                    <td className="px-4 py-2.5 whitespace-nowrap">{formatTanggalID(r.tanggal)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.cash)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.transfer)}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-amber-400">{fmtRp(r.cash + r.transfer)}</td>
                   </tr>
-                );
-              })}
-              <tr className="border-t-2 border-slate-700 bg-slate-900/40 font-semibold">
-                <td className="px-4 py-2.5">Total Semua Channel</td>
-                <td className="px-4 py-2.5 text-right text-emerald-400">{fmtRp(totalSemuaChannel.hariIni)}</td>
-                <td className="px-4 py-2.5 text-right text-emerald-400">{fmtRp(totalSemuaChannel.bulan)}</td>
-                <td className="px-4 py-2.5 text-right text-emerald-400">{fmtRp(totalSemuaChannel.tahunTotal)}</td>
-                <td className="px-4 py-2.5"></td>
-              </tr>
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
-      </div>
+        </>
+      )}
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Laporan Grosir — Harian / Bulanan / Tahunan</div>
-          <button
-            onClick={() => onNavigate && onNavigate("grosir", "laporan")}
-            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-          >
-            Lihat Laporan Lengkap <ArrowRight size={12} />
-          </button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-800">
-          <div className="p-4">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-              <Clock size={12} /> Hari Ini ({hariIniStr.slice(8, 10)}/{hariIniStr.slice(5, 7)})
-            </div>
-            <div className="text-lg font-bold text-amber-400">{fmtRp(laporanHarian.omset)}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{laporanHarian.jumlahPesanan} pesanan</div>
+      {tabStoreSelma === "grosir" && (
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-8">
+            <StatCard label="Piutang Grosir Belum Lunas" value={fmtRp(totalPiutang)} accent="text-amber-400" iconColor="text-amber-500" icon={Wallet} />
+            <StatCard label="Total Saldo Deposit Grosir" value={fmtRp(totalDeposit)} icon={Package} />
           </div>
-          <div className="p-4">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-              <CalendarRange size={12} /> {periodeLabel}
-            </div>
-            <div className="text-lg font-bold text-amber-400">{fmtRp(laporanBulanan.omset)}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{laporanBulanan.jumlahPesanan} pesanan</div>
-          </div>
-          <div className="p-4">
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-              <BarChart3 size={12} /> Tahun {tahunTerpilih}
-            </div>
-            <div className="text-lg font-bold text-amber-400">{fmtRp(laporanTahunan.omset)}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{laporanTahunan.jumlahPesanan} pesanan</div>
-          </div>
-        </div>
-      </div>
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold">Pesanan Grosir Belum Lunas</div>
-          <button
-            onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
-            className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
-          >
-            Lihat Semua Pesanan →
-          </button>
-        </div>
-        {belumLunas.length === 0 ? (
-          <div className="p-6">
-            <EmptyState label="Semua pesanan sudah lunas." />
+          <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
+            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold">Pesanan Grosir Belum Lunas</div>
+              <button
+                onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
+                className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+              >
+                Lihat Semua Pesanan →
+              </button>
+            </div>
+            {belumLunas.length === 0 ? (
+              <div className="p-6">
+                <EmptyState label="Semua pesanan sudah lunas." />
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {belumLunas.slice(0, 8).map((p) => (
+                    <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
+                      <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
+                      <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
+                      <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody>
-              {belumLunas.slice(0, 8).map((p) => (
-                <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                  <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                  <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
-                  <td className="px-4 py-2.5">
-                    <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Pesanan Grosir Hari Ini</div>
-        {recentHariIni.length === 0 ? (
-          <div className="p-6">
-            <EmptyState label="Belum ada pesanan grosir hari ini." />
+          <div className="rounded-xl border border-slate-800 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Pesanan Grosir Hari Ini</div>
+            {recentHariIni.length === 0 ? (
+              <div className="p-6">
+                <EmptyState label="Belum ada pesanan grosir hari ini." />
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <tbody>
+                  {recentHariIni.map((p) => (
+                    <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
+                      <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
+                      <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
+                      <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(p.total)}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                          {p.status_bayar}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody>
-              {recentHariIni.map((p) => (
-                <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                  <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                  <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(p.total)}</td>
-                  <td className="px-4 py-2.5">
-                    <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
-                      {p.status_bayar}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+        </>
+      )}
+        </div>
+      )}
     </div>
   );
 }
