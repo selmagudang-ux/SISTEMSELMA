@@ -459,7 +459,7 @@ export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningLis
 // margin-nya. Dipakai bareng oleh halaman Laporan Keuangan (rentang bebas)
 // dan Dashboard Keuangan (rentang bulan berjalan, menggantikan tabel
 // Transaksi Terbaru supaya dashboard langsung menunjukkan untung/rugi).
-export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action }) {
+export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, iklanInfo = 0 }) {
   const untung = labaRugi >= 0;
   return (
     <div className="rounded-xl border border-slate-800 overflow-hidden mb-5">
@@ -527,6 +527,13 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
               {(Math.round(marginPersen * 10) / 10).toLocaleString("id-ID")}%
             </td>
           </tr>
+          {iklanInfo > 0 && (
+            <tr>
+              <td colSpan={2} className="px-4 py-2 text-[11px] text-slate-500 border-t border-dashed border-slate-800">
+                <span className="text-amber-400 font-medium">Info:</span> Iklan Marketplace periode ini {fmtRp(iklanInfo)} — sudah kepotong di Pendapatan (lewat Pencairan netto), bukan pengurang tambahan di Beban.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -1122,6 +1129,7 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
         labaRugi={labaRugi.labaRugi}
         marginPersen={labaRugi.marginPersen}
         subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
+        iklanInfo={iklanPeriode}
       />
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />

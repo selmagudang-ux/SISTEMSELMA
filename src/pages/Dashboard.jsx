@@ -253,6 +253,7 @@ export default function Dashboard({
       ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
+          marketplaceTransaksi={marketplaceTransaksi}
           master={master}
           onNavigate={onNavigate}
           periodeDari={periodeDari}
@@ -273,13 +274,20 @@ export default function Dashboard({
   );
 }
 
-function DashboardKeuangan({ keuanganTransaksi, master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
   const [detailKategori, setDetailKategori] = useState(null);
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
+
+  // Info tambahan (bukan transaksi Keuangan sungguhan) — total iklan
+  // marketplace pada periode yang sama, sudah otomatis dipotong dari saldo
+  // marketplace sebelum dicairkan, jadi TIDAK ikut dihitung ke labaRugiBulanIni.
+  const iklanPeriode = (marketplaceTransaksi || [])
+    .filter((t) => t.tipe === "iklan" && t.tanggal >= dari && t.tanggal <= sampai)
+    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
   // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
@@ -359,6 +367,7 @@ function DashboardKeuangan({ keuanganTransaksi, master, onNavigate, periodeDari,
         labaRugi={labaRugiBulanIni.labaRugi}
         marginPersen={labaRugiBulanIni.marginPersen}
         subtitle={periodeLabel}
+        iklanInfo={iklanPeriode}
         action={
           <button
             onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
