@@ -37,7 +37,7 @@ const PelangganList = lazy(() => import("./pages/Grosir").then((m) => ({ default
 // pola sama persis seperti PelangganList di atas.
 const TokoList = lazy(() => import("./pages/Grosir").then((m) => ({ default: m.TokoList })));
 const TokoOffline = lazy(() => import("./pages/TokoOffline"));
-const PenjualanMarketplace = lazy(() => import("./pages/PenjualanMarketplace"));
+const Penjualanmarketplace = lazy(() => import("./pages/Penjualanmarketplace"));
 const Reseller = lazy(() => import("./pages/Reseller"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
@@ -774,7 +774,7 @@ function MainApp({ session, onLogout }) {
                 />
               )}
               {nav.menu === "penjualan-marketplace" && (
-                <PenjualanMarketplace
+                <Penjualanmarketplace
                   sub={nav.sub || "shopee"}
                   marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
