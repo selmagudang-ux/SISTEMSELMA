@@ -1643,9 +1643,11 @@ export default function ModalRouter({
             {depositSudahKepakai > 0.0001 && (
               <div className="mt-1.5 text-red-200/90">
                 Pesanan ini sumber saldo deposit sebesar {fmtRp(netDepositPesananIni)}, tapi {fmtRp(depositSudahKepakai)}{" "}
-                dari situ sudah kepakai pelanggan di pesanan lain. Bagian yang sudah kepakai itu{" "}
-                <span className="font-semibold">tidak akan ikut terhapus</span> (cuma dilepas tautannya dari
-                pesanan ini) — supaya saldo deposit pelanggan tidak jadi minus.
+                dari situ sudah kepakai pelanggan (mis. sudah dicairkan). Bagian yang sudah kepakai itu{" "}
+                <span className="font-semibold">akan tetap ikut dihapus total</span> bersama baris pemakaian/pencairan
+                lain milik pelanggan ini yang senilai itu (diambil dari yang paling lama), supaya tidak ada riwayat
+                deposit yang nyangkut merujuk ke pesanan yang sudah tidak ada — saldo deposit pelanggan tidak berubah
+                karena kedua baris itu saling meniadakan.
               </div>
             )}
           </div>
@@ -1681,17 +1683,25 @@ export default function ModalRouter({
                 // baris deposit yang tercatat dari pesanan ini (kelebihan bayar,
                 // deposit yang dipakai buat bayar pesanan ini pakai saldo
                 // deposit, atau pembayaran yang dikembalikan sebagai deposit
-                // saat dibatalkan) ikut dihapus permanen — TAPI kalau pesanan
-                // ini net-nya jadi SUMBER kredit (kelebihan bayar/refund batal)
-                // dan kredit itu sebagian/semua SUDAH KEPAKAI di pesanan LAIN
-                // milik pelanggan yang sama (baris pemakaiannya tertaut ke
-                // pesanan lain itu, bukan ke pesanan ini, jadi tidak ikut
-                // kehapus di sini) — bagian yang sudah kepakai itu TIDAK
-                // dihapus, cuma dilepas tautannya (pesanan_id_terkait jadi
-                // null) supaya tetap sah sebagai saldo. Kalau nekat dihapus
-                // penuh, saldo deposit pelanggan bisa jadi MINUS karena uang
-                // yang sudah dipakai pelanggan di pesanan lain jadi kehilangan
-                // sumbernya.
+                // saat dibatalkan) ikut dihapus permanen — TERMASUK kalau
+                // pesanan ini net-nya jadi SUMBER kredit (kelebihan bayar/
+                // refund batal) dan kredit itu sebagian/semua SUDAH KEPAKAI
+                // pelanggan (mis. sudah dicairkan lewat "Cairkan Deposit").
+                // Supaya tidak ada baris "nyangkut" yang merujuk ke pesanan
+                // yang sudah tidak ada, bagian yang sudah kepakai itu TETAP
+                // dihapus — tapi dibarengi menghapus/mengurangi baris DEBIT
+                // lain milik pelanggan yang sama senilai itu (bukan yang
+                // tertaut ke pesanan ini, diambil dari yang paling lama),
+                // supaya kedua baris saling meniadakan dan saldo deposit
+                // pelanggan TIDAK berubah. Catatan pengeluaran di Keuangan
+                // (mis. "Pengembalian deposit"/"Reseller Checkout" waktu
+                // dicairkan) TIDAK ikut dihapus di sini — uang itu beneran
+                // sudah keluar dari rekening, jadi tetap harus tercatat di
+                // Laporan Keuangan walau baris ledger deposit internalnya
+                // sudah dibersihkan. Kalau (jarang terjadi) baris debit lain
+                // tidak cukup buat menutupi seluruhnya, sisa yang tidak
+                // tertutup tetap disimpan (dilepas tautan) sebagai jaring
+                // pengaman supaya saldo deposit pelanggan tidak jadi minus.
                 {
                   const depositTerkaitPesanan = (depositGrosir || []).filter((d) => d.pesanan_id_terkait === p.id);
                   const netDariPesananIni = depositTerkaitPesanan.reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
@@ -1709,29 +1719,75 @@ export default function ModalRouter({
                     for (const d of debitDulu) {
                       await sb(`grosir_deposit?id=eq.${d.id}`, { method: "DELETE" });
                     }
+
+                    // Pool baris debit LAIN milik pelanggan yang sama (bukan
+                    // tertaut ke pesanan ini) yang bisa dipakai buat menutupi
+                    // porsi kredit yang "sudah kepakai" — dari yang paling
+                    // lama, magnitudonya dilacak lokal (sisaMagnitude) supaya
+                    // satu baris bisa dipotong sebagian oleh lebih dari satu
+                    // kredit kalau perlu.
+                    const poolDebitLain = (depositGrosir || [])
+                      .filter(
+                        (d) =>
+                          d.pelanggan_id === p.pelanggan_id &&
+                          d.pesanan_id_terkait !== p.id &&
+                          (Number(d.jumlah) || 0) < 0
+                      )
+                      .map((d) => ({
+                        id: d.id,
+                        sisaMagnitude: Math.abs(Number(d.jumlah) || 0),
+                        created_at: d.created_at,
+                      }))
+                      .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+
+                    const tutupDenganDebitLain = async (target) => {
+                      let sisa = target;
+                      for (const row of poolDebitLain) {
+                        if (sisa <= 0.0001) break;
+                        if (row.sisaMagnitude <= 0.0001) continue;
+                        if (row.sisaMagnitude <= sisa + 0.0001) {
+                          await sb(`grosir_deposit?id=eq.${row.id}`, { method: "DELETE" });
+                          sisa -= row.sisaMagnitude;
+                          row.sisaMagnitude = 0;
+                        } else {
+                          const magnitudeBaru = row.sisaMagnitude - sisa;
+                          await sb(`grosir_deposit?id=eq.${row.id}`, {
+                            method: "PATCH",
+                            body: JSON.stringify({ jumlah: -magnitudeBaru }),
+                          });
+                          row.sisaMagnitude = magnitudeBaru;
+                          sisa = 0;
+                        }
+                      }
+                      return sisa; // >0 kalau baris debit lain tidak cukup
+                    };
+
                     for (const d of kreditBelakangan) {
                       const jumlahKredit = Number(d.jumlah) || 0;
                       if (sisaAmanDihapus >= jumlahKredit - 0.0001) {
+                        // Belum kepakai sama sekali — aman dihapus penuh.
                         await sb(`grosir_deposit?id=eq.${d.id}`, { method: "DELETE" });
                         sisaAmanDihapus -= jumlahKredit;
-                      } else if (sisaAmanDihapus > 0.0001) {
-                        await sb(`grosir_deposit?id=eq.${d.id}`, {
-                          method: "PATCH",
-                          body: JSON.stringify({
-                            jumlah: jumlahKredit - sisaAmanDihapus,
-                            pesanan_id_terkait: null,
-                            keterangan: `${d.keterangan} (pesanan asal sudah dihapus, sisa kredit ini sudah kepakai pelanggan)`,
-                          }),
-                        });
-                        sisaAmanDihapus = 0;
                       } else {
-                        await sb(`grosir_deposit?id=eq.${d.id}`, {
-                          method: "PATCH",
-                          body: JSON.stringify({
-                            pesanan_id_terkait: null,
-                            keterangan: `${d.keterangan} (pesanan asal sudah dihapus, kredit ini sudah kepakai pelanggan)`,
-                          }),
-                        });
+                        const sudahKepakai = jumlahKredit - Math.max(0, sisaAmanDihapus);
+                        sisaAmanDihapus = 0;
+                        const tidakTertutup = await tutupDenganDebitLain(sudahKepakai);
+                        if (tidakTertutup > 0.0001) {
+                          // Jaring pengaman: baris debit lain tidak cukup
+                          // buat menutupi seluruhnya — simpan sisa yang
+                          // belum tertutup itu saja (dilepas tautan) supaya
+                          // saldo pelanggan tidak jadi minus.
+                          await sb(`grosir_deposit?id=eq.${d.id}`, {
+                            method: "PATCH",
+                            body: JSON.stringify({
+                              jumlah: tidakTertutup,
+                              pesanan_id_terkait: null,
+                              keterangan: `${d.keterangan} (pesanan asal sudah dihapus, sisa kredit ini sudah kepakai pelanggan)`,
+                            }),
+                          });
+                        } else {
+                          await sb(`grosir_deposit?id=eq.${d.id}`, { method: "DELETE" });
+                        }
                       }
                     }
                   } else {
