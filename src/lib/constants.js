@@ -402,14 +402,20 @@ export function withParentBadges(nav, rawBadges) {
 // =========================================================
 // LOGIN — role & hak akses menu
 // =========================================================
+// CATATAN PENTING soal "superappa": role ini SENGAJA TIDAK didaftarkan di
+// ROLES di bawah — supaya (1) tidak muncul sebagai pilihan role di dropdown
+// pembuatan/edit user (Pengaturan → Kelola User), dan (2) roleLabel() di
+// bawah menyamarkannya jadi "Super Admin" di mana pun label role ditampilkan
+// (mis. daftar user di Kelola User), jadi role ini tidak bisa dibedakan dari
+// superadmin biasa oleh admin lain yang memakai aplikasi ini.
+// Aksesnya sendiri TETAP jalan penuh via ROLE_MENUS/canAdvanceStage/
+// isSuperadminLike/ROLE_BOLEH_EDIT/ROLE_BOLEH_EDIT_JAM (semua itu baca role
+// mentah dari session, bukan dari daftar ROLES ini) — hanya TIDAK dapat
+// dibuat/diubah lewat dropdown UI. Untuk membuat akun dengan role ini, isi
+// kolom `role` = "superappa" langsung lewat Supabase (SQL editor / table
+// editor), bukan lewat form "Tambah User".
 export const ROLES = [
   { key: "superadmin", label: "Super Admin" },
-  // Super Appa: aksesnya PERSIS sama dengan Super Admin (lihat ROLE_MENUS &
-  // canAdvanceStage di bawah, serta isSuperadminLike yang dipakai di
-  // komponen-komponen lain untuk fitur khusus superadmin), ditambah SATU hak
-  // ekstra yang superadmin biasa TIDAK punya: mengoreksi jam masuk/pulang
-  // absen karyawan (lihat ROLE_BOLEH_EDIT_JAM di pages/Absensi.jsx).
-  { key: "superappa", label: "Super Appa" },
   { key: "owner", label: "Owner" },
   { key: "gudang", label: "Gudang" },
   { key: "pemotretan", label: "Pemotretan" },
@@ -487,5 +493,7 @@ export function allowedSubMenus(role, menuKey) {
 }
 
 export function roleLabel(role) {
+  // Disamarkan sebagai "Super Admin" — lihat catatan panjang di ROLES di atas.
+  if (role === "superappa") return "Super Admin";
   return ROLES.find((r) => r.key === role)?.label || role;
 }
