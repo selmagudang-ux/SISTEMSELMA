@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight, Pencil, Stethoscope } from "lucide-react";
+import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight, Pencil, Stethoscope, Clock } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
 import { downloadCsv } from "../lib/api";
 import {
@@ -12,6 +12,7 @@ import {
   listAbsensi,
   hapusAbsensiHarian,
   simpanAbsensiManual,
+  updateJamAbsensi,
   rekapHarianAbsensi,
   rekapBulananAbsensi,
   rekapMingguanAbsensi,
@@ -22,11 +23,16 @@ import {
   daftarShift,
 } from "../lib/absensi";
 
-// Hanya superadmin & owner yang boleh: (1) mengedit/menandai absensi manual
-// (Sakit/Izin/Libur) untuk karyawan yang tidak absen, dan (2) mengubah nama data
-// karyawan. Role lain yang mungkin nanti dibuka aksesnya ke menu Absensi
-// tetap hanya bisa LIHAT, tidak bisa mengedit kedua hal ini.
-const ROLE_BOLEH_EDIT = ["superadmin", "owner"];
+// Hanya superadmin, superappa, & owner yang boleh: (1) mengedit/menandai
+// absensi manual (Sakit/Izin/Libur) untuk karyawan yang tidak absen, dan (2)
+// mengubah nama data karyawan. Role lain yang mungkin nanti dibuka aksesnya
+// ke menu Absensi tetap hanya bisa LIHAT, tidak bisa mengedit kedua hal ini.
+const ROLE_BOLEH_EDIT = ["superadmin", "superappa", "owner"];
+
+// Koreksi jam masuk/pulang absen ASLI (bukan menimpanya jadi Sakit/Izin/Libur)
+// khusus role "superappa" — ini hak tambahan yang bahkan superadmin biasa
+// tidak punya (lihat catatan di lib/constants.js pada definisi ROLES).
+const ROLE_BOLEH_EDIT_JAM = ["superappa"];
 
 // Warna badge untuk tiap status absensi manual.
 function warnaManual(tipe) {
@@ -57,6 +63,7 @@ export default function Absensi({ sub, showToast, session }) {
 // =========================================================
 function RekapAbsensi({ showToast, role }) {
   const bolehEdit = ROLE_BOLEH_EDIT.includes(role);
+  const bolehEditJam = ROLE_BOLEH_EDIT_JAM.includes(role);
   const [mode, setMode] = useState("harian"); // harian | mingguan | bulanan
   const [rows, setRows] = useState(null);
   const [karyawanList, setKaryawanList] = useState(null);
@@ -64,6 +71,8 @@ function RekapAbsensi({ showToast, role }) {
   const [tglAcuan, setTglAcuan] = useState(new Date().toISOString().slice(0, 10)); // dipakai mode mingguan
   const [manualFor, setManualFor] = useState(null); // {idKaryawan, karyawanId, nama, tanggal, tipe, keterangan}
   const [savingManual, setSavingManual] = useState(false);
+  const [editJamFor, setEditJamFor] = useState(null); // {idKaryawan, nama, tanggal, jamSekarang, jamBaru}
+  const [savingJam, setSavingJam] = useState(false);
 
   const load = async () => {
     try {
@@ -172,6 +181,42 @@ function RekapAbsensi({ showToast, role }) {
       showToast?.(e.message || "Gagal menghapus", "err");
     } finally {
       setSavingManual(false);
+    }
+  };
+
+  // Buka form koreksi jam Masuk — hanya untuk baris yang memang sudah punya
+  // absen Masuk asli (r.masuk terisi). Baris Sakit/Izin/Libur/Tidak Absen
+  // tetap lewat jalur "Tandai/ubah" (bukaManual) seperti biasa.
+  const bukaEditJam = (r) => {
+    setEditJamFor({
+      idKaryawan: r.idKaryawan,
+      nama: r.nama,
+      tanggal: r.tanggal,
+      jamSekarang: r.masuk,
+      jamBaru: r.masuk,
+    });
+  };
+
+  const simpanEditJam = async () => {
+    if (!editJamFor?.jamBaru) {
+      showToast?.("Jam masuk wajib diisi", "err");
+      return;
+    }
+    setSavingJam(true);
+    try {
+      await updateJamAbsensi({
+        idKaryawan: editJamFor.idKaryawan,
+        tanggal: editJamFor.tanggal,
+        tipe: "Masuk",
+        jamBaru: editJamFor.jamBaru,
+      });
+      showToast?.(`Jam masuk ${editJamFor.nama} tanggal ${editJamFor.tanggal} diubah jadi ${editJamFor.jamBaru}.`);
+      setEditJamFor(null);
+      load();
+    } catch (e) {
+      showToast?.(e.message || "Gagal mengubah jam masuk", "err");
+    } finally {
+      setSavingJam(false);
     }
   };
 
@@ -413,7 +458,20 @@ function RekapAbsensi({ showToast, role }) {
                 <tr key={i} className="border-t border-slate-800/70">
                   <td className="px-3 py-2.5 whitespace-nowrap">{r.tanggal}</td>
                   <td className="px-3 py-2.5">{r.nama}</td>
-                  <td className="px-3 py-2.5">{r.masuk || "—"}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <span>{r.masuk || "—"}</span>
+                      {bolehEditJam && r.masuk && (
+                        <button
+                          title="Koreksi jam masuk"
+                          onClick={() => bukaEditJam(r)}
+                          className="p-1 rounded-md text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                        >
+                          <Clock size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5">{r.pulang || "—"}</td>
                   <td className="px-3 py-2.5">{r.jamKerja || "—"}</td>
                   <td className="px-3 py-2.5">
@@ -573,6 +631,52 @@ function RekapAbsensi({ showToast, role }) {
                 Hapus tanda ini
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {editJamFor && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
+            <div className="text-sm font-semibold mb-3">Koreksi Jam Masuk</div>
+            <div className="space-y-3">
+              <Field label="Karyawan">
+                <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{editJamFor.nama}</div>
+              </Field>
+              <Field label="Tanggal">
+                <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{editJamFor.tanggal}</div>
+              </Field>
+              <Field label="Jam Masuk Sekarang">
+                <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{editJamFor.jamSekarang || "—"}</div>
+              </Field>
+              <Field label="Jam Masuk Baru">
+                <input
+                  type="time"
+                  className={inputClass}
+                  value={editJamFor.jamBaru}
+                  onChange={(e) => setEditJamFor((f) => ({ ...f, jamBaru: e.target.value }))}
+                />
+              </Field>
+              <p className="text-[11px] text-slate-500">
+                Telat/tepat waktu akan dihitung ulang otomatis berdasarkan jam baru ini dan shift yang sudah tercatat
+                pada absen tersebut.
+              </p>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                disabled={savingJam}
+                onClick={simpanEditJam}
+                className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 text-sm font-semibold py-2 rounded-lg"
+              >
+                {savingJam ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan
+              </button>
+              <button
+                onClick={() => setEditJamFor(null)}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold py-2 rounded-lg"
+              >
+                Batal
+              </button>
+            </div>
           </div>
         </div>
       )}

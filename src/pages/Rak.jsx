@@ -484,7 +484,7 @@ function PetaRak({ rak, penempatan, skuMaster, master, pengajuanRestock, session
   (pengajuanRestock || [])
     .filter((p) => p.jenis === "zona" && p.status === "menunggu")
     .forEach((p) => pengajuanZonaMenunggu.set(p.zona, p));
-  const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
+  const bisaAjukan = ["gudang", "owner", "superadmin", "superappa"].includes(session?.role);
 
   const ajukanZona = (zona) =>
     setModal?.({ type: "ajukan-restock-zona", item: { zona, jumlahKosong: rakKosongPerZona[zona] || 0 } });

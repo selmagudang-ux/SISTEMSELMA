@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ShoppingBag, CheckCircle2, AlertTriangle, PackagePlus, ArrowRightLeft, Search, MapPin, PackageX } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtTgl } from "../lib/api";
+import { isSuperadminLike } from "../lib/constants";
 
 export default function Marketplace({
   sub,
@@ -28,7 +29,7 @@ export default function Marketplace({
         notifRakPindah={notifRakPindah}
         notifRakKosong={notifRakKosong}
         ackNotif={ackNotif}
-        isSuperadmin={session?.role === "superadmin"}
+        isSuperadmin={isSuperadminLike(session?.role)}
       />
     );
   return <BelumUpload items={items} quickAdvance={quickAdvance} setModal={setModal} />;

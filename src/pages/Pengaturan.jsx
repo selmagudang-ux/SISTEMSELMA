@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb, sbAll } from "../lib/api";
-import { ROLES, roleLabel } from "../lib/constants";
+import { ROLES, roleLabel, isSuperadminLike } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
@@ -11,7 +11,7 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
       <div>
         <PageHeader title="Pengaturan" />
         <EmptyState label="Data pengaturan belum tersedia di Supabase." />
-        {session?.role === "superadmin" && <UserManager showToast={showToast} />}
+        {isSuperadminLike(session?.role) && <UserManager showToast={showToast} />}
       </div>
     );
   }
@@ -24,7 +24,7 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
 
       <FotoYatimCleaner reload={reload} showToast={showToast} />
 
-      {session?.role === "superadmin" && <UserManager showToast={showToast} />}
+      {isSuperadminLike(session?.role) && <UserManager showToast={showToast} />}
     </div>
   );
 }

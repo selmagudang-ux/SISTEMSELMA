@@ -43,7 +43,7 @@ export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengaju
 // approve-nya ada di menu sidebar tersendiri "Persetujuan Restok"
 // (owner/superadmin saja — lihat pages/PersetujuanRestock.jsx).
 function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
-  const bisaAjukan = ["gudang", "owner", "superadmin"].includes(session?.role);
+  const bisaAjukan = ["gudang", "owner", "superadmin", "superappa"].includes(session?.role);
   const [q, setQ] = useState("");
 
   const menipis = (skuMaster || [])

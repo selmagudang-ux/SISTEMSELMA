@@ -190,7 +190,7 @@ function MainApp({ session, onLogout }) {
   // memang halaman utama (superadmin/owner) — role operasional (termasuk
   // gudang) tidak punya akses "dashboard" sama sekali, langsung ke halaman
   // kerja masing-masing (allowed[0]).
-  const landingKeDashboard = allowed.includes("dashboard") && ["superadmin", "owner"].includes(session.role);
+  const landingKeDashboard = allowed.includes("dashboard") && ["superadmin", "superappa", "owner"].includes(session.role);
   const [nav, setNav] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");

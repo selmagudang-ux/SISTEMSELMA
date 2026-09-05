@@ -8,6 +8,7 @@ import {
   tokoShopeeGudang,
 } from "../lib/api";
 import { rencanaKurangiRak } from "./Rak";
+import { isSuperadminLike } from "../lib/constants";
 import { newItemRow, ItemRow } from "./Grosir";
 
 // =========================================================
@@ -326,7 +327,7 @@ function RiwayatPenagihanPencairan({
   const [q, setQ] = useState("");
   const [jenisFilter, setJenisFilter] = useState("");
   const [menghapusId, setMenghapusId] = useState(null);
-  const isSuperadmin = session?.role === "superadmin";
+  const isSuperadmin = isSuperadminLike(session?.role);
 
   const namaPelanggan = (id) => (pelangganGrosir || []).find((p) => p.id === id)?.nama || "—";
   const nomorPesananReseller = (id) => (pesananReseller || []).find((p) => p.id === id)?.nomor_pesanan;

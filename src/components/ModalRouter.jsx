@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2 } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
-import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
+import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike } from "../lib/constants";
 import {
   sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
@@ -1589,7 +1589,7 @@ export default function ModalRouter({
             <Trash2 size={14} /> Batalkan Pesanan
           </button>
         )}
-        {dibatalkan && session?.role === "superadmin" && (
+        {dibatalkan && isSuperadminLike(session?.role) && (
           <button
             onClick={() => setModal({ type: "grosir-hapus-pesanan", item: p })}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white mt-2"
@@ -1606,7 +1606,7 @@ export default function ModalRouter({
     // Lapis keamanan kedua di sisi UI — tombol pemicu di modal detail pesanan
     // sudah disembunyikan untuk role selain superadmin, tapi modal ini juga
     // dijaga sendiri kalau-kalau modal.type ini terpanggil dari jalur lain.
-    if (session?.role !== "superadmin") {
+    if (!isSuperadminLike(session?.role)) {
       return (
         <ModalShell title="Tidak Diizinkan" onClose={close}>
           <p className="text-xs text-slate-400">Menghapus riwayat pesanan permanen hanya bisa dilakukan oleh Super Admin.</p>
@@ -4376,7 +4376,7 @@ export default function ModalRouter({
     // Lapis keamanan kedua di sisi UI — tombol pemicu di SkuHarga.jsx sudah
     // disembunyikan untuk role selain superadmin, tapi modal ini juga dijaga
     // sendiri kalau-kalau modal.type ini terpanggil dari jalur lain.
-    if (session?.role !== "superadmin") {
+    if (!isSuperadminLike(session?.role)) {
       return (
         <ModalShell title="Tidak Diizinkan" onClose={close}>
           <p className="text-xs text-slate-400">Edit harga langsung hanya bisa dilakukan oleh Super Admin.</p>

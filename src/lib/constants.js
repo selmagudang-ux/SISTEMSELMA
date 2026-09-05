@@ -56,11 +56,21 @@ export const STAGE_ROLE = {
 // & StokMenipis).
 export const AMBANG_MENIPIS_RESTOCK = 12;
 
-// Owner & superadmin selalu boleh melanjutkan tahap apa pun, role lain hanya
-// boleh untuk tahap yang jadi "tugas"-nya sendiri (lihat STAGE_ROLE di atas).
+// Owner & superadmin (+ superappa, akses setara superadmin) selalu boleh
+// melanjutkan tahap apa pun, role lain hanya boleh untuk tahap yang jadi
+// "tugas"-nya sendiri (lihat STAGE_ROLE di atas).
 export function canAdvanceStage(role, stage) {
-  if (role === "superadmin" || role === "owner") return true;
+  if (role === "superadmin" || role === "superappa" || role === "owner") return true;
   return STAGE_ROLE[stage] === role;
+}
+
+// Helper dipakai di komponen-komponen yang punya fitur khusus "superadmin
+// saja" (edit harga langsung, hapus permanen, kelola user, dsb) — superappa
+// harus selalu ikut lolos cek yang sama karena aksesnya dijanjikan setara
+// superadmin. Pakai helper ini (bukan bandingkan role === "superadmin" satu-
+// satu) supaya tidak ada tempat yang lupa kalau nanti ada role serupa lagi.
+export function isSuperadminLike(role) {
+  return role === "superadmin" || role === "superappa";
 }
 
 export const COLOR = {
@@ -394,6 +404,12 @@ export function withParentBadges(nav, rawBadges) {
 // =========================================================
 export const ROLES = [
   { key: "superadmin", label: "Super Admin" },
+  // Super Appa: aksesnya PERSIS sama dengan Super Admin (lihat ROLE_MENUS &
+  // canAdvanceStage di bawah, serta isSuperadminLike yang dipakai di
+  // komponen-komponen lain untuk fitur khusus superadmin), ditambah SATU hak
+  // ekstra yang superadmin biasa TIDAK punya: mengoreksi jam masuk/pulang
+  // absen karyawan (lihat ROLE_BOLEH_EDIT_JAM di pages/Absensi.jsx).
+  { key: "superappa", label: "Super Appa" },
   { key: "owner", label: "Owner" },
   { key: "gudang", label: "Gudang" },
   { key: "pemotretan", label: "Pemotretan" },
@@ -415,6 +431,8 @@ export const ROLES = [
 // landing page dari MainApp pakai allowed[0] kalau "dashboard" tidak diizinkan).
 export const ROLE_MENUS = {
   superadmin: [...ALL_MENU_KEYS, "barang-masuk"],
+  // Sama persis dengan superadmin — lihat catatan di ROLES di atas.
+  superappa: [...ALL_MENU_KEYS, "barang-masuk"],
   owner: [...ALL_MENU_KEYS.filter((k) => k !== "pengaturan"), "barang-masuk"],
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan

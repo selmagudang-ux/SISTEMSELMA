@@ -202,7 +202,7 @@ export default function Sidebar({
               <Warehouse size={19} className="text-md-on-primary" />
             </div>
             <div className="min-w-0">
-              {user && user.role !== "superadmin" && user.role !== "owner" ? (
+              {user && user.role !== "superadmin" && user.role !== "superappa" && user.role !== "owner" ? (
                 <>
                   <div className="font-medium text-sm leading-none truncate text-md-on-surface">{user.nama || user.username}</div>
                   <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5 truncate">{roleLabel(user.role)}</div>

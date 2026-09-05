@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor } from "../lib/api";
+import { isSuperadminLike } from "../lib/constants";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
@@ -32,7 +33,7 @@ function BuatSkuList({ items, setModal, session }) {
   const belumSku = items.filter((i) => i.stage === "sku");
   // Input banyak sekaligus khusus superadmin — role lain tetap pakai alur
   // Buat SKU satu-satu seperti biasa dari daftar barang di bawah.
-  const isSuperadmin = session?.role === "superadmin";
+  const isSuperadmin = isSuperadminLike(session?.role);
   return (
     <div>
       <PageHeader
@@ -89,7 +90,7 @@ const adaHargaBaruCheck = (s) => s.harga_asli_baru != null && s.harga_asli_baru 
 const modelFromSku = (sku) => (sku || "").split("-")[2] || "";
 
 function MasterBarang({ skuMaster, items, master, penempatan, setModal, session }) {
-  const isSuperadmin = session?.role === "superadmin";
+  const isSuperadmin = isSuperadminLike(session?.role);
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
   const [subkategori, setSubkategori] = useState("");

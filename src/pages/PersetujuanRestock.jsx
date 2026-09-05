@@ -89,7 +89,7 @@ export default function PersetujuanRestock({
 // sebelum tab ini ada, cuma dipindah jadi sub-komponen (bukan komponen
 // halaman utama lagi) supaya bisa hidup berdampingan dengan tab baru.
 function TinjauPengajuan({ pengajuanRestock, session, setModal, filterJenis, onNavigate }) {
-  const bisaSetujui = ["owner", "superadmin"].includes(session?.role);
+  const bisaSetujui = ["owner", "superadmin", "superappa"].includes(session?.role);
 
   const semua = pengajuanRestock || [];
   const menunggu = [...semua]

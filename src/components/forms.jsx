@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
+import { isSuperadminLike } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
@@ -52,7 +53,7 @@ function baris(tanggal) {
 
 export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   const today = new Date().toISOString().slice(0, 10);
-  const isSuperadmin = session?.role === "superadmin";
+  const isSuperadmin = isSuperadminLike(session?.role);
 
   // Mode banyak sekaligus: khusus superadmin. Role lain tetap pakai form
   // satu-satu seperti biasa.
@@ -964,7 +965,7 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
 // DI ATAS, atau isi bagian "buat SKU baru" di bawahnya — dua-duanya kelihatan
 // sekaligus, user tinggal pakai salah satu lalu simpan.
 export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, onSubmitSplit, saving, session }) {
-  const isSuperadmin = session?.role === "superadmin";
+  const isSuperadmin = isSuperadminLike(session?.role);
   const [selectedId, setSelectedId] = useState("");
   const [hargaBaru, setHargaBaru] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
 
@@ -1619,7 +1620,7 @@ function barisSkuBaru() {
 }
 
 export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penempatan, reload, onClose, onSubmit, saving, session }) {
-  const isSuperadmin = session?.role === "superadmin";
+  const isSuperadmin = isSuperadminLike(session?.role);
   const [rows, setRows] = useState([barisSkuBaru()]);
 
   const updateRow = (idx, patch) => setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)));

@@ -326,6 +326,43 @@ export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tangga
   });
 }
 
+// Koreksi jam Masuk/Pulang pada baris absen ASLI yang sudah ada — khusus role
+// "superappa" (ditegakkan di halaman UI, lihat ROLE_BOLEH_EDIT_JAM di
+// pages/Absensi.jsx). Beda dari simpanAbsensiManual di atas (yang MENIMPA
+// baris jadi tipe Sakit/Izin/Libur): fungsi ini dipakai kalau baris Masuk
+// atau Pulang-nya sendiri sudah benar ADA tapi jamnya keliru (mis. karyawan
+// lupa tap tepat waktu padahal sebenarnya datang tepat waktu, atau salah
+// input). Hanya kolom `jam` yang ditimpa, lalu telat_menit/lembur_jam
+// dihitung ulang terhadap shift yang SUDAH tercatat di baris itu sendiri
+// (kolom `shift`), supaya rekap harian/mingguan/bulanan (yang selalu dihitung
+// ulang dari tabel ini) tetap akurat setelah dikoreksi.
+export async function updateJamAbsensi({ idKaryawan, tanggal, tipe, jamBaru }) {
+  if (!["Masuk", "Pulang"].includes(tipe)) throw new Error("Tipe harus Masuk atau Pulang.");
+  if (!idKaryawan || !tanggal || !jamBaru) throw new Error("Data tidak lengkap.");
+
+  const rows = await sb(
+    `absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&tanggal=eq.${encodeURIComponent(tanggal)}&tipe=eq.${tipe}`
+  );
+  const row = (rows || [])[0];
+  if (!row) {
+    throw new Error(`Belum ada absen ${tipe} untuk dikoreksi pada tanggal ini.`);
+  }
+
+  const settings = await getAbsensiSettings();
+  const shiftList = daftarShift(settings);
+  const shiftDipakai = shiftList.find((s) => s.nama === row.shift) || shiftList[0];
+
+  const jamHHMM = String(jamBaru).slice(0, 5);
+  const patch = { jam: `${jamHHMM}:00` };
+  if (tipe === "Masuk") {
+    patch.telat_menit = hitungTelatMenit(jamHHMM, shiftDipakai.jam_masuk, settings?.toleransi_telat_menit || 0);
+  } else {
+    patch.lembur_jam = hitungLemburJam(jamHHMM, shiftDipakai.jam_pulang, settings?.min_lembur_menit || 0);
+  }
+
+  return sb(`absensi?id=eq.${row.id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
 // =========================================================
 // REKAP — dihitung dinamis dari data mentah `absensi` (bukan tabel terpisah).
 // =========================================================
