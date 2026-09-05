@@ -2013,7 +2013,36 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   const laporanCekoutBulanan = ringkasanGrosir(pesananResellerCekout, periodeDari, periodeSampai);
   const laporanCekoutTahunan = ringkasanGrosir(pesananResellerCekout, awalTahunTerpilih, akhirTahunTerpilih);
 
-  const totalPiutangCekout = pesananCekoutAktif.reduce((a, p) => a + sisaHutangPesanan(p, pembayaranGrosir), 0);
+  // Deposit Reseller Cekout — dipakai buat StatCard "Deposit Belum
+  // Dicairkan" & ringkasan "Deposit yang Dicairkan" di panel Omset. Kriteria
+  // filter SAMA PERSIS dengan entriDeposit di RiwayatPenagihanPencairan
+  // (pages/Reseller.jsx): milik pelanggan yang pernah pesan Reseller Cekout,
+  // DAN (terkait pesanan cekout ATAU keterangannya menyebut "Reseller
+  // Cekout"). jumlah positif = deposit masuk (kelebihan cair), jumlah
+  // negatif = sudah dicairkan ke pelanggan.
+  const cekoutPelangganIds = new Set(pesananResellerCekout.map((p) => p.pelanggan_id));
+  const cekoutIds = new Set(pesananResellerCekout.map((p) => p.id));
+  const depositCekout = (depositGrosir || []).filter(
+    (d) =>
+      cekoutPelangganIds.has(d.pelanggan_id) &&
+      ((d.pesanan_id_terkait && cekoutIds.has(d.pesanan_id_terkait)) || (d.keterangan || "").includes("Reseller Cekout"))
+  );
+
+  const depositBelumDicairkanCekout = depositCekout.reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
+
+  const jumlahDicairkanCekout = (dari, sampai) =>
+    depositCekout.reduce((a, d) => {
+      const jumlah = Number(d.jumlah) || 0;
+      if (jumlah >= 0) return a; // cuma yang sudah dicairkan (negatif) yang dihitung di sini
+      const tgl = (d.created_at || "").slice(0, 10);
+      if (dari && tgl < dari) return a;
+      if (sampai && tgl > sampai) return a;
+      return a + Math.abs(jumlah);
+    }, 0);
+
+  const dicairkanCekoutHarian = jumlahDicairkanCekout(hariIniStr, hariIniStr);
+  const dicairkanCekoutBulanan = jumlahDicairkanCekout(periodeDari, periodeSampai);
+  const dicairkanCekoutTahunan = jumlahDicairkanCekout(awalTahunTerpilih, akhirTahunTerpilih);
 
   const belumLunasCekout = pesananCekoutAktif
     .filter((p) => p.status_bayar !== "Lunas")
@@ -2441,7 +2470,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
             <div className="border-t border-slate-800 p-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
                 <StatCard label="Total Pesanan" value={pesananCekoutAktif.length} icon={ClipboardList} iconColor="text-amber-400" />
-                <StatCard label="Piutang Belum Lunas" value={fmtRp(totalPiutangCekout)} icon={Wallet} accent="text-amber-400" iconColor="text-amber-500" />
+                <StatCard label="Deposit Belum Dicairkan" value={fmtRp(depositBelumDicairkanCekout)} icon={Wallet} accent="text-sky-400" iconColor="text-sky-500" />
                 <StatCard label="Jumlah Pelanggan" value={dataPelangganCekout.length} icon={Users} iconColor="text-sky-400" />
               </div>
 
@@ -2455,6 +2484,19 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                   bulanan={laporanCekoutBulanan}
                   tahunan={laporanCekoutTahunan}
                   satuanLabel="pesanan"
+                />
+              </div>
+
+              <div className="mb-4">
+                <div className="text-xs text-slate-400 mb-2">Deposit yang Dicairkan</div>
+                <MiniLaporanPeriode
+                  hariIniStr={hariIniStr}
+                  periodeLabel={periodeLabel}
+                  tahunTerpilih={tahunTerpilih}
+                  harian={{ omset: dicairkanCekoutHarian }}
+                  bulanan={{ omset: dicairkanCekoutBulanan }}
+                  tahunan={{ omset: dicairkanCekoutTahunan }}
+                  satuanLabel=""
                 />
               </div>
 
