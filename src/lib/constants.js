@@ -240,13 +240,6 @@ export const NAV = [
           // pages/Reseller.jsx): tab "Penagihan Hutang" (hutang Reseller
           // Toko) & tab "Pencairan" (status pencairan Reseller Cekout).
           { key: "penagihan", label: "Penagihan atau Pencairan" },
-          // Baru — daftar LENGKAP semua pelanggan Reseller Toko (jumlah
-          // pesanan, total omset, sisa hutang), bukan cuma yang berhutang
-          // seperti "Penagihan atau Pencairan". Dipakai sebagai halaman
-          // "Lihat Semua" dari ringkasan "Data Pelanggan" di Dashboard
-          // Penjualan > kartu Reseller Toko (lihat DataPelangganReseller
-          // di pages/Reseller.jsx).
-          { key: "data-pelanggan", label: "Data Pelanggan" },
         ],
       },
       // Dipindah ke sini — sejajar dengan "Store Selma", "Marketplace", &
