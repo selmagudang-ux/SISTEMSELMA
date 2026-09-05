@@ -146,6 +146,7 @@ function RekapAbsensi({ showToast, role }) {
       tipe: tipeAwal || "Sakit",
       keterangan: keteranganAwal || "",
       jamMasuk: "",
+      jamPulang: "",
       shift: shiftList[0]?.nama || "",
       existing: !!existing,
     });
@@ -169,9 +170,14 @@ function RekapAbsensi({ showToast, role }) {
           nama: manualFor.nama,
           tanggal: manualFor.tanggal,
           jamMasuk: manualFor.jamMasuk,
+          jamPulang: manualFor.jamPulang,
           shiftNama: manualFor.shift,
         });
-        showToast?.(`Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditulis Masuk jam ${manualFor.jamMasuk}.`);
+        showToast?.(
+          manualFor.jamPulang
+            ? `Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditulis Masuk ${manualFor.jamMasuk} — Pulang ${manualFor.jamPulang}.`
+            : `Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditulis Masuk jam ${manualFor.jamMasuk}.`
+        );
       } else {
         await simpanAbsensiManual({
           karyawanId: manualFor.karyawanId,
@@ -213,22 +219,24 @@ function RekapAbsensi({ showToast, role }) {
     }
   };
 
-  // Buka form koreksi jam Masuk — hanya untuk baris yang memang sudah punya
-  // absen Masuk asli (r.masuk terisi). Baris Sakit/Izin/Libur/Tidak Absen
-  // tetap lewat jalur "Tandai/ubah" (bukaManual) seperti biasa.
-  const bukaEditJam = (r) => {
+  // Buka form koreksi jam Masuk ATAU Pulang — hanya untuk baris yang memang
+  // sudah punya absen asli (r.masuk / r.pulang terisi). Baris yang masih
+  // kosong (belum ada Masuk/Pulang sama sekali) lewat jalur "Tulis Jam
+  // Masuk" (bukaManual dengan tipe "Masuk") di bawah, bukan lewat sini.
+  const bukaEditJam = (r, tipe) => {
     setEditJamFor({
       idKaryawan: r.idKaryawan,
       nama: r.nama,
       tanggal: r.tanggal,
-      jamSekarang: r.masuk,
-      jamBaru: r.masuk,
+      tipe,
+      jamSekarang: tipe === "Pulang" ? r.pulang : r.masuk,
+      jamBaru: tipe === "Pulang" ? r.pulang : r.masuk,
     });
   };
 
   const simpanEditJam = async () => {
     if (!editJamFor?.jamBaru) {
-      showToast?.("Jam masuk wajib diisi", "err");
+      showToast?.(`Jam ${editJamFor.tipe === "Pulang" ? "pulang" : "masuk"} wajib diisi`, "err");
       return;
     }
     setSavingJam(true);
@@ -236,14 +244,14 @@ function RekapAbsensi({ showToast, role }) {
       await updateJamAbsensi({
         idKaryawan: editJamFor.idKaryawan,
         tanggal: editJamFor.tanggal,
-        tipe: "Masuk",
+        tipe: editJamFor.tipe,
         jamBaru: editJamFor.jamBaru,
       });
-      showToast?.(`Jam masuk ${editJamFor.nama} tanggal ${editJamFor.tanggal} diubah jadi ${editJamFor.jamBaru}.`);
+      showToast?.(`Jam ${editJamFor.tipe === "Pulang" ? "pulang" : "masuk"} ${editJamFor.nama} tanggal ${editJamFor.tanggal} diubah jadi ${editJamFor.jamBaru}.`);
       setEditJamFor(null);
       load();
     } catch (e) {
-      showToast?.(e.message || "Gagal mengubah jam masuk", "err");
+      showToast?.(e.message || `Gagal mengubah jam ${editJamFor.tipe === "Pulang" ? "pulang" : "masuk"}`, "err");
     } finally {
       setSavingJam(false);
     }
@@ -493,7 +501,7 @@ function RekapAbsensi({ showToast, role }) {
                       {bolehEditJam && r.masuk && (
                         <button
                           title="Koreksi jam masuk"
-                          onClick={() => bukaEditJam(r)}
+                          onClick={() => bukaEditJam(r, "Masuk")}
                           className="p-1 rounded-md text-slate-500 hover:text-amber-400 hover:bg-slate-800"
                         >
                           <Clock size={13} />
@@ -501,7 +509,20 @@ function RekapAbsensi({ showToast, role }) {
                       )}
                     </div>
                   </td>
-                  <td className="px-3 py-2.5">{r.pulang || "—"}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <span>{r.pulang || "—"}</span>
+                      {bolehEditJam && r.pulang && (
+                        <button
+                          title="Koreksi jam pulang"
+                          onClick={() => bukaEditJam(r, "Pulang")}
+                          className="p-1 rounded-md text-slate-500 hover:text-amber-400 hover:bg-slate-800"
+                        >
+                          <Clock size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5">{r.jamKerja || "—"}</td>
                   <td className="px-3 py-2.5">
                     <Badge
@@ -642,6 +663,14 @@ function RekapAbsensi({ showToast, role }) {
                       onChange={(e) => setManualFor((f) => ({ ...f, jamMasuk: e.target.value }))}
                     />
                   </Field>
+                  <Field label="Jam Pulang (opsional)">
+                    <input
+                      type="time"
+                      className={inputClass}
+                      value={manualFor.jamPulang}
+                      onChange={(e) => setManualFor((f) => ({ ...f, jamPulang: e.target.value }))}
+                    />
+                  </Field>
                   {shiftList.length > 1 && (
                     <Field label="Shift">
                       <select
@@ -695,7 +724,9 @@ function RekapAbsensi({ showToast, role }) {
       {editJamFor && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
-            <div className="text-sm font-semibold mb-3">Koreksi Jam Masuk</div>
+            <div className="text-sm font-semibold mb-3">
+              Koreksi Jam {editJamFor.tipe === "Pulang" ? "Pulang" : "Masuk"}
+            </div>
             <div className="space-y-3">
               <Field label="Karyawan">
                 <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{editJamFor.nama}</div>
@@ -703,10 +734,10 @@ function RekapAbsensi({ showToast, role }) {
               <Field label="Tanggal">
                 <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{editJamFor.tanggal}</div>
               </Field>
-              <Field label="Jam Masuk Sekarang">
+              <Field label={`Jam ${editJamFor.tipe === "Pulang" ? "Pulang" : "Masuk"} Sekarang`}>
                 <div className={`${inputClass} bg-slate-800/60 text-slate-300`}>{editJamFor.jamSekarang || "—"}</div>
               </Field>
-              <Field label="Jam Masuk Baru">
+              <Field label={`Jam ${editJamFor.tipe === "Pulang" ? "Pulang" : "Masuk"} Baru`}>
                 <input
                   type="time"
                   className={inputClass}
@@ -715,7 +746,7 @@ function RekapAbsensi({ showToast, role }) {
                 />
               </Field>
               <p className="text-[11px] text-slate-500">
-                Telat/tepat waktu akan dihitung ulang otomatis berdasarkan jam baru ini dan shift yang sudah tercatat
+                {editJamFor.tipe === "Pulang" ? "Lembur" : "Telat/tepat waktu"} akan dihitung ulang otomatis berdasarkan jam baru ini dan shift yang sudah tercatat
                 pada absen tersebut.
               </p>
             </div>

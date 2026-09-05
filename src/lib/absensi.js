@@ -334,7 +334,7 @@ export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tangga
 // menuliskan jam masuk karyawan tanpa perlu karyawannya tap absen dulu.
 // telat_menit dihitung terhadap shift yang dipilih, sama seperti absen asli
 // lewat submitAbsen(), supaya rekap harian/mingguan/bulanan tetap akurat.
-export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, tanggal, jamMasuk, shiftNama }) {
+export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, tanggal, jamMasuk, jamPulang, shiftNama }) {
   if (!idKaryawan || !tanggal || !jamMasuk) throw new Error("Karyawan, tanggal, dan jam masuk wajib diisi.");
 
   await hapusAbsensiHarian(idKaryawan, tanggal);
@@ -343,10 +343,10 @@ export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, t
   const shiftList = daftarShift(settings);
   const shiftDipakai = shiftList.find((s) => s.nama === shiftNama) || shiftList[0];
 
-  const jamHHMM = String(jamMasuk).slice(0, 5);
-  const telatMenit = hitungTelatMenit(jamHHMM, shiftDipakai.jam_masuk, settings?.toleransi_telat_menit || 0);
+  const jamMasukHHMM = String(jamMasuk).slice(0, 5);
+  const telatMenit = hitungTelatMenit(jamMasukHHMM, shiftDipakai.jam_masuk, settings?.toleransi_telat_menit || 0);
 
-  return sb("absensi", {
+  await sb("absensi", {
     method: "POST",
     body: JSON.stringify({
       karyawan_id: karyawanId,
@@ -354,7 +354,7 @@ export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, t
       id_karyawan: idKaryawan,
       tipe: "Masuk",
       tanggal,
-      jam: `${jamHHMM}:00`,
+      jam: `${jamMasukHHMM}:00`,
       latitude: 0,
       longitude: 0,
       jarak_meter: 0,
@@ -364,6 +364,32 @@ export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, t
       keterangan: "Diinput manual oleh superappa",
     }),
   });
+
+  // Jam pulang sifatnya opsional — kalau diisi, langsung ditulis juga
+  // sebagai baris "Pulang" pada tanggal yang sama, supaya tidak perlu buka
+  // modal koreksi terpisah lagi setelahnya.
+  if (jamPulang) {
+    const jamPulangHHMM = String(jamPulang).slice(0, 5);
+    const lemburJam = hitungLemburJam(jamPulangHHMM, shiftDipakai.jam_pulang, settings?.min_lembur_menit || 0);
+    await sb("absensi", {
+      method: "POST",
+      body: JSON.stringify({
+        karyawan_id: karyawanId,
+        nama,
+        id_karyawan: idKaryawan,
+        tipe: "Pulang",
+        tanggal,
+        jam: `${jamPulangHHMM}:00`,
+        latitude: 0,
+        longitude: 0,
+        jarak_meter: 0,
+        telat_menit: 0,
+        lembur_jam: lemburJam,
+        shift: shiftDipakai?.nama || null,
+        keterangan: "Diinput manual oleh superappa",
+      }),
+    });
+  }
 }
 
 // Koreksi jam Masuk/Pulang pada baris absen ASLI yang sudah ada — khusus role
