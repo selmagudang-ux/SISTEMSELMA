@@ -1998,7 +1998,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
             <Truck size={17} />
           </div>
           <div className="text-base font-semibold text-slate-100">Reseller</div>
-          <div className="text-[11px] text-slate-500 mt-1">Segera Hadir</div>
+          <div className="text-[11px] text-slate-500 mt-1">Toko & Cekout</div>
         </button>
       </div>
 
@@ -2120,14 +2120,33 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
 
       {channelAktif === "reseller" && (
         <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
-          <div className="flex flex-col items-center justify-center gap-2 py-12 px-4 text-center">
-            <div className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-slate-800 text-slate-400">Segera Hadir</div>
-            <div className="text-[11px] text-slate-500 max-w-[260px]">Ringkasan Reseller di Dashboard Penjualan masih dalam pengembangan.</div>
+          <div className="px-4 py-3 border-b border-slate-800">
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <Truck size={14} className="text-amber-400" /> Reseller
+            </div>
+          </div>
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => onNavigate && onNavigate("reseller", "toko")}
-              className="mt-1 text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+              className="rounded-xl border border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70 p-4 text-left transition flex items-center justify-between gap-2"
             >
-              Buka Halaman Reseller <ArrowRight size={12} />
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Reseller Toko</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Pesanan reseller dengan sistem hutang</div>
+              </div>
+              <ArrowRight size={14} className="text-slate-500 flex-shrink-0" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate && onNavigate("reseller", "cekout")}
+              className="rounded-xl border border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70 p-4 text-left transition flex items-center justify-between gap-2"
+            >
+              <div>
+                <div className="text-sm font-semibold text-slate-100">Reseller Cekout</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Pesanan reseller yang dibayar sesuai nominal cair marketplace</div>
+              </div>
+              <ArrowRight size={14} className="text-slate-500 flex-shrink-0" />
             </button>
           </div>
         </div>
