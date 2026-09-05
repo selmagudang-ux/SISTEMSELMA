@@ -1422,19 +1422,35 @@ export default function ModalRouter({
             disabled={saving}
             onClick={() =>
               run(async () => {
-                if (t.tipe === "pencairan" && t.keuangan_transaksi_id) {
-                  await sb(`keuangan_transaksi?id=eq.${t.keuangan_transaksi_id}`, { method: "DELETE" }).catch(() => {});
-                }
+                // PENTING: hapus dulu baris pencairan (marketplace_transaksi)
+                // ini SENDIRI sebelum menghapus baris keuangan_transaksi yang
+                // ditautkan. Baris `t` masih punya kolom keuangan_transaksi_id
+                // & keuangan_transaksi_id_iklan yang jadi foreign key ke
+                // keuangan_transaksi — kalau baris Keuangan dihapus duluan
+                // selagi `t` belum dihapus, DELETE-nya gagal (foreign key
+                // violation 23503). Sebelumnya gagal ini ditelan diam-diam
+                // oleh .catch(() => {}), jadi baris Biaya Iklan (& Pemasukan)
+                // di Keuangan nyangkut terus walau toast bilang "Transaksi
+                // dihapus". Urutan yang benar: bereskan referensinya dulu,
+                // baru hapus yang direferensikan (sama seperti pola yang
+                // dipakai lepasPemasukanCekoutDariGudang() di atas).
                 if (t.tipe === "pencairan" && t.keuangan_transaksi_id_iklan) {
                   // Lepas tanda semua Iklan yang tadi diselesaikan lewat pencairan
                   // ini, supaya otomatis ikut ke perhitungan pencairan berikutnya.
                   await sb(`marketplace_transaksi?keuangan_transaksi_id=eq.${t.keuangan_transaksi_id_iklan}`, {
                     method: "PATCH",
                     body: JSON.stringify({ keuangan_transaksi_id: null }),
-                  }).catch(() => {});
+                  });
+                }
+
+                await sb(`marketplace_transaksi?id=eq.${t.id}`, { method: "DELETE" });
+
+                if (t.tipe === "pencairan" && t.keuangan_transaksi_id) {
+                  await sb(`keuangan_transaksi?id=eq.${t.keuangan_transaksi_id}`, { method: "DELETE" }).catch(() => {});
+                }
+                if (t.tipe === "pencairan" && t.keuangan_transaksi_id_iklan) {
                   await sb(`keuangan_transaksi?id=eq.${t.keuangan_transaksi_id_iklan}`, { method: "DELETE" }).catch(() => {});
                 }
-                await sb(`marketplace_transaksi?id=eq.${t.id}`, { method: "DELETE" });
               }, "Transaksi dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
