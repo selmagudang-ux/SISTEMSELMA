@@ -111,6 +111,15 @@ export default function Reseller({
       />
     );
 
+  if (sub === "data-pelanggan")
+    return (
+      <DataPelangganReseller
+        pesananReseller={pesananReseller}
+        pelangganGrosir={pelangganGrosir}
+        pembayaranGrosir={pembayaranGrosir}
+      />
+    );
+
   // "toko" (default/fallback)
   return (
     <SemuaPesananReseller
@@ -217,6 +226,81 @@ function SemuaPesananReseller({ pesananReseller, pelangganGrosir, pembayaranGros
               </div>
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =========================================================
+// DATA PELANGGAN RESELLER TOKO — daftar LENGKAP semua pelanggan yang pernah
+// pesan lewat Reseller Toko (bukan cuma yang berhutang seperti "Penagihan
+// Hutang" di bawah): jumlah pesanan, total omset, dan sisa hutang tiap
+// pelanggan, diurutkan omset terbesar dulu. Halaman "Lihat Semua" dari
+// ringkasan "Data Pelanggan" di Dashboard Penjualan > kartu Reseller Toko.
+// =========================================================
+function DataPelangganReseller({ pesananReseller, pelangganGrosir, pembayaranGrosir }) {
+  const [q, setQ] = useState("");
+  const namaPelanggan = (id) => pelangganGrosir.find((p) => p.id === id)?.nama || "—";
+
+  const pesananAktif = (pesananReseller || []).filter((p) => p.status !== "Batal");
+
+  const daftar = (() => {
+    const map = new Map();
+    for (const p of pesananAktif) {
+      const key = p.pelanggan_id || "-";
+      const entri = map.get(key) || { id: key, nama: namaPelanggan(p.pelanggan_id), jumlahPesanan: 0, omset: 0, sisaHutang: 0 };
+      entri.jumlahPesanan += 1;
+      entri.omset += Number(p.total) || 0;
+      entri.sisaHutang += sisaHutangPesanan(p, pembayaranGrosir);
+      map.set(key, entri);
+    }
+    return Array.from(map.values()).sort((a, b) => b.omset - a.omset);
+  })();
+
+  const filtered = daftar.filter((d) => !q.trim() || d.nama.toLowerCase().includes(q.trim().toLowerCase()));
+
+  return (
+    <div>
+      <PageHeader
+        title="Data Pelanggan — Reseller Toko"
+        description="Rekap semua pelanggan yang pernah pesan lewat Reseller Toko: jumlah pesanan, total omset, dan sisa hutang, diurutkan omset terbesar."
+      />
+
+      <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm mb-4">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari nama pelanggan…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState label={q ? "Tidak ada pelanggan yang cocok." : "Belum ada pelanggan Reseller Toko."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-500 border-b border-slate-800">
+                <th className="px-4 py-2.5 font-medium">Pelanggan</th>
+                <th className="px-4 py-2.5 font-medium text-right">Jml. Pesanan</th>
+                <th className="px-4 py-2.5 font-medium text-right">Total Omset</th>
+                <th className="px-4 py-2.5 font-medium text-right">Sisa Hutang</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((d) => (
+                <tr key={d.id} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 text-slate-300">{d.nama}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
+                  <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
