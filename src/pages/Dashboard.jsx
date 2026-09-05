@@ -3,7 +3,7 @@ import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
-  Activity, Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
+  Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -11,7 +11,6 @@ import {
   sisaHutangPesanan,
   ringkasanKeuangan,
   saldoPerRekening,
-  arusKasPerPeriode,
   breakdownPengeluaranKategori,
   breakdownPemasukanKategori,
   laporanLabaRugi,
@@ -23,7 +22,7 @@ import {
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
-import { GrafikArusKas, BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
+import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
 import { isEntriTokoOffline } from "./TokoOffline";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 
@@ -47,11 +46,10 @@ import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 // Toko Offline (dari keuangan_transaksi yang ditandai isEntriTokoOffline —
 // lihat pages/TokoOffline.jsx). Lihat fungsi DashboardPenjualan di bawah.
 const TABS = [
-  { key: "monitoring", label: "Dashboard Monitoring", icon: Activity },
-  { key: "gudang", label: "Dashboard Gudang", icon: Warehouse },
-  { key: "penjualan", label: "Dashboard Penjualan", icon: Store },
-  { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet },
-  { key: "absensi", label: "Dashboard Absensi", icon: Clock },
+  { key: "gudang", label: "Dashboard Gudang", icon: Warehouse, color: "sky" },
+  { key: "penjualan", label: "Dashboard Penjualan", icon: Store, color: "emerald" },
+  { key: "absensi", label: "Dashboard Absensi", icon: Clock, color: "violet" },
+  { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet, color: "amber" },
 ];
 
 function awalBulanIni() {
@@ -154,7 +152,7 @@ export default function Dashboard({
   pengajuanRestock = [],
   skuMaster = [],
 }) {
-  const [tab, setTab] = useState("monitoring");
+  const [tab, setTab] = useState("gudang");
 
   // Filter periode global "Bulan & Tahun" — dipakai oleh ringkasan yang
   // sifatnya berbasis periode (Keuangan, Grosir, Monitoring, Absensi). Default
@@ -178,8 +176,6 @@ export default function Dashboard({
             ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
-            : tab === "monitoring"
-            ? "Pantau tiap tahap alur barang — dari pesanan ke supplier sampai siap dijual — plus akses cepat ke laporan keuangan & penjualan grosir."
             : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
         }
         action={
@@ -192,19 +188,25 @@ export default function Dashboard({
         }
       />
 
-      <div className="flex flex-wrap items-center gap-1.5 mb-5 bg-slate-900 border border-slate-800 rounded-lg p-1">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
+          const c = COLOR[t.color] || COLOR.slate;
           return (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
-                active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+              className={`flex items-center gap-2.5 text-left px-3.5 py-3 rounded-xl border transition ${
+                active
+                  ? `${c.bg} border-current ${c.text}`
+                  : "bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-900/70"
               }`}
             >
-              <Icon size={13} /> {t.label}
+              <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${active ? "bg-slate-950/30" : c.bg}`}>
+                <Icon size={15} className={active ? c.text : c.text} />
+              </span>
+              <span className={`text-xs font-semibold leading-tight ${active ? c.text : "text-slate-200"}`}>{t.label}</span>
             </button>
           );
         })}
@@ -219,19 +221,6 @@ export default function Dashboard({
           pesananMasuk={pesananMasuk}
           skuMaster={skuMaster}
           master={master}
-          periodeDari={periodeDari}
-          periodeSampai={periodeSampai}
-          periodeLabel={periodeLabel}
-        />
-      ) : tab === "monitoring" ? (
-        <DashboardMonitoring
-          items={items}
-          pesananMasuk={pesananMasuk}
-          penempatan={penempatan}
-          keuanganTransaksi={keuanganTransaksi}
-          pesananGrosir={pesananGrosir}
-          onNavigate={onNavigate}
-          setModal={setModal}
           periodeDari={periodeDari}
           periodeSampai={periodeSampai}
           periodeLabel={periodeLabel}
@@ -286,8 +275,7 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
   // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
   // kartu ringkasan "Kas Masuk/Keluar (bulan terpilih)" di bawahnya.
-  const transaksiPeriode = keuanganTransaksi.filter((t) => t.tanggal >= dari && t.tanggal <= sampai);
-  const { mode, data: dataArusKas } = arusKasPerPeriode(transaksiPeriode);
+
 
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
   const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
@@ -308,8 +296,6 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
           iconColor={ringkasanBulanIni.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
         />
       </div>
-
-      <GrafikArusKas mode={mode} data={dataArusKas} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <BreakdownPemasukan
@@ -732,7 +718,7 @@ function DashboardGudang({
               </div>
             </div>
             <button
-              onClick={() => onNavigate && onNavigate("sku-harga")}
+              onClick={() => onNavigate && onNavigate("sku-harga", "master-barang")}
               className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
             >
               Buka Halaman Lengkap <ArrowRight size={12} />
@@ -800,7 +786,7 @@ function DashboardGudang({
 
       {tabAlur && (
         <div>
-          <div className="flex flex-wrap items-center gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
             {ALUR_TABS.map((t) => {
               const Icon = t.icon;
               const active = tabAlur === t.key;
@@ -808,8 +794,10 @@ function DashboardGudang({
                 <button
                   key={t.key}
                   onClick={() => setTabAlur(t.key)}
-                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
-                    active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                  className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition whitespace-nowrap ${
+                    active
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                      : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                   }`}
                 >
                   <Icon size={13} /> {t.label}
@@ -1366,280 +1354,6 @@ function DashboardGudang({
   );
 }
 
-// Tab "Dashboard Monitoring" — satu layar untuk memantau posisi tiap barang
-// di sepanjang alur, dari pesanan ke supplier sampai siap dijual, plus akses
-// cepat ke Laporan Keuangan & Penjualan Grosir. Beda dari "Dashboard Gudang"
-// (yang cuma menghitung), tab ini menampilkan DAFTAR barangnya langsung per
-// tahap supaya owner/superadmin bisa lihat & klik satu-satu tanpa perlu
-// bolak-balik ke tiap halaman kerja.
-const MAX_BARIS_MONITORING = 8;
-
-function SeksiMonitoring({ icon: Icon, color = "slate", title, description, count, rows, onNavigate, navTarget, emptyLabel }) {
-  const c = COLOR[color] || COLOR.slate;
-  const lebih = rows.length - MAX_BARIS_MONITORING;
-  return (
-    <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
-      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${c.bg}`}>
-            <Icon size={15} className={c.text} />
-          </span>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold flex items-center gap-2">
-              {title}
-              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${c.bg} ${c.text}`}>{count}</span>
-            </div>
-            <div className="text-[11px] text-slate-500 truncate">{description}</div>
-          </div>
-        </div>
-        {onNavigate && navTarget && (
-          <button
-            onClick={() => onNavigate(navTarget.menu, navTarget.sub)}
-            className="shrink-0 text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-          >
-            Buka Halaman <ArrowRight size={12} />
-          </button>
-        )}
-      </div>
-      {rows.length === 0 ? (
-        <div className="p-5">
-          <EmptyState label={emptyLabel} />
-        </div>
-      ) : (
-        <>
-          <div className="divide-y divide-slate-800/60">
-            {rows.slice(0, MAX_BARIS_MONITORING).map((r) => (
-              <div key={r.key} onClick={r.onClick} className={`flex items-center justify-between gap-3 px-4 py-2.5 ${r.onClick ? "cursor-pointer hover:bg-slate-900/50" : ""}`}>
-                <div className="min-w-0 flex items-center gap-3">
-                  {r.foto_url ? (
-                    <img src={r.foto_url} alt={r.label} loading="lazy" decoding="async" className="w-8 h-8 object-cover rounded-md border border-slate-800 shrink-0" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-md border border-dashed border-slate-800 flex items-center justify-center text-slate-700 shrink-0">
-                      <Icon size={12} />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="font-mono text-xs text-slate-200 truncate">{r.label}</div>
-                    {r.subLabel && <div className="text-[11px] text-slate-500 truncate">{r.subLabel}</div>}
-                  </div>
-                </div>
-                {r.rightLabel && <div className="shrink-0 text-[11px] text-slate-400 whitespace-nowrap">{r.rightLabel}</div>}
-              </div>
-            ))}
-          </div>
-          {lebih > 0 && (
-            <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-800/60">
-              +{lebih} barang lainnya — buka halaman terkait untuk lihat semua.
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function DashboardMonitoring({ items, pesananMasuk, penempatan, keuanganTransaksi, pesananGrosir, onNavigate, setModal, periodeDari, periodeSampai, periodeLabel }) {
-  // 1) Barang yang sedang dipesan ke supplier (PO belum "selesai"/"batal").
-  const sedangDipesan = (pesananMasuk || [])
-    .filter((p) => {
-      const st = statusPesananMasuk(p);
-      return st === "menunggu" || st === "sebagian";
-    })
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-  // 2)-6) Barang di tiap tahap alur (lihat STAGE_ORDER/STAGE_META di lib/constants.js).
-  const byStage = (stage) => items.filter((i) => i.stage === stage);
-  const belumSku = byStage("sku");
-  const belumRak = byStage("rak");
-  const hargaBelumPasti = byStage("menunggu-harga");
-  const belumFoto = byStage("verifikasi");
-  const belumUpload = byStage("marketplace");
-
-  const labelItem = (i) => i.sku || i.barcode_supplier || "—";
-  const itemRow = (i, rightLabel) => ({
-    key: i.id,
-    label: labelItem(i),
-    subLabel: `${i.jumlah || 0}x${i.tanggal ? ` · ${i.tanggal}` : ""}`,
-    foto_url: i.foto_url,
-    rightLabel,
-    onClick: setModal ? () => setModal({ type: "detail-item", item: i }) : undefined,
-  });
-
-  // Ringkasan singkat Laporan Keuangan & Penjualan Grosir — mengikuti filter
-  // Bulan & Tahun di atas Dashboard, jalan pintas ke laporan lengkapnya.
-  const dari = periodeDari || awalBulanIni();
-  const sampai = periodeSampai || hariIniIso();
-  const ringkasanKeuanganBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
-  // Cuma pesanan Grosir asli — Reseller Toko/Cekout dihitung terpisah, bukan
-  // di sini (sama seperti Semua Pesanan & Laporan Grosir).
-  const pesananGrosirSajaMonitoring = (pesananGrosir || []).filter(
-    (p) => !p.jenis_transaksi || p.jenis_transaksi === "grosir"
-  );
-  const laporanGrosirBulanIni = ringkasanGrosir(pesananGrosirSajaMonitoring, dari, sampai);
-
-  return (
-    <div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <StatCard label="Sedang Dipesan" value={sedangDipesan.length} icon={Truck} />
-        <StatCard label="Belum Ada SKU" value={belumSku.length} icon={Boxes} accent="text-amber-400" iconColor="text-amber-500" />
-        <StatCard label="Belum Ada Rak" value={belumRak.length} icon={MapPin} accent="text-sky-400" iconColor="text-sky-500" />
-        <StatCard label="Harga Belum Pasti" value={hargaBelumPasti.length} icon={DollarSign} accent="text-orange-400" iconColor="text-orange-500" />
-        <StatCard label="Belum Pemotretan" value={belumFoto.length} icon={Camera} accent="text-pink-400" iconColor="text-pink-500" />
-        <StatCard label="Belum Upload MP" value={belumUpload.length} icon={ShoppingBag} accent="text-teal-400" iconColor="text-teal-500" />
-      </div>
-
-      <SeksiMonitoring
-        icon={Truck}
-        color="amber"
-        title="Barang Sedang Dipesan"
-        description="Pesanan ke supplier yang belum datang penuh (menunggu / sebagian datang)."
-        count={sedangDipesan.length}
-        rows={sedangDipesan.map((p) => {
-          const st = statusPesananMasuk(p);
-          const meta = PO_STATUS_META[st];
-          const detail = detailModelPesanan(p);
-          return {
-            key: p.id,
-            label: p.supplier || "—",
-            subLabel: `${detail.length} model · dipesan ${p.tanggal_pesan || "—"}`,
-            rightLabel: meta?.label,
-            onClick: setModal ? () => setModal({ type: "konfirmasi-datang", item: p }) : undefined,
-          };
-        })}
-        onNavigate={onNavigate}
-        navTarget={{ menu: "barang-datang" }}
-        emptyLabel="Tidak ada pesanan yang masih ditunggu — semua sudah datang."
-      />
-
-      <SeksiMonitoring
-        icon={Boxes}
-        color="amber"
-        title="Sudah Datang, Belum Ada SKU"
-        description="Barang fisik sudah diterima gudang, tinggal dibuatkan SKU."
-        count={belumSku.length}
-        rows={belumSku.map((i) => itemRow(i))}
-        onNavigate={onNavigate}
-        navTarget={{ menu: "sku-harga", sub: "buat" }}
-        emptyLabel="Tidak ada barang yang menunggu dibuatkan SKU."
-      />
-
-      <SeksiMonitoring
-        icon={MapPin}
-        color="sky"
-        title="Sudah Ada SKU, Belum Ada Rak"
-        description="SKU sudah dibuat, tinggal ditempatkan ke rak gudang."
-        count={belumRak.length}
-        rows={belumRak.map((i) => itemRow(i))}
-        onNavigate={onNavigate}
-        navTarget={{ menu: "rak", sub: "tempatkan" }}
-        emptyLabel="Tidak ada SKU yang menunggu ditempatkan ke rak."
-      />
-
-      <SeksiMonitoring
-        icon={DollarSign}
-        color="orange"
-        title="Harga Belum Dipastikan"
-        description="Sudah punya rak, tapi ada perubahan harga asli yang perlu diputuskan dulu sebelum lanjut ke pemotretan."
-        count={hargaBelumPasti.length}
-        rows={hargaBelumPasti.map((i) => itemRow(i))}
-        onNavigate={onNavigate}
-        navTarget={{ menu: "sku-harga", sub: "master-barang" }}
-        emptyLabel="Tidak ada barang yang harganya belum dipastikan."
-      />
-
-      <SeksiMonitoring
-        icon={Camera}
-        color="pink"
-        title="Sudah Ada Rak, Belum Pemotretan"
-        description="Harga sudah pasti, tinggal difoto untuk keperluan katalog & marketplace."
-        count={belumFoto.length}
-        rows={belumFoto.map((i) => itemRow(i))}
-        onNavigate={onNavigate}
-        navTarget={{ menu: "foto" }}
-        emptyLabel="Tidak ada barang yang menunggu difoto."
-      />
-
-      <SeksiMonitoring
-        icon={ShoppingBag}
-        color="teal"
-        title="Sudah Ada Foto, Belum Upload Marketplace"
-        description="Foto sudah siap, tinggal diupload ke marketplace."
-        count={belumUpload.length}
-        rows={belumUpload.map((i) => itemRow(i))}
-        onNavigate={onNavigate}
-        navTarget={{ menu: "marketplace", sub: "belum" }}
-        emptyLabel="Tidak ada barang yang menunggu upload ke marketplace."
-      />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
-        <div className="rounded-xl border border-slate-800 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                <Wallet size={15} className="text-amber-400" />
-              </span>
-              <div className="text-sm font-semibold">Laporan Keuangan</div>
-            </div>
-            <button
-              onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
-              className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-            >
-              Lihat Laporan <ArrowRight size={12} />
-            </button>
-          </div>
-          <div className="grid grid-cols-3 divide-x divide-slate-800">
-            <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Kas Masuk ({periodeLabel})</div>
-              <div className="text-sm font-bold text-emerald-400">{fmtRp(ringkasanKeuanganBulanIni.masuk)}</div>
-            </div>
-            <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Kas Keluar ({periodeLabel})</div>
-              <div className="text-sm font-bold text-red-400">{fmtRp(ringkasanKeuanganBulanIni.keluar)}</div>
-            </div>
-            <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Laba (Rugi)</div>
-              <div className={`text-sm font-bold ${ringkasanKeuanganBulanIni.saldo >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {fmtRp(ringkasanKeuanganBulanIni.saldo)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <span className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-                <Store size={15} className="text-emerald-400" />
-              </span>
-              <div className="text-sm font-semibold">Penjualan Grosir</div>
-            </div>
-            <button
-              onClick={() => onNavigate && onNavigate("grosir", "laporan")}
-              className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-            >
-              Lihat Laporan <ArrowRight size={12} />
-            </button>
-          </div>
-          <div className="grid grid-cols-3 divide-x divide-slate-800">
-            <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Omset ({periodeLabel})</div>
-              <div className="text-sm font-bold text-emerald-400">{fmtRp(laporanGrosirBulanIni.omset)}</div>
-            </div>
-            <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Jumlah Pesanan</div>
-              <div className="text-sm font-bold">{laporanGrosirBulanIni.jumlahPesanan}</div>
-            </div>
-            <div className="p-4">
-              <div className="text-[11px] text-slate-500 mb-1">Rata-rata / Pesanan</div>
-              <div className="text-sm font-bold">{fmtRp(laporanGrosirBulanIni.rataRata)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Jumlah nominal marketplace_transaksi/keuangan_transaksi bertipe tertentu
 // yang tanggalnya jatuh di rentang [dari, sampai] (format "YYYY-MM-DD",
 // inklusif) — dipakai untuk menghitung omset channel Marketplace & Toko
@@ -2134,15 +1848,17 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
               <ShoppingBag size={14} className="text-amber-400" /> Toko Marketplace
             </div>
             {daftarNamaTokoUnik.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+              <div className="flex flex-wrap items-center gap-2">
                 {daftarNamaTokoUnik.map((t) => {
                   const active = tokoAktif?.key === t.key;
                   return (
                     <button
                       key={t.key}
                       onClick={() => setTokoAktifKey(t.key)}
-                      className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
-                        active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                      className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition whitespace-nowrap ${
+                        active
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                          : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200"
                       }`}
                     >
                       <Store size={13} /> {t.label}
@@ -2691,7 +2407,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
       {/* Pill-tab Laporan Grosir / Laporan Toko Offline — pola sama persis
           seperti ALUR_TABS ("Barang yang di Pesan" dkk) di DashboardGudang:
           cuma satu laporan yang tampil, ganti dengan klik tab. */}
-      <div className="flex flex-wrap items-center gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {STORE_SELMA_TABS.map((t) => {
           const Icon = t.icon;
           const active = tabStoreSelma === t.key;
@@ -2699,8 +2415,10 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
             <button
               key={t.key}
               onClick={() => setTabStoreSelma(t.key)}
-              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md transition whitespace-nowrap ${
-                active ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition whitespace-nowrap ${
+                active
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                  : "border-slate-800 bg-slate-900 text-slate-400 hover:border-slate-700 hover:text-slate-200"
               }`}
             >
               <Icon size={13} /> {t.label}

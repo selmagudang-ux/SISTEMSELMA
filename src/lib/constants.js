@@ -109,7 +109,7 @@ export const MASTER_TIPE = [
 // marketplace, grosir, dst) tidak berubah sama sekali.
 // =========================================================
 export const NAV = [
-  { key: "dashboard", label: "DASHBOARD", icon: LayoutDashboard },
+  { key: "dashboard", label: "DASHBOARD MONITORING", icon: LayoutDashboard },
   // Menu sendiri (bukan tab di dalam Dashboard) supaya owner/superadmin bisa
   // langsung menuju & lihat badge-nya dari sidebar tanpa buka Dashboard dulu.
   // Dibatasi ke owner & superadmin lewat ROLE_MENUS di bawah (role lain tidak

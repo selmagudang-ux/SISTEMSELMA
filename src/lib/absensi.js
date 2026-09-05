@@ -326,6 +326,46 @@ export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tangga
   });
 }
 
+// Buat baris absen "Masuk" manual lengkap dengan jam — khusus role "superappa"
+// (ditegakkan di UI, lihat ROLE_BOLEH_EDIT_JAM di pages/Absensi.jsx). Beda
+// dari simpanAbsensiManual (yang cuma bisa Sakit/Izin/Libur) dan updateJamAbsensi
+// (yang cuma mengoreksi baris yang SUDAH ada): fungsi ini dipakai untuk hari
+// yang masih "Tidak Absen" sama sekali, supaya superappa bisa langsung
+// menuliskan jam masuk karyawan tanpa perlu karyawannya tap absen dulu.
+// telat_menit dihitung terhadap shift yang dipilih, sama seperti absen asli
+// lewat submitAbsen(), supaya rekap harian/mingguan/bulanan tetap akurat.
+export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, tanggal, jamMasuk, shiftNama }) {
+  if (!idKaryawan || !tanggal || !jamMasuk) throw new Error("Karyawan, tanggal, dan jam masuk wajib diisi.");
+
+  await hapusAbsensiHarian(idKaryawan, tanggal);
+
+  const settings = await getAbsensiSettings();
+  const shiftList = daftarShift(settings);
+  const shiftDipakai = shiftList.find((s) => s.nama === shiftNama) || shiftList[0];
+
+  const jamHHMM = String(jamMasuk).slice(0, 5);
+  const telatMenit = hitungTelatMenit(jamHHMM, shiftDipakai.jam_masuk, settings?.toleransi_telat_menit || 0);
+
+  return sb("absensi", {
+    method: "POST",
+    body: JSON.stringify({
+      karyawan_id: karyawanId,
+      nama,
+      id_karyawan: idKaryawan,
+      tipe: "Masuk",
+      tanggal,
+      jam: `${jamHHMM}:00`,
+      latitude: 0,
+      longitude: 0,
+      jarak_meter: 0,
+      telat_menit: telatMenit,
+      lembur_jam: 0,
+      shift: shiftDipakai?.nama || null,
+      keterangan: "Diinput manual oleh superappa",
+    }),
+  });
+}
+
 // Koreksi jam Masuk/Pulang pada baris absen ASLI yang sudah ada — khusus role
 // "superappa" (ditegakkan di halaman UI, lihat ROLE_BOLEH_EDIT_JAM di
 // pages/Absensi.jsx). Beda dari simpanAbsensiManual di atas (yang MENIMPA

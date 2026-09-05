@@ -12,6 +12,7 @@ import {
   listAbsensi,
   hapusAbsensiHarian,
   simpanAbsensiManual,
+  simpanAbsensiManualMasuk,
   updateJamAbsensi,
   rekapHarianAbsensi,
   rekapBulananAbsensi,
@@ -73,6 +74,16 @@ function RekapAbsensi({ showToast, role }) {
   const [savingManual, setSavingManual] = useState(false);
   const [editJamFor, setEditJamFor] = useState(null); // {idKaryawan, nama, tanggal, jamSekarang, jamBaru}
   const [savingJam, setSavingJam] = useState(false);
+  // Daftar shift — dipakai buat dropdown "Shift" di modal "Masuk" manual
+  // (khusus superappa), supaya telat_menit dihitung terhadap shift yang benar.
+  const [shiftList, setShiftList] = useState([]);
+
+  useEffect(() => {
+    if (!bolehEditJam) return;
+    getAbsensiSettings()
+      .then((s) => setShiftList(daftarShift(s)))
+      .catch(() => {});
+  }, [bolehEditJam]);
 
   const load = async () => {
     try {
@@ -134,6 +145,8 @@ function RekapAbsensi({ showToast, role }) {
       tanggal: tanggal || new Date().toISOString().slice(0, 10),
       tipe: tipeAwal || "Sakit",
       keterangan: keteranganAwal || "",
+      jamMasuk: "",
+      shift: shiftList[0]?.nama || "",
       existing: !!existing,
     });
   };
@@ -143,17 +156,33 @@ function RekapAbsensi({ showToast, role }) {
       showToast?.("Pilih karyawan dan tanggal dulu", "err");
       return;
     }
+    if (manualFor.tipe === "Masuk" && !manualFor.jamMasuk) {
+      showToast?.("Jam masuk wajib diisi", "err");
+      return;
+    }
     setSavingManual(true);
     try {
-      await simpanAbsensiManual({
-        karyawanId: manualFor.karyawanId,
-        idKaryawan: manualFor.idKaryawan,
-        nama: manualFor.nama,
-        tanggal: manualFor.tanggal,
-        tipe: manualFor.tipe,
-        keterangan: manualFor.keterangan,
-      });
-      showToast?.(`Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditandai ${manualFor.tipe}.`);
+      if (manualFor.tipe === "Masuk") {
+        await simpanAbsensiManualMasuk({
+          karyawanId: manualFor.karyawanId,
+          idKaryawan: manualFor.idKaryawan,
+          nama: manualFor.nama,
+          tanggal: manualFor.tanggal,
+          jamMasuk: manualFor.jamMasuk,
+          shiftNama: manualFor.shift,
+        });
+        showToast?.(`Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditulis Masuk jam ${manualFor.jamMasuk}.`);
+      } else {
+        await simpanAbsensiManual({
+          karyawanId: manualFor.karyawanId,
+          idKaryawan: manualFor.idKaryawan,
+          nama: manualFor.nama,
+          tanggal: manualFor.tanggal,
+          tipe: manualFor.tipe,
+          keterangan: manualFor.keterangan,
+        });
+        showToast?.(`Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditandai ${manualFor.tipe}.`);
+      }
       setManualFor(null);
       load();
     } catch (e) {
@@ -558,7 +587,9 @@ function RekapAbsensi({ showToast, role }) {
       {manualFor && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
-            <div className="text-sm font-semibold mb-3">Tandai Sakit / Izin / Libur</div>
+            <div className="text-sm font-semibold mb-3">
+              {manualFor.tipe === "Masuk" ? "Tulis Jam Masuk" : "Tandai Sakit / Izin / Libur"}
+            </div>
             <div className="space-y-3">
               {manualFor.idKaryawan ? (
                 <Field label="Karyawan">
@@ -589,7 +620,7 @@ function RekapAbsensi({ showToast, role }) {
               </Field>
               <Field label="Status">
                 <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-1">
-                  {["Sakit", "Izin", "Libur"].map((t) => (
+                  {["Sakit", "Izin", "Libur", ...(bolehEditJam ? ["Masuk"] : [])].map((t) => (
                     <button
                       key={t}
                       type="button"
@@ -601,14 +632,40 @@ function RekapAbsensi({ showToast, role }) {
                   ))}
                 </div>
               </Field>
-              <Field label="Catatan (opsional)">
-                <input
-                  className={inputClass}
-                  placeholder="mis. Surat dokter, keperluan keluarga, dll."
-                  value={manualFor.keterangan}
-                  onChange={(e) => setManualFor((f) => ({ ...f, keterangan: e.target.value }))}
-                />
-              </Field>
+              {manualFor.tipe === "Masuk" ? (
+                <>
+                  <Field label="Jam Masuk">
+                    <input
+                      type="time"
+                      className={inputClass}
+                      value={manualFor.jamMasuk}
+                      onChange={(e) => setManualFor((f) => ({ ...f, jamMasuk: e.target.value }))}
+                    />
+                  </Field>
+                  {shiftList.length > 1 && (
+                    <Field label="Shift">
+                      <select
+                        className={inputClass}
+                        value={manualFor.shift}
+                        onChange={(e) => setManualFor((f) => ({ ...f, shift: e.target.value }))}
+                      >
+                        {shiftList.map((s) => (
+                          <option key={s.nama} value={s.nama}>{s.nama} ({s.jam_masuk}–{s.jam_pulang})</option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                </>
+              ) : (
+                <Field label="Catatan (opsional)">
+                  <input
+                    className={inputClass}
+                    placeholder="mis. Surat dokter, keperluan keluarga, dll."
+                    value={manualFor.keterangan}
+                    onChange={(e) => setManualFor((f) => ({ ...f, keterangan: e.target.value }))}
+                  />
+                </Field>
+              )}
             </div>
             <div className="flex gap-2 mt-4">
               <button
