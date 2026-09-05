@@ -1645,9 +1645,10 @@ export default function ModalRouter({
                 Pesanan ini sumber saldo deposit sebesar {fmtRp(netDepositPesananIni)}, tapi {fmtRp(depositSudahKepakai)}{" "}
                 dari situ sudah kepakai pelanggan (mis. sudah dicairkan). Bagian yang sudah kepakai itu{" "}
                 <span className="font-semibold">akan tetap ikut dihapus total</span> bersama baris pemakaian/pencairan
-                lain milik pelanggan ini yang senilai itu (diambil dari yang paling lama), supaya tidak ada riwayat
-                deposit yang nyangkut merujuk ke pesanan yang sudah tidak ada — saldo deposit pelanggan tidak berubah
-                karena kedua baris itu saling meniadakan.
+                lain milik pelanggan ini yang senilai itu (diambil dari yang paling lama) — kalau baris pencairan itu
+                ketemu pasangannya di Laporan Keuangan (baris pengeluaran "Pengembalian deposit"/"R.CO · Pencairan"),
+                baris Keuangan itu juga ikut dihapus/dikurangi senilai yang sama, supaya tidak ada yang nyangkut di
+                kedua tempat.
               </div>
             )}
           </div>
@@ -1693,15 +1694,18 @@ export default function ModalRouter({
                 // lain milik pelanggan yang sama senilai itu (bukan yang
                 // tertaut ke pesanan ini, diambil dari yang paling lama),
                 // supaya kedua baris saling meniadakan dan saldo deposit
-                // pelanggan TIDAK berubah. Catatan pengeluaran di Keuangan
-                // (mis. "Pengembalian deposit"/"Reseller Checkout" waktu
-                // dicairkan) TIDAK ikut dihapus di sini — uang itu beneran
-                // sudah keluar dari rekening, jadi tetap harus tercatat di
-                // Laporan Keuangan walau baris ledger deposit internalnya
-                // sudah dibersihkan. Kalau (jarang terjadi) baris debit lain
-                // tidak cukup buat menutupi seluruhnya, sisa yang tidak
-                // tertutup tetap disimpan (dilepas tautan) sebagai jaring
-                // pengaman supaya saldo deposit pelanggan tidak jadi minus.
+                // pelanggan TIDAK berubah. Kalau baris debit itu adalah
+                // "Dicairkan ke pelanggan..." (dibuat sepasang dengan satu
+                // baris pengeluaran "Pengembalian deposit"/"R.CO · Pencairan"
+                // di keuangan_transaksi waktu Cairkan Deposit dijalankan),
+                // baris Keuangan pasangannya JUGA ikut dihapus/dikurangi
+                // senilai yang sama — dicocokkan lewat pola teks keterangan +
+                // nama pelanggan + jumlah + tanggal (skema tidak menyimpan FK
+                // eksplisit antara keduanya). Kalau (jarang terjadi) baris
+                // debit lain tidak cukup buat menutupi seluruhnya, sisa yang
+                // tidak tertutup tetap disimpan (dilepas tautan) sebagai
+                // jaring pengaman supaya saldo deposit pelanggan tidak jadi
+                // minus.
                 {
                   const depositTerkaitPesanan = (depositGrosir || []).filter((d) => d.pesanan_id_terkait === p.id);
                   const netDariPesananIni = depositTerkaitPesanan.reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
@@ -1720,12 +1724,45 @@ export default function ModalRouter({
                       await sb(`grosir_deposit?id=eq.${d.id}`, { method: "DELETE" });
                     }
 
+                    // Nama pelanggan dipakai buat mencocokkan baris
+                    // pengeluaran "Pencairan" di Keuangan — baris itu cuma
+                    // menyimpan nama pelanggan di keterangannya, bukan
+                    // pesanan_id atau referensi lain.
+                    const namaPelangganIni = (pelangganGrosir || []).find((x) => x.id === p.pelanggan_id)?.nama || "";
+                    const keuanganTerpakai = new Set();
+
+                    const cariKeuanganPencairanTerkait = (depositRow) => {
+                      let prefix = null;
+                      if ((depositRow.keterangan || "").startsWith("Dicairkan ke pelanggan Reseller Cekout")) {
+                        prefix = `R.CO · Pencairan — ${namaPelangganIni}`;
+                      } else if ((depositRow.keterangan || "").startsWith("Dicairkan ke pelanggan")) {
+                        prefix = `Pengembalian deposit — ${namaPelangganIni}`;
+                      } else {
+                        return null;
+                      }
+                      const tglDeposit = (depositRow.created_at || "").slice(0, 10);
+                      const jumlahAsli = Math.abs(Number(depositRow.jumlah) || 0);
+                      return (
+                        (keuanganTransaksi || []).find(
+                          (t) =>
+                            !keuanganTerpakai.has(t.id) &&
+                            t.tipe === "keluar" &&
+                            typeof t.keterangan === "string" &&
+                            t.keterangan.startsWith(prefix) &&
+                            Math.abs((Number(t.jumlah) || 0) - jumlahAsli) < 0.0001 &&
+                            (!tglDeposit || t.tanggal === tglDeposit)
+                        ) || null
+                      );
+                    };
+
                     // Pool baris debit LAIN milik pelanggan yang sama (bukan
                     // tertaut ke pesanan ini) yang bisa dipakai buat menutupi
                     // porsi kredit yang "sudah kepakai" — dari yang paling
                     // lama, magnitudonya dilacak lokal (sisaMagnitude) supaya
                     // satu baris bisa dipotong sebagian oleh lebih dari satu
-                    // kredit kalau perlu.
+                    // kredit kalau perlu. Kalau baris ini ketemu pasangannya
+                    // di Keuangan, pasangan itu ikut dilacak (keuanganTerkaitId)
+                    // supaya ikut dipotong/dihapus di jumlah yang sama.
                     const poolDebitLain = (depositGrosir || [])
                       .filter(
                         (d) =>
@@ -1733,11 +1770,17 @@ export default function ModalRouter({
                           d.pesanan_id_terkait !== p.id &&
                           (Number(d.jumlah) || 0) < 0
                       )
-                      .map((d) => ({
-                        id: d.id,
-                        sisaMagnitude: Math.abs(Number(d.jumlah) || 0),
-                        created_at: d.created_at,
-                      }))
+                      .map((d) => {
+                        const keuanganTerkait = cariKeuanganPencairanTerkait(d);
+                        if (keuanganTerkait) keuanganTerpakai.add(keuanganTerkait.id);
+                        return {
+                          id: d.id,
+                          sisaMagnitude: Math.abs(Number(d.jumlah) || 0),
+                          created_at: d.created_at,
+                          keuanganTerkaitId: keuanganTerkait?.id || null,
+                          keuanganSisaMagnitude: keuanganTerkait ? Math.abs(Number(keuanganTerkait.jumlah) || 0) : 0,
+                        };
+                      })
                       .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
 
                     const tutupDenganDebitLain = async (target) => {
@@ -1745,19 +1788,33 @@ export default function ModalRouter({
                       for (const row of poolDebitLain) {
                         if (sisa <= 0.0001) break;
                         if (row.sisaMagnitude <= 0.0001) continue;
-                        if (row.sisaMagnitude <= sisa + 0.0001) {
+                        const potong = Math.min(row.sisaMagnitude, sisa);
+                        const habisDeposit = row.sisaMagnitude <= sisa + 0.0001;
+
+                        if (habisDeposit) {
                           await sb(`grosir_deposit?id=eq.${row.id}`, { method: "DELETE" });
-                          sisa -= row.sisaMagnitude;
-                          row.sisaMagnitude = 0;
                         } else {
-                          const magnitudeBaru = row.sisaMagnitude - sisa;
                           await sb(`grosir_deposit?id=eq.${row.id}`, {
                             method: "PATCH",
-                            body: JSON.stringify({ jumlah: -magnitudeBaru }),
+                            body: JSON.stringify({ jumlah: -(row.sisaMagnitude - potong) }),
                           });
-                          row.sisaMagnitude = magnitudeBaru;
-                          sisa = 0;
                         }
+
+                        if (row.keuanganTerkaitId) {
+                          const habisKeuangan = row.keuanganSisaMagnitude <= potong + 0.0001;
+                          if (habisKeuangan) {
+                            await sb(`keuangan_transaksi?id=eq.${row.keuanganTerkaitId}`, { method: "DELETE" });
+                          } else {
+                            await sb(`keuangan_transaksi?id=eq.${row.keuanganTerkaitId}`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ jumlah: row.keuanganSisaMagnitude - potong }),
+                            });
+                          }
+                          row.keuanganSisaMagnitude = Math.max(0, row.keuanganSisaMagnitude - potong);
+                        }
+
+                        row.sisaMagnitude = habisDeposit ? 0 : row.sisaMagnitude - potong;
+                        sisa -= potong;
                       }
                       return sisa; // >0 kalau baris debit lain tidak cukup
                     };
