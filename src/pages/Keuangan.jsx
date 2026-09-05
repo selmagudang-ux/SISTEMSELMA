@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, Megaphone } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -459,7 +459,7 @@ export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningLis
 // margin-nya. Dipakai bareng oleh halaman Laporan Keuangan (rentang bebas)
 // dan Dashboard Keuangan (rentang bulan berjalan, menggantikan tabel
 // Transaksi Terbaru supaya dashboard langsung menunjukkan untung/rugi).
-export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, iklanInfo = 0 }) {
+export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action }) {
   const untung = labaRugi >= 0;
   return (
     <div className="rounded-xl border border-slate-800 overflow-hidden mb-5">
@@ -527,13 +527,6 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
               {(Math.round(marginPersen * 10) / 10).toLocaleString("id-ID")}%
             </td>
           </tr>
-          {iklanInfo > 0 && (
-            <tr>
-              <td colSpan={2} className="px-4 py-2 text-[11px] text-slate-500 border-t border-dashed border-slate-800">
-                <span className="text-amber-400 font-medium">Info:</span> Ada Iklan Marketplace {fmtRp(iklanInfo)} yang belum diselesaikan — belum masuk Beban di atas, baru tercatat sungguhan saat Pencairan berikutnya.
-              </td>
-            </tr>
-          )}
         </tbody>
       </table>
     </div>
@@ -997,14 +990,6 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
 
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
 
-  // Info tambahan (bukan transaksi Keuangan sungguhan): Iklan marketplace yang
-  // BELUM diselesaikan lewat Pencairan (belum jadi Biaya Iklan Marketplace
-  // sungguhan di Keuangan — lihat iklanBelumTercatat di lib/api.js & modal
-  // "marketplace-pencairan" di ModalRouter.jsx). Begitu Pencairan berikutnya
-  // terjadi, jumlah ini otomatis tercatat sebagai Beban sungguhan dan hilang
-  // dari sini — supaya tidak dihitung dua kali.
-  const iklanBelumSelesai = (marketplaceTransaksi || []).filter((t) => t.tipe === "iklan" && !t.keuangan_transaksi_id);
-  const totalIklanBelumSelesai = iklanBelumSelesai.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
@@ -1085,17 +1070,6 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
         />
       </div>
 
-      {totalIklanBelumSelesai > 0 && (
-        <div className="flex items-center gap-2 rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 px-4 py-2.5 mb-4 text-xs">
-          <Megaphone size={14} className="text-amber-400 flex-shrink-0" />
-          <span className="text-slate-300">
-            Info: Ada Iklan Marketplace{" "}
-            <span className="font-semibold text-amber-400">{fmtRp(totalIklanBelumSelesai)}</span> yang belum
-            diselesaikan — <span className="text-slate-500">baru tercatat sebagai Biaya Iklan sungguhan di Keuangan saat Pencairan berikutnya</span>.
-          </span>
-        </div>
-      )}
-
       <SaldoAwalBulan
         keuanganTransaksi={keuanganTransaksi}
         rekeningList={rekeningList}
@@ -1128,7 +1102,6 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
         labaRugi={labaRugi.labaRugi}
         marginPersen={labaRugi.marginPersen}
         subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
-        iklanInfo={totalIklanBelumSelesai}
       />
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />

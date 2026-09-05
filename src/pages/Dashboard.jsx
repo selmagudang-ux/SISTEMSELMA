@@ -282,14 +282,6 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
   const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
 
-  // Info tambahan (bukan transaksi Keuangan sungguhan) — Iklan marketplace
-  // yang belum diselesaikan lewat Pencairan (belum jadi Biaya Iklan Marketplace
-  // sungguhan). Begitu Pencairan berikutnya terjadi, otomatis jadi Beban
-  // sungguhan dan hilang dari sini (lihat iklanBelumTercatat di lib/api.js).
-  const iklanPeriode = (marketplaceTransaksi || [])
-    .filter((t) => t.tipe === "iklan" && !t.keuangan_transaksi_id)
-    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
   // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
   // kartu ringkasan "Kas Masuk/Keluar (bulan terpilih)" di bawahnya.
@@ -368,7 +360,6 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
         labaRugi={labaRugiBulanIni.labaRugi}
         marginPersen={labaRugiBulanIni.marginPersen}
         subtitle={periodeLabel}
-        iklanInfo={iklanPeriode}
         action={
           <button
             onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
