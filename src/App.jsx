@@ -797,6 +797,8 @@ function MainApp({ session, onLogout }) {
                   detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
+                  keuanganTransaksi={keuanganTransaksi}
+                  session={session}
                   reload={loadAll}
                   showToast={showToast}
                   setModal={setModal}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Search, Plus, ShoppingCart, AlertTriangle, CalendarClock, Wallet,
+  Search, Plus, ShoppingCart, AlertTriangle, CalendarClock, Wallet, Trash2,
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, InputTanggal, InputRupiah } from "../components/ui";
 import {
@@ -83,8 +83,8 @@ function infoKamis() {
 export default function Reseller({
   sub,
   pelangganGrosir, produkManualGrosir, skuMaster, penempatan,
-  pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
-  reload, showToast, setModal,
+  pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
+  session, reload, showToast, setModal,
 }) {
   const pesananReseller = (pesananGrosir || []).filter((p) => p.jenis_transaksi === "reseller");
   const pesananCekout = (pesananGrosir || []).filter((p) => p.jenis_transaksi === "reseller_cekout");
@@ -97,6 +97,10 @@ export default function Reseller({
         pelangganGrosir={pelangganGrosir}
         pembayaranGrosir={pembayaranGrosir}
         depositGrosir={depositGrosir}
+        keuanganTransaksi={keuanganTransaksi}
+        session={session}
+        reload={reload}
+        showToast={showToast}
         setModal={setModal}
       />
     );
@@ -236,7 +240,8 @@ function SemuaPesananReseller({ pesananReseller, pelangganGrosir, pembayaranGros
 // cuma kebalikannya — lihat catatan di PencairanResellerCekout.
 // =========================================================
 function PencairanDanPenagihanReseller({
-  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir, setModal,
+  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
+  session, reload, showToast, setModal,
 }) {
   const [tab, setTab] = useState("penagihan");
 
@@ -276,6 +281,10 @@ function PencairanDanPenagihanReseller({
           pelangganGrosir={pelangganGrosir}
           pembayaranGrosir={pembayaranGrosir}
           depositGrosir={depositGrosir}
+          keuanganTransaksi={keuanganTransaksi}
+          session={session}
+          reload={reload}
+          showToast={showToast}
         />
       ) : (
         <PenagihanHutangReseller
@@ -311,10 +320,13 @@ function PencairanDanPenagihanReseller({
 // dibedakan lagi jenisnya, cukup ikut label "Cair dari Marketplace".
 // =========================================================
 function RiwayatPenagihanPencairan({
-  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir,
+  pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
+  session, reload, showToast,
 }) {
   const [q, setQ] = useState("");
   const [jenisFilter, setJenisFilter] = useState("");
+  const [menghapusId, setMenghapusId] = useState(null);
+  const isSuperadmin = session?.role === "superadmin";
 
   const namaPelanggan = (id) => (pelangganGrosir || []).find((p) => p.id === id)?.nama || "—";
   const nomorPesananReseller = (id) => (pesananReseller || []).find((p) => p.id === id)?.nomor_pesanan;
@@ -337,6 +349,9 @@ function RiwayatPenagihanPencairan({
       metode: b.metode_bayar,
       catatan: b.catatan,
       jumlah: Number(b.jumlah) || 0,
+      sourceTable: "grosir_pembayaran",
+      rawId: b.id,
+      keuanganTransaksiId: b.keuangan_transaksi_id || null,
     }));
 
   const entriCair = (pembayaranGrosir || [])
@@ -352,6 +367,9 @@ function RiwayatPenagihanPencairan({
       metode: b.metode_bayar,
       catatan: b.catatan,
       jumlah: Number(b.jumlah) || 0,
+      sourceTable: "grosir_pembayaran",
+      rawId: b.id,
+      keuanganTransaksiId: b.keuangan_transaksi_id || null,
     }));
 
   const entriDeposit = (depositGrosir || [])
@@ -374,12 +392,57 @@ function RiwayatPenagihanPencairan({
         metode: null,
         catatan: d.keterangan,
         jumlah: Math.abs(jumlah),
+        sourceTable: "grosir_deposit",
+        rawId: d.id,
+        keuanganTransaksiId: null,
       };
     });
 
   const semua = [...entriPenagihan, ...entriCair, ...entriDeposit].sort(
     (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
   );
+
+  // Hapus satu baris riwayat — khusus superadmin, dari tabel asalnya
+  // langsung (grosir_pembayaran untuk Penagihan Hutang/Cair dari
+  // Marketplace, grosir_deposit untuk Kelebihan/Dicairkan). Kalau baris
+  // grosir_pembayaran-nya tertaut ke satu baris keuangan_transaksi (bisa
+  // gabungan, mencakup beberapa pesanan/pelanggan sekaligus lewat Penagihan
+  // Hutang gabungan), baris Keuangan itu ikut dikurangi sebesar porsi baris
+  // ini saja (dihapus penuh kalau porsi ini ternyata satu-satunya isinya) —
+  // pola yang sama dengan "Hapus Pesanan" di ModalRouter, supaya uang milik
+  // pesanan/pelanggan lain di baris Keuangan yang sama tetap aman.
+  const hapusEntri = async (x) => {
+    if (
+      !window.confirm(
+        `Hapus riwayat "${x.jenis}" (${namaPelanggan(x.pelangganId)}, ${fmtRp(x.jumlah)}) ini? Tindakan ini tidak bisa dibatalkan.`
+      )
+    )
+      return;
+    setMenghapusId(x.id);
+    try {
+      await sb(`${x.sourceTable}?id=eq.${x.rawId}`, { method: "DELETE" });
+      if (x.keuanganTransaksiId) {
+        const t = (keuanganTransaksi || []).find((k) => k.id === x.keuanganTransaksiId);
+        if (t) {
+          const jumlahBaru = (Number(t.jumlah) || 0) - x.jumlah;
+          if (jumlahBaru <= 0.0001) {
+            await sb(`keuangan_transaksi?id=eq.${x.keuanganTransaksiId}`, { method: "DELETE" });
+          } else {
+            await sb(`keuangan_transaksi?id=eq.${x.keuanganTransaksiId}`, {
+              method: "PATCH",
+              body: JSON.stringify({ jumlah: jumlahBaru }),
+            });
+          }
+        }
+      }
+      await reload?.();
+      showToast?.("Riwayat dihapus");
+    } catch (e) {
+      showToast?.(e.message || "Gagal menghapus", "err");
+    } finally {
+      setMenghapusId(null);
+    }
+  };
 
   const JENIS_OPTIONS = ["Penagihan Hutang", "Cair dari Marketplace", "Kelebihan → Deposit", "Dicairkan ke Pelanggan"];
 
@@ -465,6 +528,16 @@ function RiwayatPenagihanPencairan({
                 {x.arah === "masuk" ? "+" : "−"}
                 {fmtRp(x.jumlah)}
               </div>
+              {isSuperadmin && (
+                <button
+                  onClick={() => hapusEntri(x)}
+                  disabled={menghapusId === x.id}
+                  title="Hapus riwayat ini (superadmin)"
+                  className="ml-2 p-1.5 rounded-md text-slate-500 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 flex-shrink-0"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
         </div>
