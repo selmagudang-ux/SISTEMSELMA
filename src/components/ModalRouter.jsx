@@ -1589,7 +1589,7 @@ export default function ModalRouter({
             <Trash2 size={14} /> Batalkan Pesanan
           </button>
         )}
-        {dibatalkan && (
+        {dibatalkan && session?.role === "superadmin" && (
           <button
             onClick={() => setModal({ type: "grosir-hapus-pesanan", item: p })}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white mt-2"
@@ -1603,6 +1603,16 @@ export default function ModalRouter({
 
   if (modal.type === "grosir-hapus-pesanan") {
     const p = modal.item;
+    // Lapis keamanan kedua di sisi UI — tombol pemicu di modal detail pesanan
+    // sudah disembunyikan untuk role selain superadmin, tapi modal ini juga
+    // dijaga sendiri kalau-kalau modal.type ini terpanggil dari jalur lain.
+    if (session?.role !== "superadmin") {
+      return (
+        <ModalShell title="Tidak Diizinkan" onClose={close}>
+          <p className="text-xs text-slate-400">Menghapus riwayat pesanan permanen hanya bisa dilakukan oleh Super Admin.</p>
+        </ModalShell>
+      );
+    }
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
     const skuTerpakai = Array.from(
       new Set(detailItems.filter((d) => d.sumber_produk === "sku" && d.sku).map((d) => d.sku))
