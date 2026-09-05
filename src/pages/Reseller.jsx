@@ -7,7 +7,7 @@ import {
   sb, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
   tokoShopeeGudang,
 } from "../lib/api";
-import { rencanaKurangiRak } from "./Rak";
+import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 import { isSuperadminLike } from "../lib/constants";
 import { newItemRow, ItemRow } from "./Grosir";
 
@@ -898,79 +898,15 @@ export function BuatPesananReseller({
         }),
       });
 
-      // 3. Simpan tiap item + potong stok — logikanya sama persis dengan
-      //    BuatPesanan (Grosir).
-      let produkManualList = await sb("grosir_produk_manual?select=id,kode");
-      for (const r of rows) {
-        let produkManualId = r.produk_manual_id || null;
-
-        if (r.sumber_produk === "manual" && !produkManualId) {
-          const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
-          const [produkBaru] = await sb("grosir_produk_manual", {
-            method: "POST",
-            body: JSON.stringify({
-              kode: kodeBaru,
-              nama_produk: r.nama_produk.trim(),
-              harga: Number(r.harga) || 0,
-              stok: 0,
-            }),
-          });
-          produkManualId = produkBaru.id;
-          produkManualList = [...produkManualList, produkBaru];
-        }
-
-        await sb("grosir_detail_pesanan", {
-          method: "POST",
-          body: JSON.stringify({
-            pesanan_id: pesanan.id,
-            sumber_produk: r.sumber_produk,
-            sku: r.sumber_produk === "sku" ? r.sku : null,
-            produk_manual_id: r.sumber_produk === "manual" ? produkManualId : null,
-            nama_produk: r.nama_produk,
-            qty: Number(r.qty),
-            harga: Number(r.harga),
-            subtotal: Number(r.qty) * Number(r.harga),
-          }),
-        });
-
-        if (r.sumber_produk === "sku") {
-          const skuRow = skuMaster.find((s) => s.sku === r.sku);
-          const stokSaatIni = skuRow ? skuRow.stok : 0;
-          const stokBaru = Math.max(stokSaatIni - Number(r.qty), 0);
-          await sb(`sku_master?sku=eq.${encodeURIComponent(r.sku)}`, {
-            method: "PATCH",
-            body: JSON.stringify({ stok: stokBaru }),
-          });
-          await sb("stock_history", {
-            method: "POST",
-            body: JSON.stringify({
-              sku: r.sku,
-              type: "keluar",
-              qty_before: stokSaatIni,
-              qty_change: -Number(r.qty),
-              qty_after: stokBaru,
-              note: `Pesanan reseller ${nomorPesananTrim}`,
-            }),
-          });
-
-          const rencanaRak = rencanaKurangiRak(r.sku, Number(r.qty), penempatan);
-          for (const rk of rencanaRak) {
-            await sb(`penempatan?id=eq.${rk.id}`, {
-              method: "PATCH",
-              body: JSON.stringify({ qty: Math.max(rk.qtyBaru, 0) }),
-            });
-            if (rk.qtyBaru <= 0) {
-              const baris = (penempatan || []).find((p) => p.id === rk.id);
-              if (baris) {
-                await sb("rak_events", {
-                  method: "POST",
-                  body: JSON.stringify({ sku: r.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
-                });
-              }
-            }
-          }
-        }
-      }
+      // 3. Simpan tiap item + potong stok — versi cepat (batch), lihat
+      // simpanItemPesananGrosir() di pages/Rak.jsx untuk detail lengkap.
+      await simpanItemPesananGrosir({
+        pesananId: pesanan.id,
+        rows,
+        skuMaster,
+        penempatan,
+        catatanStok: `Pesanan reseller ${nomorPesananTrim}`,
+      });
 
       await reload();
       showToast(`Pesanan reseller ${nomorPesananTrim} tersimpan sebagai hutang, stok diperbarui`);
@@ -1466,79 +1402,15 @@ export function BuatPesananResellerCekout({
         });
       }
 
-      // 3. Simpan tiap item + potong stok — logikanya sama persis dengan
-      //    BuatPesananReseller/BuatPesanan (Grosir).
-      let produkManualList = await sb("grosir_produk_manual?select=id,kode");
-      for (const r of rows) {
-        let produkManualId = r.produk_manual_id || null;
-
-        if (r.sumber_produk === "manual" && !produkManualId) {
-          const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
-          const [produkBaru] = await sb("grosir_produk_manual", {
-            method: "POST",
-            body: JSON.stringify({
-              kode: kodeBaru,
-              nama_produk: r.nama_produk.trim(),
-              harga: Number(r.harga) || 0,
-              stok: 0,
-            }),
-          });
-          produkManualId = produkBaru.id;
-          produkManualList = [...produkManualList, produkBaru];
-        }
-
-        await sb("grosir_detail_pesanan", {
-          method: "POST",
-          body: JSON.stringify({
-            pesanan_id: pesanan.id,
-            sumber_produk: r.sumber_produk,
-            sku: r.sumber_produk === "sku" ? r.sku : null,
-            produk_manual_id: r.sumber_produk === "manual" ? produkManualId : null,
-            nama_produk: r.nama_produk,
-            qty: Number(r.qty),
-            harga: Number(r.harga),
-            subtotal: Number(r.qty) * Number(r.harga),
-          }),
-        });
-
-        if (r.sumber_produk === "sku") {
-          const skuRow = skuMaster.find((s) => s.sku === r.sku);
-          const stokSaatIni = skuRow ? skuRow.stok : 0;
-          const stokBaru = Math.max(stokSaatIni - Number(r.qty), 0);
-          await sb(`sku_master?sku=eq.${encodeURIComponent(r.sku)}`, {
-            method: "PATCH",
-            body: JSON.stringify({ stok: stokBaru }),
-          });
-          await sb("stock_history", {
-            method: "POST",
-            body: JSON.stringify({
-              sku: r.sku,
-              type: "keluar",
-              qty_before: stokSaatIni,
-              qty_change: -Number(r.qty),
-              qty_after: stokBaru,
-              note: `Pesanan reseller cekout ${nomorPesananTrim}`,
-            }),
-          });
-
-          const rencanaRak = rencanaKurangiRak(r.sku, Number(r.qty), penempatan);
-          for (const rk of rencanaRak) {
-            await sb(`penempatan?id=eq.${rk.id}`, {
-              method: "PATCH",
-              body: JSON.stringify({ qty: Math.max(rk.qtyBaru, 0) }),
-            });
-            if (rk.qtyBaru <= 0) {
-              const baris = (penempatan || []).find((p) => p.id === rk.id);
-              if (baris) {
-                await sb("rak_events", {
-                  method: "POST",
-                  body: JSON.stringify({ sku: r.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
-                });
-              }
-            }
-          }
-        }
-      }
+      // 3. Simpan tiap item + potong stok — versi cepat (batch), lihat
+      // simpanItemPesananGrosir() di pages/Rak.jsx untuk detail lengkap.
+      await simpanItemPesananGrosir({
+        pesananId: pesanan.id,
+        rows,
+        skuMaster,
+        penempatan,
+        catatanStok: `Pesanan reseller cekout ${nomorPesananTrim}`,
+      });
 
       await reload();
       showToast(

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search, LayoutGrid, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
-import { sameProdukKecualiUkuran, labelFor } from "../lib/api";
+import { sameProdukKecualiUkuran, labelFor, sb, nextKode } from "../lib/api";
 
 // Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
 // Diekspor supaya halaman lain (Data Barang, Cetak Label) bisa pakai sumber yang sama
@@ -126,6 +126,124 @@ export function rencanaKurangiRak(sku, jumlahKurang, penempatan) {
     sisaKurang -= potong;
   }
   return out;
+}
+
+// =========================================================
+// SIMPAN ITEM PESANAN GROSIR/RESELLER — VERSI CEPAT (BATCH)
+// =========================================================
+// Dipakai bareng oleh BuatPesanan (Grosir), BuatPesananReseller,
+// BuatPesananResellerCekout — sebelumnya tiap fungsi ini nyalin-tempel loop
+// yang sama persis dan nyimpen tiap baris item SATU-SATU (POST detail, PATCH
+// stok, POST riwayat stok, PATCH tiap baris rak — semua nunggu gantian).
+// Untuk pesanan isi banyak item ini jadi puluhan request berurutan, jadi
+// lambat/berat. Versi ini:
+//   1. Produk manual baru TETAP dibuat satu-satu berurutan (supaya kode
+//      PRM-xxxx antar baris dalam satu pesanan tidak tabrakan).
+//   2. Semua baris detail pesanan disimpan SEKALIGUS lewat satu request
+//      (PostgREST otomatis insert banyak baris kalau body-nya array).
+//   3. Potongan stok dikelompokkan per SKU dulu (kalau SKU yang sama
+//      kepakai di lebih dari satu baris, jumlahnya digabung dulu sebelum
+//      dipotong — sekalian membenahi bug lama: versi sebelumnya bisa
+//      salah kurangi rak dobel kalau ada 2 baris SKU yang sama dalam satu
+//      pesanan). Riwayat stok & event rak juga digabung jadi satu request.
+//   4. PATCH yang memang harus per-baris (beda SKU/id target = tidak bisa
+//      digabung satu request) dijalankan PARALEL lewat Promise.all, bukan
+//      gantian satu-satu.
+// rows: [{ sumber_produk, sku, produk_manual_id, nama_produk, qty, harga }]
+export async function simpanItemPesananGrosir({ pesananId, rows, skuMaster, penempatan, catatanStok }) {
+  // 1. Resolusi produk manual baru — berurutan (lihat catatan di atas).
+  let produkManualList = null;
+  const resolvedRows = [];
+  for (const r of rows || []) {
+    let produkManualId = r.produk_manual_id || null;
+    if (r.sumber_produk === "manual" && !produkManualId) {
+      if (!produkManualList) produkManualList = await sb("grosir_produk_manual?select=id,kode");
+      const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
+      const [produkBaru] = await sb("grosir_produk_manual", {
+        method: "POST",
+        body: JSON.stringify({
+          kode: kodeBaru,
+          nama_produk: r.nama_produk.trim(),
+          harga: Number(r.harga) || 0,
+          stok: 0,
+        }),
+      });
+      produkManualId = produkBaru.id;
+      produkManualList = [...produkManualList, produkBaru];
+    }
+    resolvedRows.push({ ...r, produkManualId });
+  }
+
+  // 2. Simpan semua baris detail pesanan dalam SATU request.
+  const detailPayload = resolvedRows.map((r) => ({
+    pesanan_id: pesananId,
+    sumber_produk: r.sumber_produk,
+    sku: r.sumber_produk === "sku" ? r.sku : null,
+    produk_manual_id: r.sumber_produk === "manual" ? r.produkManualId : null,
+    nama_produk: r.nama_produk,
+    qty: Number(r.qty),
+    harga: Number(r.harga),
+    subtotal: Number(r.qty) * Number(r.harga),
+  }));
+  if (detailPayload.length > 0) {
+    await sb("grosir_detail_pesanan", { method: "POST", body: JSON.stringify(detailPayload) });
+  }
+
+  // 3. Potong stok — kelompokkan per SKU dulu.
+  const qtyPerSku = new Map();
+  for (const r of resolvedRows) {
+    if (r.sumber_produk === "sku" && r.sku) {
+      qtyPerSku.set(r.sku, (qtyPerSku.get(r.sku) || 0) + Number(r.qty));
+    }
+  }
+
+  const stockHistoryPayload = [];
+  const rakEventsPayload = [];
+  const tugasParalel = [];
+
+  for (const [sku, qtyKurang] of qtyPerSku) {
+    const skuRow = (skuMaster || []).find((s) => s.sku === sku);
+    const stokSaatIni = skuRow ? skuRow.stok : 0;
+    const stokBaru = Math.max(stokSaatIni - qtyKurang, 0);
+
+    tugasParalel.push(
+      sb(`sku_master?sku=eq.${encodeURIComponent(sku)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ stok: stokBaru }),
+      })
+    );
+    stockHistoryPayload.push({
+      sku,
+      type: "keluar",
+      qty_before: stokSaatIni,
+      qty_change: -qtyKurang,
+      qty_after: stokBaru,
+      note: catatanStok,
+    });
+
+    const rencanaRak = rencanaKurangiRak(sku, qtyKurang, penempatan);
+    for (const rk of rencanaRak) {
+      tugasParalel.push(
+        sb(`penempatan?id=eq.${rk.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ qty: Math.max(rk.qtyBaru, 0) }),
+        })
+      );
+      if (rk.qtyBaru <= 0) {
+        const baris = (penempatan || []).find((p) => p.id === rk.id);
+        if (baris) rakEventsPayload.push({ sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null });
+      }
+    }
+  }
+
+  if (stockHistoryPayload.length > 0) {
+    tugasParalel.push(sb("stock_history", { method: "POST", body: JSON.stringify(stockHistoryPayload) }));
+  }
+  if (rakEventsPayload.length > 0) {
+    tugasParalel.push(sb("rak_events", { method: "POST", body: JSON.stringify(rakEventsPayload) }));
+  }
+
+  await Promise.all(tugasParalel);
 }
 
 export default function Rak({ sub, items, rak, penempatan, skuMaster, master, pengajuanRestock, session, setModal }) {

@@ -2040,10 +2040,14 @@ export default function ModalRouter({
         saving={saving}
         onSubmit={(data) =>
           run(async () => {
-            // 1. Kembalikan dulu qty lama (dari item ber-sumber SKU) ke stok,
-            //    supaya perhitungan qty baru di bawah selalu mulai dari basis
-            //    yang benar — sama seperti alur "batalkan pesanan", tapi di
-            //    sini pesanannya tidak dibatalkan, cuma item-nya diganti.
+            // 1+2. Versi cepat (batch) — sebelumnya tiap langkah di sini
+            // (kembalikan stok lama, hapus detail lama, simpan detail baru,
+            // potong stok baru) jalan SATU-SATU per baris item, jadi edit
+            // pesanan isi banyak item jadi lambat. Sekarang: semua
+            // perhitungan stok tetap dihitung berurutan di JS (supaya
+            // urutan qty lama-dikembalikan lalu qty baru-dipotong tetap
+            // benar walau SKU yang sama muncul di beberapa baris), tapi
+            // permintaan ke server digabung/dijalankan paralel.
             const stokWorking = {}; // { sku: stokTerbaruSementara }
             const getStok = (sku) => {
               if (stokWorking[sku] === undefined) {
@@ -2051,45 +2055,34 @@ export default function ModalRouter({
               }
               return stokWorking[sku];
             };
+            const riwayatStokBaru = [];
 
             for (const d of detailItems) {
               if (d.sumber_produk !== "sku" || !d.sku) continue;
               const stokSebelum = getStok(d.sku);
               const stokBaru = stokSebelum + Number(d.qty);
               stokWorking[d.sku] = stokBaru;
-              await sb(`sku_master?sku=eq.${encodeURIComponent(d.sku)}`, {
-                method: "PATCH",
-                body: JSON.stringify({ stok: stokBaru }),
-              });
-              await sb("stock_history", {
-                method: "POST",
-                body: JSON.stringify({
-                  sku: d.sku,
-                  type: "masuk",
-                  qty_before: stokSebelum,
-                  qty_change: Number(d.qty),
-                  qty_after: stokBaru,
-                  note: `Edit pesanan grosir ${p.nomor_pesanan} — qty lama dikembalikan`,
-                }),
+              riwayatStokBaru.push({
+                sku: d.sku,
+                type: "masuk",
+                qty_before: stokSebelum,
+                qty_change: Number(d.qty),
+                qty_after: stokBaru,
+                note: `Edit pesanan grosir ${p.nomor_pesanan} — qty lama dikembalikan`,
               });
             }
 
-            // 2. Hapus semua detail item lama, lalu simpan ulang item baru +
-            //    potong stok sesuai qty baru (mengikuti pola simpan di BuatPesanan).
-            for (const d of detailItems) {
-              await sb(`grosir_detail_pesanan?id=eq.${d.id}`, { method: "DELETE" });
-            }
-
+            // Resolusi produk manual baru — berurutan (kode PRM-xxxx antar
+            // baris tidak boleh tabrakan), tapi daftar produk manual cuma
+            // diambil SEKALI lalu dipakai/di-update lokal (bukan fetch ulang
+            // tiap baris seperti sebelumnya).
+            let produkManualList = null;
+            const itemsResolved = [];
             for (const it of data.items) {
               let produkManualId = it.produk_manual_id || null;
               if (it.sumber_produk === "manual" && !produkManualId) {
-                // Sama seperti di BuatPesanan: ambil kode terbaru FRESH dari
-                // database (bukan prop produkManualGrosir yang bisa basi) dan
-                // update salinan lokalnya tiap kali ada produk baru dibuat,
-                // supaya kalau dalam satu edit ada >1 produk manual baru,
-                // kodenya tidak tabrakan satu sama lain.
-                const produkManualTerbaru = await sb("grosir_produk_manual?select=id,kode");
-                const kodeBaru = nextKode(produkManualTerbaru, "kode", "PRM-");
+                if (!produkManualList) produkManualList = await sb("grosir_produk_manual?select=id,kode");
+                const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
                 const [produkBaru] = await sb("grosir_produk_manual", {
                   method: "POST",
                   body: JSON.stringify({
@@ -2100,42 +2093,60 @@ export default function ModalRouter({
                   }),
                 });
                 produkManualId = produkBaru.id;
+                produkManualList = [...produkManualList, produkBaru];
               }
-
-              await sb("grosir_detail_pesanan", {
-                method: "POST",
-                body: JSON.stringify({
-                  pesanan_id: p.id,
-                  sumber_produk: it.sumber_produk,
-                  sku: it.sumber_produk === "sku" ? it.sku : null,
-                  produk_manual_id: it.sumber_produk === "manual" ? produkManualId : null,
-                  nama_produk: it.nama_produk,
-                  qty: it.qty,
-                  harga: it.harga,
-                  subtotal: it.qty * it.harga,
-                }),
-              });
+              itemsResolved.push({ ...it, produkManualId });
 
               if (it.sumber_produk === "sku") {
                 const stokSebelum = getStok(it.sku);
                 const stokBaru = Math.max(stokSebelum - it.qty, 0);
                 stokWorking[it.sku] = stokBaru;
-                await sb(`sku_master?sku=eq.${encodeURIComponent(it.sku)}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ stok: stokBaru }),
-                });
-                await sb("stock_history", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    sku: it.sku,
-                    type: "keluar",
-                    qty_before: stokSebelum,
-                    qty_change: -it.qty,
-                    qty_after: stokBaru,
-                    note: `Edit pesanan grosir ${p.nomor_pesanan}`,
-                  }),
+                riwayatStokBaru.push({
+                  sku: it.sku,
+                  type: "keluar",
+                  qty_before: stokSebelum,
+                  qty_change: -it.qty,
+                  qty_after: stokBaru,
+                  note: `Edit pesanan grosir ${p.nomor_pesanan}`,
                 });
               }
+            }
+
+            const detailPayloadBaru = itemsResolved.map((it) => ({
+              pesanan_id: p.id,
+              sumber_produk: it.sumber_produk,
+              sku: it.sumber_produk === "sku" ? it.sku : null,
+              produk_manual_id: it.sumber_produk === "manual" ? it.produkManualId : null,
+              nama_produk: it.nama_produk,
+              qty: it.qty,
+              harga: it.harga,
+              subtotal: it.qty * it.harga,
+            }));
+
+            await Promise.all([
+              // Hapus semua detail item lama dalam SATU request (bukan satu-satu per id).
+              detailItems.length > 0
+                ? sb(`grosir_detail_pesanan?pesanan_id=eq.${p.id}`, { method: "DELETE" })
+                : null,
+              // Stok akhir per SKU (setelah qty lama dikembalikan & qty baru
+              // dipotong) — satu PATCH per SKU, paralel.
+              ...Object.entries(stokWorking).map(([sku, stokAkhir]) =>
+                sb(`sku_master?sku=eq.${encodeURIComponent(sku)}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ stok: stokAkhir }),
+                })
+              ),
+              riwayatStokBaru.length > 0
+                ? sb("stock_history", { method: "POST", body: JSON.stringify(riwayatStokBaru) })
+                : null,
+            ].filter(Boolean));
+
+            // Detail baru BARU disimpan setelah yang lama pasti sudah
+            // terhapus (delete & insert sengaja tidak digabung paralel di
+            // atas supaya tidak ada risiko keduanya nabrak di baris yang
+            // sama kalau ID kebetulan dipakai ulang).
+            if (detailPayloadBaru.length > 0) {
+              await sb("grosir_detail_pesanan", { method: "POST", body: JSON.stringify(detailPayloadBaru) });
             }
 
             // 3. Update header pesanan: toko, metode bayar, catatan, total,

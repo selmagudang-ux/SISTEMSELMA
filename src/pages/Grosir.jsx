@@ -9,7 +9,7 @@ import {
   sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
 } from "../lib/api";
-import { rencanaKurangiRak } from "./Rak";
+import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 
 export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
@@ -1064,100 +1064,17 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
         }
       }
 
-      // 3. Simpan tiap item + potong stok.
-      // Salinan lokal daftar produk manual, di-update tiap kali ada produk
-      // manual BARU dibuat di bawah — supaya kalau dalam satu pesanan ada
-      // lebih dari satu produk manual baru, kode barunya (PRM-xxxx) tidak
-      // dobel/tabrakan (sebelumnya nextKode() selalu ngitung dari daftar awal
-      // yang sama, jadi baris ke-2 dst dapat kode yang sama persis dengan
-      // baris pertama -> ditolak database karena kode harus unik).
-      // Daftar awalnya diambil FRESH dari database (bukan dari prop state
-      // yang bisa basi kalau ada pesanan lain baru saja bikin produk manual
-      // baru juga tapi halaman belum sempat reload) — sumber utama pesan
-      // eror "kode/SKU sudah ada" yang kadang muncul waktu buat pesanan.
-      let produkManualList = await sb("grosir_produk_manual?select=id,kode");
-      for (const r of rows) {
-        let produkManualId = r.produk_manual_id || null;
-
-        if (r.sumber_produk === "manual" && !produkManualId) {
-          // Produk manual baru — dibuat sekali di grosir_produk_manual (TIDAK
-          // pernah masuk ke sku_master/Data Barang), supaya bisa dipakai lagi
-          // di pesanan berikutnya tanpa ketik ulang.
-          const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
-          const [produkBaru] = await sb("grosir_produk_manual", {
-            method: "POST",
-            body: JSON.stringify({
-              kode: kodeBaru,
-              nama_produk: r.nama_produk.trim(),
-              harga: Number(r.harga) || 0,
-              stok: 0,
-            }),
-          });
-          produkManualId = produkBaru.id;
-          produkManualList = [...produkManualList, produkBaru];
-        }
-
-        await sb("grosir_detail_pesanan", {
-
-          method: "POST",
-          body: JSON.stringify({
-            pesanan_id: pesanan.id,
-            sumber_produk: r.sumber_produk,
-            sku: r.sumber_produk === "sku" ? r.sku : null,
-            produk_manual_id: r.sumber_produk === "manual" ? produkManualId : null,
-            nama_produk: r.nama_produk,
-            qty: Number(r.qty),
-            harga: Number(r.harga),
-            subtotal: Number(r.qty) * Number(r.harga),
-          }),
-        });
-
-        // Potong stok — hanya untuk item dari SKU Master Barang. Item manual
-        // sengaja tidak menyentuh stok manapun (di luar sistem stok terlacak).
-        if (r.sumber_produk === "sku") {
-          const skuRow = skuMaster.find((s) => s.sku === r.sku);
-          const stokSaatIni = skuRow ? skuRow.stok : 0;
-          const stokBaru = Math.max(stokSaatIni - Number(r.qty), 0);
-          await sb(`sku_master?sku=eq.${encodeURIComponent(r.sku)}`, {
-            method: "PATCH",
-            body: JSON.stringify({ stok: stokBaru }),
-          });
-          await sb("stock_history", {
-            method: "POST",
-            body: JSON.stringify({
-              sku: r.sku,
-              type: "keluar",
-              qty_before: stokSaatIni,
-              qty_change: -Number(r.qty),
-              qty_after: stokBaru,
-              note: `Pesanan grosir ${nomorPesanan}`,
-            }),
-          });
-
-          // Samakan juga qty di rak (FIFO: rak paling lama ditempatkan
-          // duluan yang dikurangi), sama seperti alur "Barang Keluar" di
-          // menu Stok — supaya Peta Rak ikut sinkron waktu stok terjual
-          // lewat pesanan grosir, bukan cuma lewat menu Stok manual. Baris
-          // rak yang qty-nya habis TIDAK dihapus, cuma di-PATCH ke 0 supaya
-          // tetap ada catatan SKU apa yang biasa ada di rak itu ("Habis").
-          const rencanaRak = rencanaKurangiRak(r.sku, Number(r.qty), penempatan);
-          for (const rk of rencanaRak) {
-            await sb(`penempatan?id=eq.${rk.id}`, {
-              method: "PATCH",
-              body: JSON.stringify({ qty: Math.max(rk.qtyBaru, 0) }),
-            });
-            if (rk.qtyBaru <= 0) {
-              const baris = (penempatan || []).find((p) => p.id === rk.id);
-              if (baris) {
-                await sb("rak_events", {
-                  method: "POST",
-                  body: JSON.stringify({ sku: r.sku, jenis: "keluar", rak_dari: baris.rak_code, rak_baru: null }),
-                });
-              }
-            }
-          }
-        }
-      }
+      // 3. Simpan tiap item + potong stok — versi cepat (batch), lihat
+      // simpanItemPesananGrosir() di pages/Rak.jsx untuk detail lengkap:
+      // detail pesanan disimpan sekaligus (bukan satu-satu), dan potongan
+      // stok/rak dikelompokkan per SKU lalu dijalankan paralel.
+      await simpanItemPesananGrosir({
+        pesananId: pesanan.id,
+        rows,
+        skuMaster,
+        penempatan,
+        catatanStok: `Pesanan grosir ${nomorPesanan}`,
+      });
 
       await reload();
       showToast(`Pesanan ${nomorPesanan} tersimpan, stok diperbarui`);
