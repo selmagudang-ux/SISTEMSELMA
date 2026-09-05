@@ -1849,6 +1849,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   const [halamanBelumLunasReseller, setHalamanBelumLunasReseller] = useState(1);
   const [halamanRiwayatReseller, setHalamanRiwayatReseller] = useState(1);
   const [halamanBelumLunasCekout, setHalamanBelumLunasCekout] = useState(1);
+  const [halamanDicairkanCekout, setHalamanDicairkanCekout] = useState(1);
   const [halamanRiwayatCekout, setHalamanRiwayatCekout] = useState(1);
 
   // Tab aktif di dalam kartu "Store Selma" — pola pill-tab sama persis
@@ -2047,6 +2048,15 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   const belumLunasCekout = pesananCekoutAktif
     .filter((p) => p.status_bayar !== "Lunas")
     .sort((a, b) => sisaHutangPesanan(b, pembayaranGrosir) - sisaHutangPesanan(a, pembayaranGrosir));
+
+  // Daftar deposit Reseller Cekout yang SUDAH DICAIRKAN (jumlah negatif di
+  // depositCekout) — dipakai buat panel "Deposit yang Dicairkan" di bawah,
+  // menggantikan panel "Belum Bayar / Hutang" yang untuk Reseller Cekout
+  // hampir selalu kosong (pesanan cekout dibayar dari saldo deposit, bukan
+  // berhutang).
+  const daftarDicairkanCekout = depositCekout
+    .filter((d) => (Number(d.jumlah) || 0) < 0)
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const riwayatCekout = [...pesananCekoutAktif].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
@@ -2536,50 +2546,46 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
 
               <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
                 <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">Belum Bayar / Hutang</div>
-                  <button
-                    onClick={() => onNavigate && onNavigate("reseller", "cekout")}
-                    className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
-                  >
-                    Lihat Semua <ArrowRight size={11} />
-                  </button>
+                  <div className="text-sm font-semibold">Deposit yang Dicairkan</div>
                 </div>
-                {belumLunasCekout.length === 0 ? (
+                {daftarDicairkanCekout.length === 0 ? (
                   <div className="p-6">
-                    <EmptyState label="Semua pesanan Reseller Cekout sudah lunas." />
+                    <EmptyState label="Belum ada deposit Reseller Cekout yang dicairkan." />
                   </div>
                 ) : (
                   <>
                     <table className="w-full text-sm">
                       <tbody>
-                        {belumLunasCekout
+                        {daftarDicairkanCekout
                           .slice(
-                            (halamanBelumLunasCekout - 1) * BARIS_PER_HALAMAN_RESELLER,
-                            halamanBelumLunasCekout * BARIS_PER_HALAMAN_RESELLER
+                            (halamanDicairkanCekout - 1) * BARIS_PER_HALAMAN_RESELLER,
+                            halamanDicairkanCekout * BARIS_PER_HALAMAN_RESELLER
                           )
-                          .map((p) => (
-                            <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                              <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                              <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                              <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
-                              <td className="px-4 py-2.5">
-                                <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
+                          .map((d) => (
+                            <tr key={d.id} className="border-b border-slate-800/60 last:border-0">
+                              <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">
+                                {formatTanggalID((d.created_at || "").slice(0, 10))}
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(d.pelanggan_id)}</td>
+                              <td className="px-4 py-2.5 text-slate-400">{d.keterangan}</td>
+                              <td className="px-4 py-2.5 text-right text-rose-400 whitespace-nowrap">
+                                -{fmtRp(Math.abs(Number(d.jumlah) || 0))}
                               </td>
                             </tr>
                           ))}
                       </tbody>
                     </table>
-                    {belumLunasCekout.length > BARIS_PER_HALAMAN_RESELLER && (
+                    {daftarDicairkanCekout.length > BARIS_PER_HALAMAN_RESELLER && (
                       <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
                         <span>
-                          Halaman {halamanBelumLunasCekout} dari{" "}
-                          {Math.ceil(belumLunasCekout.length / BARIS_PER_HALAMAN_RESELLER)}
+                          Halaman {halamanDicairkanCekout} dari{" "}
+                          {Math.ceil(daftarDicairkanCekout.length / BARIS_PER_HALAMAN_RESELLER)}
                         </span>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => setHalamanBelumLunasCekout((h) => Math.max(1, h - 1))}
-                            disabled={halamanBelumLunasCekout <= 1}
+                            onClick={() => setHalamanDicairkanCekout((h) => Math.max(1, h - 1))}
+                            disabled={halamanDicairkanCekout <= 1}
                             className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
                           >
                             Sebelumnya
@@ -2587,11 +2593,13 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                           <button
                             type="button"
                             onClick={() =>
-                              setHalamanBelumLunasCekout((h) =>
-                                Math.min(Math.ceil(belumLunasCekout.length / BARIS_PER_HALAMAN_RESELLER), h + 1)
+                              setHalamanDicairkanCekout((h) =>
+                                Math.min(Math.ceil(daftarDicairkanCekout.length / BARIS_PER_HALAMAN_RESELLER), h + 1)
                               )
                             }
-                            disabled={halamanBelumLunasCekout >= Math.ceil(belumLunasCekout.length / BARIS_PER_HALAMAN_RESELLER)}
+                            disabled={
+                              halamanDicairkanCekout >= Math.ceil(daftarDicairkanCekout.length / BARIS_PER_HALAMAN_RESELLER)
+                            }
                             className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
                           >
                             Berikutnya
