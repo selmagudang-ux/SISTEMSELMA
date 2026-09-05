@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
@@ -477,72 +477,133 @@ function MainApp({ session, onLogout }) {
     loadForMenu(nav.menu);
   }, []);
 
-  const stageCounts = STAGE_ORDER.reduce((acc, s) => {
-    acc[s] = items.filter((i) => i.stage === s).length;
-    return acc;
-  }, {});
-  const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
+  // Seluruh badge/ringkasan/notifikasi di bawah ini dihitung ulang dari
+  // tabel-tabel inti (items, skuMaster, rak, penempatan, dst) — beberapa di
+  // antaranya (rakTerpakai, cariPerluDitempatkanUlang, dst) melakukan
+  // pencarian bolak-balik antar array (bukan cuma satu kali lewat), jadi
+  // biayanya naik seiring jumlah SKU/rak/barang. SEBELUMNYA blok ini dihitung
+  // ulang setiap kali MainApp render — termasuk untuk hal yang sama sekali
+  // tidak menyentuh tabel-tabel ini (buka/tutup modal, pindah tab, dsb),
+  // jadi kerasa lag tiap klik begitu jumlah data sudah banyak. Sekarang
+  // dibungkus useMemo supaya cuma dihitung ulang kalau salah satu tabel
+  // sumbernya (items/skuMaster/rak/penempatan/marketplaceNotifAck/
+  // stockHistory/rakEvents/pengajuanRestock) benar-benar berubah — isi &
+  // urutan perhitungannya PERSIS SAMA seperti sebelumnya, cuma waktu
+  // eksekusinya yang berubah (di-cache, bukan diulang tiap render).
+  const derived = useMemo(() => {
+    const stageCounts = STAGE_ORDER.reduce((acc, s) => {
+      acc[s] = items.filter((i) => i.stage === s).length;
+      return acc;
+    }, {});
+    const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
 
-  // SKU yang sudah tuntas alur barangnya (stage "selesai" — sama dengan sudah
-  // diupload ke marketplace, lihat quickAdvance) — inilah barang yang boleh
-  // dipilih untuk transaksi Grosir. Ditandai lewat flag "siapGrosir" di
-  // skuMaster (bukan filter array) supaya skuMaster tetap utuh dipakai
-  // halaman lain (SKU & Harga, Stok, Rak, Marketplace, Laporan, dll).
-  const skuSelesaiSet = new Set(
-    items.filter((i) => i.stage === "selesai" && i.sku).map((i) => i.sku)
-  );
-  const skuMasterGrosir = skuMaster.map((s) => ({ ...s, siapGrosir: skuSelesaiSet.has(s.sku) }));
-  const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
+    // SKU yang sudah tuntas alur barangnya (stage "selesai" — sama dengan sudah
+    // diupload ke marketplace, lihat quickAdvance) — inilah barang yang boleh
+    // dipilih untuk transaksi Grosir. Ditandai lewat flag "siapGrosir" di
+    // skuMaster (bukan filter array) supaya skuMaster tetap utuh dipakai
+    // halaman lain (SKU & Harga, Stok, Rak, Marketplace, Laporan, dll).
+    const skuSelesaiSet = new Set(
+      items.filter((i) => i.stage === "selesai" && i.sku).map((i) => i.sku)
+    );
+    const skuMasterGrosir = skuMaster.map((s) => ({ ...s, siapGrosir: skuSelesaiSet.has(s.sku) }));
+    const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
 
-  // SKU tanpa rak = barang yang belum pernah ditempatkan + SKU yang rak lamanya
-  // sudah ditimpa SKU lain (butuh ditempatkan ulang).
-  const perluRakUlang = cariPerluDitempatkanUlang(skuMaster, penempatan);
-  const tanpaRakCount = stageCounts.rak + perluRakUlang.length;
-  // Rak Terpakai (Dashboard) = rak yang benar-benar masih diisi SKU berstok > 0,
-  // pakai logika yang SAMA dengan Peta Rak supaya angkanya selalu sinkron.
-  const rakTerpakaiList = rakTerpakai(rak, penempatan, skuMaster);
-  const rakTerpakaiCount = rakTerpakaiList.length;
-  // Rak Kosong (Dashboard) = rak yang terdaftar tapi tidak ada di daftar rak terpakai.
-  const rakKosong = rak.filter((r) => !rakTerpakaiList.some((t) => t.id === r.id));
-  // Sisa di Gudang = SKU berstok yang belum sepenuhnya masuk rak (belum pernah
-  // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
-  const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
-  // Cek Marketplace — notifikasi stok tipis/habis, stok bertambah, dan rak
-  // berubah, dikurangi yang sudah dikonfirmasi (marketplace_notif_ack).
-  const ackedKeys = new Set((marketplaceNotifAck || []).map((a) => a.notif_key));
-  const historyMap = latestHistoryBySku(stockHistory);
-  const notifTipis = computeStokTipisNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
-  const notifTambah = computeStokTambahNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
-  const notifRak = computeRakBerubahNotifs(skuMaster, rak, penempatan).filter((n) => !ackedKeys.has(n.key));
-  const notifRakPindah = computeRakPindahNotifs(rakEvents).filter((n) => !ackedKeys.has(n.key));
-  const notifRakKosong = computeRakKosongNotifs(rak, penempatan, rakEvents).filter((n) => !ackedKeys.has(n.key));
-  const cekMarketplaceCount =
-    notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
+    // SKU tanpa rak = barang yang belum pernah ditempatkan + SKU yang rak lamanya
+    // sudah ditimpa SKU lain (butuh ditempatkan ulang).
+    const perluRakUlang = cariPerluDitempatkanUlang(skuMaster, penempatan);
+    const tanpaRakCount = stageCounts.rak + perluRakUlang.length;
+    // Rak Terpakai (Dashboard) = rak yang benar-benar masih diisi SKU berstok > 0,
+    // pakai logika yang SAMA dengan Peta Rak supaya angkanya selalu sinkron.
+    const rakTerpakaiList = rakTerpakai(rak, penempatan, skuMaster);
+    const rakTerpakaiCount = rakTerpakaiList.length;
+    // Rak Kosong (Dashboard) = rak yang terdaftar tapi tidak ada di daftar rak terpakai.
+    const rakKosong = rak.filter((r) => !rakTerpakaiList.some((t) => t.id === r.id));
+    // Sisa di Gudang = SKU berstok yang belum sepenuhnya masuk rak (belum pernah
+    // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
+    const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
+    // Cek Marketplace — notifikasi stok tipis/habis, stok bertambah, dan rak
+    // berubah, dikurangi yang sudah dikonfirmasi (marketplace_notif_ack).
+    const ackedKeys = new Set((marketplaceNotifAck || []).map((a) => a.notif_key));
+    const historyMap = latestHistoryBySku(stockHistory);
+    const notifTipis = computeStokTipisNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+    const notifTambah = computeStokTambahNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+    const notifRak = computeRakBerubahNotifs(skuMaster, rak, penempatan).filter((n) => !ackedKeys.has(n.key));
+    const notifRakPindah = computeRakPindahNotifs(rakEvents).filter((n) => !ackedKeys.has(n.key));
+    const notifRakKosong = computeRakKosongNotifs(rak, penempatan, rakEvents).filter((n) => !ackedKeys.has(n.key));
+    const cekMarketplaceCount =
+      notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
 
-  const stokMenipisCount = skuMaster.filter(
-    (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
-  ).length;
+    const stokMenipisCount = skuMaster.filter(
+      (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
+    ).length;
 
-  // Badge di menu "Persetujuan Restok" (sidebar) = jumlah pengajuan restock
-  // yang masih "menunggu" — supaya owner/superadmin langsung lihat ada yang
-  // perlu ditinjau tanpa harus buka halamannya dulu (reminder pasif, bukan
-  // notifikasi push — cukup untuk kasus ini karena menu ini memang sudah
-  // dibatasi hanya untuk role owner/superadmin di ROLE_MENUS).
-  const pengajuanMenungguCount = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
+    // Badge di menu "Persetujuan Restok" (sidebar) = jumlah pengajuan restock
+    // yang masih "menunggu" — supaya owner/superadmin langsung lihat ada yang
+    // perlu ditinjau tanpa harus buka halamannya dulu (reminder pasif, bukan
+    // notifikasi push — cukup untuk kasus ini karena menu ini memang sudah
+    // dibatasi hanya untuk role owner/superadmin di ROLE_MENUS).
+    const pengajuanMenungguCount = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
 
-  const sidebarBadges = withParentBadges(NAV, {
-    "persetujuan-restock": pengajuanMenungguCount,
-    "sku-harga.buat": stageCounts.sku,
-    "rak.tempatkan": tanpaRakCount,
-    "rak.gudang": sisaGudangList.length,
-    "stok.menipis": stokMenipisCount,
-    foto: stageCounts.verifikasi,
-    "marketplace.belum": stageCounts.marketplace,
-    "marketplace.cek": cekMarketplaceCount,
-  });
-  const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
-    .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
-    .filter((s) => s.count > 0);
+    const sidebarBadges = withParentBadges(NAV, {
+      "persetujuan-restock": pengajuanMenungguCount,
+      "sku-harga.buat": stageCounts.sku,
+      "rak.tempatkan": tanpaRakCount,
+      "rak.gudang": sisaGudangList.length,
+      "stok.menipis": stokMenipisCount,
+      foto: stageCounts.verifikasi,
+      "marketplace.belum": stageCounts.marketplace,
+      "marketplace.cek": cekMarketplaceCount,
+    });
+    const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
+      .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
+      .filter((s) => s.count > 0);
+
+    return {
+      stageCounts,
+      totalStok,
+      skuMasterGrosir,
+      belumSelesaiCount,
+      perluRakUlang,
+      tanpaRakCount,
+      rakTerpakaiList,
+      rakTerpakaiCount,
+      rakKosong,
+      sisaGudangList,
+      notifTipis,
+      notifTambah,
+      notifRak,
+      notifRakPindah,
+      notifRakKosong,
+      cekMarketplaceCount,
+      stokMenipisCount,
+      pengajuanMenungguCount,
+      sidebarBadges,
+      belumSelesaiBreakdown,
+    };
+  }, [items, skuMaster, rak, penempatan, marketplaceNotifAck, stockHistory, rakEvents, pengajuanRestock]);
+
+  const {
+    stageCounts,
+    totalStok,
+    skuMasterGrosir,
+    belumSelesaiCount,
+    perluRakUlang,
+    tanpaRakCount,
+    rakTerpakaiList,
+    rakTerpakaiCount,
+    rakKosong,
+    sisaGudangList,
+    notifTipis,
+    notifTambah,
+    notifRak,
+    notifRakPindah,
+    notifRakKosong,
+    cekMarketplaceCount,
+    stokMenipisCount,
+    pengajuanMenungguCount,
+    sidebarBadges,
+    belumSelesaiBreakdown,
+  } = derived;
 
   // Notif sekali saat data pertama kali selesai dimuat (bukan tiap reload manual).
   useEffect(() => {

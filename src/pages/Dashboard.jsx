@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
@@ -388,70 +388,292 @@ function DashboardGudang({
   const [qDataBarang, setQDataBarang] = useState("");
   const [kategoriDataBarang, setKategoriDataBarang] = useState("");
 
-  // Terapkan filter Bulan & Tahun (dari header Dashboard) ke data yang
-  // sifatnya berbasis tanggal kejadian — pesanan/kedatangan barang
-  // (pesananMasuk, per tanggal PO) & pengajuan restock (per tanggal
-  // diajukan). Kalau periodeDari/periodeSampai belum diisi (mis. dipanggil
-  // dari tempat lain tanpa filter), semua data tetap ditampilkan seperti
-  // sebelumnya.
-  const dalamPeriode = (tanggal) => {
-    if (!periodeDari || !periodeSampai || !tanggal) return true;
-    const t = String(tanggal).slice(0, 10);
-    return t >= periodeDari && t <= periodeSampai;
-  };
+  // Semua perhitungan di bawah ini (restok disetujui/menunggu, pesanan yang
+  // sedang datang, rincian Model Lama & Model Baru) berasal HANYA dari
+  // pesananMasuk, pengajuanRestock, items, skuMaster, dan filter
+  // periodeDari/periodeSampai — sama sekali tidak tersentuh oleh state lokal
+  // panel lain di komponen ini (buka/tutup panel, ganti halaman, ketik di
+  // pencarian Data Barang di bawah). SEBELUMNYA seluruh blok ini (termasuk
+  // cariSupplier yang menelusuri array items utk tiap baris, dan loop
+  // Model Lama/Baru yang jalan per pesanan x per model) dihitung ulang
+  // setiap kali komponen ini render — jadi kerasa lag setiap klik/ketik di
+  // halaman ini. Sekarang dibungkus useMemo supaya cuma dihitung ulang saat
+  // salah satu tabel sumbernya benar-benar berubah — isi & urutan
+  // perhitungan PERSIS SAMA seperti sebelumnya.
+  const derivedGudang = useMemo(() => {
+    // Terapkan filter Bulan & Tahun (dari header Dashboard) ke data yang
+    // sifatnya berbasis tanggal kejadian — pesanan/kedatangan barang
+    // (pesananMasuk, per tanggal PO) & pengajuan restock (per tanggal
+    // diajukan). Kalau periodeDari/periodeSampai belum diisi (mis. dipanggil
+    // dari tempat lain tanpa filter), semua data tetap ditampilkan seperti
+    // sebelumnya.
+    const dalamPeriode = (tanggal) => {
+      if (!periodeDari || !periodeSampai || !tanggal) return true;
+      const t = String(tanggal).slice(0, 10);
+      return t >= periodeDari && t <= periodeSampai;
+    };
 
-  const pesananMasukPeriode = (pesananMasuk || []).filter((p) => dalamPeriode(p.tanggal_pesan));
-  const pengajuanRestockPeriode = (pengajuanRestock || []).filter((p) => dalamPeriode(p.created_at));
+    const pesananMasukPeriode = (pesananMasuk || []).filter((p) => dalamPeriode(p.tanggal_pesan));
+    const pengajuanRestockPeriode = (pengajuanRestock || []).filter((p) => dalamPeriode(p.created_at));
 
-  const semuaPengajuan = pengajuanRestockPeriode;
+    const semuaPengajuan = pengajuanRestockPeriode;
 
-  // Nama toko/supplier untuk sebuah SKU ditelusuri dari barang masuk
-  // TERBARU dengan SKU tsb (items.kode_bon -> pesanan_masuk.kode_bon ->
-  // pesanan_masuk.supplier) — pola yang sama dipakai di modal "Tinjau
-  // Pengajuan Restock" (lihat ModalRouter.jsx).
-  const cariSupplier = (sku) => {
-    const itemTerbaru = items
-      .filter((i) => i.sku === sku && i.kode_bon)
-      .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
-    if (!itemTerbaru) return null;
-    const pesanan = pesananMasuk.find((pm) => pm.kode_bon === itemTerbaru.kode_bon);
-    return pesanan?.supplier || null;
-  };
+    // Nama toko/supplier untuk sebuah SKU ditelusuri dari barang masuk
+    // TERBARU dengan SKU tsb (items.kode_bon -> pesanan_masuk.kode_bon ->
+    // pesanan_masuk.supplier) — pola yang sama dipakai di modal "Tinjau
+    // Pengajuan Restock" (lihat ModalRouter.jsx).
+    const cariSupplier = (sku) => {
+      const itemTerbaru = items
+        .filter((i) => i.sku === sku && i.kode_bon)
+        .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
+      if (!itemTerbaru) return null;
+      const pesanan = pesananMasuk.find((pm) => pm.kode_bon === itemTerbaru.kode_bon);
+      return pesanan?.supplier || null;
+    };
 
-  // Daftar barang restok (jenis SKU, bukan zona) yang statusnya sudah
-  // disetujui — ditampilkan saat kartu "Total Restok (SKU)" diklik, supaya
-  // owner/superadmin bisa langsung lihat SKU mana saja yang disetujui tanpa
-  // pindah halaman, dan buka detail SKU-nya langsung dari sini. Tiap baris
-  // dilengkapi nama supplier supaya bisa difilter per toko/supplier.
-  const restokDisetujuiSemua = semuaPengajuan
-    .filter((p) => p.jenis !== "zona" && p.status === "disetujui")
-    .map((p) => ({ ...p, _supplier: cariSupplier(p.sku) }))
-    .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
+    // Daftar barang restok (jenis SKU, bukan zona) yang statusnya sudah
+    // disetujui — ditampilkan saat kartu "Total Restok (SKU)" diklik, supaya
+    // owner/superadmin bisa langsung lihat SKU mana saja yang disetujui tanpa
+    // pindah halaman, dan buka detail SKU-nya langsung dari sini. Tiap baris
+    // dilengkapi nama supplier supaya bisa difilter per toko/supplier.
+    const restokDisetujuiSemua = semuaPengajuan
+      .filter((p) => p.jenis !== "zona" && p.status === "disetujui")
+      .map((p) => ({ ...p, _supplier: cariSupplier(p.sku) }))
+      .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
 
-  const daftarSupplier = [...new Set(restokDisetujuiSemua.map((p) => p._supplier).filter(Boolean))].sort();
+    const daftarSupplier = [...new Set(restokDisetujuiSemua.map((p) => p._supplier).filter(Boolean))].sort();
 
+    // Kartu ringkasan di atas tab "Barang Diajukan" — "Total Restok (SKU)"
+    // dihitung dari restokDisetujuiSemua (bukan hasil filter supplier) supaya
+    // angkanya tetap mewakili total keseluruhan, sama dengan jumlah baris
+    // yang tampil saat kartu ini diklik sebelum difilter (cuma yang sudah
+    // disetujui, bukan gabungan menunggu + ditolak). Model baru dihitung dari
+    // total rak kosong yang diajukan lewat pengajuan zona (semua status,
+    // jumlah_rak_kosong dijumlah — satu pengajuan zona bisa berisi beberapa
+    // rak kosong).
+    const totalRestokSku = restokDisetujuiSemua.length;
+    const pengajuanZonaSemua = semuaPengajuan
+      .filter((p) => p.jenis === "zona")
+      .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
+    const totalModelBaru = pengajuanZonaSemua.reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
+    const totalMenunggu = semuaPengajuan.filter((p) => p.status === "menunggu").length;
+    const pengajuanMenungguSemua = semuaPengajuan
+      .filter((p) => p.status === "menunggu")
+      .map((p) => (p.jenis === "zona" ? p : { ...p, _supplier: cariSupplier(p.sku) }))
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    const sedangDipesan = pesananMasukPeriode
+      .filter((p) => {
+        const st = statusPesananMasuk(p);
+        return st === "menunggu" || st === "sebagian";
+      })
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    // Pesanan yang sudah selesai (semua model sudah datang penuh) — dipakai
+    // untuk kartu "Total Barang" di tab "Barang yang Sudah Datang".
+    const barangSelesai = pesananMasukPeriode
+      .filter((p) => statusPesananMasuk(p) === "selesai")
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    // Rincian per-model (bukan per-PO) dari semua pesanan yang sudah selesai —
+    // dipakai saat kartu "Total Barang" diklik, supaya langsung kelihatan
+    // supplier, nama model, dan qty tiap barang tanpa perlu buka satu-satu PO.
+    const rincianBarangDipesan = barangSelesai.flatMap((p) => {
+      const detail = detailModelPesanan(p);
+      return detail.map((m, i) => ({
+        key: `${p.id}-${i}`,
+        supplier: p.supplier || "—",
+        nama: m.nama || "—",
+        jumlah: Number(m.jumlah) || 0,
+        harga: Number(m.harga) || 0,
+        datang: m.datang,
+        tanggal: p.tanggal_pesan,
+      }));
+    });
+
+    // Total MODEL (jumlah baris/model, bukan qty) dari pesanan yang sudah
+    // selesai — ditampilkan sebagai kartu "Total Barang".
+    const totalBarangDipesan = rincianBarangDipesan.length;
+
+    // "Model Lama" = model yang, PAS DATANG/DIKONFIRMASI DITERIMA, ternyata
+    // supplier-nya sudah pernah dipakai bikin SKU kita sebelumnya (restock ke
+    // SKU lama) — bukan dari tabel items, tapi langsung dari data pesanan
+    // (detail_model per pesanan), disinkronkan ke sku_master.barcode_supplier
+    // (trim + lowercase), sama seperti pola auto-hubung SKU lama di
+    // SkuEntryForm (components/forms.jsx). Satu baris hasil = SATU SKU,
+    // gabungan qty dari semua kali model itu datang (bukan satu baris per
+    // kedatangan).
+    //
+    // Pesanan yang PERTAMA KALI membawa suatu kode model (yang jadi alasan SKU
+    // itu dibuat) DIKECUALIKAN dari hitungan restock — soalnya kode modelnya
+    // otomatis "cocok" dengan barcode_supplier SKU yang baru dibuat dari
+    // pesanan itu sendiri, padahal itu bukan restock. Origin (pesanan
+    // pertama) ditentukan dari tabel items, diurutkan kronologis per kode
+    // model (created_at, lalu tanggal, lalu id sebagai tie-break terakhir).
+    const kodeModelKeOriginKodeBon = {};
+    [...(items || [])]
+      .filter((i) => i.barcode_supplier && i.kode_bon)
+      .sort((a, b) => {
+        const byCreated = new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        if (byCreated !== 0) return byCreated;
+        const byTanggal = new Date(a.tanggal || 0) - new Date(b.tanggal || 0);
+        if (byTanggal !== 0) return byTanggal;
+        return String(a.id).localeCompare(String(b.id));
+      })
+      .forEach((i) => {
+        const kode = (i.barcode_supplier || "").trim().toLowerCase();
+        if (kode && !(kode in kodeModelKeOriginKodeBon)) {
+          kodeModelKeOriginKodeBon[kode] = i.kode_bon;
+        }
+      });
+
+    const skuMasterByKode = new Map();
+    (skuMaster || []).forEach((s) => {
+      const kode = (s.barcode_supplier || "").trim().toLowerCase();
+      if (kode && !skuMasterByKode.has(kode)) skuMasterByKode.set(kode, s);
+    });
+
+    const modelLamaMap = new Map(); // sku id -> baris gabungan
+    pesananMasukPeriode.forEach((p) => {
+      if (p.dibatalkan) return;
+      detailModelPesanan(p)
+        .filter((m) => m.datang && m.nama)
+        .forEach((m) => {
+          const kode = m.nama.trim().toLowerCase();
+          if (!kode) return;
+          const skuRow = skuMasterByKode.get(kode);
+          if (!skuRow) return; // belum ada SKU yang cocok -> bukan "Model Lama"
+          if (kodeModelKeOriginKodeBon[kode] === p.kode_bon) return; // origin, bukan restock
+
+          const jumlah = Number(m.jumlah) || 0;
+          const existing = modelLamaMap.get(skuRow.id);
+          if (existing) {
+            existing.jumlah += jumlah;
+            existing.kaliDatang += 1;
+            if (p.supplier) existing.supplierSet.add(p.supplier);
+            if (new Date(p.tanggal_pesan || 0) > new Date(existing.tanggalTerakhir || 0)) {
+              existing.tanggalTerakhir = p.tanggal_pesan;
+            }
+          } else {
+            modelLamaMap.set(skuRow.id, {
+              key: skuRow.id,
+              sku: skuRow.sku,
+              nama: m.nama,
+              jumlah,
+              kaliDatang: 1,
+              supplierSet: new Set(p.supplier ? [p.supplier] : []),
+              tanggalTerakhir: p.tanggal_pesan,
+            });
+          }
+        });
+    });
+
+    const rincianModelLama = Array.from(modelLamaMap.values())
+      .map((r) => ({
+        ...r,
+        supplier: r.supplierSet.size > 0 ? Array.from(r.supplierSet).join(", ") : "—",
+      }))
+      .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
+
+    const totalModelLama = rincianModelLama.length;
+
+    // "Model Baru" = KEBALIKAN dari "Model Lama" — model yang datang tapi
+    // BUKAN restock ke SKU yang sudah ada. Ini mencakup dua kasus: (1) model
+    // yang kodenya belum cocok ke sku_master manapun sama sekali (belum
+    // pernah dibuatkan SKU), dan (2) pesanan origin/pencipta SKU itu sendiri
+    // (kedatangan pertama yang bikin SKU-nya dibuat, dikecualikan dari "Model
+    // Lama" — lihat kodeModelKeOriginKodeBon di atas). Digabung per KODE MODEL
+    // (bukan per SKU, karena kasus (1) belum tentu punya SKU), satu baris =
+    // satu kode model, qty dijumlah dari semua kali datang.
+    const modelBaruDatangMap = new Map(); // kode model (barcode_supplier dinormalisasi) -> baris gabungan
+    pesananMasukPeriode.forEach((p) => {
+      if (p.dibatalkan) return;
+      detailModelPesanan(p)
+        .filter((m) => m.datang && m.nama)
+        .forEach((m) => {
+          const kode = m.nama.trim().toLowerCase();
+          if (!kode) return;
+          const skuRow = skuMasterByKode.get(kode);
+          const sudahRestock = skuRow && kodeModelKeOriginKodeBon[kode] !== p.kode_bon;
+          if (sudahRestock) return; // sudah dihitung sebagai "Model Lama"
+
+          const jumlah = Number(m.jumlah) || 0;
+          const existing = modelBaruDatangMap.get(kode);
+          if (existing) {
+            existing.jumlah += jumlah;
+            existing.kaliDatang += 1;
+            if (p.supplier) existing.supplierSet.add(p.supplier);
+            if (new Date(p.tanggal_pesan || 0) > new Date(existing.tanggalTerakhir || 0)) {
+              existing.tanggalTerakhir = p.tanggal_pesan;
+            }
+            if (!existing.sku && skuRow) existing.sku = skuRow.sku;
+          } else {
+            modelBaruDatangMap.set(kode, {
+              key: kode,
+              sku: skuRow ? skuRow.sku : null,
+              nama: m.nama,
+              jumlah,
+              kaliDatang: 1,
+              supplierSet: new Set(p.supplier ? [p.supplier] : []),
+              tanggalTerakhir: p.tanggal_pesan,
+            });
+          }
+        });
+    });
+
+    const rincianModelBaruDatang = Array.from(modelBaruDatangMap.values())
+      .map((r) => ({
+        ...r,
+        supplier: r.supplierSet.size > 0 ? Array.from(r.supplierSet).join(", ") : "—",
+      }))
+      .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
+
+    const totalModelBaruDatang = rincianModelBaruDatang.length;
+
+    return {
+      pesananMasukPeriode,
+      restokDisetujuiSemua,
+      daftarSupplier,
+      totalRestokSku,
+      pengajuanZonaSemua,
+      totalModelBaru,
+      totalMenunggu,
+      pengajuanMenungguSemua,
+      sedangDipesan,
+      barangSelesai,
+      rincianBarangDipesan,
+      totalBarangDipesan,
+      rincianModelLama,
+      totalModelLama,
+      rincianModelBaruDatang,
+      totalModelBaruDatang,
+    };
+  }, [pesananMasuk, pengajuanRestock, items, skuMaster, periodeDari, periodeSampai]);
+
+  const {
+    pesananMasukPeriode,
+    restokDisetujuiSemua,
+    daftarSupplier,
+    totalRestokSku,
+    pengajuanZonaSemua,
+    totalModelBaru,
+    totalMenunggu,
+    pengajuanMenungguSemua,
+    sedangDipesan,
+    barangSelesai,
+    rincianBarangDipesan,
+    totalBarangDipesan,
+    rincianModelLama,
+    totalModelLama,
+    rincianModelBaruDatang,
+    totalModelBaruDatang,
+  } = derivedGudang;
+
+  // Cuma memfilter array yang sudah dihitung di atas berdasarkan pilihan
+  // dropdown supplier (state lokal) — murah, tidak perlu useMemo.
   const restokDisetujui = filterSupplier
     ? restokDisetujuiSemua.filter((p) => p._supplier === filterSupplier)
     : restokDisetujuiSemua;
-
-  // Kartu ringkasan di atas tab "Barang Diajukan" — "Total Restok (SKU)"
-  // dihitung dari restokDisetujuiSemua (bukan hasil filter supplier) supaya
-  // angkanya tetap mewakili total keseluruhan, sama dengan jumlah baris
-  // yang tampil saat kartu ini diklik sebelum difilter (cuma yang sudah
-  // disetujui, bukan gabungan menunggu + ditolak). Model baru dihitung dari
-  // total rak kosong yang diajukan lewat pengajuan zona (semua status,
-  // jumlah_rak_kosong dijumlah — satu pengajuan zona bisa berisi beberapa
-  // rak kosong).
-  const totalRestokSku = restokDisetujuiSemua.length;
-  const pengajuanZonaSemua = semuaPengajuan
-    .filter((p) => p.jenis === "zona")
-    .sort((a, b) => new Date(b.direspon_pada || b.created_at) - new Date(a.direspon_pada || a.created_at));
-  const totalModelBaru = pengajuanZonaSemua.reduce((sum, p) => sum + (Number(p.jumlah_rak_kosong) || 0), 0);
-  const totalMenunggu = semuaPengajuan.filter((p) => p.status === "menunggu").length;
-  const pengajuanMenungguSemua = semuaPengajuan
-    .filter((p) => p.status === "menunggu")
-    .map((p) => (p.jenis === "zona" ? p : { ...p, _supplier: cariSupplier(p.sku) }))
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const STATUS_MODEL_BARU_META = {
     disetujui: { label: "Disetujui", color: "emerald" },
@@ -464,174 +686,6 @@ function DashboardGudang({
   const bukaDetailPengajuan = (p) => {
     setModal && setModal({ type: "respon-pengajuan-restock", item: p });
   };
-
-  const sedangDipesan = pesananMasukPeriode
-    .filter((p) => {
-      const st = statusPesananMasuk(p);
-      return st === "menunggu" || st === "sebagian";
-    })
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-  // Pesanan yang sudah selesai (semua model sudah datang penuh) — dipakai
-  // untuk kartu "Total Barang" di tab "Barang yang Sudah Datang".
-  const barangSelesai = pesananMasukPeriode
-    .filter((p) => statusPesananMasuk(p) === "selesai")
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-  // Rincian per-model (bukan per-PO) dari semua pesanan yang sudah selesai —
-  // dipakai saat kartu "Total Barang" diklik, supaya langsung kelihatan
-  // supplier, nama model, dan qty tiap barang tanpa perlu buka satu-satu PO.
-  const rincianBarangDipesan = barangSelesai.flatMap((p) => {
-    const detail = detailModelPesanan(p);
-    return detail.map((m, i) => ({
-      key: `${p.id}-${i}`,
-      supplier: p.supplier || "—",
-      nama: m.nama || "—",
-      jumlah: Number(m.jumlah) || 0,
-      harga: Number(m.harga) || 0,
-      datang: m.datang,
-      tanggal: p.tanggal_pesan,
-    }));
-  });
-
-  // Total MODEL (jumlah baris/model, bukan qty) dari pesanan yang sudah
-  // selesai — ditampilkan sebagai kartu "Total Barang".
-  const totalBarangDipesan = rincianBarangDipesan.length;
-
-  // "Model Lama" = model yang, PAS DATANG/DIKONFIRMASI DITERIMA, ternyata
-  // supplier-nya sudah pernah dipakai bikin SKU kita sebelumnya (restock ke
-  // SKU lama) — bukan dari tabel items, tapi langsung dari data pesanan
-  // (detail_model per pesanan), disinkronkan ke sku_master.barcode_supplier
-  // (trim + lowercase), sama seperti pola auto-hubung SKU lama di
-  // SkuEntryForm (components/forms.jsx). Satu baris hasil = SATU SKU,
-  // gabungan qty dari semua kali model itu datang (bukan satu baris per
-  // kedatangan).
-  //
-  // Pesanan yang PERTAMA KALI membawa suatu kode model (yang jadi alasan SKU
-  // itu dibuat) DIKECUALIKAN dari hitungan restock — soalnya kode modelnya
-  // otomatis "cocok" dengan barcode_supplier SKU yang baru dibuat dari
-  // pesanan itu sendiri, padahal itu bukan restock. Origin (pesanan
-  // pertama) ditentukan dari tabel items, diurutkan kronologis per kode
-  // model (created_at, lalu tanggal, lalu id sebagai tie-break terakhir).
-  const kodeModelKeOriginKodeBon = {};
-  [...(items || [])]
-    .filter((i) => i.barcode_supplier && i.kode_bon)
-    .sort((a, b) => {
-      const byCreated = new Date(a.created_at || 0) - new Date(b.created_at || 0);
-      if (byCreated !== 0) return byCreated;
-      const byTanggal = new Date(a.tanggal || 0) - new Date(b.tanggal || 0);
-      if (byTanggal !== 0) return byTanggal;
-      return String(a.id).localeCompare(String(b.id));
-    })
-    .forEach((i) => {
-      const kode = (i.barcode_supplier || "").trim().toLowerCase();
-      if (kode && !(kode in kodeModelKeOriginKodeBon)) {
-        kodeModelKeOriginKodeBon[kode] = i.kode_bon;
-      }
-    });
-
-  const skuMasterByKode = new Map();
-  (skuMaster || []).forEach((s) => {
-    const kode = (s.barcode_supplier || "").trim().toLowerCase();
-    if (kode && !skuMasterByKode.has(kode)) skuMasterByKode.set(kode, s);
-  });
-
-  const modelLamaMap = new Map(); // sku id -> baris gabungan
-  pesananMasukPeriode.forEach((p) => {
-    if (p.dibatalkan) return;
-    detailModelPesanan(p)
-      .filter((m) => m.datang && m.nama)
-      .forEach((m) => {
-        const kode = m.nama.trim().toLowerCase();
-        if (!kode) return;
-        const skuRow = skuMasterByKode.get(kode);
-        if (!skuRow) return; // belum ada SKU yang cocok -> bukan "Model Lama"
-        if (kodeModelKeOriginKodeBon[kode] === p.kode_bon) return; // origin, bukan restock
-
-        const jumlah = Number(m.jumlah) || 0;
-        const existing = modelLamaMap.get(skuRow.id);
-        if (existing) {
-          existing.jumlah += jumlah;
-          existing.kaliDatang += 1;
-          if (p.supplier) existing.supplierSet.add(p.supplier);
-          if (new Date(p.tanggal_pesan || 0) > new Date(existing.tanggalTerakhir || 0)) {
-            existing.tanggalTerakhir = p.tanggal_pesan;
-          }
-        } else {
-          modelLamaMap.set(skuRow.id, {
-            key: skuRow.id,
-            sku: skuRow.sku,
-            nama: m.nama,
-            jumlah,
-            kaliDatang: 1,
-            supplierSet: new Set(p.supplier ? [p.supplier] : []),
-            tanggalTerakhir: p.tanggal_pesan,
-          });
-        }
-      });
-  });
-
-  const rincianModelLama = Array.from(modelLamaMap.values())
-    .map((r) => ({
-      ...r,
-      supplier: r.supplierSet.size > 0 ? Array.from(r.supplierSet).join(", ") : "—",
-    }))
-    .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
-
-  const totalModelLama = rincianModelLama.length;
-
-  // "Model Baru" = KEBALIKAN dari "Model Lama" — model yang datang tapi
-  // BUKAN restock ke SKU yang sudah ada. Ini mencakup dua kasus: (1) model
-  // yang kodenya belum cocok ke sku_master manapun sama sekali (belum
-  // pernah dibuatkan SKU), dan (2) pesanan origin/pencipta SKU itu sendiri
-  // (kedatangan pertama yang bikin SKU-nya dibuat, dikecualikan dari "Model
-  // Lama" — lihat kodeModelKeOriginKodeBon di atas). Digabung per KODE MODEL
-  // (bukan per SKU, karena kasus (1) belum tentu punya SKU), satu baris =
-  // satu kode model, qty dijumlah dari semua kali datang.
-  const modelBaruDatangMap = new Map(); // kode model (barcode_supplier dinormalisasi) -> baris gabungan
-  pesananMasukPeriode.forEach((p) => {
-    if (p.dibatalkan) return;
-    detailModelPesanan(p)
-      .filter((m) => m.datang && m.nama)
-      .forEach((m) => {
-        const kode = m.nama.trim().toLowerCase();
-        if (!kode) return;
-        const skuRow = skuMasterByKode.get(kode);
-        const sudahRestock = skuRow && kodeModelKeOriginKodeBon[kode] !== p.kode_bon;
-        if (sudahRestock) return; // sudah dihitung sebagai "Model Lama"
-
-        const jumlah = Number(m.jumlah) || 0;
-        const existing = modelBaruDatangMap.get(kode);
-        if (existing) {
-          existing.jumlah += jumlah;
-          existing.kaliDatang += 1;
-          if (p.supplier) existing.supplierSet.add(p.supplier);
-          if (new Date(p.tanggal_pesan || 0) > new Date(existing.tanggalTerakhir || 0)) {
-            existing.tanggalTerakhir = p.tanggal_pesan;
-          }
-          if (!existing.sku && skuRow) existing.sku = skuRow.sku;
-        } else {
-          modelBaruDatangMap.set(kode, {
-            key: kode,
-            sku: skuRow ? skuRow.sku : null,
-            nama: m.nama,
-            jumlah,
-            kaliDatang: 1,
-            supplierSet: new Set(p.supplier ? [p.supplier] : []),
-            tanggalTerakhir: p.tanggal_pesan,
-          });
-        }
-      });
-  });
-
-  const rincianModelBaruDatang = Array.from(modelBaruDatangMap.values())
-    .map((r) => ({
-      ...r,
-      supplier: r.supplierSet.size > 0 ? Array.from(r.supplierSet).join(", ") : "—",
-    }))
-    .sort((a, b) => new Date(b.tanggalTerakhir || 0) - new Date(a.tanggalTerakhir || 0));
-
-  const totalModelBaruDatang = rincianModelBaruDatang.length;
 
   const byStage = (stage) => items.filter((i) => i.stage === stage);
   const TAHAP_ALUR = STAGE_ORDER; // semua tahap — rincian dari halaman "Alur Barang" di sidebar (DataBarang.jsx)
@@ -649,28 +703,40 @@ function DashboardGudang({
   // katalog PDF, dll) tetap di halaman SKU & Harga (lihat tombol "Buka
   // Halaman Lengkap" di bawah).
   const kategoriLabelDataBarang = (kode) => labelFor(master || {}, "kategori", kode);
-  const skuAktif = skuMaster.filter((s) => !s.nonaktif);
-  const totalStokSemua = skuAktif.reduce((sum, s) => sum + (Number(s.stok) || 0), 0);
-  const jumlahPerubahanHargaSemua = skuAktif.filter(
-    (s) => s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli
-  ).length;
-  const kategoriOptionsDataBarang = Array.from(
-    new Set(skuAktif.map((s) => s.kategori).filter(Boolean))
-  ).sort();
+  // Dipisah dari skuMaster sendiri (bukan cuma alias) supaya ini hanya
+  // dihitung ulang kalau skuMaster benar-benar berubah — bukan tiap kali
+  // qDataBarang berubah (user mengetik di kotak pencarian di bawah).
+  const { skuAktif, totalStokSemua, jumlahPerubahanHargaSemua, kategoriOptionsDataBarang } = useMemo(() => {
+    const skuAktif = skuMaster.filter((s) => !s.nonaktif);
+    const totalStokSemua = skuAktif.reduce((sum, s) => sum + (Number(s.stok) || 0), 0);
+    const jumlahPerubahanHargaSemua = skuAktif.filter(
+      (s) => s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli
+    ).length;
+    const kategoriOptionsDataBarang = Array.from(
+      new Set(skuAktif.map((s) => s.kategori).filter(Boolean))
+    ).sort();
+    return { skuAktif, totalStokSemua, jumlahPerubahanHargaSemua, kategoriOptionsDataBarang };
+  }, [skuMaster]);
 
   const MAX_TAMPIL_DATA_BARANG = 12;
-  const filteredDataBarangSemua = skuAktif.filter((s) => {
-    const ql = qDataBarang.trim().toLowerCase();
-    const cocokQ =
-      !ql ||
-      (s.sku || "").toLowerCase().includes(ql) ||
-      (s.barcode_supplier || "").toLowerCase().includes(ql);
-    if (!cocokQ) return false;
-    if (kategoriDataBarang && s.kategori !== kategoriDataBarang) return false;
-    return true;
-  });
-  const filteredDataBarang = filteredDataBarangSemua.slice(0, MAX_TAMPIL_DATA_BARANG);
-  const lebihDataBarang = filteredDataBarangSemua.length - filteredDataBarang.length;
+  // Ini yang berubah tiap ketikan di kotak pencarian — dipisah dari memo di
+  // atas supaya cuma bagian filter murah ini yang jalan ulang, bukan seluruh
+  // skuAktif/totalStokSemua/dst yang dihitung dari SEMUA sku_master.
+  const { filteredDataBarangSemua, filteredDataBarang, lebihDataBarang } = useMemo(() => {
+    const filteredDataBarangSemua = skuAktif.filter((s) => {
+      const ql = qDataBarang.trim().toLowerCase();
+      const cocokQ =
+        !ql ||
+        (s.sku || "").toLowerCase().includes(ql) ||
+        (s.barcode_supplier || "").toLowerCase().includes(ql);
+      if (!cocokQ) return false;
+      if (kategoriDataBarang && s.kategori !== kategoriDataBarang) return false;
+      return true;
+    });
+    const filteredDataBarang = filteredDataBarangSemua.slice(0, MAX_TAMPIL_DATA_BARANG);
+    const lebihDataBarang = filteredDataBarangSemua.length - filteredDataBarang.length;
+    return { filteredDataBarangSemua, filteredDataBarang, lebihDataBarang };
+  }, [skuAktif, qDataBarang, kategoriDataBarang]);
 
   return (
     <div>
