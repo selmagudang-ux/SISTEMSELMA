@@ -3327,110 +3327,139 @@ export default function ModalRouter({
     );
   }
 
+  // INPUT BARANG DATANG — sekarang bisa disimpan dua cara:
+  // - "Simpan sebagai Draf" (draft=true): header transaksi disimpan supaya
+  //   progresnya tidak hilang, TAPI belum bikin "items"/"pesanan_penerimaan"
+  //   sama sekali — jadi belum masuk Alur Barang/stok. Draf ini muncul di
+  //   daftar dengan status "Draf" dan dilanjutkan lewat modal ini lagi
+  //   (modal.item terisi baris drafnya) sampai akhirnya difinalisasi.
+  // - "Simpan & Lanjut ke Alur Barang" (draft=false): perilaku LAMA — begitu
+  //   simpan, tiap model langsung jadi baris "items" (stage "sku") & lanjut
+  //   alur SKU. Ini juga jalan yang dipakai waktu draf akhirnya difinalisasi.
+  // modal.item (opsional) = baris draf yang sedang dilanjutkan — kalau ada,
+  // header transaksi di-PATCH ke baris yang SAMA (bukan bikin baris baru),
+  // supaya kode bonnya tetap satu dari draf sampai final.
   if (modal.type === "barang-datang") {
+    const draftItem = modal.item || null;
     return (
       <BarangDatangForm
         onClose={close}
         saving={saving}
         suppliers={suppliers}
-        onSubmit={({ tanggal, fotoBonFiles, supplier, jenis, models, catatan }) =>
+        initial={draftItem || undefined}
+        onSubmit={({ draft, draftId, tanggal, fotoBonFiles, existingFotoBonUrls, supplier, jenis, models, catatan }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
             // Foto bon (opsional, boleh lebih dari satu) — dipakai untuk
             // seluruh transaksi ini, ditempel juga di tiap baris penerimaan
-            // per model. `foto_bon_urls` menyimpan SEMUA foto; `foto_bon_url`
-            // (kolom lama) tetap diisi foto PERTAMA saja supaya layar/kode
-            // lain yang masih baca kolom tunggal itu (mis. menu Rusak) tetap
-            // dapat satu foto yang wajar tanpa perlu ikut diubah.
-            const fotoBonUrls = [];
+            // per model. `foto_bon_urls` menyimpan SEMUA foto (lama yang
+            // dipertahankan + baru diupload); `foto_bon_url` (kolom lama)
+            // tetap diisi foto PERTAMA saja supaya layar/kode lain yang masih
+            // baca kolom tunggal itu (mis. menu Rusak) tetap dapat satu foto
+            // yang wajar tanpa perlu ikut diubah.
+            const fotoBonUrlsBaru = [];
             for (const f of fotoBonFiles || []) {
               const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
-              const path = `bon-${Date.now()}-${fotoBonUrls.length}.${ext}`;
-              fotoBonUrls.push(await sbUploadFoto(f, path));
+              const path = `bon-${Date.now()}-${fotoBonUrlsBaru.length}.${ext}`;
+              fotoBonUrlsBaru.push(await sbUploadFoto(f, path));
             }
+            const fotoBonUrls = [...(existingFotoBonUrls || []), ...fotoBonUrlsBaru];
             const fotoBonUrl = fotoBonUrls[0] || null;
 
             // m.jumlahDatang = TOTAL fisik baris ini (baik + rusak jadi satu
-            // angka, diisi begitu di form). Qty baik = total - rusak.
-            const totalDatang = models.reduce(
-              (sum, m) => sum + Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-              0
-            );
+            // angka, diisi begitu di form). jumlah_pesan/jumlah_diterima
+            // header dihitung dari TOTAL ini (sama seperti kolom "Qty
+            // Datang" di halaman Riwayat Barang Datang) — qty rusak tetap
+            // ditampilkan terpisah di detail_model.
+            const totalKotor = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
 
-            // 1) Simpan header transaksi barang datang, langsung dengan
-            //    jumlah_diterima = jumlah_pesan (selalu "selesai", karena
-            //    memang dicatat saat barang sudah di tangan, bukan janji).
-            //    jumlah_pesan/jumlah_diterima tetap dihitung dari qty datang
-            //    (baik) saja — sama seperti kolom "Qty Datang" di halaman
-            //    Riwayat Barang Datang, qty rusak tetap ditampilkan terpisah.
-            // Kode bon otomatis (BON-0001, BON-0002, ...) — dipakai untuk
-            // cocokkan riwayat di sistem dengan bon fisik dari supplier, dan
-            // ikut ditempel ke tiap item hasil transaksi ini supaya kalau ada
-            // yang rusak, menu "Rusak" bisa tahu itu dari bon yang mana.
-            const kodeBon = nextKode(pesananMasuk, "kode_bon", "BON-");
+            const headerPayload = {
+              tanggal_pesan: tanggal,
+              supplier,
+              jenis,
+              // DB tidak boleh 0 (check constraint) — minimal 1 walau
+              // draf-nya masih kosong/belum lengkap sama sekali.
+              jumlah_pesan: Math.max(totalKotor, 1),
+              jumlah_diterima: totalKotor,
+              dibatalkan: false,
+              draft,
+              catatan,
+              foto_bon_url: fotoBonUrl,
+              foto_bon_urls: fotoBonUrls,
+              detail_model: models.map((m) => ({
+                nama: m.nama,
+                jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+                rusak: m.jumlahRusak,
+                alasan_rusak: m.alasanRusak,
+                harga: m.harga,
+                datang: true,
+              })),
+            };
 
-            const [pesanan] = await sb("pesanan_masuk", {
-              method: "POST",
-              body: JSON.stringify({
-                tanggal_pesan: tanggal,
-                supplier,
-                jenis,
-                jumlah_pesan: totalDatang,
-                jumlah_diterima: totalDatang,
-                dibatalkan: false,
-                catatan,
-                foto_bon_url: fotoBonUrl,
-                foto_bon_urls: fotoBonUrls,
-                kode_bon: kodeBon,
-                detail_model: models.map((m) => ({
-                  nama: m.nama,
-                  jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-                  rusak: m.jumlahRusak,
-                  alasan_rusak: m.alasanRusak,
-                  harga: m.harga,
-                  datang: true,
-                })),
-              }),
-            });
-
-            // 2) Tiap model dengan Qty Datang (TOTAL, sudah termasuk rusak) > 0
-            //    langsung jadi baris Barang Masuk tersendiri (stage "sku") &
-            //    lanjut alur SKU-nya sendiri-sendiri — jumlah item = TOTAL,
-            //    supaya qty rusaknya ikut terbawa sampai SKU-nya ketahuan.
-            for (const m of models) {
-              const totalQtyModel = m.jumlahDatang;
-              if (totalQtyModel <= 0) continue;
-              const [itemBaru] = await sb("items", {
-                method: "POST",
-                body: JSON.stringify({
-                  tanggal,
-                  gudang: jenis,
-                  jumlah: totalQtyModel,
-                  jumlah_rusak: m.jumlahRusak || 0,
-                  alasan_rusak: m.alasanRusak || null,
-                  harga: m.harga || null,
-                  stage: "sku",
-                  kode_bon: kodeBon,
-                  // Nama model yang diketik di sini adalah barcode/kode dari
-                  // supplier — harus ikut disalin ke barcode_supplier item,
-                  // sama seperti alur Konfirmasi Datang, supaya muncul di
-                  // kolom "Model/Barcode Supplier" pada Alur Barang.
-                  barcode_supplier: m.nama || null,
-                }),
+            let pesanan;
+            if (draftId) {
+              // Melanjutkan/menyimpan-ulang draf yang sudah ada — PATCH baris
+              // yang SAMA (kode bon & id tetap), bukan bikin baris baru.
+              const [updated] = await sb(`pesanan_masuk?id=eq.${draftId}`, {
+                method: "PATCH",
+                body: JSON.stringify(headerPayload),
               });
-              await sb("pesanan_penerimaan", {
+              pesanan = updated || { id: draftId, kode_bon: draftItem?.kode_bon };
+            } else {
+              // Kode bon otomatis (BON-0001, BON-0002, ...) — dipakai untuk
+              // cocokkan riwayat di sistem dengan bon fisik dari supplier, dan
+              // ikut ditempel ke tiap item hasil transaksi ini supaya kalau
+              // ada yang rusak, menu "Rusak" bisa tahu itu dari bon yang mana.
+              const kodeBon = nextKode(pesananMasuk, "kode_bon", "BON-");
+              const [created] = await sb("pesanan_masuk", {
                 method: "POST",
-                body: JSON.stringify({
-                  pesanan_id: pesanan?.id || null,
-                  tanggal,
-                  jumlah: totalQtyModel,
-                  item_id: itemBaru?.id || null,
-                  foto_bon_url: fotoBonUrl,
-                  foto_bon_urls: fotoBonUrls,
-                }),
+                body: JSON.stringify({ ...headerPayload, kode_bon: kodeBon }),
               });
+              pesanan = created;
             }
-          }, "Barang datang dicatat — lanjut ke alur SKU")
+
+            // Draf BELUM masuk Alur Barang/stok — "items" & "pesanan_penerimaan"
+            // baru dibuat begitu disimpan sebagai FINAL (draft === false),
+            // baik langsung dari form baru maupun waktu draf ini dilanjutkan
+            // & akhirnya difinalisasi. Tiap model dengan Qty Datang (TOTAL,
+            // sudah termasuk rusak) > 0 jadi baris Barang Masuk tersendiri
+            // (stage "sku") & lanjut alur SKU-nya sendiri-sendiri.
+            if (!draft) {
+              for (const m of models) {
+                const totalQtyModel = m.jumlahDatang;
+                if (totalQtyModel <= 0) continue;
+                const [itemBaru] = await sb("items", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    tanggal,
+                    gudang: jenis,
+                    jumlah: totalQtyModel,
+                    jumlah_rusak: m.jumlahRusak || 0,
+                    alasan_rusak: m.alasanRusak || null,
+                    harga: m.harga || null,
+                    stage: "sku",
+                    kode_bon: pesanan?.kode_bon,
+                    // Nama model yang diketik di sini adalah barcode/kode dari
+                    // supplier — harus ikut disalin ke barcode_supplier item,
+                    // sama seperti alur Konfirmasi Datang, supaya muncul di
+                    // kolom "Model/Barcode Supplier" pada Alur Barang.
+                    barcode_supplier: m.nama || null,
+                  }),
+                });
+                await sb("pesanan_penerimaan", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    pesanan_id: pesanan?.id || null,
+                    tanggal,
+                    jumlah: totalQtyModel,
+                    item_id: itemBaru?.id || null,
+                    foto_bon_url: fotoBonUrl,
+                    foto_bon_urls: fotoBonUrls,
+                  }),
+                });
+              }
+            }
+          }, draft ? "Barang datang disimpan sebagai draf" : "Barang datang dicatat — lanjut ke alur SKU")
         }
       />
     );

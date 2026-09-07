@@ -275,7 +275,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
     <div>
       <PageHeader
         title="Pesanan Barang"
-        description={`Baru tahu toko & harga saat pesan? Pakai "Pesan Barang" dulu, lalu "Konfirmasi Datang" di baris itu begitu barangnya sampai — riwayatnya tetap satu, nyambung dari pesan sampai datang. Kalau barang sudah langsung di tangan (tanpa pesan dulu), pakai "Input Barang Datang" langsung.`}
+        description={`Baru tahu toko & harga saat pesan? Pakai "Pesan Barang" dulu, lalu "Konfirmasi Datang" di baris itu begitu barangnya sampai — riwayatnya tetap satu, nyambung dari pesan sampai datang. Kalau barang sudah langsung di tangan (tanpa pesan dulu), pakai "Input Barang Datang" — bisa "Simpan sebagai Draf" dulu kalau belum sempat lengkap, atau simpan langsung kalau sudah pasti.`}
         action={
           <div className="flex items-center gap-2">
             <button
@@ -325,6 +325,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                 const status = statusPesananMasuk(p);
                 const statusMeta = PO_STATUS_META[status] || PO_STATUS_META.menunggu;
                 const belumSelesai = status === "menunggu" || status === "sebagian";
+                const isDraft = status === "draft";
                 return (
                   <>
                     <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
@@ -375,6 +376,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                         <button onClick={() => toggle(p.id)} className="text-left hover:text-slate-200">
                           {status === "menunggu" ? (
                             <span className="text-amber-400/80 italic">Belum ada rincian</span>
+                          ) : detail.length === 0 || detail.every((m) => !m.nama && !m.jumlah) ? (
+                            <span className="text-violet-400/80 italic">Draf — belum diisi</span>
                           ) : (
                             <>
                               {detail.length} model
@@ -408,7 +411,16 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                       </td>
                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-3">
-                          {belumSelesai && (
+                          {isDraft && (
+                            <button
+                              onClick={() => setModal({ type: "barang-datang", item: p })}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-400 hover:text-violet-300"
+                              title="Lanjutkan mengisi draf ini — bisa disimpan sebagai draf lagi atau difinalisasi"
+                            >
+                              <PackageCheck size={13} /> Lanjutkan
+                            </button>
+                          )}
+                          {!isDraft && belumSelesai && (
                             <button
                               onClick={() => setModal({ type: "konfirmasi-datang", item: p })}
                               className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300"
@@ -417,7 +429,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                               <PackageCheck size={13} /> Konfirmasi Datang
                             </button>
                           )}
-                          {status !== "menunggu" && (
+                          {!isDraft && status !== "menunggu" && (
                             <button
                               onClick={() => setModal({ type: "edit-barang-datang", item: p })}
                               className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-amber-400"

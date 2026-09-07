@@ -551,9 +551,13 @@ export function sisaHutangPesanan(pesanan, pembayaranList) {
 //  Lunas       -> sisa <= 0
 // Status "Pesanan Masuk" (Barang Datang) diturunkan dari jumlah_diterima vs
 // jumlah_pesan — bukan disimpan manual oleh user, supaya selalu konsisten.
-// dibatalkan (kolom terpisah) menang atas hitungan angka.
+// dibatalkan (kolom terpisah) menang atas hitungan angka. "draft" (kolom
+// terpisah juga) menang atas SEMUANYA kecuali dibatalkan — dipakai untuk
+// baris "Input Barang Datang" yang disimpan sementara lewat tombol "Simpan
+// sebagai Draf" dan belum dikirim ke Alur Barang/stok.
 export function statusPesananMasuk(p) {
   if (p.dibatalkan) return "batal";
+  if (p.draft) return "draft";
   if ((p.jumlah_diterima || 0) <= 0) return "menunggu";
   if (p.jumlah_diterima < p.jumlah_pesan) return "sebagian";
   return "selesai";

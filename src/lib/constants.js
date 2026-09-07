@@ -32,11 +32,15 @@ export const STAGE_META = {
 // Status "Pesanan Masuk" (Barang Datang — tahap SEBELUM Barang Masuk, dipakai
 // untuk PO/pesanan ke supplier yang belum tentu tiba sekaligus). Beda dari
 // STAGE_META di atas: ini bukan tahap alur barang fisik, tapi status pemesanan.
+// - draft   : disimpan dari "Input Barang Datang" tapi BELUM dikirim ke Alur
+//             Barang/stok — masih bisa dilengkapi & diubah bebas lewat
+//             "Lanjutkan" sebelum akhirnya difinalisasi.
 // - menunggu: belum ada barang yang datang sama sekali.
 // - sebagian: sudah ada yang datang, tapi belum genap sesuai jumlah_pesan.
 // - selesai : jumlah_diterima sudah >= jumlah_pesan.
 // - batal   : pesanan dibatalkan, tidak akan ditagih lagi ke alur Barang Masuk.
 export const PO_STATUS_META = {
+  draft: { label: "Draf", color: "violet" },
   menunggu: { label: "Menunggu", color: "amber" },
   sebagian: { label: "Sebagian Datang", color: "sky" },
   selesai: { label: "Selesai", color: "emerald" },

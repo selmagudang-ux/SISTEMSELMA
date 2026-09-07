@@ -221,18 +221,49 @@ function barisBarangDatang() {
   return { nama: "", jumlahDatang: 1, jumlahRusak: 0, alasanRusak: "", harga: "" };
 }
 
-export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
+// Ubah rincian model tersimpan (bentuk database: jumlah = qty BAIK saja,
+// rusak terpisah) balik ke bentuk form (jumlahDatang = TOTAL baik+rusak) —
+// dipakai untuk pre-fill form ini waktu melanjutkan draf "Input Barang
+// Datang" yang sudah disimpan sebelumnya lewat "Simpan sebagai Draf".
+function modelsDariDraf(p) {
+  const detail = Array.isArray(p?.detail_model) ? p.detail_model : [];
+  if (detail.length === 0) return [barisBarangDatang()];
+  return detail.map((m) => ({
+    nama: m.nama || "",
+    jumlahDatang: (Number(m.jumlah) || 0) + (Number(m.rusak) || 0),
+    jumlahRusak: Number(m.rusak) || 0,
+    alasanRusak: m.alasan_rusak || "",
+    harga: m.harga || "",
+  }));
+}
+
+// `initial` (opsional) dipakai waktu melanjutkan draf yang sudah disimpan
+// sebelumnya — form dibuka sudah terisi persis seperti draf itu, lalu bisa
+// diubah/dilengkapi lagi sebelum disimpan ulang sebagai draf atau
+// difinalisasi. `initial.id` menandai ini draf yang sudah ada di database
+// (jadi disimpan lewat PATCH, bukan bikin baris baru).
+export function BarangDatangForm({ onClose, onSubmit, saving, suppliers, initial = {} }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [tanggal, setTanggal] = useState(today);
+  const draftId = initial?.id || null;
+  const [tanggal, setTanggal] = useState(initial?.tanggal_pesan || today);
   // Foto bon sekarang bisa lebih dari satu (mis. bon multi-halaman, atau
   // beberapa nota terpisah dalam satu transaksi datang) — disimpan sebagai
-  // array file + array preview URL, urutannya sama seperti dipilih.
+  // array file + array preview URL, urutannya sama seperti dipilih. Foto
+  // yang sudah ada dari draf sebelumnya (sudah terupload, tinggal URL)
+  // disimpan terpisah di `existingFotoBon` supaya tidak ikut diupload ulang.
   const [fotoBonList, setFotoBonList] = useState([]);
-  const [supplier, setSupplier] = useState("");
-  const [jenis, setJenis] = useState("Pembelian");
-  const [jenisLainnya, setJenisLainnya] = useState("");
-  const [models, setModels] = useState([barisBarangDatang()]);
-  const [catatan, setCatatan] = useState("");
+  const [existingFotoBon, setExistingFotoBon] = useState(() => {
+    if (Array.isArray(initial?.foto_bon_urls) && initial.foto_bon_urls.length > 0) {
+      return initial.foto_bon_urls;
+    }
+    return initial?.foto_bon_url ? [initial.foto_bon_url] : [];
+  });
+  const [supplier, setSupplier] = useState(initial?.supplier || "");
+  const jenisAwalKustom = initial?.jenis && !JENIS_BARANG_MASUK.includes(initial.jenis);
+  const [jenis, setJenis] = useState(jenisAwalKustom ? "Lainnya" : initial?.jenis || "Pembelian");
+  const [jenisLainnya, setJenisLainnya] = useState(jenisAwalKustom ? initial.jenis : "");
+  const [models, setModels] = useState(() => modelsDariDraf(initial));
+  const [catatan, setCatatan] = useState(initial?.catatan || "");
 
   const handleFotoBon = (e) => {
     const files = Array.from(e.target.files || []);
@@ -246,6 +277,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
     e.target.value = "";
   };
   const hapusFotoBon = (idx) => setFotoBonList((list) => list.filter((_, i) => i !== idx));
+  const hapusFotoBonLama = (idx) => setExistingFotoBon((list) => list.filter((_, i) => i !== idx));
 
   const updateModel = (idx, patch) =>
     setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -268,14 +300,22 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
   // Qty rusak tidak boleh lebih besar dari qty datang di baris yang sama —
   // rusak itu bagian DARI yang datang, jadi maksimal ya sebanyak yang datang.
   const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
+  // Valid untuk FINAL ("Simpan & Lanjut ke Alur Barang") — sama seperti
+  // sebelumnya, rincian model/qty harus lengkap & wajar karena langsung
+  // dikirim ke Alur Barang/stok.
   const valid =
     models.length > 0 &&
     models.every((m) => (Number(m.jumlahDatang) || 0) >= 1) &&
     models.every((m) => !rusakMelebihiDatang(m)) &&
     (jenis !== "Lainnya" || jenisLainnya.trim());
+  // Valid untuk DRAF — jauh lebih longgar karena draf memang buat nyimpen
+  // progres yang belum lengkap (mis. qty/harga sebagian model belum
+  // ketahuan). Cuma dicegah kalau ada input yang jelas tidak masuk akal
+  // (qty rusak lebih besar dari qty datang di baris yang sama).
+  const validDraft = models.every((m) => !rusakMelebihiDatang(m));
 
   return (
-    <ModalShell title="Input Barang Datang" onClose={onClose}>
+    <ModalShell title={draftId ? "Lanjutkan Draf Barang Datang" : "Input Barang Datang"} onClose={onClose}>
       <Field label="Tanggal">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
@@ -283,8 +323,25 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
       <Field label="Foto Bon (opsional, boleh lebih dari satu)">
         <input type="file" accept="image/*" multiple onChange={handleFotoBon} className={inputClass} />
       </Field>
-      {fotoBonList.length > 0 && (
+      {(existingFotoBon.length > 0 || fotoBonList.length > 0) && (
         <div className="grid grid-cols-3 gap-2 mb-3">
+          {existingFotoBon.map((url, idx) => (
+            <div key={`lama-${idx}`} className="relative">
+              <img
+                src={url}
+                alt={`Foto bon tersimpan ${idx + 1}`}
+                className="w-full h-24 object-cover rounded-lg border border-slate-800 bg-slate-950"
+              />
+              <button
+                type="button"
+                onClick={() => hapusFotoBonLama(idx)}
+                title="Hapus foto ini"
+                className="absolute top-1 right-1 bg-slate-950/80 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full p-0.5"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
           {fotoBonList.map((f, idx) => (
             <div key={idx} className="relative">
               <img
@@ -429,28 +486,49 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
           placeholder="Contoh: no. bon, keterangan tambahan, dll"
         />
       </Field>
-      <button
-        disabled={saving || !valid}
-        onClick={() =>
-          onSubmit({
-            tanggal,
-            fotoBonFiles: fotoBonList.map((f) => f.file),
-            supplier: supplier.trim() || null,
-            jenis: jenisFinal || null,
-            models: models.map((m) => ({
-              nama: m.nama.trim() || null,
-              jumlahDatang: Number(m.jumlahDatang) || 0,
-              jumlahRusak: Number(m.jumlahRusak) || 0,
-              alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
-              harga: Number(m.harga) || 0,
-            })),
-            catatan: catatan.trim() || null,
-          })
-        }
-        className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
-      >
-        {saving ? "Menyimpan…" : "Simpan & Lanjut ke Alur Barang"}
-      </button>
+      {(() => {
+        const buatPayload = (draft) => ({
+          draft,
+          draftId,
+          tanggal,
+          fotoBonFiles: fotoBonList.map((f) => f.file),
+          existingFotoBonUrls: existingFotoBon,
+          supplier: supplier.trim() || null,
+          jenis: jenisFinal || null,
+          models: models.map((m) => ({
+            nama: m.nama.trim() || null,
+            jumlahDatang: Number(m.jumlahDatang) || 0,
+            jumlahRusak: Number(m.jumlahRusak) || 0,
+            alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
+            harga: Number(m.harga) || 0,
+          })),
+          catatan: catatan.trim() || null,
+        });
+        return (
+          <div className="flex gap-2 mt-2">
+            <button
+              disabled={saving || !validDraft}
+              onClick={() => onSubmit(buatPayload(true))}
+              title="Simpan progres tanpa masuk ke Alur Barang/stok — bisa dilanjutkan & dilengkapi lagi nanti"
+              className="flex-1 border border-slate-700 hover:border-violet-500 text-slate-300 hover:text-violet-400 disabled:opacity-50 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {saving ? "Menyimpan…" : "Simpan sebagai Draf"}
+            </button>
+            <button
+              disabled={saving || !valid}
+              onClick={() => onSubmit(buatPayload(false))}
+              className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {saving ? "Menyimpan…" : "Simpan & Lanjut ke Alur Barang"}
+            </button>
+          </div>
+        );
+      })()}
+      <p className="text-[11px] text-slate-500 mt-2">
+        "Simpan sebagai Draf" cuma menyimpan progresnya — belum masuk Alur Barang/stok sampai
+        nanti dilanjutkan &amp; disimpan sebagai final dari baris berstatus <span className="text-violet-400">Draf</span> di
+        daftar.
+      </p>
     </ModalShell>
   );
 }
