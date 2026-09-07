@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download, Package, PackageX, PackageSearch, ArrowDownUp } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download, Package, PackageX, PackageSearch, ArrowDownUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState, Badge, StatCard } from "../components/ui";
 import { fmtTgl, downloadCsv } from "../lib/api";
 import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
@@ -45,11 +45,24 @@ export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengaju
 function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
   const bisaAjukan = ["gudang", "owner", "superadmin", "superappa"].includes(session?.role);
   const [q, setQ] = useState("");
+  const [halaman, setHalaman] = useState(1);
+
+  const ubahCari = (val) => {
+    setQ(val);
+    setHalaman(1);
+  };
 
   const menipis = (skuMaster || [])
     .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
     .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (a.stok || 0) - (b.stok || 0));
+
+  // Pagination — sama seperti Stok Barang: di-clamp biar nggak nyangkut di
+  // halaman kosong kalau jumlah hasil berkurang (mis. abis diajukan restock).
+  const totalHalaman = Math.max(1, Math.ceil(menipis.length / STOK_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const mulai = (halamanAktif - 1) * STOK_PER_HALAMAN;
+  const ditampilkan = menipis.slice(mulai, mulai + STOK_PER_HALAMAN);
 
   // Pengajuan TERBARU per SKU (apapun statusnya) — supaya tiap baris bisa
   // langsung nunjukin balasan owner: masih menunggu, sudah disetujui, atau
@@ -67,20 +80,22 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
         title="Stok Menipis"
         description={`SKU yang stoknya sudah turun (≤ ${AMBANG_MENIPIS_RESTOCK}pcs) dan siap diajukan restock ke owner.`}
       />
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => ubahCari(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
       </div>
       {menipis.length === 0 ? (
         <EmptyState label={q ? "Tidak ada SKU menipis yang cocok dengan pencarian." : "Tidak ada SKU dengan stok menipis."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
-          {menipis.map((s, i) => {
+          {ditampilkan.map((s, i) => {
             const pengajuan = pengajuanTerbaruPerSku.get(s.sku);
             const sudahDiajukan = pengajuan?.status === "menunggu";
             return (
@@ -125,6 +140,37 @@ function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
           })}
         </div>
       )}
+
+      {menipis.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-xs text-slate-400">
+          <div>
+            Menampilkan {mulai + 1}–{Math.min(mulai + STOK_PER_HALAMAN, menipis.length)} dari {menipis.length} SKU
+          </div>
+          {totalHalaman > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.max(1, p - 1))}
+                disabled={halamanAktif <= 1}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2 font-medium text-slate-300 whitespace-nowrap">
+                Hal {halamanAktif} / {totalHalaman}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.min(totalHalaman, p + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -136,9 +182,25 @@ const STOK_SORT_OPTIONS = [
   { key: "za", label: "Model Z-A" },
 ];
 
+// Jumlah baris per halaman di Stok Barang — dipisah jadi konstanta karena
+// dipakai buat hitung total halaman & slice data.
+const STOK_PER_HALAMAN = 50;
+
 function StokBarang({ skuMaster, setModal }) {
   const [q, setQ] = useState("");
   const [sortBy, setSortBy] = useState("tertinggi");
+  const [halaman, setHalaman] = useState(1);
+
+  // Reset ke halaman 1 tiap kali pencarian atau urutan berubah, biar nggak
+  // nyangkut di halaman kosong (mis. lagi di halaman 5 terus hasil cari cuma 1 halaman).
+  const ubahCari = (val) => {
+    setQ(val);
+    setHalaman(1);
+  };
+  const ubahSort = (val) => {
+    setSortBy(val);
+    setHalaman(1);
+  };
 
   // Sengaja TIDAK menyaring SKU nonaktif di sini — perilaku data sama seperti
   // sebelumnya (halaman ini dulu menampilkan semua skuMaster apa adanya),
@@ -156,10 +218,17 @@ function StokBarang({ skuMaster, setModal }) {
     return (b.stok || 0) - (a.stok || 0);
   });
 
-  // Stok tertinggi di antara hasil yang tampil — dipakai sebagai basis
-  // proporsi bar visual per baris (biar barang dengan stok paling banyak
-  // selalu tampil bar penuh, sisanya proporsional terhadap itu).
+  // Stok tertinggi di antara SEMUA hasil yang cocok filter (bukan cuma
+  // halaman yang lagi tampil) — supaya proporsi bar visual per baris tetap
+  // konsisten walau pindah halaman.
   const maxStok = Math.max(1, ...sorted.map((s) => Number(s.stok) || 0));
+
+  // Pagination — dihitung dari `sorted` (hasil filter+sort penuh), lalu
+  // di-clamp biar nggak nyangkut di halaman kosong kalau jumlah hasil berkurang.
+  const totalHalaman = Math.max(1, Math.ceil(sorted.length / STOK_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const mulai = (halamanAktif - 1) * STOK_PER_HALAMAN;
+  const ditampilkan = sorted.slice(mulai, mulai + STOK_PER_HALAMAN);
 
   const handleDownload = () => {
     downloadCsv(
@@ -195,29 +264,31 @@ function StokBarang({ skuMaster, setModal }) {
         <StatCard label="Stok Habis" value={habisCount} icon={PackageX} iconColor="text-red-400" accent={habisCount > 0 ? "text-red-400" : ""} />
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-4">
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1">
-          <Search size={14} className="text-slate-500" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Cari SKU…"
-            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-          />
-        </div>
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:w-56">
-          <ArrowDownUp size={14} className="text-slate-500 flex-shrink-0" />
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-transparent outline-none text-sm flex-1 text-slate-300"
-          >
-            {STOK_SORT_OPTIONS.map((o) => (
-              <option key={o.key} value={o.key} className="bg-slate-900">
-                {o.label}
-              </option>
-            ))}
-          </select>
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1">
+            <Search size={14} className="text-slate-500" />
+            <input
+              value={q}
+              onChange={(e) => ubahCari(e.target.value)}
+              placeholder="Cari SKU…"
+              className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:w-56">
+            <ArrowDownUp size={14} className="text-slate-500 flex-shrink-0" />
+            <select
+              value={sortBy}
+              onChange={(e) => ubahSort(e.target.value)}
+              className="bg-transparent outline-none text-sm flex-1 text-slate-300"
+            >
+              {STOK_SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key} className="bg-slate-900">
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -225,7 +296,7 @@ function StokBarang({ skuMaster, setModal }) {
         <EmptyState label={q ? "Tidak ada SKU yang cocok dengan pencarian." : "Belum ada data stok."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
-          {sorted.map((s, i) => {
+          {ditampilkan.map((s, i) => {
             const stok = Number(s.stok) || 0;
             const habis = stok <= 0;
             const menipis = !habis && stok < AMBANG_MENIPIS_BADGE;
@@ -263,15 +334,58 @@ function StokBarang({ skuMaster, setModal }) {
           })}
         </div>
       )}
+
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-xs text-slate-400">
+          <div>
+            Menampilkan {mulai + 1}–{Math.min(mulai + STOK_PER_HALAMAN, sorted.length)} dari {sorted.length} SKU
+          </div>
+          {totalHalaman > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.max(1, p - 1))}
+                disabled={halamanAktif <= 1}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2 font-medium text-slate-300 whitespace-nowrap">
+                Hal {halamanAktif} / {totalHalaman}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.min(totalHalaman, p + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function BarangKeluar({ skuMaster, setModal }) {
   const [q, setQ] = useState("");
+  const [halaman, setHalaman] = useState(1);
+
+  const ubahCari = (val) => {
+    setQ(val);
+    setHalaman(1);
+  };
+
   const sorted = [...skuMaster]
     .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (b.stok || 0) - (a.stok || 0));
+
+  const totalHalaman = Math.max(1, Math.ceil(sorted.length / STOK_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const mulai = (halamanAktif - 1) * STOK_PER_HALAMAN;
+  const ditampilkan = sorted.slice(mulai, mulai + STOK_PER_HALAMAN);
 
   return (
     <div>
@@ -279,20 +393,22 @@ function BarangKeluar({ skuMaster, setModal }) {
         title="Barang Keluar"
         description="Catat pengurangan stok di luar alur Marketplace — misalnya terjual langsung, rusak, hilang, atau retur ke supplier."
       />
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => ubahCari(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
       </div>
       {sorted.length === 0 ? (
         <EmptyState label="Belum ada data stok." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
-          {sorted.map((s, i) => (
+          {ditampilkan.map((s, i) => (
             <div
               key={s.id}
               className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
@@ -317,6 +433,37 @@ function BarangKeluar({ skuMaster, setModal }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-xs text-slate-400">
+          <div>
+            Menampilkan {mulai + 1}–{Math.min(mulai + STOK_PER_HALAMAN, sorted.length)} dari {sorted.length} SKU
+          </div>
+          {totalHalaman > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.max(1, p - 1))}
+                disabled={halamanAktif <= 1}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2 font-medium text-slate-300 whitespace-nowrap">
+                Hal {halamanAktif} / {totalHalaman}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.min(totalHalaman, p + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
