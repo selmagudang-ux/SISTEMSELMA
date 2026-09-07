@@ -73,21 +73,36 @@ function DetailBonModal({ pesanan, kodeBon, onClose }) {
 
               <div className="shrink-0 sm:w-40">
                 <div className="text-[10px] uppercase text-slate-500 mb-1.5">Foto Bon</div>
-                {pesanan.foto_bon_url ? (
-                  <a
-                    href={pesanan.foto_bon_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block w-full sm:w-40 h-40 rounded-lg overflow-hidden border border-slate-700 hover:border-amber-500"
-                    title="Buka foto ukuran penuh"
-                  >
-                    <img src={pesanan.foto_bon_url} alt="Foto bon" className="w-full h-full object-cover" />
-                  </a>
-                ) : (
-                  <div className="w-full sm:w-40 h-40 rounded-lg border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
-                    <Receipt size={20} />
-                  </div>
-                )}
+                {(() => {
+                  // Data lama cuma punya foto_bon_url tunggal; data baru
+                  // (sejak foto bon boleh lebih dari satu) punya foto_bon_urls.
+                  const fotoUrls =
+                    pesanan.foto_bon_urls?.length > 0
+                      ? pesanan.foto_bon_urls
+                      : pesanan.foto_bon_url
+                      ? [pesanan.foto_bon_url]
+                      : [];
+                  return fotoUrls.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-1 gap-1.5">
+                      {fotoUrls.map((url, idx) => (
+                        <a
+                          key={idx}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block w-full h-20 sm:h-40 rounded-lg overflow-hidden border border-slate-700 hover:border-amber-500"
+                          title="Buka foto ukuran penuh"
+                        >
+                          <img src={url} alt={`Foto bon ${idx + 1}`} className="w-full h-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="w-full sm:w-40 h-40 rounded-lg border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
+                      <Receipt size={20} />
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           )}

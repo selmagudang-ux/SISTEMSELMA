@@ -224,8 +224,10 @@ function barisBarangDatang() {
 export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
-  const [fotoBon, setFotoBon] = useState(null);
-  const [fotoBonPreview, setFotoBonPreview] = useState(null);
+  // Foto bon sekarang bisa lebih dari satu (mis. bon multi-halaman, atau
+  // beberapa nota terpisah dalam satu transaksi datang) — disimpan sebagai
+  // array file + array preview URL, urutannya sama seperti dipilih.
+  const [fotoBonList, setFotoBonList] = useState([]);
   const [supplier, setSupplier] = useState("");
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
@@ -233,11 +235,17 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
   const [catatan, setCatatan] = useState("");
 
   const handleFotoBon = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setFotoBon(f);
-    setFotoBonPreview(URL.createObjectURL(f));
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setFotoBonList((list) => [
+      ...list,
+      ...files.map((f) => ({ file: f, preview: URL.createObjectURL(f) })),
+    ]);
+    // Reset input supaya bisa pilih file yang sama lagi kalau perlu, dan
+    // supaya tiap kali dipakai selalu nambah (bukan ganti) foto yang sudah ada.
+    e.target.value = "";
   };
+  const hapusFotoBon = (idx) => setFotoBonList((list) => list.filter((_, i) => i !== idx));
 
   const updateModel = (idx, patch) =>
     setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -272,16 +280,28 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
 
-      <Field label="Foto Bon (opsional)">
-        <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
+      <Field label="Foto Bon (opsional, boleh lebih dari satu)">
+        <input type="file" accept="image/*" multiple onChange={handleFotoBon} className={inputClass} />
       </Field>
-      {fotoBonPreview && (
-        <div className="mb-3">
-          <img
-            src={fotoBonPreview}
-            alt="Preview bon/nota"
-            className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950"
-          />
+      {fotoBonList.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {fotoBonList.map((f, idx) => (
+            <div key={idx} className="relative">
+              <img
+                src={f.preview}
+                alt={`Preview bon/nota ${idx + 1}`}
+                className="w-full h-24 object-cover rounded-lg border border-slate-800 bg-slate-950"
+              />
+              <button
+                type="button"
+                onClick={() => hapusFotoBon(idx)}
+                title="Hapus foto ini"
+                className="absolute top-1 right-1 bg-slate-950/80 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full p-0.5"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -414,7 +434,7 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers }) {
         onClick={() =>
           onSubmit({
             tanggal,
-            fotoBon,
+            fotoBonFiles: fotoBonList.map((f) => f.file),
             supplier: supplier.trim() || null,
             jenis: jenisFinal || null,
             models: models.map((m) => ({

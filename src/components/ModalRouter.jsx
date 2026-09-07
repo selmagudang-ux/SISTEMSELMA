@@ -3333,17 +3333,22 @@ export default function ModalRouter({
         onClose={close}
         saving={saving}
         suppliers={suppliers}
-        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan }) =>
+        onSubmit={({ tanggal, fotoBonFiles, supplier, jenis, models, catatan }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
-            // Foto bon (opsional) — satu foto untuk seluruh transaksi ini,
-            // dipakai di tiap baris penerimaan per model.
-            let fotoBonUrl = null;
-            if (fotoBon) {
-              const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
-              const path = `bon-${Date.now()}.${ext}`;
-              fotoBonUrl = await sbUploadFoto(fotoBon, path);
+            // Foto bon (opsional, boleh lebih dari satu) — dipakai untuk
+            // seluruh transaksi ini, ditempel juga di tiap baris penerimaan
+            // per model. `foto_bon_urls` menyimpan SEMUA foto; `foto_bon_url`
+            // (kolom lama) tetap diisi foto PERTAMA saja supaya layar/kode
+            // lain yang masih baca kolom tunggal itu (mis. menu Rusak) tetap
+            // dapat satu foto yang wajar tanpa perlu ikut diubah.
+            const fotoBonUrls = [];
+            for (const f of fotoBonFiles || []) {
+              const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+              const path = `bon-${Date.now()}-${fotoBonUrls.length}.${ext}`;
+              fotoBonUrls.push(await sbUploadFoto(f, path));
             }
+            const fotoBonUrl = fotoBonUrls[0] || null;
 
             // m.jumlahDatang = TOTAL fisik baris ini (baik + rusak jadi satu
             // angka, diisi begitu di form). Qty baik = total - rusak.
@@ -3375,6 +3380,7 @@ export default function ModalRouter({
                 dibatalkan: false,
                 catatan,
                 foto_bon_url: fotoBonUrl,
+                foto_bon_urls: fotoBonUrls,
                 kode_bon: kodeBon,
                 detail_model: models.map((m) => ({
                   nama: m.nama,
@@ -3420,6 +3426,7 @@ export default function ModalRouter({
                   jumlah: totalQtyModel,
                   item_id: itemBaru?.id || null,
                   foto_bon_url: fotoBonUrl,
+                  foto_bon_urls: fotoBonUrls,
                 }),
               });
             }

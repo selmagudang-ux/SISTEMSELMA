@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, ChevronDown, ChevronRight, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock, Pencil, Search, Truck } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock, Pencil, Search, Truck } from "lucide-react";
 import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
 import { detailModelPesanan, fmtRp, statusPesananMasuk } from "../lib/api";
 import { PO_STATUS_META } from "../lib/constants";
@@ -19,6 +19,14 @@ const totalQtyDatangTransaksi = (detail) => detail.reduce((sum, m) => sum + qtyD
 const nilaiModel = (m) => qtyDatangModel(m) * (Number(m.harga) || 0);
 const totalNilaiTransaksi = (detail) => detail.reduce((sum, m) => sum + nilaiModel(m), 0);
 const totalRusakTransaksi = (detail) => detail.reduce((sum, m) => sum + (Number(m.rusak) || 0), 0);
+
+// Foto bon transaksi ini sebagai array — data baru punya `foto_bon_urls`
+// (bisa lebih dari satu), data lama cuma punya `foto_bon_url` tunggal jadi
+// dibungkus jadi array 1 elemen supaya kode tampilan bisa seragam.
+function fotoBonUrlsOf(p) {
+  if (p?.foto_bon_urls?.length > 0) return p.foto_bon_urls;
+  return p?.foto_bon_url ? [p.foto_bon_url] : [];
+}
 
 // Warna badge jenis barang datang — sama seperti jenis di Barang Masuk
 // (Pembelian/Retur/Lainnya) supaya konsisten secara visual di seluruh sistem.
@@ -40,7 +48,7 @@ function ringkasNamaModel(detail) {
   return joined.length > 42 ? joined.slice(0, 42) + "…" : joined;
 }
 
-function DetailModelPanel({ detail, colSpan, kodeBon, fotoBonUrl, onLihatFoto, hargaKesepakatan, keteranganSelisih }) {
+function DetailModelPanel({ detail, colSpan, kodeBon, fotoBonUrls, onLihatFoto, hargaKesepakatan, keteranganSelisih }) {
   const nilaiDatang = totalNilaiTransaksi(detail);
   const adaKesepakatan = Number(hargaKesepakatan) > 0;
   const selisih = adaKesepakatan ? nilaiDatang - Number(hargaKesepakatan) : 0;
@@ -132,14 +140,19 @@ function DetailModelPanel({ detail, colSpan, kodeBon, fotoBonUrl, onLihatFoto, h
             <div className="text-[10px] uppercase text-slate-500 mb-1.5">
               Foto Bon <span className="normal-case text-amber-400 font-mono">{kodeBon || ""}</span>
             </div>
-            {fotoBonUrl ? (
-              <button
-                onClick={() => onLihatFoto(fotoBonUrl)}
-                className="block w-32 h-32 rounded-lg overflow-hidden border border-slate-700 hover:border-amber-500"
-                title="Lihat foto bon ukuran penuh"
-              >
-                <img src={fotoBonUrl} alt="Foto bon barang datang" className="w-full h-full object-cover" />
-              </button>
+            {fotoBonUrls.length > 0 ? (
+              <div className="grid grid-cols-2 gap-1.5 w-32">
+                {fotoBonUrls.map((url, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onLihatFoto(fotoBonUrls, idx)}
+                    className="block w-full h-14 rounded-lg overflow-hidden border border-slate-700 hover:border-amber-500"
+                    title="Lihat foto bon ukuran penuh"
+                  >
+                    <img src={url} alt={`Foto bon barang datang ${idx + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
             ) : (
               <div className="w-32 h-32 rounded-lg border border-dashed border-slate-800 flex items-center justify-center text-slate-700">
                 <Receipt size={20} />
@@ -152,8 +165,9 @@ function DetailModelPanel({ detail, colSpan, kodeBon, fotoBonUrl, onLihatFoto, h
   );
 }
 
-function FotoBonLightbox({ url, onClose }) {
-  if (!url) return null;
+function FotoBonLightbox({ urls, index, onClose, onNavigate }) {
+  if (!urls || urls.length === 0 || index == null) return null;
+  const adaBanyak = urls.length > 1;
   return (
     <div
       className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
@@ -166,12 +180,41 @@ function FotoBonLightbox({ url, onClose }) {
       >
         <X size={18} />
       </button>
+      {adaBanyak && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(-1);
+          }}
+          className="absolute left-4 text-slate-300 hover:text-white bg-slate-900/80 rounded-full p-1.5"
+          title="Foto sebelumnya"
+        >
+          <ChevronLeft size={20} />
+        </button>
+      )}
       <img
-        src={url}
-        alt="Foto bon barang datang"
+        src={urls[index]}
+        alt={`Foto bon barang datang ${index + 1}`}
         className="max-w-full max-h-full rounded-lg border border-slate-700"
         onClick={(e) => e.stopPropagation()}
       />
+      {adaBanyak && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(1);
+          }}
+          className="absolute right-4 text-slate-300 hover:text-white bg-slate-900/80 rounded-full p-1.5"
+          title="Foto berikutnya"
+        >
+          <ChevronRight size={20} />
+        </button>
+      )}
+      {adaBanyak && (
+        <div className="absolute bottom-4 text-xs text-slate-300 bg-slate-900/80 px-2.5 py-1 rounded-full">
+          {index + 1} / {urls.length}
+        </div>
+      )}
     </div>
   );
 }
@@ -188,7 +231,12 @@ export default function BarangDatang({ sub, pesananMasuk, suppliers, setModal })
 
 function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const [expanded, setExpanded] = useState(() => new Set());
-  const [fotoLightbox, setFotoLightbox] = useState(null);
+  const [fotoLightbox, setFotoLightbox] = useState(null); // { urls, index } | null
+  const lihatFoto = (urls, index) => setFotoLightbox({ urls, index });
+  const navigasiFoto = (delta) =>
+    setFotoLightbox((s) =>
+      s ? { ...s, index: (s.index + delta + s.urls.length) % s.urls.length } : s
+    );
   const [halaman, setHalaman] = useState(1);
   const toggle = (id) =>
     setExpanded((s) => {
@@ -301,19 +349,27 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                         <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
                       </td>
                       <td className="px-4 py-2.5">
-                        {p.foto_bon_url ? (
-                          <button
-                            onClick={() => setFotoLightbox(p.foto_bon_url)}
-                            className="block w-9 h-9 rounded-md overflow-hidden border border-slate-800 hover:border-amber-500"
-                            title="Lihat foto bon"
-                          >
-                            <img src={p.foto_bon_url} alt="Foto bon" className="w-full h-full object-cover" />
-                          </button>
-                        ) : (
-                          <span className="text-slate-700" title="Tidak ada foto bon">
-                            <Receipt size={16} />
-                          </span>
-                        )}
+                        {(() => {
+                          const fotoUrls = fotoBonUrlsOf(p);
+                          return fotoUrls.length > 0 ? (
+                            <button
+                              onClick={() => lihatFoto(fotoUrls, 0)}
+                              className="relative block w-9 h-9 rounded-md overflow-hidden border border-slate-800 hover:border-amber-500"
+                              title={fotoUrls.length > 1 ? `Lihat ${fotoUrls.length} foto bon` : "Lihat foto bon"}
+                            >
+                              <img src={fotoUrls[0]} alt="Foto bon" className="w-full h-full object-cover" />
+                              {fotoUrls.length > 1 && (
+                                <span className="absolute bottom-0 right-0 bg-slate-950/85 text-amber-400 text-[9px] font-semibold leading-none px-1 py-0.5 rounded-tl">
+                                  +{fotoUrls.length - 1}
+                                </span>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-slate-700" title="Tidak ada foto bon">
+                              <Receipt size={16} />
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-2.5 text-slate-400">
                         <button onClick={() => toggle(p.id)} className="text-left hover:text-slate-200">
@@ -386,8 +442,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                         detail={detail}
                         colSpan={12}
                         kodeBon={p.kode_bon}
-                        fotoBonUrl={p.foto_bon_url}
-                        onLihatFoto={setFotoLightbox}
+                        fotoBonUrls={fotoBonUrlsOf(p)}
+                        onLihatFoto={lihatFoto}
                         hargaKesepakatan={p.harga_kesepakatan}
                         keteranganSelisih={p.keterangan_selisih}
                       />
@@ -428,7 +484,12 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         </div>
       )}
 
-      <FotoBonLightbox url={fotoLightbox} onClose={() => setFotoLightbox(null)} />
+      <FotoBonLightbox
+        urls={fotoLightbox?.urls}
+        index={fotoLightbox?.index}
+        onClose={() => setFotoLightbox(null)}
+        onNavigate={navigasiFoto}
+      />
     </div>
   );
 }
