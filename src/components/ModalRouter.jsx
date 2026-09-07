@@ -3414,10 +3414,9 @@ export default function ModalRouter({
             const fotoBonUrls = [...(existingFotoBonUrls || []), ...fotoBonUrlsBaru];
             const fotoBonUrl = fotoBonUrls[0] || null;
 
-            const totalDatang = models.reduce(
-              (sum, m) => sum + Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-              0
-            );
+            // totalKotor = TOTAL fisik semua model (baik + rusak) — dipakai
+            // buat jumlah_pesan & jumlah_diterima header di bawah (lihat
+            // catatan panjang di situ soal kenapa rusak tidak dikurangi).
             const totalKotor = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
 
             const patchPayload = {
@@ -3446,9 +3445,19 @@ export default function ModalRouter({
             // jumlah_pesan/jumlah_diterima cuma diganti ke qty sebenarnya
             // begitu difinalisasi — selama masih draf, dibiarkan seperti
             // placeholder awal (DB tidak boleh 0 lewat check constraint).
+            // jumlah_diterima SENGAJA disamakan dengan totalKotor (baik +
+            // rusak) — BUKAN dikurangi rusak dulu seperti sebelumnya — sama
+            // seperti pola di "Input Barang Datang" (BarangDatangForm) di
+            // bawah. Barang rusak tetap dianggap "sudah diterima" secara
+            // fisik (sudah dibayar ke supplier, cuma tidak masuk stok),
+            // jadi tidak boleh bikin status jadi "Sebagian Datang" padahal
+            // semua model sudah dikonfirmasi lengkap. Qty baik-saja (dikurangi
+            // rusak) tetap dipakai apa adanya per model lewat `detail_model`
+            // di atas & buat baris "items"/stok di bawah — cuma tidak lagi
+            // dipakai untuk header jumlah_diterima ini.
             if (!draft) {
               patchPayload.jumlah_pesan = Math.max(totalKotor, 1);
-              patchPayload.jumlah_diterima = totalDatang;
+              patchPayload.jumlah_diterima = totalKotor;
             }
 
             await sb(`pesanan_masuk?id=eq.${p.id}`, {
