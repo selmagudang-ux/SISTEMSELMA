@@ -243,8 +243,13 @@ export function InputTanggal({ value, onChange, className }) {
 // ditampilkan, dan (2) scroll mouse di atas input tidak diam-diam mengubah
 // angkanya — perilaku bawaan browser pada <input type="number"> yang sering
 // bikin nominal berubah sendiri tanpa sengaja saat user scroll halaman.
+// Nilai 0 (termasuk default awal sebelum user mengetik apa-apa) sengaja
+// TIDAK ditampilkan sebagai angka "0" sungguhan — itu bikin bingung mana
+// yang beneran sudah diisi vs yang masih kosong. Ditampilkan kosong saja,
+// jadi placeholder-nya kelihatan kayak "bayangan" sampai user mulai ketik.
 export function InputRupiah({ value, onChange, className, placeholder }) {
-  const display = value === "" || value === null || value === undefined ? "" : Number(value).toLocaleString("id-ID");
+  const numeric = Number(value);
+  const display = value === "" || value === null || value === undefined || numeric === 0 ? "" : numeric.toLocaleString("id-ID");
 
   return (
     <input

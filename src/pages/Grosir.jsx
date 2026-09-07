@@ -4,7 +4,7 @@ import {
   TrendingUp, Wallet, Download, CalendarRange, BarChart3, Receipt,
   FileClock, Landmark, AlertTriangle,
 } from "lucide-react";
-import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal } from "../components/ui";
+import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal, InputRupiah } from "../components/ui";
 import {
   sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
@@ -1387,14 +1387,11 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
             </div>
             <div>
               <span className="block text-[11px] text-slate-500 mb-1">Harga satuan</span>
-              <input
-                type="number"
-                min="0"
-                className="w-full h-11 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base font-semibold text-right outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              <InputRupiah
                 value={row.harga}
-                onChange={(e) => onChange({ harga: e.target.value === "" ? "" : Number(e.target.value) })}
-                onWheel={(e) => e.target.blur()}
-                placeholder="Harga"
+                onChange={(v) => onChange({ harga: v })}
+                className="w-full h-11 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base font-semibold text-right outline-none focus:border-amber-500"
+                placeholder="0"
               />
             </div>
           </div>
