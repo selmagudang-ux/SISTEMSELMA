@@ -282,18 +282,20 @@ function SkuYatimCleaner({ reload, showToast }) {
   );
 }
 
-// Pembersihan foto "yatim" — items.foto_url yang masih menunjuk ke file di
-// bucket Storage "verifikasi-foto" padahal filenya sudah dihapus langsung dari
-// Storage (mis. lewat Cyberduck/S3, bukan lewat aplikasi ini). Kalau tidak
-// dibersihkan, foto_url tetap "nyangkut" di database dan bikin <img> di
-// FotoProduk/DataBarang/Marketplace/Dashboard nampilin gambar rusak (broken).
+// Pembersihan foto "yatim" — foto_url (barang) & foto_bon_url/foto_bon_urls
+// (bon transaksi Barang Datang) yang masih menunjuk ke file di bucket Storage
+// padahal filenya sudah dihapus langsung dari Storage (mis. lewat
+// Cyberduck/S3, bukan lewat aplikasi ini). Kalau tidak dibersihkan, foto_url
+// tetap "nyangkut" di database dan bikin <img> di FotoProduk/DataBarang/
+// Marketplace/Dashboard (untuk foto barang) atau Barang Datang/Rusak (untuk
+// foto bon) nampilin gambar rusak (broken).
 //
 // Bucket ini public tapi anon key tidak tentu punya izin LIST/SELECT ke
 // storage.objects (perlu policy RLS tersendiri), jadi supaya tidak bergantung
 // pada policy tambahan, pengecekan dilakukan dengan cara yang sudah pasti
-// selalu bisa dipakai: HEAD request langsung ke tiap foto_url publik satu-
-// satu (persis cara <img> di aplikasi ini memuat fotonya). Kalau HEAD balas
-// 404 → file itu memang sudah tidak ada di Storage.
+// selalu bisa dipakai: GET request langsung ke tiap url publik satu-satu
+// (persis cara <img> di aplikasi ini memuat fotonya). Kalau balas 404 → file
+// itu memang sudah tidak ada di Storage.
 function FotoYatimCleaner({ reload, showToast }) {
   const [checking, setChecking] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -329,43 +331,76 @@ function FotoYatimCleaner({ reload, showToast }) {
     }
   };
 
+  // Verifikasi dua tahap dipakai bersama buat kedua sumber (barang & bon):
+  // hitung mana yang 404 di percobaan pertama, lalu cek ULANG khusus yang
+  // 404 itu saja (bukan semuanya) — hanya yang 404 dua kali berturut-turut
+  // yang dianggap benar-benar hilang (jaga-jaga dari 404 "nyasar"/sementara).
+  const cekBertahap = async (daftarUrl, onProgress) => {
+    const unik = Array.from(new Set(daftarUrl));
+    const hilang = new Set();
+    for (let i = 0; i < unik.length; i += KONKURENSI) {
+      const batch = unik.slice(i, i + KONKURENSI);
+      const hasil = await Promise.all(batch.map(cekSatu));
+      batch.forEach((url, j) => {
+        if (hasil[j]) hilang.add(url);
+      });
+      onProgress?.(Math.min(i + KONKURENSI, unik.length), unik.length);
+    }
+    const kandidat = Array.from(hilang);
+    const benarHilang = new Set();
+    for (let i = 0; i < kandidat.length; i += KONKURENSI) {
+      const batch = kandidat.slice(i, i + KONKURENSI);
+      const hasil = await Promise.all(batch.map(cekSatu));
+      batch.forEach((url, j) => {
+        if (hasil[j]) benarHilang.add(url);
+      });
+    }
+    return benarHilang;
+  };
+
   const cek = async () => {
     setChecking(true);
     setOrphans(null);
     setProgress(null);
     try {
-      const items = await sbAll("items?select=id,sku,foto_url&foto_url=not.is.null");
-      const unik = items.filter((i) => i.foto_url);
-      setProgress({ done: 0, total: unik.length });
+      const [items, penerimaan] = await Promise.all([
+        sbAll("items?select=id,sku,foto_url&foto_url=not.is.null"),
+        sbAll("pesanan_masuk?select=id,nomor_pesanan,foto_bon_url,foto_bon_urls"),
+      ]);
 
-      const hilang = new Set(); // foto_url yang 404 di pengecekan PERTAMA
-      for (let i = 0; i < unik.length; i += KONKURENSI) {
-        const batch = unik.slice(i, i + KONKURENSI);
-        const hasil = await Promise.all(batch.map((it) => cekSatu(it.foto_url)));
-        batch.forEach((it, j) => {
-          if (hasil[j]) hilang.add(it.foto_url);
-        });
-        setProgress({ done: Math.min(i + KONKURENSI, unik.length), total: unik.length });
+      // Barang: satu foto per baris (foto_url).
+      const barangList = items.filter((i) => i.foto_url);
+
+      // Bon: satu baris Barang Datang bisa punya BEBERAPA foto bon
+      // (foto_bon_urls array) — data lama cuma punya foto_bon_url tunggal.
+      // Diratakan jadi satu foto per entri (bisa lebih dari satu entri per
+      // pesanan_masuk yang sama) supaya tiap foto dicek & bisa dibersihkan
+      // satu-satu tanpa ikut menghapus foto lain yang masih ada di baris
+      // yang sama.
+      const bonList = [];
+      for (const p of penerimaan) {
+        const urls = Array.isArray(p.foto_bon_urls) && p.foto_bon_urls.length > 0
+          ? p.foto_bon_urls
+          : p.foto_bon_url
+          ? [p.foto_bon_url]
+          : [];
+        urls.forEach((url) => url && bonList.push({ pesananMasukId: p.id, nomor_pesanan: p.nomor_pesanan, url }));
       }
 
-      // Verifikasi ULANG khusus yang 404 di percobaan pertama (bukan cek
-      // ulang semuanya — hemat waktu). Ini jaga-jaga dari 404 yang
-      // "nyasar"/sementara (mis. gangguan jaringan sesaat atau respons tidak
-      // konsisten dari CDN Storage) — hanya yang 404 DUA KALI berturut-turut
-      // yang dianggap benar-benar hilang.
-      const kandidat = unik.filter((it) => hilang.has(it.foto_url));
-      const benarHilang = new Set();
-      for (let i = 0; i < kandidat.length; i += KONKURENSI) {
-        const batch = kandidat.slice(i, i + KONKURENSI);
-        const hasil = await Promise.all(batch.map((it) => cekSatu(it.foto_url)));
-        batch.forEach((it, j) => {
-          if (hasil[j]) benarHilang.add(it.foto_url);
-        });
-      }
+      const semuaUrl = [...barangList.map((b) => b.foto_url), ...bonList.map((b) => b.url)];
+      setProgress({ done: 0, total: semuaUrl.length });
+      const benarHilang = await cekBertahap(semuaUrl, (done, total) => setProgress({ done, total }));
 
-      const yatim = unik.filter((it) => benarHilang.has(it.foto_url));
+      const yatimBarang = barangList
+        .filter((it) => benarHilang.has(it.foto_url))
+        .map((it) => ({ jenis: "barang", id: it.id, label: it.sku, url: it.foto_url }));
+      const yatimBon = bonList
+        .filter((it) => benarHilang.has(it.url))
+        .map((it) => ({ jenis: "bon", id: it.pesananMasukId, label: it.nomor_pesanan, url: it.url }));
+
+      const yatim = [...yatimBarang, ...yatimBon];
       setOrphans(yatim);
-      if (yatim.length === 0) showToast("Tidak ada foto yatim — semua foto_url di database masih ada filenya");
+      if (yatim.length === 0) showToast("Tidak ada foto yatim — semua foto_url/foto bon di database masih ada filenya");
     } catch (e) {
       showToast(e.message || "Gagal mengecek foto", "err");
     } finally {
@@ -377,13 +412,42 @@ function FotoYatimCleaner({ reload, showToast }) {
     if (!orphans || orphans.length === 0) return;
     setCleaning(true);
     try {
-      // PATCH sekaligus dalam satu request pakai filter id=in.(...) — lebih
-      // cepat dan lebih aman (satu transaksi) daripada looping PATCH satu-satu.
-      const ids = orphans.map((o) => o.id).join(",");
-      await sb(`items?id=in.(${ids})`, {
-        method: "PATCH",
-        body: JSON.stringify({ foto_url: null }),
-      });
+      const yatimBarang = orphans.filter((o) => o.jenis === "barang");
+      const yatimBon = orphans.filter((o) => o.jenis === "bon");
+
+      // Barang: PATCH sekaligus dalam satu request pakai filter id=in.(...)
+      // — lebih cepat & lebih aman (satu transaksi) daripada looping satu-satu.
+      if (yatimBarang.length > 0) {
+        const ids = yatimBarang.map((o) => o.id).join(",");
+        await sb(`items?id=in.(${ids})`, {
+          method: "PATCH",
+          body: JSON.stringify({ foto_url: null }),
+        });
+      }
+
+      // Bon: satu baris pesanan_masuk bisa punya beberapa foto bon, jadi
+      // TIDAK bisa dikosongkan sekaligus seperti barang — cuma foto yang
+      // benar-benar hilang yang dibuang dari array-nya, foto lain di baris
+      // yang sama (kalau masih ada filenya) tetap dipertahankan.
+      if (yatimBon.length > 0) {
+        const penerimaanTerdampak = await sbAll(
+          `pesanan_masuk?id=in.(${yatimBon.map((o) => o.id).join(",")})&select=id,foto_bon_url,foto_bon_urls`
+        );
+        for (const p of penerimaanTerdampak) {
+          const urlHilang = new Set(yatimBon.filter((o) => o.id === p.id).map((o) => o.url));
+          const urlLama = Array.isArray(p.foto_bon_urls) && p.foto_bon_urls.length > 0
+            ? p.foto_bon_urls
+            : p.foto_bon_url
+            ? [p.foto_bon_url]
+            : [];
+          const urlBaru = urlLama.filter((u) => !urlHilang.has(u));
+          await sb(`pesanan_masuk?id=eq.${p.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ foto_bon_urls: urlBaru, foto_bon_url: urlBaru[0] || null }),
+          });
+        }
+      }
+
       showToast(`${orphans.length} foto yatim dibersihkan dari database`);
       setOrphans(null);
       setProgress(null);
@@ -399,9 +463,10 @@ function FotoYatimCleaner({ reload, showToast }) {
     <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
       <div className="text-sm font-semibold mb-1">Bersihkan Foto Yatim</div>
       <p className="text-xs text-slate-500 mb-3 max-w-xl">
-        Cek apakah ada barang yang foto_url-nya masih tercatat di database, tapi file fotonya sudah
-        terhapus langsung dari Storage (mis. lewat Cyberduck/S3). Kalau dibiarkan, foto ini akan
-        tampil rusak/broken di halaman Pemotretan, Data Barang, Marketplace, dan Dashboard.
+        Cek apakah ada foto barang atau foto bon (Barang Datang) yang url-nya masih tercatat di
+        database, tapi file fotonya sudah terhapus langsung dari Storage (mis. lewat
+        Cyberduck/S3). Kalau dibiarkan, foto ini akan tampil rusak/broken di halaman Pemotretan,
+        Data Barang, Marketplace, Dashboard, Barang Datang, maupun Rusak.
       </p>
 
       <button
@@ -421,17 +486,18 @@ function FotoYatimCleaner({ reload, showToast }) {
             <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
             <div>
               Ditemukan <span className="font-semibold">{orphans.length} foto</span> yang filenya
-              sudah tidak ada di Storage. Kosongkan foto_url barang-barang ini? Barangnya sendiri
-              TIDAK dihapus — hanya link fotonya saja yang dikosongkan, supaya barangnya balik
-              muncul di menu Pemotretan untuk difoto ulang.
+              sudah tidak ada di Storage. Kosongkan url foto-foto ini? Barang/pesanannya sendiri
+              TIDAK dihapus — hanya link fotonya saja yang dikosongkan. Untuk foto barang,
+              barangnya balik muncul di menu Pemotretan untuk difoto ulang. Untuk foto bon, foto
+              lain di pesanan yang sama (kalau masih ada filenya) tetap dipertahankan.
             </div>
           </div>
           <div className="max-h-48 overflow-y-auto border border-slate-800 rounded-lg mb-3 divide-y divide-slate-800">
-            {orphans.map((o) => (
-              <div key={o.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="font-mono text-xs text-slate-200">{o.sku}</span>
+            {orphans.map((o, i) => (
+              <div key={`${o.jenis}-${o.id}-${i}`} className="flex items-center justify-between px-3 py-2 text-sm">
+                <span className="font-mono text-xs text-slate-200">{o.label}</span>
                 <span className="flex items-center gap-1 text-[11px] text-slate-500">
-                  <ImageOff size={12} /> file hilang
+                  <ImageOff size={12} /> {o.jenis === "bon" ? "foto bon hilang" : "file hilang"}
                 </span>
               </div>
             ))}
