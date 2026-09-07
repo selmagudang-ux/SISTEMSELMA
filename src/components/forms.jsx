@@ -3338,7 +3338,124 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   );
 }
 
-// Form bayar hutang gabungan di level pelanggan (bukan per-pesanan) — dipakai
+// =========================================================
+// EDIT PEMBAYARAN — khusus role "superappa" (dicek di ModalRouter, bukan di
+// sini), buat kasus salah catat waktu awal (mis. dicatat Lunas Cash tapi
+// pas dihitung uangnya kurang, ternyata sisanya ditransfer). Beda dengan
+// BayarHutangForm (yang selalu BIKIN baris pembayaran baru): form ini
+// EDIT satu baris grosir_pembayaran yang sudah ada, sekaligus baris
+// keuangan_transaksi yang tertaut ke situ (kalau ada) supaya nominal di
+// Keuangan tetap konsisten. Hanya dipakai untuk pembayaran metode
+// Cash/Transfer yang tertaut LANGSUNG & TIDAK gabungan dengan pesanan lain
+// (dicek di ModalRouter sebelum form ini dirender — lihat modal
+// "grosir-edit-pembayaran").
+// =========================================================
+export function EditPembayaranForm({ pembayaran, pesanan, keuanganRow, master, onClose, saving, onSubmit }) {
+  const [jumlah, setJumlah] = useState(pembayaran.jumlah);
+  const [metodeBayar, setMetodeBayar] = useState(pembayaran.metode_bayar === "Transfer" ? "Transfer" : "Cash");
+  const [rekening, setRekening] = useState(keuanganRow?.rekening || "");
+  const [catatan, setCatatan] = useState(pembayaran.catatan || "");
+
+  const daftarRekening = master?.rekening || [];
+  const daftarKategoriMasuk = master?.kategori_masuk || [];
+  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const isReseller = pesanan.jenis_transaksi === "reseller";
+  const labelKategoriDipakai = isReseller
+    ? LABEL_KATEGORI_RESELLER_TOKO
+    : metodeBayar === "Transfer"
+      ? LABEL_KATEGORI_GROSIR_TRANSFER
+      : LABEL_KATEGORI_GROSIR_CASH;
+  const kategoriObj = cariKategoriByLabelBayar(daftarKategoriMasuk, labelKategoriDipakai);
+
+  const jumlahNum = Number(jumlah) || 0;
+  const canSubmit = jumlahNum > 0 && rekening && kategoriObj && !saving;
+
+  return (
+    <ModalShell title={`Edit Pembayaran — ${pesanan.nomor_pesanan}`} onClose={onClose}>
+      <div className="flex items-start gap-2 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs px-3 py-2 rounded-lg mb-3">
+        <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+        <div>
+          Mengubah baris pembayaran ini juga otomatis mengubah baris Keuangan yang tertaut, dan menghitung ulang
+          status bayar pesanan. Kalau ternyata sebagian uangnya beda metode (mis. sisanya transfer), turunkan dulu
+          jumlah di sini ke nominal yang benar-benar Cash, simpan, lalu catat sisanya lewat "Catat Pembayaran"
+          seperti biasa dengan metode Transfer.
+        </div>
+      </div>
+
+      <Field label="Metode Bayar">
+        <select
+          value={metodeBayar}
+          onChange={(e) => setMetodeBayar(e.target.value)}
+          className={inputClass}
+        >
+          <option value="Cash">Cash</option>
+          <option value="Transfer">Transfer</option>
+        </select>
+      </Field>
+
+      <Field label="Rekening Penampung">
+        <SearchableSelect
+          value={rekening}
+          onChange={setRekening}
+          options={rekeningOptions}
+          placeholder={metodeBayar === "Transfer" ? "Pilih rekening tujuan…" : "Pilih rekening kas…"}
+        />
+        {kategoriObj ? (
+          <div className="text-[11px] text-slate-500 mt-1">
+            Tercatat di Keuangan sebagai pemasukan kategori{" "}
+            <span className="text-slate-300 font-medium">{kategoriObj.label}</span>.
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5 text-[11px] text-amber-400 mt-1">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            Kategori "{labelKategoriDipakai}" belum ada. Buat dulu di Keuangan {">"} Rekening & Kategori.
+          </div>
+        )}
+      </Field>
+
+      <Field label="Jumlah Dibayar (nominal baru untuk baris ini)">
+        <input
+          type="number"
+          min="1"
+          className={inputClass}
+          value={jumlah}
+          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
+        />
+      </Field>
+
+      <Field label="Catatan (opsional)">
+        <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
+      </Field>
+
+      <div className="flex gap-2 mt-1">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={!canSubmit}
+          onClick={() =>
+            onSubmit({
+              jumlah: jumlahNum,
+              metodeBayar,
+              rekening,
+              kategoriKode: kategoriObj?.kode || null,
+              catatan: catatan.trim(),
+            })
+          }
+          className="flex-1 bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-xs py-2.5 rounded-lg"
+        >
+          {saving ? "Menyimpan…" : "Simpan Perubahan"}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+
 // dari modal Riwayat Pelanggan saat pelanggan masih punya total hutang neto.
 // Uang yang masuk otomatis dialokasikan ke pesanan yang masih hutang, dari
 // yang paling lama dulu, sampai jumlahnya habis atau semua hutang lunas;

@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2 } from "lucide-react";
+import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike } from "../lib/constants";
 import {
@@ -9,7 +9,7 @@ import {
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
-  GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm,
+  GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm, EditPembayaranForm,
   LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT,
   BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
@@ -1546,7 +1546,18 @@ export default function ModalRouter({
                     <div className="text-slate-200 text-xs">{new Date(b.created_at).toLocaleString("id-ID")}</div>
                     <div className="text-[11px] text-slate-500">{b.metode_bayar}{b.catatan ? ` · ${b.catatan}` : ""}</div>
                   </div>
-                  <div className="text-emerald-400 font-medium flex-shrink-0 ml-2">{fmtRp(b.jumlah)}</div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                    <div className="text-emerald-400 font-medium">{fmtRp(b.jumlah)}</div>
+                    {session?.role === "superappa" && (
+                      <button
+                        onClick={() => setModal({ type: "grosir-edit-pembayaran", item: { pesanan: p, pembayaran: b } })}
+                        className="p-1 rounded text-slate-500 hover:text-sky-400 hover:bg-slate-800"
+                        title="Edit pembayaran ini (superappa)"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2235,6 +2246,84 @@ export default function ModalRouter({
           </button>
         </div>
       </ModalShell>
+    );
+  }
+
+  // Edit satu baris pembayaran yang sudah tercatat (grosir_pembayaran) —
+  // beserta baris keuangan_transaksi yang tertaut, kalau ada. Khusus role
+  // "superappa" (tombolnya sendiri sudah disembunyikan untuk role lain di
+  // grosir-detail-pesanan, tapi modal ini juga dijaga di sini untuk
+  // jaga-jaga). Hanya untuk metode Cash/Transfer yang TIDAK gabungan dengan
+  // pembayaran pesanan lain (lihat catatan panjang di EditPembayaranForm,
+  // components/forms.jsx) — kalau tidak, resiko salah ubah nominal Keuangan
+  // gabungan dari "Bayar Hutang Pelanggan".
+  if (modal.type === "grosir-edit-pembayaran") {
+    const { pesanan: p, pembayaran: b } = modal.item;
+    if (session?.role !== "superappa") {
+      return (
+        <ModalShell title="Tidak diizinkan" onClose={close}>
+          <div className="text-sm text-slate-400">Fitur ini khusus untuk role superappa.</div>
+        </ModalShell>
+      );
+    }
+    const eligible = (b.metode_bayar === "Cash" || b.metode_bayar === "Transfer") && b.keuangan_transaksi_id;
+    const gabungan =
+      eligible &&
+      (pembayaranGrosir || []).filter((x) => x.keuangan_transaksi_id === b.keuangan_transaksi_id).length > 1;
+    if (!eligible || gabungan) {
+      return (
+        <ModalShell title="Tidak Bisa Diedit" onClose={close}>
+          <div className="text-sm text-slate-400">
+            {gabungan
+              ? 'Baris Keuangan untuk pembayaran ini gabungan dari pembayaran beberapa pesanan sekaligus (dari "Bayar Hutang Pelanggan") — tidak bisa diedit dari sini supaya nominal gabungannya tidak jadi salah. Edit langsung baris transaksinya di menu Keuangan kalau memang perlu, lalu sesuaikan manual.'
+              : "Edit pembayaran cuma didukung untuk metode Cash/Transfer yang tercatat langsung ke Keuangan (bukan Deposit atau Pencairan Marketplace)."}
+          </div>
+        </ModalShell>
+      );
+    }
+    const keuanganRow = (keuanganTransaksi || []).find((k) => k.id === b.keuangan_transaksi_id);
+    return (
+      <EditPembayaranForm
+        pembayaran={b}
+        pesanan={p}
+        keuanganRow={keuanganRow}
+        master={master}
+        onClose={close}
+        saving={saving}
+        onSubmit={(data) =>
+          run(async () => {
+            const jumlahBaru = Number(data.jumlah) || 0;
+            if (jumlahBaru <= 0) throw new Error("Jumlah harus lebih dari 0");
+
+            await sb(`grosir_pembayaran?id=eq.${b.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                jumlah: jumlahBaru,
+                metode_bayar: data.metodeBayar,
+                catatan: data.catatan || null,
+              }),
+            });
+
+            await sb(`keuangan_transaksi?id=eq.${b.keuangan_transaksi_id}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                jumlah: jumlahBaru,
+                rekening: data.rekening,
+                kategori: data.kategoriKode,
+              }),
+            });
+
+            const totalDibayarBaru = (pembayaranGrosir || [])
+              .filter((x) => x.pesanan_id === p.id)
+              .reduce((a, x) => a + (x.id === b.id ? jumlahBaru : Number(x.jumlah) || 0), 0);
+            const statusBaru = hitungStatusBayar(Number(p.total) || 0, totalDibayarBaru);
+            await sb(`grosir_pesanan?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ status_bayar: statusBaru }),
+            });
+          }, "Pembayaran diperbarui")
+        }
+      />
     );
   }
 
