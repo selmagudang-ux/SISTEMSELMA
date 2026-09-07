@@ -1334,7 +1334,7 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
       <div className="flex items-start gap-2">
-        <div className="flex-1 grid sm:grid-cols-[2fr_1fr_1fr] gap-2">
+        <div className="flex-1">
           {row.sumber_produk === "sku" ? (
             <SearchableSelect value={row.sku} onChange={pickSku} options={skuOptions} placeholder="Cari SKU…" compact />
           ) : (
@@ -1354,42 +1354,50 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
               />
             </div>
           )}
-          <div className="flex items-center border border-slate-800 rounded-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => onChange({ qty: Math.max(1, (Number(row.qty) || 0) - 1) })}
-              className="px-2.5 py-2 text-slate-400 hover:text-white hover:bg-slate-800 flex-shrink-0"
-              tabIndex={-1}
-            >
-              <Minus size={12} />
-            </button>
-            <input
-              type="number"
-              min="1"
-              className="w-full bg-slate-950 text-center text-sm outline-none py-2 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-              value={row.qty}
-              onChange={(e) => onChange({ qty: e.target.value === "" ? "" : Number(e.target.value) })}
-              onWheel={(e) => e.target.blur()}
-              placeholder="Qty"
-            />
-            <button
-              type="button"
-              onClick={() => onChange({ qty: (Number(row.qty) || 0) + 1 })}
-              className="px-2.5 py-2 text-slate-400 hover:text-white hover:bg-slate-800 flex-shrink-0"
-              tabIndex={-1}
-            >
-              <Plus size={12} />
-            </button>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div>
+              <span className="block text-[11px] text-slate-500 mb-1">Qty</span>
+              <div className="flex items-stretch border border-slate-800 rounded-lg overflow-hidden h-11">
+                <button
+                  type="button"
+                  onClick={() => onChange({ qty: Math.max(1, (Number(row.qty) || 0) - 1) })}
+                  className="w-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 flex-shrink-0"
+                  tabIndex={-1}
+                >
+                  <Minus size={16} />
+                </button>
+                <input
+                  type="number"
+                  min="1"
+                  className="w-full min-w-0 bg-slate-950 text-center text-base font-semibold outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  value={row.qty}
+                  onChange={(e) => onChange({ qty: e.target.value === "" ? "" : Number(e.target.value) })}
+                  onWheel={(e) => e.target.blur()}
+                  placeholder="Qty"
+                />
+                <button
+                  type="button"
+                  onClick={() => onChange({ qty: (Number(row.qty) || 0) + 1 })}
+                  className="w-10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 flex-shrink-0"
+                  tabIndex={-1}
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+            <div>
+              <span className="block text-[11px] text-slate-500 mb-1">Harga satuan</span>
+              <input
+                type="number"
+                min="0"
+                className="w-full h-11 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base font-semibold text-right outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                value={row.harga}
+                onChange={(e) => onChange({ harga: e.target.value === "" ? "" : Number(e.target.value) })}
+                onWheel={(e) => e.target.blur()}
+                placeholder="Harga"
+              />
+            </div>
           </div>
-          <input
-            type="number"
-            min="0"
-            className={inputClass}
-            value={row.harga}
-            onChange={(e) => onChange({ harga: e.target.value === "" ? "" : Number(e.target.value) })}
-            onWheel={(e) => e.target.blur()}
-            placeholder="Harga"
-          />
         </div>
         <button
           onClick={onRemove}
@@ -1399,7 +1407,7 @@ export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, o
           <X size={16} />
         </button>
       </div>
-      <div className="flex items-center justify-between mt-1.5">
+      <div className="flex items-center justify-between mt-2">
         <span className="text-[11px] text-slate-500">
           {row.sumber_produk === "sku" ? "Dari Data Barang" : "Item manual"}
           {row.qty && row.harga ? ` · Subtotal ${fmtRp(Number(row.qty) * Number(row.harga))}` : ""}
