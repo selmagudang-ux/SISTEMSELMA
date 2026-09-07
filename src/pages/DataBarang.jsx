@@ -11,8 +11,17 @@ import { rakForSku } from "./Rak";
 const JENIS_COLOR = { Pembelian: "emerald", Retur: "amber" };
 const jenisColor = (j) => JENIS_COLOR[j] || "slate";
 
+// Jumlah baris per halaman di tabel Alur Barang — sama seperti pola
+// pagination di Pesanan Barang (BarangDatang.jsx), supaya konsisten &
+// tabel tidak memanjang tanpa batas begitu datanya ratusan baris.
+const BARIS_PER_HALAMAN = 10;
+
 export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
   const [q, setQ] = useState("");
+  // "" = semua tahap. Filter ini berdiri sendiri dari pencarian teks (q) —
+  // keduanya digabung (AND) di `filtered` di bawah.
+  const [tahapFilter, setTahapFilter] = useState("");
+  const [halaman, setHalaman] = useState(1);
 
   // Kode rak diambil dari data penempatan terbaru (sumber yang sama dengan Peta Rak),
   // BUKAN dari field items.rak_code yang bisa basi kalau SKU-nya sudah dipindah rak.
@@ -40,14 +49,33 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
 
   const filtered = items.filter((i) => {
     const s = q.toLowerCase();
-    if (!s) return true;
-    return (
+    const cocokTeks =
+      !s ||
       (i.sku || "").toLowerCase().includes(s) ||
       (i.barcode_supplier || "").toLowerCase().includes(s) ||
       (i.gudang || "").toLowerCase().includes(s) ||
-      rakSaatIni(i).toLowerCase().includes(s)
-    );
+      rakSaatIni(i).toLowerCase().includes(s);
+    const cocokTahap = !tahapFilter || i.stage === tahapFilter;
+    return cocokTeks && cocokTahap;
   });
+
+  // Ganti pencarian/filter tahap -> balik ke halaman 1, biar tidak nyangkut
+  // di halaman kosong kalau hasil filter barunya lebih sedikit halamannya.
+  const ubahPencarian = (v) => {
+    setQ(v);
+    setHalaman(1);
+  };
+  const ubahTahapFilter = (v) => {
+    setTahapFilter(v);
+    setHalaman(1);
+  };
+
+  const totalHalaman = Math.max(1, Math.ceil(filtered.length / BARIS_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const paged = filtered.slice(
+    (halamanAktif - 1) * BARIS_PER_HALAMAN,
+    halamanAktif * BARIS_PER_HALAMAN
+  );
 
   const handleDownload = () => {
     downloadCsv(
@@ -75,43 +103,65 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
 
   return (
     <div>
-      <PageHeader
-        title="Alur Barang"
-        description="Cari dan lihat detail semua barang yang tercatat di sistem."
-        sticky
-        action={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleDownload}
-              disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-            >
-              <Download size={14} /> Download CSV
-            </button>
-            <button
-              onClick={() => setModal({ type: "barang-masuk" })}
-              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-            >
-              <Plus size={14} /> Barang Masuk
-            </button>
-          </div>
-        }
-      />
-
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU, model/barcode supplier, jenis, atau rak…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+      {/* PageHeader + kolom cari/filter dibungkus satu wrapper sticky supaya
+          keduanya "freeze" bareng di bawah header aplikasi (tinggi 64px)
+          waktu daftar di bawahnya di-scroll — polanya sama seperti sticky
+          search bar di Peta Rak (Rak.jsx), cuma di sini PageHeader-nya ikut
+          nempel juga karena disatukan dalam satu wrapper, bukan lewat
+          prop `sticky` bawaan PageHeader (yang cuma freeze headernya saja). */}
+      <div className="sticky top-[64px] z-10 bg-md-surface py-3 -mt-3 mb-1">
+        <PageHeader
+          title="Alur Barang"
+          description="Cari dan lihat detail semua barang yang tercatat di sistem."
+          action={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDownload}
+                disabled={filtered.length === 0}
+                className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+              >
+                <Download size={14} /> Download CSV
+              </button>
+              <button
+                onClick={() => setModal({ type: "barang-masuk" })}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+              >
+                <Plus size={14} /> Barang Masuk
+              </button>
+            </div>
+          }
         />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm w-full sm:w-auto">
+            <Search size={14} className="text-slate-500" />
+            <input
+              value={q}
+              onChange={(e) => ubahPencarian(e.target.value)}
+              placeholder="Cari SKU, model/barcode supplier, jenis, atau rak…"
+              className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+            />
+          </div>
+          <select
+            value={tahapFilter}
+            onChange={(e) => ubahTahapFilter(e.target.value)}
+            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-amber-500/50"
+          >
+            <option value="">Semua Tahap</option>
+            {Object.entries(STAGE_META).map(([key, meta]) => (
+              <option key={key} value={key}>
+                {meta.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState label="Tidak ada barang yang cocok." />
+        <EmptyState label={q || tahapFilter ? "Tidak ada barang yang cocok." : "Belum ada barang yang tercatat."} />
       ) : (
-        <div className="rounded-xl border border-slate-800 overflow-x-auto">
+        <div className="rounded-xl border border-slate-800">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
@@ -126,7 +176,7 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((i) => {
+              {paged.map((i) => {
                 const meta = STAGE_META[i.stage];
                 const skuCocok = skuCocokOtomatis(i);
                 return (
@@ -179,6 +229,34 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
               })}
             </tbody>
           </table>
+        </div>
+
+        {totalHalaman > 1 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800 text-xs text-slate-400">
+            <span>
+              Halaman {halamanAktif} dari {totalHalaman}{" "}
+              <span className="text-slate-600">({filtered.length} data)</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHalaman((h) => Math.max(1, h - 1))}
+                disabled={halamanAktif <= 1}
+                className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Sebelumnya
+              </button>
+              <button
+                type="button"
+                onClick={() => setHalaman((h) => Math.min(totalHalaman, h + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Berikutnya
+              </button>
+            </div>
+          </div>
+        )}
         </div>
       )}
     </div>

@@ -25,6 +25,12 @@ const totalRusakTransaksi = (detail) => detail.reduce((sum, m) => sum + (Number(
 const JENIS_COLOR = { Pembelian: "emerald", Retur: "amber" };
 const jenisColor = (j) => JENIS_COLOR[j] || "slate";
 
+// Jumlah baris per halaman di tabel "Pesanan Barang" — biar tabel tidak
+// memanjang tanpa batas begitu riwayatnya sudah ratusan baris. Pola &
+// angka sama seperti BARIS_PER_HALAMAN_BARANG_DATANG di Dashboard.jsx
+// supaya perilakunya konsisten di seluruh sistem.
+const BARIS_PER_HALAMAN = 10;
+
 // Ringkasan singkat daftar nama model, dipakai di kolom "Model" supaya tabel
 // tidak perlu diperlebar — nama lengkap per model tetap bisa dilihat dengan
 // membuka baris (lihat DetailModelPanel).
@@ -183,6 +189,7 @@ export default function BarangDatang({ sub, pesananMasuk, suppliers, setModal })
 function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const [fotoLightbox, setFotoLightbox] = useState(null);
+  const [halaman, setHalaman] = useState(1);
   const toggle = (id) =>
     setExpanded((s) => {
       const next = new Set(s);
@@ -205,6 +212,16 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       if (waktuA !== waktuB) return waktuB - waktuA;
       return a.tanggal_pesan < b.tanggal_pesan ? 1 : -1;
     });
+
+  // Kalau halaman aktif jadi kelebihan (mis. sebelumnya di halaman 5 lalu
+  // sebagian riwayat dihapus sehingga cuma tersisa 2 halaman), tarik balik
+  // ke halaman terakhir yang masih valid supaya tidak nampak tabel kosong.
+  const totalHalaman = Math.max(1, Math.ceil(list.length / BARIS_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const paged = list.slice(
+    (halamanAktif - 1) * BARIS_PER_HALAMAN,
+    halamanAktif * BARIS_PER_HALAMAN
+  );
 
   return (
     <div>
@@ -232,7 +249,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       {list.length === 0 ? (
         <EmptyState label="Belum ada barang datang yang dicatat." />
       ) : (
-        <div className="rounded-xl border border-slate-800 overflow-x-auto">
+        <div className="rounded-xl border border-slate-800">
+        <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[1280px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
@@ -251,7 +269,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
               </tr>
             </thead>
             <tbody>
-              {list.map((p) => {
+              {paged.map((p) => {
                 const detail = detailModelPesanan(p);
                 const nilai = totalNilaiTransaksi(detail);
                 const rusak = totalRusakTransaksi(detail);
@@ -379,6 +397,34 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
               })}
             </tbody>
           </table>
+        </div>
+
+        {totalHalaman > 1 && (
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800 text-xs text-slate-400">
+            <span>
+              Halaman {halamanAktif} dari {totalHalaman}{" "}
+              <span className="text-slate-600">({list.length} data)</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHalaman((h) => Math.max(1, h - 1))}
+                disabled={halamanAktif <= 1}
+                className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Sebelumnya
+              </button>
+              <button
+                type="button"
+                onClick={() => setHalaman((h) => Math.min(totalHalaman, h + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                Berikutnya
+              </button>
+            </div>
+          </div>
+        )}
         </div>
       )}
 

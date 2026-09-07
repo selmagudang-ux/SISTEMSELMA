@@ -3,6 +3,11 @@ import { Search, Download, Trash2, AlertTriangle, X, Receipt } from "lucide-reac
 import { PageHeader, EmptyState, formatTanggalID } from "../components/ui";
 import { downloadCsv, fmtTgl, detailModelPesanan, fmtRp } from "../lib/api";
 
+// Jumlah baris per halaman di tabel Barang Reject — sama seperti pola
+// pagination di Pesanan Barang & Alur Barang, supaya konsisten & tabel
+// tidak memanjang tanpa batas begitu catatannya sudah ratusan baris.
+const BARIS_PER_HALAMAN = 10;
+
 // Modal rincian bon — dibuka saat kode bon di kolom "Dari Bon" diklik.
 // Menampilkan foto bon fisiknya beserta rincian tiap model yang ada di
 // transaksi barang datang itu, supaya gampang dicocokkan dengan catatan
@@ -102,12 +107,27 @@ function DetailBonModal({ pesanan, kodeBon, onClose }) {
 export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
   const [q, setQ] = useState("");
   const [detailBon, setDetailBon] = useState(null);
+  const [halaman, setHalaman] = useState(1);
 
   const list = [...(barangRusak || [])]
     .filter((r) => (r.sku || "").toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   const totalQty = list.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+
+  // Ganti pencarian -> balik ke halaman 1, biar tidak nyangkut di halaman
+  // kosong kalau hasil pencarian barunya lebih sedikit halamannya.
+  const ubahPencarian = (v) => {
+    setQ(v);
+    setHalaman(1);
+  };
+
+  const totalHalaman = Math.max(1, Math.ceil(list.length / BARIS_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const paged = list.slice(
+    (halamanAktif - 1) * BARIS_PER_HALAMAN,
+    halamanAktif * BARIS_PER_HALAMAN
+  );
 
   const handleDownload = () => {
     downloadCsv(
@@ -131,38 +151,45 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
 
   return (
     <div>
-      <PageHeader
-        title="Barang Reject"
-        description="Barang yang tercatat rusak sejak Barang Datang — otomatis dipisahkan dari stok begitu SKU-nya dibuat."
-        action={
-          <button
-            onClick={handleDownload}
-            disabled={list.length === 0}
-            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-          >
-            <Download size={14} /> Download CSV
-          </button>
-        }
-      />
-
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+      {/* PageHeader + kolom cari dibungkus satu wrapper sticky supaya
+          keduanya "freeze" di bawah header aplikasi (tinggi 64px) waktu
+          daftar di bawahnya di-scroll — pola sama seperti di Alur Barang
+          (DataBarang.jsx) / Peta Rak (Rak.jsx). */}
+      <div className="sticky top-[64px] z-10 bg-md-surface py-3 -mt-3 mb-1">
+        <PageHeader
+          title="Barang Reject"
+          description="Barang yang tercatat rusak sejak Barang Datang — otomatis dipisahkan dari stok begitu SKU-nya dibuat."
+          action={
+            <button
+              onClick={handleDownload}
+              disabled={list.length === 0}
+              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+            >
+              <Download size={14} /> Download CSV
+            </button>
+          }
         />
+
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => ubahPencarian(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
       </div>
 
       {list.length === 0 ? (
-        <EmptyState label="Belum ada barang rusak yang tercatat." />
+        <EmptyState label={q ? "Tidak ada SKU yang cocok." : "Belum ada barang rusak yang tercatat."} />
       ) : (
         <>
           <div className="flex items-center gap-2 mb-3 text-xs text-red-400">
             <AlertTriangle size={13} /> Total {totalQty}x rusak dari {list.length} catatan
           </div>
-          <div className="rounded-xl border border-slate-800 overflow-x-auto">
+          <div className="rounded-xl border border-slate-800">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[760px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
@@ -175,7 +202,7 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
                 </tr>
               </thead>
               <tbody>
-                {list.map((r) => (
+                {paged.map((r) => (
                   <tr key={r.id} className="border-b border-slate-800/60 last:border-0">
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-400 text-xs">{fmtTgl(r.created_at)}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{r.sku}</td>
@@ -207,6 +234,34 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {totalHalaman > 1 && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800 text-xs text-slate-400">
+              <span>
+                Halaman {halamanAktif} dari {totalHalaman}{" "}
+                <span className="text-slate-600">({list.length} data)</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHalaman((h) => Math.max(1, h - 1))}
+                  disabled={halamanAktif <= 1}
+                  className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Sebelumnya
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHalaman((h) => Math.min(totalHalaman, h + 1))}
+                  disabled={halamanAktif >= totalHalaman}
+                  className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  Berikutnya
+                </button>
+              </div>
+            </div>
+          )}
           </div>
         </>
       )}
