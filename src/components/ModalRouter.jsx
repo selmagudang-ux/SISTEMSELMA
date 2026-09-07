@@ -2188,6 +2188,38 @@ export default function ModalRouter({
                 status_bayar: statusBaru,
               }),
             });
+
+            // 4. Kelebihan bayar akibat edit (total baru diedit turun sampai
+            //    di bawah yang sudah dibayar) tidak boleh hangus — sama
+            //    seperti pola "Batalkan Pesanan" di atas, otomatis dicatat
+            //    sebagai saldo deposit pelanggan supaya kelihatan & bisa
+            //    dicairkan lewat "Cairkan Deposit ke Pelanggan". Berlaku
+            //    untuk SEMUA jenis_transaksi, termasuk Reseller Cekout.
+            const kelebihanEdit = totalDibayar - data.total;
+            if (kelebihanEdit > 0.0001) {
+              const isCekout = p.jenis_transaksi === "reseller_cekout";
+              await sb("grosir_deposit", {
+                method: "POST",
+                body: JSON.stringify({
+                  nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  pelanggan_id: p.pelanggan_id,
+                  jumlah: kelebihanEdit,
+                  keterangan: `Kelebihan bayar akibat edit pesanan ${p.nomor_pesanan}`,
+                  // Reseller Cekout: pesanan_id_terkait SENGAJA dibiarkan null.
+                  // Laporan Reseller Cekout (Dashboard.jsx & RiwayatPenagihan-
+                  // Pencairan di pages/Reseller.jsx) mengumpulkan deposit
+                  // cekout lewat filter "pesanan_id_terkait ada di daftar
+                  // pesanan cekout ATAU keterangan menyebut 'Reseller
+                  // Cekout'" — dua-duanya sengaja dihindari di sini supaya
+                  // deposit dari edit pesanan ini TIDAK ikut ke laporan
+                  // cekout, tapi tetap masuk ke saldo deposit umum pelanggan
+                  // (saldoDepositPelanggan tidak peduli pesanan_id_terkait)
+                  // dan tetap bisa dicairkan lewat "Cairkan Deposit ke
+                  // Pelanggan" seperti biasa.
+                  pesanan_id_terkait: isCekout ? null : p.id,
+                }),
+              });
+            }
           }, "Pesanan diperbarui")
         }
       />
