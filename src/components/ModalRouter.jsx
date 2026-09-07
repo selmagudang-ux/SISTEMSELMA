@@ -1581,6 +1581,20 @@ export default function ModalRouter({
             Edit Item Pesanan
           </button>
         )}
+        {/* Pindah jenis pesanan Grosir -> Reseller Toko: cuma tinggal ubah
+            kolom jenis_transaksi (lihat catatan panjang di pages/Reseller.jsx
+            kenapa ini aman — semua modal pesanan generik, tidak peduli
+            jenis_transaksi-nya apa). Dibatasi KHUSUS role "superappa" (bukan
+            superadmin biasa) sesuai permintaan — jangan pakai isSuperadminLike
+            di sini karena itu akan ikut meloloskan superadmin biasa juga. */}
+        {!dibatalkan && (!p.jenis_transaksi || p.jenis_transaksi === "grosir") && session?.role === "superappa" && (
+          <button
+            onClick={() => setModal({ type: "grosir-pindah-ke-reseller", item: p })}
+            className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 mb-2"
+          >
+            Pindah ke Reseller Toko
+          </button>
+        )}
         {!dibatalkan && (
           <button
             onClick={() => setModal({ type: "grosir-batalkan-pesanan", item: p })}
@@ -2167,6 +2181,60 @@ export default function ModalRouter({
         }
       />
       </Suspense>
+    );
+  }
+
+  // Pindah pesanan Grosir -> Reseller Toko. Cuma butuh update jenis_transaksi
+  // ('grosir'/null -> 'reseller') — nomor_pesanan, item, riwayat pembayaran,
+  // dan semua modal terkait tetap jalan apa adanya karena semuanya generik
+  // (lihat catatan di pages/Reseller.jsx). Khusus role "superappa" (tombolnya
+  // sendiri sudah disembunyikan untuk role lain di grosir-detail-pesanan,
+  // tapi modal ini juga dijaga di sini untuk jaga-jaga).
+  if (modal.type === "grosir-pindah-ke-reseller") {
+    const p = modal.item;
+    if (session?.role !== "superappa") {
+      return (
+        <ModalShell title="Tidak diizinkan" onClose={close}>
+          <div className="text-sm text-slate-400">Fitur ini khusus untuk role superappa.</div>
+        </ModalShell>
+      );
+    }
+    return (
+      <ModalShell title={`Pindah ke Reseller Toko — ${p.nomor_pesanan}`} onClose={close}>
+        <div className="flex items-start gap-3 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Pesanan <span className="font-semibold">{p.nomor_pesanan}</span> akan dipindah dari daftar Grosir ke
+            daftar Reseller Toko (menu Reseller). Item, riwayat pembayaran, dan sisa hutangnya tetap sama persis —
+            cuma jenis pesanannya yang berubah. Setelah dipindah, pesanan ini juga akan ikut ditagih lewat
+            "Penagihan Hutang" reseller (kalau masih ada sisa hutang) dan kategori Keuangan untuk pembayarannya
+            nanti pakai "Reseller Toko", bukan "Grosir Cash/Transfer".
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`grosir_pesanan?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ jenis_transaksi: "reseller" }),
+                });
+              }, "Pesanan dipindah ke Reseller Toko")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950"
+          >
+            {saving ? "Memindahkan…" : "Ya, Pindahkan"}
+          </button>
+        </div>
+      </ModalShell>
     );
   }
 
