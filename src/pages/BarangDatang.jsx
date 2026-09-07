@@ -413,7 +413,12 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                         <div className="flex items-center justify-end gap-3">
                           {isDraft && (
                             <button
-                              onClick={() => setModal({ type: "barang-datang", item: p })}
+                              onClick={() =>
+                                setModal({
+                                  type: p.kode_bon?.startsWith("PSN-") ? "konfirmasi-datang" : "barang-datang",
+                                  item: p,
+                                })
+                              }
                               className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-400 hover:text-violet-300"
                               title="Lanjutkan mengisi draf ini — bisa disimpan sebagai draf lagi atau difinalisasi"
                             >

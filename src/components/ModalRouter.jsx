@@ -3198,10 +3198,12 @@ export default function ModalRouter({
   }
 
   // KONFIRMASI DATANG — dibuka dari baris pesanan (status Menunggu/Sebagian
-  // Datang) yang dibuat lewat "pesan-barang" di atas. PATCH baris pesanan
-  // yang SAMA (bukan bikin baru) supaya kode/toko/riwayatnya tetap nyambung
-  // dari pesan sampai barang di tangan, lalu lanjut ke alur SKU seperti
-  // input barang datang biasa.
+  // Datang/Draf) yang dibuat lewat "pesan-barang" di atas. PATCH baris
+  // pesanan yang SAMA (bukan bikin baru) supaya kode/toko/riwayatnya tetap
+  // nyambung dari pesan sampai barang di tangan. Sama seperti "Input Barang
+  // Datang", sekarang bisa disimpan sebagai draf dulu (draft=true — cuma
+  // PATCH rincian, BELUM bikin items/pesanan_penerimaan) atau langsung
+  // difinalisasi (draft=false — lanjut ke alur SKU seperti biasa).
   if (modal.type === "konfirmasi-datang") {
     const p = modal.item;
     return (
@@ -3210,79 +3212,99 @@ export default function ModalRouter({
         onClose={close}
         saving={saving}
         suppliers={suppliers}
-        onSubmit={({ tanggal, fotoBon, models, catatan, hargaKesepakatan, keteranganSelisih }) =>
+        onSubmit={({ draft, tanggal, fotoBonFiles, existingFotoBonUrls, models, catatan, hargaKesepakatan, keteranganSelisih }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, p.supplier, models.map((m) => m.nama));
-            let fotoBonUrl = p.foto_bon_url || null;
-            if (fotoBon) {
-              const ext = (fotoBon.name.split(".").pop() || "jpg").toLowerCase();
-              const path = `bon-${Date.now()}.${ext}`;
-              fotoBonUrl = await sbUploadFoto(fotoBon, path);
+
+            const fotoBonUrlsBaru = [];
+            for (const f of fotoBonFiles || []) {
+              const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+              const path = `bon-${Date.now()}-${fotoBonUrlsBaru.length}.${ext}`;
+              fotoBonUrlsBaru.push(await sbUploadFoto(f, path));
             }
+            const fotoBonUrls = [...(existingFotoBonUrls || []), ...fotoBonUrlsBaru];
+            const fotoBonUrl = fotoBonUrls[0] || null;
 
             const totalDatang = models.reduce(
               (sum, m) => sum + Math.max(m.jumlahDatang - m.jumlahRusak, 0),
               0
             );
+            const totalKotor = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+
+            const patchPayload = {
+              draft,
+              catatan,
+              foto_bon_url: fotoBonUrl,
+              foto_bon_urls: fotoBonUrls,
+              // harga_kesepakatan dibawa apa adanya dari form (sudah dibaca
+              // dari kolom ini waktu form dibuka) supaya tetap tersimpan di
+              // kolomnya sendiri, tidak ikut hilang saat detail_model
+              // ditimpa isi sebenarnya di bawah. keterangan_selisih dicatat
+              // kalau total harga barang datang tidak sama dengan
+              // kesepakatan (validasi wajib isi ada di form, hanya untuk
+              // simpan final — draf tidak wajib).
+              harga_kesepakatan: hargaKesepakatan,
+              keterangan_selisih: keteranganSelisih,
+              detail_model: models.map((m) => ({
+                nama: m.nama,
+                jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+                rusak: m.jumlahRusak,
+                alasan_rusak: m.alasanRusak,
+                harga: m.harga,
+                datang: true,
+              })),
+            };
+            // jumlah_pesan/jumlah_diterima cuma diganti ke qty sebenarnya
+            // begitu difinalisasi — selama masih draf, dibiarkan seperti
+            // placeholder awal (DB tidak boleh 0 lewat check constraint).
+            if (!draft) {
+              patchPayload.jumlah_pesan = Math.max(totalKotor, 1);
+              patchPayload.jumlah_diterima = totalDatang;
+            }
 
             await sb(`pesanan_masuk?id=eq.${p.id}`, {
               method: "PATCH",
-              body: JSON.stringify({
-                jumlah_pesan: totalDatang,
-                jumlah_diterima: totalDatang,
-                catatan,
-                foto_bon_url: fotoBonUrl,
-                // harga_kesepakatan dibawa apa adanya dari form (sudah dibaca
-                // dari kolom ini waktu form dibuka) supaya tetap tersimpan di
-                // kolomnya sendiri, tidak ikut hilang saat detail_model
-                // ditimpa isi sebenarnya di bawah. keterangan_selisih dicatat
-                // kalau total harga barang datang tidak sama dengan
-                // kesepakatan (validasi wajib isi ada di form).
-                harga_kesepakatan: hargaKesepakatan,
-                keterangan_selisih: keteranganSelisih,
-                detail_model: models.map((m) => ({
-                  nama: m.nama,
-                  jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-                  rusak: m.jumlahRusak,
-                  alasan_rusak: m.alasanRusak,
-                  harga: m.harga,
-                  datang: true,
-                })),
-              }),
+              body: JSON.stringify(patchPayload),
             });
 
-            for (const m of models) {
-              const totalQtyModel = m.jumlahDatang;
-              if (totalQtyModel <= 0) continue;
-              const [itemBaru] = await sb("items", {
-                method: "POST",
-                body: JSON.stringify({
-                  tanggal,
-                  gudang: p.jenis,
-                  jumlah: totalQtyModel,
-                  jumlah_rusak: m.jumlahRusak || 0,
-                  alasan_rusak: m.alasanRusak || null,
-                  harga: m.harga || null,
-                  stage: "sku",
-                  kode_bon: p.kode_bon,
-                  // Nama model yang diketik di Barang Datang sebenarnya barcode/kode
-                  // dari supplier — dibawa terus di sini supaya nanti ikut disalin
-                  // ke sku_master.barcode_supplier saat SKU dibuat (lihat "buat-sku").
-                  barcode_supplier: m.nama || null,
-                }),
-              });
-              await sb("pesanan_penerimaan", {
-                method: "POST",
-                body: JSON.stringify({
-                  pesanan_id: p.id,
-                  tanggal,
-                  jumlah: totalQtyModel,
-                  item_id: itemBaru?.id || null,
-                  foto_bon_url: fotoBonUrl,
-                }),
-              });
+            // Draf BELUM masuk Alur Barang/stok — "items" & "pesanan_penerimaan"
+            // baru dibuat begitu disimpan sebagai FINAL, sama seperti "Input
+            // Barang Datang".
+            if (!draft) {
+              for (const m of models) {
+                const totalQtyModel = m.jumlahDatang;
+                if (totalQtyModel <= 0) continue;
+                const [itemBaru] = await sb("items", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    tanggal,
+                    gudang: p.jenis,
+                    jumlah: totalQtyModel,
+                    jumlah_rusak: m.jumlahRusak || 0,
+                    alasan_rusak: m.alasanRusak || null,
+                    harga: m.harga || null,
+                    stage: "sku",
+                    kode_bon: p.kode_bon,
+                    // Nama model yang diketik di Barang Datang sebenarnya barcode/kode
+                    // dari supplier — dibawa terus di sini supaya nanti ikut disalin
+                    // ke sku_master.barcode_supplier saat SKU dibuat (lihat "buat-sku").
+                    barcode_supplier: m.nama || null,
+                  }),
+                });
+                await sb("pesanan_penerimaan", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    pesanan_id: p.id,
+                    tanggal,
+                    jumlah: totalQtyModel,
+                    item_id: itemBaru?.id || null,
+                    foto_bon_url: fotoBonUrl,
+                    foto_bon_urls: fotoBonUrls,
+                  }),
+                });
+              }
             }
-          }, "Barang datang dikonfirmasi — lanjut ke alur SKU")
+          }, draft ? "Rincian barang datang disimpan sebagai draf" : "Barang datang dikonfirmasi — lanjut ke alur SKU")
         }
       />
     );
