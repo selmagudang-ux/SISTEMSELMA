@@ -2174,15 +2174,19 @@ export default function ModalRouter({
               await sb("grosir_detail_pesanan", { method: "POST", body: JSON.stringify(detailPayloadBaru) });
             }
 
-            // 3. Update header pesanan: toko, metode bayar, catatan, total,
-            //    dan status bayar dihitung ulang otomatis dari total baru vs
-            //    total yang sudah dibayar (StatusBayar tidak pernah diisi manual).
+            // 3. Update header pesanan: toko, catatan, total, dan status
+            //    bayar dihitung ulang otomatis dari total baru vs total yang
+            //    sudah dibayar (StatusBayar tidak pernah diisi manual).
+            //    metode_bayar SENGAJA tidak disentuh di sini (2026-09) —
+            //    field itu cuma valid buat "lunas langsung saat pesanan
+            //    dibuat", jadi biarkan nilai lamanya apa adanya (null kalau
+            //    memang belum dibayar saat dibuat) daripada ke-overwrite
+            //    tiap kali item pesanan diedit.
             const statusBaru = hitungStatusBayar(data.total, totalDibayar);
             await sb(`grosir_pesanan?id=eq.${p.id}`, {
               method: "PATCH",
               body: JSON.stringify({
                 toko_id: data.tokoId,
-                metode_bayar: data.metodeBayar,
                 catatan: data.catatan,
                 total: data.total,
                 status_bayar: statusBaru,

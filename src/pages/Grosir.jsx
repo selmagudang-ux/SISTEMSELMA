@@ -1428,7 +1428,15 @@ export function EditPesananForm({
   // lagi, tapi nilai toko_id pesanan lama (kalau ada) tetap dipertahankan
   // apa adanya lewat state ini (bukan ikut kehapus/ke-null-kan tiap edit).
   const [tokoId] = useState(pesanan.toko_id || "");
-  const [metodeBayar, setMetodeBayar] = useState(pesanan.metode_bayar || "Cash");
+  // Metode Bayar SENGAJA tidak ada di form edit ini (dulu ada, dihapus lagi
+  // 2026-09) — field itu di header pesanan cuma valid buat kasus "lunas
+  // langsung saat pesanan dibuat"; begitu ada pembayaran cicil/parsial,
+  // satu field ini nggak bisa mewakili kenyataan (riwayat pembayaran per-
+  // transaksi ada sendiri di grosir_pembayaran, bisa beda2 metode). Dulu
+  // form ini selalu nampilin & nge-save field ini walau pesanan belum
+  // dibayar sama sekali, jadi metode_bayar ke-set "Cash" begitu aja padahal
+  // belum ada duit masuk — nilai lama pesanan.metode_bayar tetap
+  // dipertahankan apa adanya (tidak ikut ke-null-kan/ke-overwrite).
   const [catatan, setCatatan] = useState(pesanan.catatan || "");
   const [rows, setRows] = useState(() =>
     (detailItems || []).map((d) => ({
@@ -1513,7 +1521,6 @@ export function EditPesananForm({
     onSubmit({
       tokoId: tokoId || null,
       namaToko: toko ? toko.nama_toko : null,
-      metodeBayar,
       catatan: catatan.trim() || null,
       total,
       items: rows.map((r) => ({
@@ -1529,14 +1536,6 @@ export function EditPesananForm({
 
   return (
     <ModalShell title={`Edit Pesanan ${pesanan.nomor_pesanan}`} onClose={onClose}>
-      <div className="mb-4">
-        <Field label="Metode Bayar">
-          <select value={metodeBayar} onChange={(e) => setMetodeBayar(e.target.value)} className={inputClass}>
-            <option value="Cash">Cash</option>
-            <option value="Transfer">Transfer</option>
-          </select>
-        </Field>
-      </div>
       <Field label="Catatan (opsional)">
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>
