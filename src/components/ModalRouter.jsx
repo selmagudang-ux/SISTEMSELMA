@@ -1977,6 +1977,22 @@ export default function ModalRouter({
           pesanan={p}
           pelanggan={pelanggan}
           toko={toko}
+          tokoOptions={tokoGrosir}
+          onGantiToko={async (tokoId) => {
+            // Ganti toko pengirim langsung dari dialog cetak label, tanpa
+            // lewat form Edit Pesanan. Disimpan ke pesanan (bukan cuma
+            // dipakai sekali cetak) supaya kalau labelnya dicetak ulang
+            // nanti, toko yang dipilih masih konsisten. Sengaja tidak pakai
+            // helper run() di atas karena run() nutup modal setelah sukses
+            // — di sini modalnya harus tetap kebuka biar bisa lanjut cetak.
+            await sb(`grosir_pesanan?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ toko_id: tokoId }),
+            });
+            p.toko_id = tokoId; // biar tampilan lain (mis. detail pesanan) ikut update tanpa nunggu buka-tutup modal
+            await reload();
+            showToast("Toko pengirim disimpan");
+          }}
           detailItems={detailItems}
           onClose={close}
         />

@@ -197,10 +197,28 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
 // penerima (data Pelanggan: nama, alamat, kota, WA). Daftar isi barang
 // sengaja tidak ditampilkan di label ini.
 // =========================================================
-export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, onClose }) {
+export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, onGantiToko, detailItems, onClose }) {
   const p = pesanan;
   const printRef = useRef(null);
   const [printing, setPrinting] = useState(false);
+  // Toko pengirim bisa diganti langsung dari sini (dulu cuma ikut apa yang
+  // tersimpan di pesanan). Pilihan baru langsung disimpan ke pesanan lewat
+  // onGantiToko supaya konsisten dipakai lagi kalau label dicetak ulang.
+  const [tokoIdTerpilih, setTokoIdTerpilih] = useState(toko?.id ?? "");
+  const [menyimpanToko, setMenyimpanToko] = useState(false);
+  const tokoAktif = (tokoOptions || []).find((t) => t.id === tokoIdTerpilih) || null;
+
+  const gantiToko = async (e) => {
+    const val = e.target.value;
+    setTokoIdTerpilih(val);
+    if (!onGantiToko) return;
+    setMenyimpanToko(true);
+    try {
+      await onGantiToko(val || null);
+    } finally {
+      setMenyimpanToko(false);
+    }
+  };
 
   const cetak = () => {
     setPrinting(true);
@@ -231,8 +249,28 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, on
               <X size={16} />
             </button>
           </div>
+          <div className="px-5 pt-4 pb-1">
+            <label className="block">
+              <div className="text-[11px] text-slate-500 mb-1">
+                Toko Pengirim {menyimpanToko && <span className="text-amber-500">(menyimpan…)</span>}
+              </div>
+              <select
+                value={tokoIdTerpilih}
+                onChange={gantiToko}
+                disabled={menyimpanToko}
+                className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 disabled:opacity-60"
+              >
+                <option value="">— Alamat Toko Utama —</option>
+                {(tokoOptions || []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nama_toko} ({t.kode})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="p-5 flex justify-center bg-slate-100">
-            <LabelIsi pesanan={p} pelanggan={pelanggan} toko={toko} detailItems={detailItems} />
+            <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} />
           </div>
           <div className="px-5 pb-5 pt-3">
             <button
@@ -259,7 +297,7 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, detailItems, on
           }
         `}</style>
         <div ref={printRef} className="ss-label-print">
-          <LabelIsi pesanan={p} pelanggan={pelanggan} toko={toko} detailItems={detailItems} />
+          <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} />
         </div>
       </div>
     </Fragment>
