@@ -571,12 +571,20 @@ export function statusPesananMasuk(p) {
 // barang tiba di depan mata, tanpa harus buka-buka & mengisi form detail
 // dulu — detailnya boleh menyusul kapan saja lewat "Konfirmasi Datang".
 // Kolom `konfirmasi_datang` disimpan sebagai boolean di tabel pesanan_masuk;
-// default belum ada (undefined/null) dianggap "belum". Baris "draft"/"batal"
-// balikin null (belum relevan/tidak akan ditagih) supaya UI bisa sembunyikan
-// toggle-nya.
+// default belum ada (undefined/null) dianggap "belum". Baris "batal" balikin
+// null (tidak akan ditagih lagi, jadi toggle-nya tidak relevan).
+// Baris "draft" JUGA balikin null — TAPI dikecualikan untuk pesanan yang
+// dibuat lewat "Pesan Barang" (kode_bon berprefix "PSN-"): untuk PSN-,
+// `draft` cuma dipakai KonfirmasiDatangForm buat menyimpan progres rincian
+// model (tombol "Simpan sebagai Draf") — pesanannya sendiri sudah pasti ada
+// sejak dibuat, jadi toggle "sudah datang secara fisik" tetap harus bisa
+// dipakai kapan saja, lepas dari progres pengisian rinciannya. Baris "draft"
+// murni (dari "Input Barang Datang"/BON-, yang memang belum tentu jadi
+// transaksi nyata) tetap disembunyikan seperti semula.
 export function statusKonfirmasiDatang(p) {
   const status = statusPesananMasuk(p);
-  if (status === "draft" || status === "batal") return null;
+  if (status === "batal") return null;
+  if (status === "draft" && !p.kode_bon?.startsWith("PSN-")) return null;
   return p.konfirmasi_datang ? "sudah" : "belum";
 }
 
