@@ -52,8 +52,18 @@ export const PO_STATUS_META = {
 // Terpisah dari PO_STATUS_META di atas karena "datang" (sudah sampai dari
 // supplier) dan "dibongkar" (sudah dibuka & dicek isinya) itu dua hal beda —
 // barang bisa saja sudah "Selesai" datang tapi kardusnya belum dibuka.
+// SEKARANG OTOMATIS (bukan lagi toggle manual) — mengikuti progres rincian
+// model di "Konfirmasi Datang" (lihat statusBongkar di lib/api.js):
+// - "sebagian" : rincian masih disimpan sebagai Draf (belum semua model &
+//                qty final) — dianggap baru sebagian yang sempat dibongkar &
+//                dicek.
+// - "sudah"    : rincian sudah difinalkan (status pesanan "Selesai") — semua
+//                sudah dibongkar & dicek habis.
+// - "belum"    : belum ada rincian sama sekali (status masih Menunggu/
+//                Sebagian Datang tanpa draf) — belum sempat dibongkar.
 export const BONGKAR_META = {
   belum: { label: "Belum Dibongkar", color: "amber" },
+  sebagian: { label: "Sebagian Dibongkar", color: "sky" },
   sudah: { label: "Sudah Dibongkar", color: "emerald" },
 };
 

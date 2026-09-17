@@ -588,21 +588,28 @@ export function statusKonfirmasiDatang(p) {
   return p.konfirmasi_datang ? "sudah" : "belum";
 }
 
-// Status "bongkar" satu pesanan masuk — sekarang digembok di belakang toggle
-// cepat "Konfirmasi Datang" di atas (BUKAN lagi di belakang jumlah_diterima/
-// statusPesananMasuk), supaya urutannya jelas: pesan -> (barang tiba fisik)
-// -> tandai "Sudah Datang" (cepat, tanpa rincian) -> baru boleh ditandai
-// dibongkar. Mengisi rincian model/qty lewat "Konfirmasi Datang" (form
-// detail) tetap terpisah & bisa menyusul kapan saja, tidak menggerbang
-// bongkar ini secara langsung. Balikin null kalau belum ditandai "Sudah
-// Datang" (atau baris draft/batal) supaya UI bisa sembunyikan badge/aksi
-// bongkar. Kolom `dibongkar` disimpan sebagai boolean di tabel
-// pesanan_masuk — default-nya belum ada (undefined/null) dianggap belum
-// dibongkar, supaya data lama (sebelum fitur ini ada) otomatis masuk ke
-// "Belum Dibongkar".
+// Status "bongkar" satu pesanan masuk — digembok di belakang toggle cepat
+// "Konfirmasi Datang" di atas (BUKAN lagi di belakang jumlah_diterima/
+// statusPesananMasuk saja), supaya urutannya jelas: pesan -> (barang tiba
+// fisik) -> tandai "Sudah Datang" (cepat, tanpa rincian) -> baru boleh
+// dianggap bongkar. Balikin null kalau belum ditandai "Sudah Datang" (atau
+// baris batal) supaya UI bisa sembunyikan badge bongkar.
+// SEKARANG OTOMATIS — bukan toggle manual lagi. Begitu barangnya ditandai
+// "Sudah Datang", status bongkar langsung mengikuti progres rincian model di
+// "Konfirmasi Datang":
+// - status pesanan "draft" (rincian masih disimpan sebagai Draf, belum
+//   difinalkan) -> "sebagian" dibongkar.
+// - status pesanan "selesai" (rincian sudah difinalkan lewat "Konfirmasi &
+//   Lanjut ke Alur Barang") -> "sudah" dibongkar.
+// - selain itu (menunggu/sebagian qty, belum ada rincian sama sekali) ->
+//   "belum" dibongkar.
+// Kolom `dibongkar` (manual, lama) sudah tidak dipakai lagi di sini.
 export function statusBongkar(p) {
   if (statusKonfirmasiDatang(p) !== "sudah") return null;
-  return p.dibongkar ? "sudah" : "belum";
+  const status = statusPesananMasuk(p);
+  if (status === "draft") return "sebagian";
+  if (status === "selesai") return "sudah";
+  return "belum";
 }
 
 // Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, harga, datang }].

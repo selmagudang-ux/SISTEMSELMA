@@ -263,6 +263,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
     });
 
   const jumlahBelumBongkar = semua.filter((p) => statusBongkar(p) === "belum").length;
+  const jumlahSebagianBongkar = semua.filter((p) => statusBongkar(p) === "sebagian").length;
   const jumlahSudahBongkar = semua.filter((p) => statusBongkar(p) === "sudah").length;
   // Laporan kedatangan — dihitung dari SEMUA pesanan aktif (bukan cuma yang
   // sudah datang, beda dari 2 angka bongkar di atas), supaya kelihatan juga
@@ -324,6 +325,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
             <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center gap-1.5">
               <PackageOpen size={11} className="text-emerald-500" />
               <span className="text-emerald-400">{jumlahSudahBongkar} dibongkar</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-sky-400">{jumlahSebagianBongkar} sebagian</span>
               <span className="text-slate-700">·</span>
               <span className="text-amber-400">{jumlahBelumBongkar} belum dibongkar</span>
             </div>
@@ -411,16 +414,9 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                       </td>
                       <td className="px-4 py-2.5">
                         {bongkar ? (
-                          <button
-                            onClick={() => setModal({ type: "toggle-bongkar", item: p })}
-                            title={
-                              bongkar === "sudah"
-                                ? "Klik untuk tandai belum dibongkar"
-                                : "Klik untuk tandai sudah dibongkar"
-                            }
-                          >
+                          <span title="Status bongkar otomatis mengikuti progres rincian model di Konfirmasi Datang">
                             <Badge color={BONGKAR_META[bongkar].color}>{BONGKAR_META[bongkar].label}</Badge>
-                          </button>
+                          </span>
                         ) : (
                           <span className="text-slate-700">—</span>
                         )}

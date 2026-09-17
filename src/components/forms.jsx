@@ -994,7 +994,8 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
           <span className="font-medium">{KONFIRMASI_DATANG_META[akanJadi].label.toLowerCase()}</span>.
           {!tandaiKeDatang && (
             <span className="block text-amber-400/80 text-[11px] mt-1">
-              Kalau baris ini sudah ditandai dibongkar, statusnya akan otomatis kembali ke belum dibongkar juga.
+              Kalau baris ini sudah dibongkar (otomatis), statusnya akan ikut tersembunyi lagi begitu ditandai
+              belum datang.
             </span>
           )}
         </div>

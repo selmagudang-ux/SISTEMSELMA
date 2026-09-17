@@ -1,11 +1,11 @@
 import { useState, lazy, Suspense } from "react";
-import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil, PackageOpen } from "lucide-react";
+import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
-import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, BONGKAR_META, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG } from "../lib/constants";
+import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG } from "../lib/constants";
 import {
   sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusBongkar, statusKonfirmasiDatang,
+  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -3850,14 +3850,13 @@ export default function ModalRouter({
         saving={saving}
         onSubmit={({ ongkir }) =>
           run(async () => {
-            // Kalau ditandai balik ke "belum datang", ikut reset
-            // `dibongkar` ke false juga — logisnya tidak mungkin barang
-            // yang "belum datang" berstatus sudah dibongkar.
-            const body = { konfirmasi_datang: akanJadi === "sudah" };
-            if (akanJadi === "belum") body.dibongkar = false;
+            // Field `dibongkar` (manual, lama) sudah tidak dipakai lagi —
+            // status bongkar sekarang otomatis mengikuti progres rincian
+            // model di "Konfirmasi Datang" (lihat statusBongkar di
+            // lib/api.js), jadi cukup update konfirmasi_datang saja di sini.
             await sb(`pesanan_masuk?id=eq.${p.id}`, {
               method: "PATCH",
-              body: JSON.stringify(body),
+              body: JSON.stringify({ konfirmasi_datang: akanJadi === "sudah" }),
             });
 
             // Ongkir (opsional) — dicatat sebagai Pengeluaran terpisah di
@@ -3926,49 +3925,10 @@ export default function ModalRouter({
     );
   }
 
-  // Tandai satu pesanan (yang barangnya sudah datang) sebagai sudah/belum
-  // dibongkar — cuma toggle satu kolom boolean, tidak menyentuh stok/SKU
-  // sama sekali, jadi aman & bisa dibolak-balik kapan saja.
-  if (modal.type === "toggle-bongkar") {
-    const p = modal.item;
-    const bongkarSaatIni = statusBongkar(p);
-    const akanJadi = bongkarSaatIni === "sudah" ? "belum" : "sudah";
-    return (
-      <ModalShell title="Tandai Status Bongkar" onClose={close}>
-        <div className="flex items-start gap-3 bg-slate-800/60 border border-slate-700 text-slate-300 text-sm px-4 py-3 rounded-lg mb-4">
-          <PackageOpen size={16} className="flex-shrink-0 mt-0.5 text-amber-400" />
-          <div>
-            Riwayat barang datang {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"}
-            {p.kode_bon ? <span className="font-mono text-amber-400"> ({p.kode_bon})</span> : ""} akan ditandai{" "}
-            <span className="font-medium">{BONGKAR_META[akanJadi].label.toLowerCase()}</span>.
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={close}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
-          >
-            Batal
-          </button>
-          <button
-            disabled={saving}
-            onClick={() =>
-              run(async () => {
-                await sb(`pesanan_masuk?id=eq.${p.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ dibongkar: akanJadi === "sudah" }),
-                });
-              }, `Ditandai ${BONGKAR_META[akanJadi].label.toLowerCase()}`)
-            }
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
-          >
-            <PackageOpen size={14} /> Ya, Tandai
-          </button>
-        </div>
-      </ModalShell>
-    );
-  }
+  // Status "bongkar" sekarang OTOMATIS mengikuti progres rincian model di
+  // "Konfirmasi Datang" (lihat statusBongkar di lib/api.js) — modal toggle
+  // manual "sudah/belum dibongkar" yang dulu ada di sini sudah tidak
+  // diperlukan lagi, badge-nya di halaman Barang Datang sekarang read-only.
 
   if (modal.type === "barang-masuk") {
     return (
