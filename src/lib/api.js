@@ -563,6 +563,40 @@ export function statusPesananMasuk(p) {
   return "selesai";
 }
 
+// Status "konfirmasi datang" — toggle CEPAT satu klik ("Ya"/"Tidak") yang
+// menjawab pertanyaan sederhana "barang yang dipesan sudah sampai secara
+// fisik atau belum?", TERPISAH dari form "Konfirmasi Datang" (KonfirmasiDatangForm)
+// yang detail (isi rincian model/qty/harga per pcs & set jumlah_diterima).
+// Sengaja dipisah supaya gudang bisa langsung menandai "sudah datang" begitu
+// barang tiba di depan mata, tanpa harus buka-buka & mengisi form detail
+// dulu — detailnya boleh menyusul kapan saja lewat "Konfirmasi Datang".
+// Kolom `konfirmasi_datang` disimpan sebagai boolean di tabel pesanan_masuk;
+// default belum ada (undefined/null) dianggap "belum". Baris "draft"/"batal"
+// balikin null (belum relevan/tidak akan ditagih) supaya UI bisa sembunyikan
+// toggle-nya.
+export function statusKonfirmasiDatang(p) {
+  const status = statusPesananMasuk(p);
+  if (status === "draft" || status === "batal") return null;
+  return p.konfirmasi_datang ? "sudah" : "belum";
+}
+
+// Status "bongkar" satu pesanan masuk — sekarang digembok di belakang toggle
+// cepat "Konfirmasi Datang" di atas (BUKAN lagi di belakang jumlah_diterima/
+// statusPesananMasuk), supaya urutannya jelas: pesan -> (barang tiba fisik)
+// -> tandai "Sudah Datang" (cepat, tanpa rincian) -> baru boleh ditandai
+// dibongkar. Mengisi rincian model/qty lewat "Konfirmasi Datang" (form
+// detail) tetap terpisah & bisa menyusul kapan saja, tidak menggerbang
+// bongkar ini secara langsung. Balikin null kalau belum ditandai "Sudah
+// Datang" (atau baris draft/batal) supaya UI bisa sembunyikan badge/aksi
+// bongkar. Kolom `dibongkar` disimpan sebagai boolean di tabel
+// pesanan_masuk — default-nya belum ada (undefined/null) dianggap belum
+// dibongkar, supaya data lama (sebelum fitur ini ada) otomatis masuk ke
+// "Belum Dibongkar".
+export function statusBongkar(p) {
+  if (statusKonfirmasiDatang(p) !== "sudah") return null;
+  return p.dibongkar ? "sudah" : "belum";
+}
+
 // Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, harga, datang }].
 // Satu model cuma punya SATU angka qty (bukan qty-dipesan & qty-diterima
 // terpisah) — statusnya cukup boolean "datang" (sudah/belum), karena tiap

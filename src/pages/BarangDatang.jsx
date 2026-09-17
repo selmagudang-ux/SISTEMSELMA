@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, Clock, Pencil, Search, Truck } from "lucide-react";
-import { PageHeader, EmptyState, Badge, formatTanggalID } from "../components/ui";
-import { detailModelPesanan, fmtRp, statusPesananMasuk } from "../lib/api";
-import { PO_STATUS_META } from "../lib/constants";
+import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, PackageOpen, Clock, Pencil, Search, Truck } from "lucide-react";
+import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID } from "../components/ui";
+import { detailModelPesanan, fmtRp, statusPesananMasuk, statusBongkar, statusKonfirmasiDatang } from "../lib/api";
+import { PO_STATUS_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 
 // "Qty Datang" = TOTAL fisik yang datang dari supplier (barang bagus +
 // barang rusak dijumlah jadi satu angka) — bukan cuma yang baik saja.
@@ -238,6 +238,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       s ? { ...s, index: (s.index + delta + s.urls.length) % s.urls.length } : s
     );
   const [halaman, setHalaman] = useState(1);
+  const [showRincianBongkar, setShowRincianBongkar] = useState(false);
   const toggle = (id) =>
     setExpanded((s) => {
       const next = new Set(s);
@@ -252,7 +253,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   // created_at, pesanan yang paling baru DIINPUT selalu tampil paling atas.
   // Fallback ke tanggal_pesan untuk data lama yang mungkin belum punya
   // created_at.
-  const list = [...(pesananMasuk || [])]
+  const semua = [...(pesananMasuk || [])]
     .filter((p) => !p.dibatalkan)
     .sort((a, b) => {
       const waktuA = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -260,6 +261,16 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       if (waktuA !== waktuB) return waktuB - waktuA;
       return a.tanggal_pesan < b.tanggal_pesan ? 1 : -1;
     });
+
+  const jumlahBelumBongkar = semua.filter((p) => statusBongkar(p) === "belum").length;
+  const jumlahSudahBongkar = semua.filter((p) => statusBongkar(p) === "sudah").length;
+  // Laporan kedatangan — dihitung dari SEMUA pesanan aktif (bukan cuma yang
+  // sudah datang, beda dari 2 angka bongkar di atas), supaya kelihatan juga
+  // berapa yang masih menunggu ditandai datang.
+  const jumlahSudahDatang = semua.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
+  const jumlahBelumDatang = semua.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
+
+  const list = semua;
 
   // Kalau halaman aktif jadi kelebihan (mis. sebelumnya di halaman 5 lalu
   // sebagian riwayat dihapus sehingga cuma tersisa 2 halaman), tarik balik
@@ -294,6 +305,33 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         }
       />
 
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+        <StatCard label="Total Pesanan" value={semua.length} icon={Clock} accent="text-slate-200" iconColor="text-slate-400" />
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setShowRincianBongkar((s) => !s)}
+          onKeyDown={(e) => e.key === "Enter" && setShowRincianBongkar((s) => !s)}
+          className="w-full text-left rounded-md-lg bg-md-container-low p-4 shadow-elevation-1 hover:shadow-elevation-2 transition-shadow cursor-pointer"
+          title={showRincianBongkar ? "Klik untuk sembunyikan rincian bongkar" : "Klik untuk lihat rincian bongkar"}
+        >
+          <div className="w-8 h-8 rounded-full flex items-center justify-center mb-2 bg-md-on-surface/[0.06] text-sky-500">
+            <Truck size={15} />
+          </div>
+          <div className="text-2xl font-medium text-sky-400">{jumlahSudahDatang}</div>
+          <div className="text-xs text-md-on-surface-variant mt-1">Sudah Datang</div>
+          {showRincianBongkar && (
+            <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center gap-1.5">
+              <PackageOpen size={11} className="text-emerald-500" />
+              <span className="text-emerald-400">{jumlahSudahBongkar} dibongkar</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-amber-400">{jumlahBelumBongkar} belum dibongkar</span>
+            </div>
+          )}
+        </div>
+        <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
+      </div>
+
       {list.length === 0 ? (
         <EmptyState label="Belum ada barang datang yang dicatat." />
       ) : (
@@ -308,6 +346,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                 <th className="px-4 py-2.5">Supplier</th>
                 <th className="px-4 py-2.5">Jenis</th>
                 <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5">Datang?</th>
+                <th className="px-4 py-2.5">Bongkar</th>
                 <th className="px-4 py-2.5">Bon</th>
                 <th className="px-4 py-2.5">Model</th>
                 <th className="px-4 py-2.5">Qty Datang</th>
@@ -326,6 +366,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                 const statusMeta = PO_STATUS_META[status] || PO_STATUS_META.menunggu;
                 const belumSelesai = status === "menunggu" || status === "sebagian";
                 const isDraft = status === "draft";
+                const konfirmasiDatang = statusKonfirmasiDatang(p);
+                const bongkar = statusBongkar(p);
                 return (
                   <>
                     <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
@@ -348,6 +390,40 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {konfirmasiDatang ? (
+                          <button
+                            onClick={() => setModal({ type: "toggle-konfirmasi-datang", item: p })}
+                            title={
+                              konfirmasiDatang === "sudah"
+                                ? "Klik untuk tandai belum datang"
+                                : "Klik untuk tandai sudah datang"
+                            }
+                          >
+                            <Badge color={KONFIRMASI_DATANG_META[konfirmasiDatang].color}>
+                              {KONFIRMASI_DATANG_META[konfirmasiDatang].label}
+                            </Badge>
+                          </button>
+                        ) : (
+                          <span className="text-slate-700">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {bongkar ? (
+                          <button
+                            onClick={() => setModal({ type: "toggle-bongkar", item: p })}
+                            title={
+                              bongkar === "sudah"
+                                ? "Klik untuk tandai belum dibongkar"
+                                : "Klik untuk tandai sudah dibongkar"
+                            }
+                          >
+                            <Badge color={BONGKAR_META[bongkar].color}>{BONGKAR_META[bongkar].label}</Badge>
+                          </button>
+                        ) : (
+                          <span className="text-slate-700">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         {(() => {
@@ -457,7 +533,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                       <DetailModelPanel
                         key={`${p.id}-detail`}
                         detail={detail}
-                        colSpan={12}
+                        colSpan={14}
                         kodeBon={p.kode_bon}
                         fotoBonUrls={fotoBonUrlsOf(p)}
                         onLihatFoto={lihatFoto}

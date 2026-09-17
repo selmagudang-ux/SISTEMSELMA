@@ -47,6 +47,35 @@ export const PO_STATUS_META = {
   batal: { label: "Dibatalkan", color: "slate" },
 };
 
+// Status "bongkar" — apakah barang yang sudah datang (fisik ada di gudang)
+// sudah dibongkar/dicek satu-satu atau masih tersegel/ditumpuk begitu saja.
+// Terpisah dari PO_STATUS_META di atas karena "datang" (sudah sampai dari
+// supplier) dan "dibongkar" (sudah dibuka & dicek isinya) itu dua hal beda —
+// barang bisa saja sudah "Selesai" datang tapi kardusnya belum dibuka.
+export const BONGKAR_META = {
+  belum: { label: "Belum Dibongkar", color: "amber" },
+  sudah: { label: "Sudah Dibongkar", color: "emerald" },
+};
+
+// Status toggle cepat "Konfirmasi Datang" (lihat statusKonfirmasiDatang di
+// lib/api.js) — jawaban singkat "barang sudah sampai fisik atau belum",
+// dicek SEBELUM baris pesanan boleh ditandai dibongkar. Terpisah dari
+// PO_STATUS_META (yang soal jumlah_diterima vs jumlah_pesan) dan dari
+// BONGKAR_META (yang soal sudah dibuka/dicek atau belum).
+export const KONFIRMASI_DATANG_META = {
+  belum: { label: "Belum Datang", color: "slate" },
+  sudah: { label: "Sudah Datang", color: "sky" },
+};
+
+// Label kategori (kategori_keluar) yang dipakai TETAP/otomatis untuk setiap
+// pembayaran Ongkir yang dicatat lewat "Tandai Status Kedatangan" (Barang
+// Datang) — user tidak perlu (dan tidak bisa) memilih kategori lain di form
+// itu, supaya semua pengeluaran ongkir barang datang konsisten kekelompokkan
+// jadi satu kategori yang sama di Keuangan. Entrinya dibuat otomatis di
+// master_data (tipe kategori_keluar) kalau belum ada — lihat ModalRouter.jsx
+// (modal "toggle-konfirmasi-datang").
+export const KATEGORI_ONGKIR_BARANG_DATANG = "Ongkir Barang Datang";
+
 export const STAGE_ROLE = {
   sku: "gudang",
   rak: "gudang",

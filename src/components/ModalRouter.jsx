@@ -1,17 +1,17 @@
 import { useState, lazy, Suspense } from "react";
-import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil } from "lucide-react";
+import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil, PackageOpen } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
-import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike } from "../lib/constants";
+import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, BONGKAR_META, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG } from "../lib/constants";
 import {
   sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat,
+  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusBongkar, statusKonfirmasiDatang,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm, EditPembayaranForm,
   LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT,
-  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
+  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
@@ -3421,6 +3421,7 @@ export default function ModalRouter({
         onClose={close}
         saving={saving}
         suppliers={suppliers}
+        master={master}
         onSubmit={({ draft, tanggal, fotoBonFiles, existingFotoBonUrls, models, catatan, hargaKesepakatan, keteranganSelisih }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, p.supplier, models.map((m) => m.nama));
@@ -3823,6 +3824,146 @@ export default function ModalRouter({
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
           >
             <Trash2 size={14} /> Ya, Hapus
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  // Toggle CEPAT "Konfirmasi Datang" — jawaban singkat "barang yang dipesan
+  // sudah sampai fisik atau belum", TERPISAH dari form "Konfirmasi Datang"
+  // yang detail (isi rincian model/qty/harga per pcs). Cuma toggle satu
+  // kolom boolean, tidak menyentuh stok/SKU/jumlah_diterima sama sekali,
+  // jadi aman & bisa dibolak-balik kapan saja. Ini gerbang yang harus "Ya"
+  // dulu sebelum baris pesanan boleh ditandai dibongkar (lihat
+  // statusBongkar/statusKonfirmasiDatang, lib/api.js).
+  if (modal.type === "toggle-konfirmasi-datang") {
+    const p = modal.item;
+    const konfirmasiSaatIni = statusKonfirmasiDatang(p);
+    const akanJadi = konfirmasiSaatIni === "sudah" ? "belum" : "sudah";
+    return (
+      <TandaiStatusKedatanganForm
+        pesanan={p}
+        akanJadi={akanJadi}
+        master={master}
+        onClose={close}
+        saving={saving}
+        onSubmit={({ ongkir }) =>
+          run(async () => {
+            // Kalau ditandai balik ke "belum datang", ikut reset
+            // `dibongkar` ke false juga — logisnya tidak mungkin barang
+            // yang "belum datang" berstatus sudah dibongkar.
+            const body = { konfirmasi_datang: akanJadi === "sudah" };
+            if (akanJadi === "belum") body.dibongkar = false;
+            await sb(`pesanan_masuk?id=eq.${p.id}`, {
+              method: "PATCH",
+              body: JSON.stringify(body),
+            });
+
+            // Ongkir (opsional) — dicatat sebagai Pengeluaran terpisah di
+            // Keuangan, TIDAK ikut ditambahkan ke harga_kesepakatan/harga
+            // barang. Rekening/kategori baru (kalau user ketik nama baru
+            // lewat SearchableSelectOrNew) dibuat dulu di master_data
+            // sebelum baris keuangan_transaksi-nya disimpan — pola sama
+            // persis seperti "buatEntriBaru" di handler "keuangan-transaksi".
+            if (ongkir && ongkir.jumlah > 0) {
+              const buatEntriMasterOngkir = async (tipe, kodeInput, label) => {
+                const kode = (kodeInput || suggestKode(label)).trim().toUpperCase();
+                const daftar = master[tipe] || [];
+                if (daftar.some((m) => m.kode === kode)) {
+                  throw new Error(`Kode "${kode}" sudah dipakai — pilih dari daftar atau ganti kode.`);
+                }
+                await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: label.trim() }) });
+                return kode;
+              };
+
+              let rekeningOngkir = ongkir.rekening;
+              if (!rekeningOngkir && ongkir.rekeningBaru) {
+                rekeningOngkir = await buatEntriMasterOngkir("rekening", ongkir.rekeningBaruKode, ongkir.rekeningBaru);
+              }
+
+              // Kategori pengeluaran ongkir SELALU kategori tetap
+              // KATEGORI_ONGKIR_BARANG_DATANG — tidak ada pilihan kategori
+              // lain di form (lihat TandaiStatusKedatanganForm). Cari dulu
+              // entri kategori_keluar yang labelnya sama persis (case-
+              // insensitive) di master; kalau belum ada, baru dibuatkan
+              // sekali di master_data — pola sama seperti kategori tetap
+              // "Pencairan Marketplace" / "Biaya Iklan Marketplace" di modal
+              // "marketplace-pencairan".
+              const daftarKategoriKeluar = master?.kategori_keluar || [];
+              const kategoriOngkirAda = daftarKategoriKeluar.find(
+                (k) => (k.label || "").trim().toLowerCase() === KATEGORI_ONGKIR_BARANG_DATANG.toLowerCase()
+              );
+              let kategoriOngkir;
+              if (kategoriOngkirAda) {
+                kategoriOngkir = kategoriOngkirAda.kode;
+              } else {
+                kategoriOngkir = suggestKode(KATEGORI_ONGKIR_BARANG_DATANG);
+                if (daftarKategoriKeluar.some((k) => k.kode === kategoriOngkir)) {
+                  kategoriOngkir = `${kategoriOngkir}${daftarKategoriKeluar.length + 1}`;
+                }
+                await sb("master_data", {
+                  method: "POST",
+                  body: JSON.stringify({ tipe: "kategori_keluar", kode: kategoriOngkir, label: KATEGORI_ONGKIR_BARANG_DATANG }),
+                });
+              }
+
+              await sb("keuangan_transaksi", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  tipe: "keluar",
+                  rekening: rekeningOngkir,
+                  kategori: kategoriOngkir,
+                  jumlah: ongkir.jumlah,
+                  keterangan: `Ongkir · ${p.kode_bon || ""}${p.supplier ? ` — ${p.supplier}` : ""}`.trim(),
+                }),
+              });
+            }
+          }, `Ditandai ${KONFIRMASI_DATANG_META[akanJadi].label.toLowerCase()}`)
+        }
+      />
+    );
+  }
+
+  // Tandai satu pesanan (yang barangnya sudah datang) sebagai sudah/belum
+  // dibongkar — cuma toggle satu kolom boolean, tidak menyentuh stok/SKU
+  // sama sekali, jadi aman & bisa dibolak-balik kapan saja.
+  if (modal.type === "toggle-bongkar") {
+    const p = modal.item;
+    const bongkarSaatIni = statusBongkar(p);
+    const akanJadi = bongkarSaatIni === "sudah" ? "belum" : "sudah";
+    return (
+      <ModalShell title="Tandai Status Bongkar" onClose={close}>
+        <div className="flex items-start gap-3 bg-slate-800/60 border border-slate-700 text-slate-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <PackageOpen size={16} className="flex-shrink-0 mt-0.5 text-amber-400" />
+          <div>
+            Riwayat barang datang {p.supplier ? <span className="font-medium">{p.supplier}</span> : "ini"}
+            {p.kode_bon ? <span className="font-mono text-amber-400"> ({p.kode_bon})</span> : ""} akan ditandai{" "}
+            <span className="font-medium">{BONGKAR_META[akanJadi].label.toLowerCase()}</span>.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ dibongkar: akanJadi === "sudah" }),
+                });
+              }, `Ditandai ${BONGKAR_META[akanJadi].label.toLowerCase()}`)
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-950 disabled:opacity-50"
+          >
+            <PackageOpen size={14} /> Ya, Tandai
           </button>
         </div>
       </ModalShell>

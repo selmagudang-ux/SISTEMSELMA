@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
-import { isSuperadminLike } from "../lib/constants";
+import { isSuperadminLike, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
 
 // Opsi jenis/asal barang masuk. "Lainnya" membuka input teks bebas supaya
@@ -642,7 +642,7 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
 // sampai datang. Total harga kesepakatan waktu pesan ditampilkan sebagai info
 // di atas (BUKAN harga per pcs — itu memang beda satuan), jadi harga per pcs
 // tiap model tetap harus diisi manual di sini setelah rinciannya jelas.
-export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppliers }) {
+export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppliers, master }) {
   const today = new Date().toISOString().slice(0, 10);
   // harga_kesepakatan = kolom baru (persisten, tidak hilang setelah konfirmasi).
   // Fallback ke detail_model[0].harga_total_pesan untuk pesanan lama yang
@@ -668,6 +668,11 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   );
   const [catatan, setCatatan] = useState(pesanan?.catatan || "");
   const [keteranganSelisih, setKeteranganSelisih] = useState(pesanan?.keterangan_selisih || "");
+  // Catatan: opsi "Bayar Ongkir" SENGAJA tidak ada di form ini — ongkir
+  // sekarang diisi belakangan, sekali per pesanan, lewat "Tandai Status
+  // Kedatangan" (toggle cepat) begitu ditandai sudah datang. Lihat
+  // TandaiStatusKedatanganForm di bawah & handler "toggle-konfirmasi-datang"
+  // di ModalRouter.jsx.
 
   const handleFotoBon = (e) => {
     const files = Array.from(e.target.files || []);
@@ -909,6 +914,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           placeholder="Contoh: no. bon, keterangan tambahan, dll"
         />
       </Field>
+
       {(() => {
         const buatPayload = (draft) => ({
           draft,
@@ -951,6 +957,133 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         nanti dilanjutkan &amp; disimpan sebagai final dari baris berstatus <span className="text-violet-400">Draf</span> di
         daftar.
       </p>
+    </ModalShell>
+  );
+}
+
+// Form "Tandai Status Kedatangan" — toggle CEPAT "barang yang dipesan sudah
+// sampai fisik atau belum" (jawaban singkat, TERPISAH dari form "Konfirmasi
+// Datang" yang detail buat isi rincian model/qty/harga per pcs). Ongkir
+// (opsional) SENGAJA ditaruh di sini, BUKAN di KonfirmasiDatangForm —
+// alasannya: ongkos kirim biasanya baru diketahui/dibayar begitu barangnya
+// benar-benar sampai, jadi lebih pas dicatat bareng aksi "tandai sudah
+// datang" ini daripada dicampur ke rincian isi barang. Ongkir cuma muncul
+// kalau ditandai jadi "sudah" (balik ke "belum" tidak perlu ongkir).
+export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose, onSubmit, saving }) {
+  const [bayarOngkir, setBayarOngkir] = useState(false);
+  const [ongkirJumlah, setOngkirJumlah] = useState("");
+  const [ongkirRekening, setOngkirRekening] = useState("");
+  const [ongkirRekeningBaruKode, setOngkirRekeningBaruKode] = useState("");
+  const [ongkirRekeningBaru, setOngkirRekeningBaru] = useState("");
+  const rekeningOptions = (master?.rekening || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const ongkirRekeningTerisi = !!(ongkirRekening || ongkirRekeningBaru.trim());
+  // Kategori pengeluaran ongkir SENGAJA tidak ada pilihan di sini — selalu
+  // otomatis tercatat ke kategori tetap KATEGORI_ONGKIR_BARANG_DATANG
+  // (dibuatkan/dicocokkan otomatis di ModalRouter.jsx), supaya semua ongkir
+  // barang datang konsisten kekelompokkan jadi satu kategori yang sama.
+  const ongkirValid = !bayarOngkir || (Number(ongkirJumlah) > 0 && ongkirRekeningTerisi);
+  const tandaiKeDatang = akanJadi === "sudah";
+
+  return (
+    <ModalShell title="Tandai Status Kedatangan" onClose={onClose}>
+      <div className="flex items-start gap-3 bg-slate-800/60 border border-slate-700 text-slate-300 text-sm px-4 py-3 rounded-lg mb-4">
+        <Truck size={16} className="flex-shrink-0 mt-0.5 text-sky-400" />
+        <div>
+          Pesanan {pesanan.supplier ? <span className="font-medium">{pesanan.supplier}</span> : "ini"}
+          {pesanan.kode_bon ? <span className="font-mono text-amber-400"> ({pesanan.kode_bon})</span> : ""} akan ditandai{" "}
+          <span className="font-medium">{KONFIRMASI_DATANG_META[akanJadi].label.toLowerCase()}</span>.
+          {!tandaiKeDatang && (
+            <span className="block text-amber-400/80 text-[11px] mt-1">
+              Kalau baris ini sudah ditandai dibongkar, statusnya akan otomatis kembali ke belum dibongkar juga.
+            </span>
+          )}
+        </div>
+      </div>
+
+      {tandaiKeDatang && (
+        <>
+          <Field label="Ongkir/Ongkos Kirim">
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setBayarOngkir(false)}
+                className={`py-2 rounded-lg text-xs font-semibold border ${
+                  !bayarOngkir
+                    ? "bg-slate-800 border-slate-600 text-slate-200"
+                    : "border-slate-800 text-slate-500 hover:border-slate-700"
+                }`}
+              >
+                Tidak Bayar Ongkir
+              </button>
+              <button
+                type="button"
+                onClick={() => setBayarOngkir(true)}
+                className={`py-2 rounded-lg text-xs font-semibold border ${
+                  bayarOngkir
+                    ? "bg-red-500/15 border-red-500/40 text-red-400"
+                    : "border-slate-800 text-slate-500 hover:border-slate-700"
+                }`}
+              >
+                Bayar Ongkir
+              </button>
+            </div>
+          </Field>
+          {bayarOngkir && (
+            <>
+              <Field label="Jumlah Ongkir">
+                <InputRupiah value={ongkirJumlah} onChange={setOngkirJumlah} placeholder="Nominal ongkir yang dibayar" />
+              </Field>
+              <Field label="Sumber Dana">
+                <SearchableSelectOrNew
+                  value={ongkirRekening}
+                  onChange={setOngkirRekening}
+                  newKode={ongkirRekeningBaruKode}
+                  onNewKodeChange={setOngkirRekeningBaruKode}
+                  newLabel={ongkirRekeningBaru}
+                  onNewLabelChange={setOngkirRekeningBaru}
+                  options={rekeningOptions}
+                  placeholder="Cari rekening yang sudah ada…"
+                  newPlaceholder="Atau ketik nama rekening baru"
+                />
+              </Field>
+              <p className="text-[11px] text-slate-500 -mt-2 mb-3">
+                Akan dicatat sebagai Pengeluaran di Keuangan (kategori{" "}
+                <span className="text-slate-400 font-medium">Ongkir Barang Datang</span>) begitu ditandai sudah
+                datang.
+              </p>
+            </>
+          )}
+        </>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={saving || !ongkirValid}
+          onClick={() =>
+            onSubmit({
+              ongkir:
+                tandaiKeDatang && bayarOngkir
+                  ? {
+                      jumlah: Number(ongkirJumlah) || 0,
+                      rekening: ongkirRekening || null,
+                      rekeningBaruKode: ongkirRekeningBaruKode.trim() || null,
+                      rekeningBaru: ongkirRekeningBaru.trim() || null,
+                    }
+                  : null,
+            })
+          }
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 disabled:opacity-50"
+        >
+          <Truck size={14} /> Ya, Tandai
+        </button>
+      </div>
     </ModalShell>
   );
 }
