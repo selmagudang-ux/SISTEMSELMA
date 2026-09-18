@@ -11,7 +11,7 @@ import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm, EditPembayaranForm,
   LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT,
-  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm,
+  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm, BatalkanPesananForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
@@ -1481,6 +1481,15 @@ export default function ModalRouter({
           </Badge>
           {dibatalkan && <Badge color="red">Dibatalkan</Badge>}
         </div>
+        {dibatalkan && p.alasan_batal && (
+          <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+            <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <span className="text-red-400/80">Alasan pembatalan: </span>
+              {p.alasan_batal}
+            </div>
+          </div>
+        )}
         <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
           {[
             ["Pelanggan", pelanggan ? `${pelanggan.nama} (${pelanggan.kode})` : "—"],
@@ -2924,40 +2933,13 @@ export default function ModalRouter({
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
     const sudahDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
     return (
-      <ModalShell title={`Batalkan Pesanan ${p.nomor_pesanan}`} onClose={close}>
-        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
-          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-          <div>
-            Pesanan akan ditandai <span className="font-semibold">Batal</span>. Stok Data Barang yang terpotong
-            dari pesanan ini akan dikembalikan otomatis. Item manual tidak terpengaruh (tidak ikut sistem stok).
-            {sudahDibayar > 0.0001 && (
-              <div className="mt-1.5 text-red-200/90">
-                Pesanan ini sudah dibayar {fmtRp(sudahDibayar)} — jumlah itu akan otomatis dijadikan saldo deposit
-                pelanggan (bukan hangus), karena pesanannya batal.
-              </div>
-            )}
-            {p.jenis_transaksi === "reseller_cekout" && (
-              <div className="mt-1.5 text-red-200/90">
-                Karena ini pesanan Reseller Cekout, uang yang sempat tercatat "cair" dari pesanan ini juga akan
-                dilepas dari saldo Marketplace (toko Shopee "Gudang"), supaya tidak kehitung dobel dengan saldo
-                deposit di atas. Kalau uang itu sudah kadung ikut dicairkan ke Keuangan, riwayat pencairan yang
-                paling baru akan otomatis dikurangi (atau dihapus kalau habis) sebesar nilai pesanan ini.
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={close}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
-          >
-            Batal
-          </button>
-          <button
-            disabled={saving}
-            onClick={() =>
-              run(async () => {
+      <BatalkanPesananForm
+        p={p}
+        sudahDibayar={sudahDibayar}
+        onClose={close}
+        saving={saving}
+        onSubmit={(alasanBatal) =>
+          run(async () => {
                 // Kembalikan stok untuk tiap item yang berasal dari Data Barang.
                 for (const d of detailItems) {
                   if (d.sumber_produk !== "sku" || !d.sku) continue;
@@ -3005,16 +2987,11 @@ export default function ModalRouter({
                 }
                 await sb(`grosir_pesanan?id=eq.${p.id}`, {
                   method: "PATCH",
-                  body: JSON.stringify({ status: "Batal" }),
+                  body: JSON.stringify({ status: "Batal", alasan_batal: alasanBatal }),
                 });
               }, "Pesanan dibatalkan, stok dikembalikan")
             }
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
-          >
-            <Trash2 size={14} /> Ya, Batalkan
-          </button>
-        </div>
-      </ModalShell>
+      />
     );
   }
 

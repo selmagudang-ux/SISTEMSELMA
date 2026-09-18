@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2 } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -4355,6 +4355,101 @@ export function AjukanRestockForm({ sku, onClose, onSubmit, saving }) {
       >
         {saving ? "Mengirim…" : "Ajukan ke Owner"}
       </button>
+    </ModalShell>
+  );
+}
+
+// Konfirmasi "Batalkan Pesanan" — dipakai BARENG oleh Pesanan Grosir,
+// Reseller Toko, dan Reseller Cekout (ketiganya pakai satu tabel & satu
+// modal generik "grosir-batalkan-pesanan" di ModalRouter, tidak peduli
+// jenis_transaksi-nya — lihat catatan panjang di pages/Reseller.jsx).
+// Alasan WAJIB diisi sebelum tombol "Ya, Batalkan" aktif — supaya ada
+// jejak kenapa pesanan dibatalkan (mis. barang retur, salah input, dll),
+// bukan cuma status "Batal" tanpa keterangan. Preset dropdown buat alasan
+// yang paling sering terjadi, plus opsi "Lainnya…" untuk kasus di luar itu
+// supaya tetap fleksibel. Nilai akhirnya (alasanFinal) yang dikirim ke
+// onSubmit disimpan ModalRouter ke kolom `alasan_batal` di grosir_pesanan.
+const ALASAN_BATAL_PESANAN = ["Barang Retur", "Salah Input Pesanan", "Pelanggan Batal / Tidak Jadi", "Stok Tidak Tersedia"];
+
+export function BatalkanPesananForm({ p, sudahDibayar, onClose, onSubmit, saving }) {
+  const [alasan, setAlasan] = useState("");
+  const [alasanLainnya, setAlasanLainnya] = useState("");
+  const pakaiLainnya = alasan === "__lainnya__";
+  const alasanFinal = (pakaiLainnya ? alasanLainnya : alasan).trim();
+  const bisaLanjut = alasanFinal.length > 0;
+
+  return (
+    <ModalShell title={`Batalkan Pesanan ${p.nomor_pesanan}`} onClose={onClose}>
+      <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+        <div>
+          Pesanan akan ditandai <span className="font-semibold">Batal</span>. Stok Data Barang yang terpotong
+          dari pesanan ini akan dikembalikan otomatis. Item manual tidak terpengaruh (tidak ikut sistem stok).
+          {sudahDibayar > 0.0001 && (
+            <div className="mt-1.5 text-red-200/90">
+              Pesanan ini sudah dibayar {fmtRp(sudahDibayar)} — jumlah itu akan otomatis dijadikan saldo deposit
+              pelanggan (bukan hangus), karena pesanannya batal.
+            </div>
+          )}
+          {p.jenis_transaksi === "reseller_cekout" && (
+            <div className="mt-1.5 text-red-200/90">
+              Karena ini pesanan Reseller Cekout, uang yang sempat tercatat "cair" dari pesanan ini juga akan
+              dilepas dari saldo Marketplace (toko Shopee "Gudang"), supaya tidak kehitung dobel dengan saldo
+              deposit di atas. Kalau uang itu sudah kadung ikut dicairkan ke Keuangan, riwayat pencairan yang
+              paling baru akan otomatis dikurangi (atau dihapus kalau habis) sebesar nilai pesanan ini.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Field label="Alasan Pembatalan (wajib diisi)">
+        <select
+          className={inputClass}
+          value={pakaiLainnya ? "__lainnya__" : alasan}
+          onChange={(e) => {
+            setAlasan(e.target.value);
+            if (e.target.value !== "__lainnya__") setAlasanLainnya("");
+          }}
+        >
+          <option value="">— Pilih alasan —</option>
+          {ALASAN_BATAL_PESANAN.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+          <option value="__lainnya__">Lainnya…</option>
+        </select>
+      </Field>
+
+      {pakaiLainnya && (
+        <Field label="Tuliskan alasannya">
+          <input
+            className={inputClass}
+            value={alasanLainnya}
+            onChange={(e) => setAlasanLainnya(e.target.value)}
+            placeholder="Contoh: barang rusak di gudang, dobel input, dll"
+            autoFocus
+          />
+        </Field>
+      )}
+
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={saving || !bisaLanjut}
+          onClick={() => onSubmit(alasanFinal)}
+          title={!bisaLanjut ? "Pilih atau isi alasan pembatalan dulu" : undefined}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+        >
+          <Trash2 size={14} /> Ya, Batalkan
+        </button>
+      </div>
     </ModalShell>
   );
 }
