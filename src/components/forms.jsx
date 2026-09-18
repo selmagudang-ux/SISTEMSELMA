@@ -11,6 +11,34 @@ import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } fr
 // dipakai juga di PesananMasukForm (Barang Datang) — jenisnya sama persis.
 export const JENIS_BARANG_MASUK = ["Pembelian", "Retur", "Lainnya"];
 
+// Parser "Kode Cepat" harga Grosir/Tengah/Ecer — dipakai di SkuEntryForm
+// (Buat SKU satuan) & BuatSkuBanyakForm (Buat SKU Banyak Sekaligus) supaya
+// dua form itu punya perilaku persis sama, tidak duplikat logika terpisah.
+// Terima digit genap (mis. "1020" -> 2 bagian "10"/"20") ATAU dua angka
+// dipisah spasi/strip/koma/slash (mis. "10 20", "100-20" untuk harga yang
+// jumlah digitnya beda-beda). Grosir & Tengah diambil langsung dari kode x
+// 1000, Ecer SELALU dihitung otomatis = Tengah x 2 (tidak pernah diketik
+// manual di kode). Balikin null kalau raw tidak bisa di-parse (biar input
+// manual di 3 kotak Grosir/Tengah/Ecer tidak ikut ketimpa dengan nilai
+// yang salah).
+export function parseKodeCepatHarga(raw) {
+  const bySeparator = (raw || "").split(/[\s\-/,]+/).filter(Boolean);
+  let parts = null;
+  if (bySeparator.length === 2 && bySeparator.every((p) => /^\d+$/.test(p))) {
+    parts = bySeparator;
+  } else {
+    const digitsOnly = (raw || "").replace(/\D/g, "");
+    if (digitsOnly.length > 0 && digitsOnly.length % 2 === 0) {
+      const chunkLen = digitsOnly.length / 2;
+      parts = [digitsOnly.slice(0, chunkLen), digitsOnly.slice(chunkLen)];
+    }
+  }
+  if (!parts) return null;
+  const [g, t] = parts.map((p) => Number(p) * 1000);
+  if (![g, t].every((n) => Number.isFinite(n))) return null;
+  return { grosir: g, tengah: t, ecer: t * 2 };
+}
+
 // Datalist HTML bersama untuk kolom Supplier/Toko di form-form Barang Datang
 // (Pesan Barang, Input Barang Datang, Edit Riwayat) — dropdown saran diambil
 // dari tabel "suppliers" (master data, lihat SupplierForm & ModalRouter
@@ -1360,24 +1388,11 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
   const [kodeCepat, setKodeCepat] = useState("");
   const applyKodeCepat = (raw) => {
     setKodeCepat(raw);
-    const bySeparator = raw.split(/[\s\-/,]+/).filter(Boolean);
-    let parts = null;
-    if (bySeparator.length === 2 && bySeparator.every((p) => /^\d+$/.test(p))) {
-      parts = bySeparator;
-    } else {
-      const digitsOnly = raw.replace(/\D/g, "");
-      if (digitsOnly.length > 0 && digitsOnly.length % 2 === 0) {
-        const chunkLen = digitsOnly.length / 2;
-        parts = [digitsOnly.slice(0, chunkLen), digitsOnly.slice(chunkLen)];
-      }
-    }
-    if (parts) {
-      const [g, t] = parts.map((p) => Number(p) * 1000);
-      if ([g, t].every((n) => Number.isFinite(n))) {
-        setGrosirManual(g);
-        setTengahManual(t);
-        setEcerManual(t * 2);
-      }
+    const hasil = parseKodeCepatHarga(raw);
+    if (hasil) {
+      setGrosirManual(hasil.grosir);
+      setTengahManual(hasil.tengah);
+      setEcerManual(hasil.ecer);
     }
   };
 
@@ -1912,7 +1927,7 @@ function barisSkuBaru() {
     warna: "", ukuran: "",
     jumlah: 1,
     hargaAsli: "",
-    hargaManual: false, grosirManual: "", tengahManual: "", ecerManual: "",
+    hargaManual: false, kodeCepat: "", grosirManual: "", tengahManual: "", ecerManual: "",
     fotoFile: null, fotoPreview: null,
     rakCode: "",
     // Status baca-otomatis dari foto (lihat handleFoto): "idle" | "membaca" | "selesai" | "gagal"
@@ -2379,11 +2394,32 @@ export function BuatSkuBanyakForm({ master, settings, skuMaster, rakList, penemp
                 </label>
               )}
               {isSuperadmin && r.hargaManual && (
-                <div className="grid grid-cols-3 gap-x-2">
-                  <Field label="Grosir"><InputRupiah value={r.grosirManual} onChange={(v) => updateRow(idx, { grosirManual: v })} /></Field>
-                  <Field label="Tengah"><InputRupiah value={r.tengahManual} onChange={(v) => updateRow(idx, { tengahManual: v })} /></Field>
-                  <Field label="Ecer"><InputRupiah value={r.ecerManual} onChange={(v) => updateRow(idx, { ecerManual: v })} /></Field>
-                </div>
+                <>
+                  <Field label="Kode cepat (opsional)">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className={inputClass}
+                      value={r.kodeCepat}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const hasil = parseKodeCepatHarga(raw);
+                        updateRow(idx, {
+                          kodeCepat: raw,
+                          ...(hasil
+                            ? { grosirManual: hasil.grosir, tengahManual: hasil.tengah, ecerManual: hasil.ecer }
+                            : {}),
+                        });
+                      }}
+                      placeholder="mis. 1020 → Grosir 10rb, Tengah 20rb, Ecer 40rb (otomatis 2x Tengah)"
+                    />
+                  </Field>
+                  <div className="grid grid-cols-3 gap-x-2">
+                    <Field label="Grosir"><InputRupiah value={r.grosirManual} onChange={(v) => updateRow(idx, { grosirManual: v })} /></Field>
+                    <Field label="Tengah"><InputRupiah value={r.tengahManual} onChange={(v) => updateRow(idx, { tengahManual: v })} /></Field>
+                    <Field label="Ecer"><InputRupiah value={r.ecerManual} onChange={(v) => updateRow(idx, { ecerManual: v })} /></Field>
+                  </div>
+                </>
               )}
               {!r.hargaManual && settings && Number(r.hargaAsli) > 0 && (
                 <p className="text-[11px] text-slate-500">
