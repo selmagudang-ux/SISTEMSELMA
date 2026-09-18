@@ -499,9 +499,18 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                           )}
                           {!isDraft && belumSelesai && (
                             <button
-                              onClick={() => setModal({ type: "konfirmasi-datang", item: p })}
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300"
-                              title="Isi rincian model & qty yang datang"
+                              onClick={() => konfirmasiDatang === "sudah" && setModal({ type: "konfirmasi-datang", item: p })}
+                              disabled={konfirmasiDatang !== "sudah"}
+                              className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
+                                konfirmasiDatang === "sudah"
+                                  ? "text-amber-400 hover:text-amber-300"
+                                  : "text-slate-600 cursor-not-allowed"
+                              }`}
+                              title={
+                                konfirmasiDatang === "sudah"
+                                  ? "Isi rincian model & qty yang datang"
+                                  : 'Tandai "Sudah Datang" dulu di kolom Datang? sebelum mengisi rincian'
+                              }
                             >
                               <PackageCheck size={13} /> Konfirmasi Datang
                             </button>
