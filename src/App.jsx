@@ -42,6 +42,7 @@ const Reseller = lazy(() => import("./pages/Reseller"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
 const Absensi = lazy(() => import("./pages/Absensi"));
+const Panduan = lazy(() => import("./pages/Panduan"));
 import { FormAbsen } from "./pages/AbsenKaryawan";
 import { listAbsensi, listKaryawan } from "./lib/absensi";
 
@@ -932,6 +933,7 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
               )}
+              {nav.menu === "panduan" && <Panduan session={session} />}
             </Suspense>
           )}
         </main>
