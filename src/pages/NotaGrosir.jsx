@@ -140,21 +140,29 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
 
       <table className="w-full border-collapse">
         <tbody>
-          {(detailItems || []).map((d, i) => (
-            <Fragment key={d.id}>
-              <tr>
-                <td colSpan={2} className="p-0">
-                  {i + 1}. {d.nama_produk}
-                </td>
-              </tr>
-              <tr>
-                <td className="p-0 pl-3">
-                  {d.qty} x {fmtRp(d.harga)}
-                </td>
-                <td className="p-0 text-right">{fmtRp(d.subtotal)}</td>
-              </tr>
-            </Fragment>
-          ))}
+          {(() => {
+            // Lebar nomor urut mengikuti jumlah digit terbanyak (mis. kalau ada
+            // 10+ item, nomor 1-9 diberi padding spasi di depan supaya "1." dan
+            // "10." sama lebar — baris qty di bawahnya jadi selalu sejajar
+            // persis, tidak cuma pas waktu itemnya masih 1 digit semua).
+            const totalDigits = String((detailItems || []).length).length;
+            const indentCh = totalDigits + 2; // + ". " setelah nomor
+            return (detailItems || []).map((d, i) => (
+              <Fragment key={d.id}>
+                <tr>
+                  <td colSpan={2} className="p-0">
+                    {String(i + 1).padStart(totalDigits, "\u00A0")}. {d.nama_produk}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="p-0" style={{ paddingLeft: `${indentCh}ch` }}>
+                    {d.qty} x {fmtRp(d.harga)}
+                  </td>
+                  <td className="p-0 text-right">{fmtRp(d.subtotal)}</td>
+                </tr>
+              </Fragment>
+            ));
+          })()}
         </tbody>
       </table>
 
