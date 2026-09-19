@@ -85,9 +85,9 @@ function RekapAbsensi({ showToast, role }) {
       .catch(() => {});
   }, [bolehEditJam]);
 
-  const load = async () => {
+  const load = async (force = false) => {
     try {
-      const [raw, kar] = await Promise.all([listAbsensi(), listKaryawan()]);
+      const [raw, kar] = await Promise.all([listAbsensi(force), listKaryawan(force)]);
       setRows(raw);
       setKaryawanList(kar);
     } catch (e) {
@@ -127,7 +127,7 @@ function RekapAbsensi({ showToast, role }) {
     try {
       await hapusAbsensiHarian(r.idKaryawan, r.tanggal);
       showToast?.("Data absen dihapus.");
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal menghapus data absen", "err");
     }
@@ -190,7 +190,7 @@ function RekapAbsensi({ showToast, role }) {
         showToast?.(`Absensi ${manualFor.nama} tanggal ${manualFor.tanggal} ditandai ${manualFor.tipe}.`);
       }
       setManualFor(null);
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan absensi manual", "err");
     } finally {
@@ -211,7 +211,7 @@ function RekapAbsensi({ showToast, role }) {
       await hapusAbsensiHarian(manualFor.idKaryawan, manualFor.tanggal);
       showToast?.("Tanda dihapus.");
       setManualFor(null);
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal menghapus", "err");
     } finally {
@@ -249,7 +249,7 @@ function RekapAbsensi({ showToast, role }) {
       });
       showToast?.(`Jam ${editJamFor.tipe === "Pulang" ? "pulang" : "masuk"} ${editJamFor.nama} tanggal ${editJamFor.tanggal} diubah jadi ${editJamFor.jamBaru}.`);
       setEditJamFor(null);
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || `Gagal mengubah jam ${editJamFor.tipe === "Pulang" ? "pulang" : "masuk"}`, "err");
     } finally {
@@ -784,9 +784,9 @@ function DataKaryawan({ showToast, role }) {
   const [editNamaFor, setEditNamaFor] = useState(null); // {id, nama, value}
   const [savingNama, setSavingNama] = useState(false);
 
-  const load = async () => {
+  const load = async (force = false) => {
     try {
-      setList(await listKaryawan());
+      setList(await listKaryawan(force));
     } catch (e) {
       showToast?.(e.message || "Gagal memuat data karyawan", "err");
     }
@@ -807,7 +807,7 @@ function DataKaryawan({ showToast, role }) {
       await tambahKaryawan(form);
       setForm({ id_karyawan: "", nama: "", password: "" });
       showToast?.("Karyawan berhasil ditambahkan.");
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal menambah karyawan", "err");
     } finally {
@@ -818,7 +818,7 @@ function DataKaryawan({ showToast, role }) {
   const toggleAktif = async (k) => {
     try {
       await setAktifKaryawan(k.id, !k.aktif);
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal mengubah status", "err");
     }
@@ -829,7 +829,7 @@ function DataKaryawan({ showToast, role }) {
     try {
       await hapusKaryawan(k.id);
       showToast?.("Karyawan dihapus.");
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal menghapus", "err");
     }
@@ -859,7 +859,7 @@ function DataKaryawan({ showToast, role }) {
       await updateNamaKaryawan(editNamaFor.id, editNamaFor.value.trim());
       showToast?.(`Nama berhasil diubah menjadi "${editNamaFor.value.trim()}".`);
       setEditNamaFor(null);
-      load();
+      load(true);
     } catch (e) {
       showToast?.(e.message || "Gagal mengubah nama", "err");
     } finally {

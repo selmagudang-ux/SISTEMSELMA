@@ -85,8 +85,23 @@ export async function gantiPasswordKaryawan(karyawanId, passwordLama, passwordBa
 }
 
 // ---- Kelola data karyawan (dipakai di halaman Absensi, khusus superadmin/owner) ----
-export async function listKaryawan() {
-  return sbAll("karyawan?select=*&order=nama");
+// Cache singkat (pola sama seperti di App.jsx) — tab "Rekap Absensi" & "Data
+// Karyawan" di-unmount tiap kali pindah ke tab lain (lihat Absensi.jsx),
+// jadi tanpa ini, tiap balik ke tab itu narik ulang SELURUH tabel `absensi`
+// dari nol (tabel ini nambah terus tiap hari, tidak pernah berkurang).
+// force=true (dipakai tiap kali setelah simpan/hapus/edit) selalu lewati
+// cache supaya perubahan sendiri langsung kelihatan.
+const ABSEN_CACHE_TTL_MS = 45_000;
+let _karyawanCache = { data: null, at: 0 };
+let _absensiCache = { data: null, at: 0 };
+
+export async function listKaryawan(force = false) {
+  if (!force && _karyawanCache.data && Date.now() - _karyawanCache.at < ABSEN_CACHE_TTL_MS) {
+    return _karyawanCache.data;
+  }
+  const data = await sbAll("karyawan?select=*&order=nama");
+  _karyawanCache = { data, at: Date.now() };
+  return data;
 }
 
 export async function tambahKaryawan({ id_karyawan, nama, password }) {
@@ -273,8 +288,13 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings, shift })
   };
 }
 
-export async function listAbsensi() {
-  return sbAll("absensi?select=*&order=tanggal.desc,jam.desc");
+export async function listAbsensi(force = false) {
+  if (!force && _absensiCache.data && Date.now() - _absensiCache.at < ABSEN_CACHE_TTL_MS) {
+    return _absensiCache.data;
+  }
+  const data = await sbAll("absensi?select=*&order=tanggal.desc,jam.desc");
+  _absensiCache = { data, at: Date.now() };
+  return data;
 }
 
 // Hapus satu baris rekap harian (= hapus SEMUA baris mentah `absensi` milik

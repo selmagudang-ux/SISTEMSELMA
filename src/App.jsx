@@ -298,7 +298,7 @@ function MainApp({ session, onLogout }) {
         method: "PATCH",
         body: JSON.stringify(patches[stage]),
       });
-      await loadCore(); // cuma tabel items yang berubah — bagian dari core
+      await loadCore(true); // cuma tabel items yang berubah — bagian dari core
       showToast(messages[stage]);
     } catch (e) {
       showToast(e.message || "Gagal menyimpan", "err");
@@ -320,10 +320,10 @@ function MainApp({ session, onLogout }) {
         prefer: "return=representation,resolution=merge-duplicates",
         body: JSON.stringify(keys.map((k) => ({ notif_key: k }))),
       });
-      await loadCore(); // cuma tabel marketplace_notif_ack yang berubah — bagian dari core
+      await loadCore(true); // cuma tabel marketplace_notif_ack yang berubah — bagian dari core
     } catch (e) {
       if (e.pgCode === "23505") {
-        await loadCore();
+        await loadCore(true);
         return;
       }
       showToast(e.message || "Gagal menyimpan konfirmasi", "err");
@@ -356,7 +356,26 @@ function MainApp({ session, onLogout }) {
   // supaya data yang direfresh setelah SIMPAN tetap lengkap seperti semula,
   // TIDAK ada perubahan di situ. Yang berubah cuma pemicu OTOMATIS saat
   // pindah-pindah menu (lihat loadForMenu & fungsi navigate di bawah).
-  const loadCore = useCallback(async () => {
+  // Cache singkat per grup data — supaya pindah-pindah menu dalam waktu
+  // dekat (mis. Dashboard -> Stok -> Dashboard lagi dalam <1 menit) tidak
+  // narik ulang tabel yang sama dari nol tiap kali, padahal datanya baru
+  // saja diambil. TTL sengaja pendek (bukan cache permanen) supaya sistem
+  // tetap terasa "segar" untuk pemakaian barengan banyak staf — cuma
+  // menghapus pemborosan pindah-menu yang terjadi dalam hitungan detik,
+  // BUKAN mengubah freshness untuk penggunaan normal sehari-hari.
+  // Aksi yang menulis data (quickAdvance, ackNotif, & semua form lewat
+  // reload={loadAll}) selalu lewat parameter force=true di bawah, jadi
+  // TIDAK PERNAH kena skip cache ini — user yang baru saja menyimpan
+  // selalu langsung lihat data terbaru miliknya sendiri.
+  const CACHE_TTL_MS = 45_000;
+  const lastLoadedRef = useRef({});
+  const masihSegar = (kunci) => Date.now() - (lastLoadedRef.current[kunci] || 0) < CACHE_TTL_MS;
+  const tandaiSudahDimuat = (kunci) => {
+    lastLoadedRef.current[kunci] = Date.now();
+  };
+
+  const loadCore = useCallback(async (force = false) => {
+    if (!force && masihSegar("core")) return;
     const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
       sbAll("items?select=*&order=created_at.desc"),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
@@ -390,9 +409,11 @@ function MainApp({ session, onLogout }) {
     setBarangRusak(barangRusakRes || []);
     setMarketplaceNotifAck(notifAckRes || []);
     setPengajuanRestock(pengajuanRestockRes || []);
+    tandaiSudahDimuat("core");
   }, []);
 
-  const loadGrosir = useCallback(async () => {
+  const loadGrosir = useCallback(async (force = false) => {
+    if (!force && masihSegar("grosir")) return;
     const [pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes] = await Promise.all([
       sbAll("grosir_pelanggan?select=*&order=nama"),
       sbAll("grosir_toko?select=*&order=nama_toko"),
@@ -409,34 +430,46 @@ function MainApp({ session, onLogout }) {
     setDetailPesananGrosir(detailPesananRes || []);
     setPembayaranGrosir(pembayaranRes || []);
     setDepositGrosir(depositRes || []);
+    tandaiSudahDimuat("grosir");
   }, []);
 
-  const loadKeuangan = useCallback(async () => {
+  const loadKeuangan = useCallback(async (force = false) => {
+    if (!force && masihSegar("keuangan")) return;
     const keuanganRes = await sbAll("keuangan_transaksi?select=*&order=tanggal.desc");
     setKeuanganTransaksi(keuanganRes || []);
+    tandaiSudahDimuat("keuangan");
   }, []);
 
   // Data modul Marketplace (Shopee/TikTok/Lazada) — lihat catatan lengkap di
   // saldoMarketplace() (lib/api.js). Tabel sendiri, terpisah dari
   // keuangan_transaksi, cuma ditarik kalau lagi buka menu ini (atau dashboard).
-  const loadMarketplace = useCallback(async () => {
+  const loadMarketplace = useCallback(async (force = false) => {
+    if (!force && masihSegar("marketplace")) return;
     const res = await sbAll("marketplace_transaksi?select=*&order=tanggal.desc");
     setMarketplaceTransaksi(res || []);
+    tandaiSudahDimuat("marketplace");
   }, []);
 
-  const loadAbsensi = useCallback(async () => {
-    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(), listKaryawan()]);
+  const loadAbsensi = useCallback(async (force = false) => {
+    if (!force && masihSegar("absensi")) return;
+    // Teruskan `force` ke listAbsensi/listKaryawan juga (lib/absensi.js
+    // sekarang punya cache singkat sendiri) — supaya "Muat ulang" manual
+    // benar-benar narik data baru, bukan ikut kena cache 45 detik di sana.
+    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(force), listKaryawan(force)]);
     setAbsensiRows(absensiRes || []);
     setKaryawanList(karyawanRes || []);
+    tandaiSudahDimuat("absensi");
   }, []);
 
   // Bungkus 1+ loader di atas jadi satu pemanggilan dengan indikator
   // loading & error yang seragam — persis perilaku loadAll() yang lama.
-  const runLoaders = useCallback(async (...loaders) => {
+  // `force` diteruskan ke tiap loader supaya bisa lewati cache di atas
+  // kalau memang perlu data yang benar-benar baru (lihat loadAll).
+  const runLoaders = useCallback(async (loaders, force = false) => {
     setLoading(true);
     setError(null);
     try {
-      await Promise.all(loaders.map((fn) => fn()));
+      await Promise.all(loaders.map((fn) => fn(force)));
     } catch (e) {
       setError(e.message || "Gagal memuat data");
     } finally {
@@ -444,8 +477,11 @@ function MainApp({ session, onLogout }) {
     }
   }, []);
 
+  // loadAll SELALU force (bypass cache) — dipakai tombol "Muat ulang" manual
+  // dan reload={loadAll} setelah form/modal disimpan, jadi hasil simpanan
+  // sendiri selalu langsung kelihatan, tidak pernah ketahan cache 45 detik.
   const loadAll = useCallback(
-    () => runLoaders(loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi),
+    () => runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi], true),
     [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
   );
 
@@ -453,31 +489,33 @@ function MainApp({ session, onLogout }) {
   // butuh semuanya (dia nampilin ringkasan tiap modul dalam beberapa tab),
   // Grosir & Keuangan cuma butuh datanya sendiri (+ core buat badge &
   // data gabungan seperti skuMasterGrosir), sisanya cukup loadCore saja.
+  // TIDAK pakai force — kalau grup datanya baru saja dimuat (<45 detik
+  // lalu) lewat pindah menu sebelumnya, loader di atas otomatis skip.
   const loadForMenu = useCallback(
     (menu) => {
-      if (menu === "dashboard") return runLoaders(loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi);
-      if (menu === "grosir") return runLoaders(loadCore, loadGrosir);
+      if (menu === "dashboard") return runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]);
+      if (menu === "grosir") return runLoaders([loadCore, loadGrosir]);
       // Pelanggan dulunya sub-menu "grosir" (jadi datanya otomatis ikut ke-load
       // lewat baris di atas) — sekarang menu sendiri, jadi didaftarkan terpisah
       // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
-      if (menu === "pelanggan") return runLoaders(loadCore, loadGrosir);
+      if (menu === "pelanggan") return runLoaders([loadCore, loadGrosir]);
       // Sama seperti "pelanggan" di atas — "toko" (Toko Pengirim) juga dulu
       // sub-menu "grosir", sekarang menu sendiri, jadi didaftarkan terpisah
       // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
-      if (menu === "toko") return runLoaders(loadCore, loadGrosir);
+      if (menu === "toko") return runLoaders([loadCore, loadGrosir]);
       // loadMarketplace juga ditarik di sini supaya Laporan Keuangan bisa
       // menampilkan info tambahan "Iklan Marketplace" periode berjalan
       // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
-      if (menu === "keuangan") return runLoaders(loadCore, loadKeuangan, loadMarketplace);
+      if (menu === "keuangan") return runLoaders([loadCore, loadKeuangan, loadMarketplace]);
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
-      if (menu === "toko-offline") return runLoaders(loadCore, loadKeuangan);
+      if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan]);
       // Marketplace butuh master (rekening, buat form Pencairan) + data
       // marketplace_transaksi sendiri. loadKeuangan TIDAK perlu ditarik di
       // sini — pencairan cuma nulis satu baris baru ke keuangan_transaksi,
       // tidak perlu baca isinya dulu.
-      if (menu === "penjualan-marketplace") return runLoaders(loadCore, loadMarketplace);
-      return runLoaders(loadCore);
+      if (menu === "penjualan-marketplace") return runLoaders([loadCore, loadMarketplace]);
+      return runLoaders([loadCore]);
     },
     [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
   );
