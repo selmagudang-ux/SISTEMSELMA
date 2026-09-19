@@ -140,11 +140,11 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
 
       <table className="w-full border-collapse">
         <tbody>
-          {(detailItems || []).map((d) => (
+          {(detailItems || []).map((d, i) => (
             <Fragment key={d.id}>
               <tr>
                 <td colSpan={2} className="p-0">
-                  {d.nama_produk}
+                  {i + 1}. {d.nama_produk}
                 </td>
               </tr>
               <tr>
