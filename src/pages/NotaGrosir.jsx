@@ -148,7 +148,7 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
                 </td>
               </tr>
               <tr>
-                <td className="p-0">
+                <td className="p-0 pl-3">
                   {d.qty} x {fmtRp(d.harga)}
                 </td>
                 <td className="p-0 text-right">{fmtRp(d.subtotal)}</td>
