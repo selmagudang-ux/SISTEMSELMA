@@ -1961,6 +1961,7 @@ export default function ModalRouter({
     const detailItems = (detailPesananGrosir || []).filter((d) => d.pesanan_id === p.id);
     const totalDibayar = totalDibayarPesanan(p.id, pembayaranGrosir);
     const sisaHutang = sisaHutangPesanan(p, pembayaranGrosir);
+    const pembayaran = (pembayaranGrosir || []).filter((b) => b.pesanan_id === p.id);
     return (
       <Suspense fallback={<ModalLoading onClose={close} />}>
         <NotaPesananModal
@@ -1969,6 +1970,7 @@ export default function ModalRouter({
           detailItems={detailItems}
           totalDibayar={totalDibayar}
           sisaHutang={sisaHutang}
+          pembayaran={pembayaran}
           onClose={close}
         />
       </Suspense>

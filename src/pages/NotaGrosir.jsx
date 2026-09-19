@@ -31,7 +31,7 @@ const ALAMAT_TOKO = [
 //    tingginya oleh JS, baru "dipindah" ke posisi normal khusus saat print
 //    lewat CSS media print (bukan lewat re-render React).
 // =========================================================
-export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, onClose }) {
+export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, onClose }) {
   const p = pesanan;
   const printRef = useRef(null);
   const [printing, setPrinting] = useState(false);
@@ -72,7 +72,7 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
             </button>
           </div>
           <div className="p-5 flex justify-center bg-slate-100">
-            <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} />
+            <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} />
           </div>
           <div className="px-5 pb-5 pt-3">
             <button
@@ -102,7 +102,7 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
           }
         `}</style>
         <div ref={printRef} className="ss-nota-print">
-          <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} />
+          <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} />
         </div>
       </div>
     </Fragment>
@@ -111,7 +111,17 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
 
 // Isi nota — dipakai baik untuk preview di layar maupun untuk area cetak
 // sesungguhnya, supaya keduanya selalu identik.
-function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang }) {
+function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran }) {
+  // Field metode_bayar di header pesanan cuma keisi kalau pesanan lunas
+  // LANGSUNG saat dibuat. Kalau lunasnya belakangan lewat "Catat Pembayaran"
+  // (cicil/nyusul), header itu tetap kosong walau status_bayar sudah
+  // "Lunas" — makanya di struk kelihatan "Metode: -" padahal sudah lunas.
+  // Di sini diambil dari riwayat grosir_pembayaran pesanan ini sebagai
+  // cadangan; kalau metodenya campur (mis. sebagian Cash, sebagian
+  // Transfer), semua metode unik digabung dengan koma.
+  const metodeDariRiwayat = [...new Set((pembayaran || []).map((b) => b.metode_bayar).filter(Boolean))].join(", ");
+  const metodeTampil = p.metode_bayar || metodeDariRiwayat || "—";
+
   return (
     <div className="font-mono text-[12px] leading-snug text-black bg-white" style={{ width: "72mm" }}>
       <h2 className="text-center text-[15px] font-bold my-1 tracking-wide">{NAMA_TOKO}</h2>
@@ -180,7 +190,7 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang 
       <div className="ss-nota-line border-t border-dashed border-black my-1.5" />
 
       <p className="my-0.5">
-        Status: {p.status_bayar} | Metode: {p.metode_bayar || "—"}
+        Status: {p.status_bayar} | Metode: {metodeTampil}
       </p>
       {sisaHutang > 0 && (
         <p className="my-0.5">
