@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   Search, Plus, Minus, Pencil, Trash2, X, ShoppingCart,
   TrendingUp, Wallet, Download, CalendarRange, BarChart3, Receipt,
-  FileClock, Landmark, AlertTriangle,
+  FileClock, Landmark, AlertTriangle, ChevronDown,
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal, InputRupiah } from "../components/ui";
 import {
@@ -637,36 +637,109 @@ function LaporanGrosir({ pesananGrosir, pelangganGrosir, pembayaranGrosir }) {
 
       <GrafikOmsetGrosir mode={mode} data={data} />
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-5">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
-          Pesanan pada Rentang Ini ({terbaru.length})
-        </div>
-        {terbaru.length === 0 ? (
-          <div className="p-6"><EmptyState label="Belum ada pesanan pada rentang tanggal ini." /></div>
-        ) : (
-          <div className="max-h-[420px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <tbody>
-                {terbaru.map((p) => (
-                  <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">{p.tanggal}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-amber-400 whitespace-nowrap">{p.nomor_pesanan}</td>
-                    <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                    <td className="px-4 py-2.5">
-                      <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
-                        {p.status_bayar}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-slate-200">{fmtRp(p.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <LaporanGrosirPerPelanggan terbaru={terbaru} namaPelanggan={namaPelanggan} pelangganGrosir={pelangganGrosir} />
 
       <LaporanBulananTahunanGrosir pesananGrosir={pesananGrosirSaja} />
+    </div>
+  );
+}
+
+// Daftar pesanan pada rentang tanggal dikelompokkan per pelanggan (bukan
+// list pesanan mentah) — tiap baris pelanggan menampilkan ringkasan (jumlah
+// pesanan & total omset dari pelanggan itu di rentang ini), diklik untuk
+// membuka/menutup rincian semua pesanannya.
+function LaporanGrosirPerPelanggan({ terbaru, namaPelanggan, pelangganGrosir }) {
+  const [expanded, setExpanded] = useState(() => new Set());
+
+  const toggle = (pelangganId) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(pelangganId)) next.delete(pelangganId);
+      else next.add(pelangganId);
+      return next;
+    });
+
+  // Kelompokkan pesanan per pelanggan_id. Pelanggan tanpa id (mis. data lama
+  // yang idnya kosong/null) tetap dikelompokkan jadi satu baris "—" supaya
+  // tidak hilang dari laporan.
+  const perPelangganMap = new Map();
+  (terbaru || []).forEach((p) => {
+    const key = p.pelanggan_id || "__tanpa_pelanggan__";
+    if (!perPelangganMap.has(key)) {
+      perPelangganMap.set(key, { pelangganId: p.pelanggan_id, pesanan: [], total: 0 });
+    }
+    const grup = perPelangganMap.get(key);
+    grup.pesanan.push(p);
+    grup.total += Number(p.total) || 0;
+  });
+
+  // Urutkan dari total omset terbesar supaya pelanggan paling kontributif
+  // langsung kelihatan di atas.
+  const perPelanggan = [...perPelangganMap.values()].sort((a, b) => b.total - a.total);
+
+  return (
+    <div className="rounded-xl border border-slate-800 overflow-hidden mb-5">
+      <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
+        Pesanan pada Rentang Ini — per Pelanggan ({perPelanggan.length} pelanggan, {terbaru.length} pesanan)
+      </div>
+      {perPelanggan.length === 0 ? (
+        <div className="p-6"><EmptyState label="Belum ada pesanan pada rentang tanggal ini." /></div>
+      ) : (
+        <div className="max-h-[420px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              {perPelanggan.map((grup) => {
+                const key = grup.pelangganId || "__tanpa_pelanggan__";
+                const isOpen = expanded.has(key);
+                return (
+                  <Fragment key={key}>
+                    <tr
+                      onClick={() => toggle(key)}
+                      className="border-b border-slate-800/60 last:border-0 cursor-pointer hover:bg-slate-800/40"
+                    >
+                      <td className="px-4 py-2.5">
+                        <ChevronDown
+                          size={14}
+                          className={`inline-block mr-1.5 -mt-0.5 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                        />
+                        <span className="text-slate-200 font-medium">{namaPelanggan(grup.pelangganId)}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
+                        {grup.pesanan.length} pesanan
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-200">{fmtRp(grup.total)}</td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="bg-slate-900/40">
+                        <td colSpan={3} className="px-4 pb-3 pt-0">
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {[...grup.pesanan]
+                                .sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || ""))
+                                .map((p) => (
+                                  <tr key={p.id} className="border-b border-slate-800/40 last:border-0">
+                                    <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{p.tanggal}</td>
+                                    <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">{p.nomor_pesanan}</td>
+                                    <td className="py-2 pr-3">
+                                      <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                                        {p.status_bayar}
+                                      </Badge>
+                                    </td>
+                                    <td className="py-2 text-right font-medium text-slate-300">{fmtRp(p.total)}</td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
