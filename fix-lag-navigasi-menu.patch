@@ -1,0 +1,34 @@
+diff --git a/src/App.jsx b/src/App.jsx
+index 7e63ff3..a2a0911 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -261,12 +261,24 @@ function MainApp({ session, onLogout }) {
+       sessionStorage.setItem("selma-nav", JSON.stringify({ menu, sub: sub || null }));
+     } catch {}
+     setModal(null); // dulu ikut ke-reset otomatis gara-gara reload total — sekarang ditutup manual
++    // loadForMenu() cuma nge-branch berdasarkan `menu` (lihat definisinya) —
++    // TIDAK PERNAH melihat `sub` sama sekali. Jadi kalau cuma pindah TAB di
++    // dalam menu yang sama (mis. Stok Barang -> Stok Menipis -> Riwayat
++    // Stok, atau Transaksi -> Laporan Keuangan di Keuangan), data yang mau
++    // ditarik ulang 100% SAMA PERSIS dengan yang baru saja ada di memori —
++    // sebelumnya ini tetap narik ulang SEMUA tabel grup itu (items, stok,
++    // riwayat, dst) tiap kali klik tab, padahal tidak ada yang berubah.
++    // Ini kemungkinan besar penyebab utama "lag" sehari-hari, karena
++    // pindah-pindah tab jauh lebih sering terjadi daripada pindah menu
++    // besar. Begitu benar-benar pindah ke MENU lain, loadForMenu tetap
++    // jalan seperti biasa (freshness lintas-staf yang dijaga di sini TIDAK
++    // berubah) — cuma reload yang percuma (klik tab tanpa ganti menu) yang
++    // dihapus.
++    const menuBerubah = menu !== nav.menu;
+     setNav({ menu, sub: sub || null });
+-    // Dulu loadAll() (narik SEMUA 22 tabel) tiap pindah menu — sekarang
+-    // cukup data yang relevan sama menu tujuan (lihat loadForMenu di atas),
+-    // supaya pindah menu jadi jauh lebih ringan tanpa kehilangan data fresh
+-    // yang memang dibutuhkan menu itu.
+-    loadForMenu(menu);
++    if (menuBerubah) {
++      loadForMenu(menu);
++    }
+   };
+ 
+   // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
