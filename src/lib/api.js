@@ -240,9 +240,19 @@ export async function kompresFotoProduk(file, { maxDim = 1280, quality = 0.82 } 
     });
 
     const skala = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
-    // Foto sudah lebih kecil dari batas — tidak perlu dikompres ulang,
-    // upload aslinya saja supaya tidak ada kualitas yang hilang percuma.
-    if (skala >= 1) return file;
+    // Foto sudah lebih kecil dari batas DAN sudah berformat JPEG -> tidak
+    // perlu diproses ulang, upload aslinya saja supaya tidak ada kualitas
+    // yang hilang percuma.
+    // TAPI kalau formatnya BUKAN JPEG (mis. PNG/WebP dari screenshot atau
+    // render), tetap harus dikonversi ke JPEG walau dimensinya sudah kecil —
+    // PNG itu lossless, jadi untuk foto produk biasa ukurannya bisa 5-10x
+    // lebih besar dari JPEG kualitas setara di dimensi yang SAMA PERSIS.
+    // Ini yang sebelumnya bikin banyak foto SKU ".png" ikut lolos tanpa
+    // dikompres (dimensi sudah kecil, jadi skip) padahal ukurannya tetap
+    // 1-2MB per file dan jadi salah satu penyumbang terbesar pemakaian
+    // Storage egress bulanan.
+    const sudahJpeg = /^image\/jpe?g$/i.test(file.type || "");
+    if (skala >= 1 && sudahJpeg) return file;
 
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(img.naturalWidth * skala);
