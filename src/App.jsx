@@ -212,7 +212,20 @@ function MainApp({ session, onLogout }) {
   const [master, setMaster] = useState({});
   const [settings, setSettings] = useState(null);
   const [penempatan, setPenempatan] = useState([]);
+  // stockHistory di sini SENGAJA cuma baris TERBARU per SKU (dari view
+  // stock_history_latest — lihat lib/api.js loadCore), bukan seluruh riwayat
+  // — dipakai untuk badge/notifikasi dashboard yang memang cuma butuh
+  // kondisi terkini. Riwayat LENGKAP (buat halaman Stok > Riwayat Stok)
+  // ditarik terpisah lewat stockHistoryFull, cuma saat halaman itu benar-
+  // benar dibuka (lihat loadRiwayatStokFull di bawah) — supaya tabel yang
+  // terus bertambah ini tidak ikut ditarik ulang di SETIAP pindah menu.
   const [stockHistory, setStockHistory] = useState([]);
+  const [stockHistoryFull, setStockHistoryFull] = useState([]);
+  // rakEvents juga cuma baris terbaru per SKU + per rak asal (gabungan dua
+  // view rak_events_latest_sku & rak_events_latest_rak_dari) — dipakai murni
+  // untuk notifikasi "Cek Marketplace", tidak pernah ditampilkan sebagai
+  // daftar utuh di halaman manapun, jadi tabel rak_events aslinya (yang
+  // terus bertambah) tidak perlu ditarik penuh sama sekali.
   const [rakEvents, setRakEvents] = useState([]);
   const [barangRusak, setBarangRusak] = useState([]);
   const [marketplaceNotifAck, setMarketplaceNotifAck] = useState([]);
@@ -279,6 +292,13 @@ function MainApp({ session, onLogout }) {
     setNav({ menu, sub: sub || null });
     if (menuBerubah) {
       loadForMenu(menu);
+    }
+    // Riwayat Stok butuh data lengkap (bukan cuma yang terbaru per SKU) —
+    // ditarik di sini (bukan lewat loadForMenu) supaya HANYA jalan saat
+    // sub-halaman ini yang dibuka, tetap kena cache 45 detik yang sama biar
+    // tidak ditarik ulang tiap klik tab kalau memang baru saja dimuat.
+    if (menu === "stok" && sub === "riwayat") {
+      loadRiwayatStokFull();
     }
   };
 
@@ -377,7 +397,14 @@ function MainApp({ session, onLogout }) {
 
   const loadCore = useCallback(async (force = false) => {
     if (!force && masihSegar("core")) return;
-    const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
+    // stock_history & rak_events SENGAJA TIDAK ditarik dari tabel aslinya di
+    // sini (keduanya log yang terus bertambah, bisa jadi jauh lebih besar
+    // dari tabel lain) — dipakai lewat view *_latest yang cuma balikin 1
+    // baris per SKU/rak (lihat hemat_egress_views.sql). Riwayat stok LENGKAP
+    // ditarik terpisah oleh loadRiwayatStokFull(), cuma saat halaman Stok >
+    // Riwayat Stok dibuka. Ini perubahan Sept 2026 buat menekan PostgREST
+    // egress yang sebelumnya ~500MB/hari — dua tabel log inilah biang utamanya.
+    const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsSkuRes, rakEventsRakDariRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
       sbAll("items?select=*&order=created_at.desc"),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
       sbAll("suppliers?select=*&order=nama"),
@@ -386,8 +413,9 @@ function MainApp({ session, onLogout }) {
       sbAll("master_data?select=*&order=label"),
       sb("settings?select=*"),
       sbAll("penempatan?select=*&order=created_at.desc"),
-      sbAll("stock_history?select=*&order=created_at.desc"),
-      sbAll("rak_events?select=*&order=created_at.desc"),
+      sbAll("stock_history_latest?select=*"),
+      sbAll("rak_events_latest_sku?select=*"),
+      sbAll("rak_events_latest_rak_dari?select=*"),
       sbAll("barang_rusak?select=*&order=created_at.desc"),
       sbAll("marketplace_notif_ack?select=*"),
       sbAll("pengajuan_restock?select=*&order=created_at.desc"),
@@ -406,7 +434,10 @@ function MainApp({ session, onLogout }) {
     setSettings((settingsRes || [])[0] || null);
     setPenempatan(penempatanRes || []);
     setStockHistory(historyRes || []);
-    setRakEvents(rakEventsRes || []);
+    // Gabungan dua view "terbaru" — latestRakEventBySku/latestRakEventByRakDari
+    // di lib/marketplaceNotif.js membandingkan created_at sendiri per key,
+    // jadi aman digabung begini walau urutannya tidak dijamin selang-seling.
+    setRakEvents([...(rakEventsSkuRes || []), ...(rakEventsRakDariRes || [])]);
     setBarangRusak(barangRusakRes || []);
     setMarketplaceNotifAck(notifAckRes || []);
     setPengajuanRestock(pengajuanRestockRes || []);
@@ -432,6 +463,19 @@ function MainApp({ session, onLogout }) {
     setPembayaranGrosir(pembayaranRes || []);
     setDepositGrosir(depositRes || []);
     tandaiSudahDimuat("grosir");
+  }, []);
+
+  // Riwayat stok LENGKAP (seluruh baris, bukan cuma yang terbaru per SKU) —
+  // dulu ikut ditarik di loadCore() SETIAP pindah menu walau cuma dipakai di
+  // satu halaman (Stok > Riwayat Stok). Sekarang dipisah jadi loader sendiri,
+  // cuma dipanggil saat halaman itu benar-benar dibuka (lihat useEffect di
+  // bawah navigate()) — supaya tabel log yang terus bertambah ini tidak ikut
+  // membebani egress di menu-menu lain yang sama sekali tidak menampilkannya.
+  const loadRiwayatStokFull = useCallback(async (force = false) => {
+    if (!force && masihSegar("riwayat-stok")) return;
+    const res = await sbAll("stock_history?select=*&order=created_at.desc");
+    setStockHistoryFull(res || []);
+    tandaiSudahDimuat("riwayat-stok");
   }, []);
 
   const loadKeuangan = useCallback(async (force = false) => {
@@ -526,6 +570,12 @@ function MainApp({ session, onLogout }) {
     // saat itu — pindah menu berikutnya sudah ditangani fungsi navigate().
     // eslint-disable-next-line react-hooks/exhaustive-deps
     loadForMenu(nav.menu);
+    // Kalau nav awal (dipulihkan dari sessionStorage) memang sudah di Riwayat
+    // Stok — mis. user reload browser di halaman itu — riwayat lengkapnya
+    // perlu ditarik juga di sini, karena navigate() (yang biasanya menangani
+    // ini) tidak ikut kepanggil saat mount pertama.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (nav.menu === "stok" && nav.sub === "riwayat") loadRiwayatStokFull();
   }, []);
 
   // Seluruh badge/ringkasan/notifikasi di bawah ini dihitung ulang dari
@@ -710,7 +760,7 @@ function MainApp({ session, onLogout }) {
         loadAll={loadAll}
         loading={loading}
       >
-        <main className="px-5 py-6 max-w-6xl">
+        <main className="px-5 py-6 w-full">
           {error && (
             <div className="mb-4 flex items-center gap-2 bg-md-error-container text-md-on-error-container text-sm px-4 py-3 rounded-md-md">
               <AlertCircle size={16} /> {error}
@@ -806,7 +856,7 @@ function MainApp({ session, onLogout }) {
                   sub={nav.sub || "barang"}
                   skuMaster={skuMaster}
                   penempatan={penempatan}
-                  stockHistory={stockHistory}
+                  stockHistory={stockHistoryFull}
                   pengajuanRestock={pengajuanRestock}
                   session={session}
                   setModal={setModal}

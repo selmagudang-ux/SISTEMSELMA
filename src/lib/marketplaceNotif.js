@@ -12,40 +12,42 @@
 // (kolom notif_key, unique) — dimuat dari App.jsx lalu dicocokkan di sini.
 import { cariPerluDitempatkanUlang, skuDenganRakGanda } from "../pages/Rak";
 
-// Baris stock_history TERBARU untuk tiap SKU. stockHistory dari App.jsx
-// sudah diurutkan created_at.desc, jadi kemunculan pertama per SKU dalam
-// urutan itu otomatis yang paling baru.
-export function latestHistoryBySku(stockHistory) {
+// Helper generik: dari daftar baris, ambil SATU baris ter-BARU (created_at
+// terbesar) per key. TIDAK bergantung urutan array — cocok dipakai walau
+// datanya gabungan beberapa query/view (lihat App.jsx loadCore, stockHistory
+// & rakEvents sekarang ditarik dari view "*_latest" di Supabase, bukan
+// seluruh tabel — jauh lebih hemat egress daripada narik semua baris cuma
+// buat cari yang paling baru di sisi client).
+function pilihTerbaruPerKey(rows, getKey) {
   const map = new Map();
-  (stockHistory || []).forEach((h) => {
-    if (!map.has(h.sku)) map.set(h.sku, h);
+  (rows || []).forEach((r) => {
+    const key = getKey(r);
+    if (!key) return;
+    const existing = map.get(key);
+    if (!existing || new Date(r.created_at) > new Date(existing.created_at)) {
+      map.set(key, r);
+    }
   });
   return map;
+}
+
+// Baris stock_history TERBARU untuk tiap SKU.
+export function latestHistoryBySku(stockHistory) {
+  return pilihTerbaruPerKey(stockHistory, (h) => h.sku);
 }
 
 // Event rak TERBARU untuk tiap SKU (tabel `rak_events`, diisi dari
 // ModalRouter setiap kali ada perpindahan/pengeluaran SKU dari rak — lihat
 // komentar di ModalRouter.jsx bagian pindah-rak, barang-keluar, stok-opname).
-// rakEvents dari App.jsx sudah diurutkan created_at.desc, jadi kemunculan
-// pertama per SKU otomatis yang paling baru.
 export function latestRakEventBySku(rakEvents) {
-  const map = new Map();
-  (rakEvents || []).forEach((e) => {
-    if (!map.has(e.sku)) map.set(e.sku, e);
-  });
-  return map;
+  return pilihTerbaruPerKey(rakEvents, (e) => e.sku);
 }
 
 // Event rak TERBARU per kode rak ASAL (rak_dari) — dipakai untuk notifikasi
 // "Rak Kosong": rak yang pernah tercatat kena aktivitas pindah/keluar dari
 // situ, lalu dicek lagi apakah SEKARANG beneran sudah kosong.
 export function latestRakEventByRakDari(rakEvents) {
-  const map = new Map();
-  (rakEvents || []).forEach((e) => {
-    if (!e.rak_dari) return;
-    if (!map.has(e.rak_dari)) map.set(e.rak_dari, e);
-  });
-  return map;
+  return pilihTerbaruPerKey(rakEvents, (e) => e.rak_dari);
 }
 
 // SKU yang baru saja DIPINDAH ke rak lain (jenis "pindah", punya rak_baru) —
