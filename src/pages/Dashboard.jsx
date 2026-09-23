@@ -81,34 +81,40 @@ function akhirBulanPeriode(tahun, bulan) {
   return `${tahun}-${pad2(bulan)}-${pad2(lastDay)}`;
 }
 
-// Dropdown filter "Bulan" & "Tahun" yang tampil di kanan atas Dashboard (semua
-// tab) — dipakai untuk menggeser rentang ringkasan bulanan (Keuangan, Grosir,
-// Monitoring, Absensi) ke bulan/tahun tertentu, bukan cuma bulan berjalan.
-// Rentang tahun: 4 tahun ke belakang s/d 1 tahun ke depan dari tahun berjalan.
+// Dropdown filter "Bulan" yang tampil di kanan atas Dashboard (semua tab) —
+// dipakai untuk menggeser rentang ringkasan bulanan (Keuangan, Grosir,
+// Monitoring, Absensi) antara bulan berjalan & bulan sebelumnya.
+// SENGAJA dibatasi cuma 2 pilihan (dulu bebas 6 tahun x 12 bulan) — data
+// keuangan_transaksi/marketplace_transaksi/pengajuan_restock sekarang cuma
+// ditarik untuk bulan berjalan + 1 bulan sebelumnya (lihat
+// awalRentangEgressDefault di App.jsx, demi hemat PostgREST egress,
+// dikonfirmasi user Okt 2026) — dropdown bebas 6 tahun sebelumnya cuma akan
+// nampilin data kosong/salah kalau dipilih di luar rentang itu, jadi
+// pilihannya disamakan dengan data yang benar-benar tersedia.
 function FilterBulanTahun({ bulan, tahun, onChangeBulan, onChangeTahun }) {
-  const tahunSekarang = new Date().getFullYear();
-  const daftarTahun = Array.from({ length: 6 }, (_, i) => tahunSekarang - 4 + i);
+  const now = new Date();
+  const bulanLalu = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const opsi = [
+    { bulan: now.getMonth() + 1, tahun: now.getFullYear(), label: `${BULAN_LABEL_PANJANG[now.getMonth()]} ${now.getFullYear()} (bulan ini)` },
+    { bulan: bulanLalu.getMonth() + 1, tahun: bulanLalu.getFullYear(), label: `${BULAN_LABEL_PANJANG[bulanLalu.getMonth()]} ${bulanLalu.getFullYear()}` },
+  ];
+  const nilaiTerpilih = `${tahun}-${bulan}`;
   return (
-    <div className="flex items-center gap-1.5">
-      <select
-        value={bulan}
-        onChange={(e) => onChangeBulan(Number(e.target.value))}
-        className={`${inputClass} w-auto text-xs py-1.5`}
-      >
-        {BULAN_LABEL_PANJANG.map((l, i) => (
-          <option key={l} value={i + 1}>{l}</option>
-        ))}
-      </select>
-      <select
-        value={tahun}
-        onChange={(e) => onChangeTahun(Number(e.target.value))}
-        className={`${inputClass} w-auto text-xs py-1.5`}
-      >
-        {daftarTahun.map((y) => (
-          <option key={y} value={y}>{y}</option>
-        ))}
-      </select>
-    </div>
+    <select
+      value={nilaiTerpilih}
+      onChange={(e) => {
+        const o = opsi.find((x) => `${x.tahun}-${x.bulan}` === e.target.value);
+        if (o) {
+          onChangeBulan(o.bulan);
+          onChangeTahun(o.tahun);
+        }
+      }}
+      className={`${inputClass} w-auto text-xs py-1.5`}
+    >
+      {opsi.map((o) => (
+        <option key={`${o.tahun}-${o.bulan}`} value={`${o.tahun}-${o.bulan}`}>{o.label}</option>
+      ))}
+    </select>
   );
 }
 

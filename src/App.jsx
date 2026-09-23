@@ -405,6 +405,20 @@ function MainApp({ session, onLogout }) {
     lastLoadedRef.current[kunci] = Date.now();
   };
 
+  // Batas bawah default (awal bulan sebelumnya, jadi bulan berjalan + 1
+  // bulan ke belakang) buat tabel log yang terus nambah tanpa henti
+  // (keuangan_transaksi, marketplace_transaksi, & histori pengajuan_restock
+  // yang sudah direspon) — pola sama seperti awalRentangAbsensiDefault di
+  // lib/absensi.js. Filter "Bulan & Tahun" di Dashboard ikut dibatasi ke
+  // rentang ini juga (dikonfirmasi user, Okt 2026) — kalau nanti perlu
+  // lihat lebih jauh ke belakang lagi, naikkan jumlah bulannya di sini.
+  const awalRentangEgressDefault = () => {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
   const loadCore = useCallback(async (force = false) => {
     if (!force && masihSegar("core")) return;
     // stock_history & rak_events SENGAJA TIDAK ditarik dari tabel aslinya di
@@ -427,7 +441,14 @@ function MainApp({ session, onLogout }) {
       sbAll("rak_events_latest_sku?select=*"),
       sbAll("rak_events_latest_rak_dari?select=*"),
       sbAll("marketplace_notif_ack?select=*"),
-      sbAll("pengajuan_restock?select=*&order=created_at.desc"),
+      // Status "menunggu" TETAP ditarik berapa pun umurnya (masih perlu
+      // ditindaklanjuti) — cuma histori yang SUDAH direspon (disetujui/
+      // ditolak) yang dibatasi ke bulan berjalan + 1 bulan sebelumnya, sesuai
+      // kebutuhan riil (badge sidebar cuma butuh yang menunggu; PersetujuanRestock
+      // & Dashboard cuma tampilkan histori 10 terakhir / bulan berjalan).
+      sbAll(
+        `pengajuan_restock?select=*&order=created_at.desc&or=(status.eq.menunggu,created_at.gte.${awalRentangEgressDefault()})`
+      ),
     ]);
     setItems(itemsRes || []);
     setPesananMasuk(pesananMasukRes || []);
@@ -503,7 +524,12 @@ function MainApp({ session, onLogout }) {
 
   const loadKeuangan = useCallback(async (force = false) => {
     if (!force && masihSegar("keuangan")) return;
-    const keuanganRes = await sbAll("keuangan_transaksi?select=*&order=tanggal.desc");
+    // Dibatasi ke bulan berjalan + 1 bulan sebelumnya (bukan seluruh histori)
+    // — tabel ini terus nambah tanpa henti; lihat catatan di
+    // awalRentangEgressDefault di atas.
+    const keuanganRes = await sbAll(
+      `keuangan_transaksi?select=*&tanggal=gte.${awalRentangEgressDefault()}&order=tanggal.desc`
+    );
     setKeuanganTransaksi(keuanganRes || []);
     tandaiSudahDimuat("keuangan");
   }, []);
@@ -513,7 +539,11 @@ function MainApp({ session, onLogout }) {
   // keuangan_transaksi, cuma ditarik kalau lagi buka menu ini (atau dashboard).
   const loadMarketplace = useCallback(async (force = false) => {
     if (!force && masihSegar("marketplace")) return;
-    const res = await sbAll("marketplace_transaksi?select=*&order=tanggal.desc");
+    // Dibatasi ke bulan berjalan + 1 bulan sebelumnya juga — sama alasannya
+    // seperti keuangan_transaksi di atas.
+    const res = await sbAll(
+      `marketplace_transaksi?select=*&tanggal=gte.${awalRentangEgressDefault()}&order=tanggal.desc`
+    );
     setMarketplaceTransaksi(res || []);
     tandaiSudahDimuat("marketplace");
   }, []);
