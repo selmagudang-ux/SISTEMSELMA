@@ -382,15 +382,27 @@ function CekSection({ title, description, icon: Icon, color, count, children }) 
 }
 
 function BelumUpload({ items, quickAdvance, setModal }) {
-  const list = items.filter((i) => i.stage === "marketplace");
+  const [q, setQ] = useState("");
+  const list = items
+    .filter((i) => i.stage === "marketplace")
+    .filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
   return (
     <div>
       <PageHeader
         title="Belum Upload"
         description="Barang yang sudah lolos verifikasi foto dan siap diupload ke marketplace. Klik foto untuk memperbesar, atau tombol Detail untuk lihat info lengkap, download foto, atau kembalikan ke Pemotretan kalau ada yang salah."
       />
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
       {list.length === 0 ? (
-        <EmptyState label="Semua barang sudah diupload." />
+        <EmptyState label={q ? `Tidak ada SKU yang cocok dengan "${q}".` : "Semua barang sudah diupload."} />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {list.map((item) => (
@@ -433,12 +445,24 @@ function BelumUpload({ items, quickAdvance, setModal }) {
 }
 
 function SudahUpload({ items }) {
-  const list = items.filter((i) => i.marketplace_status === "sudah");
+  const [q, setQ] = useState("");
+  const list = items
+    .filter((i) => i.marketplace_status === "sudah")
+    .filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
   return (
     <div>
       <PageHeader title="Sudah Upload" description="Barang yang sudah berhasil diupload ke marketplace." />
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
       {list.length === 0 ? (
-        <EmptyState label="Belum ada barang yang diupload." />
+        <EmptyState label={q ? `Tidak ada SKU yang cocok dengan "${q}".` : "Belum ada barang yang diupload."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
           <table className="w-full text-sm min-w-[560px]">
@@ -470,14 +494,25 @@ function SudahUpload({ items }) {
 }
 
 function RiwayatUpload({ items }) {
+  const [q, setQ] = useState("");
   const list = items
     .filter((i) => i.marketplace_uploaded_at)
+    .filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => new Date(b.marketplace_uploaded_at) - new Date(a.marketplace_uploaded_at));
   return (
     <div>
       <PageHeader title="Riwayat Upload" description="Semua histori upload ke marketplace, terbaru di atas." />
+      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
       {list.length === 0 ? (
-        <EmptyState label="Belum ada riwayat upload." />
+        <EmptyState label={q ? `Tidak ada SKU yang cocok dengan "${q}".` : "Belum ada riwayat upload."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {list.map((i, idx) => (
