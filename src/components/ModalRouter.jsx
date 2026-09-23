@@ -3626,7 +3626,7 @@ export default function ModalRouter({
                 console.error("Gagal cek nomor BON terakhir dari database:", e);
               }
               for (let i = 0; i < bonTambahan.length; i++) {
-                const { noBox: noBoxBon, noInvoice: noInvoiceBon, fotoBonFiles: fotoFilesBon, existingFotoBonUrls: fotoUrlsLamaBon, models: modelsBon, catatan: catatanBon } = bonTambahan[i];
+                const { noBox: noBoxBon, noInvoice: noInvoiceBon, fotoBonFiles: fotoFilesBon, existingFotoBonUrls: fotoUrlsLamaBon, models: modelsBon, catatan: catatanBon, existingId: existingIdBon } = bonTambahan[i];
 
                 const fotoBonUrlsBaruBon = [];
                 for (const f of fotoFilesBon || []) {
@@ -3637,45 +3637,72 @@ export default function ModalRouter({
                 const fotoBonUrlsBon = [...(fotoUrlsLamaBon || []), ...fotoBonUrlsBaruBon];
                 const fotoBonUrlBon = fotoBonUrlsBon[0] || null;
                 const totalKotorBon = modelsBon.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
-                const kodeBonBaru = `BON-${String(nomorAwal + i).padStart(4, "0")}`;
+                const detailModelBon = modelsBon.map((m) => ({
+                  nama: m.nama,
+                  jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+                  rusak: m.jumlahRusak,
+                  alasan_rusak: m.alasanRusak,
+                  harga: m.harga,
+                  datang: true,
+                }));
 
-                const [pesananBon] = await sb("pesanan_masuk", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    tanggal_pesan: tanggal,
-                    supplier: p.supplier,
-                    jenis: p.jenis,
-                    jumlah_pesan: Math.max(totalKotorBon, 1),
-                    jumlah_diterima: totalKotorBon,
-                    dibatalkan: false,
-                    draft,
-                    catatan: catatanBon,
-                    no_box: noBoxBon,
-                    no_invoice: noInvoiceBon,
-                    // induk_id nunjuk balik ke pesanan PSN-xxxx yang bon
-                    // tambahan ini dibuat dari — dipakai rincianBongkarBox
-                    // (lib/api.js) buat menjumlah box mana saja yang sudah
-                    // dibongkar untuk SATU pesanan yang sama, walau bon-nya
-                    // kepecah jadi beberapa baris pesanan_masuk. SENGAJA pakai
-                    // rootId (bukan p.id) — kalau form ini dibuka dari baris
-                    // invoice tambahan (p sendiri sudah anak), invoice baru
-                    // harus tetap nempel ke induk paling atas, bukan ke p.
-                    induk_id: rootId,
-                    foto_bon_url: fotoBonUrlBon,
-                    foto_bon_urls: fotoBonUrlsBon,
-                    kode_pesanan: kodeBonBaru,
-                    detail_model: modelsBon.map((m) => ({
-                      nama: m.nama,
-                      jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-                      rusak: m.jumlahRusak,
-                      alasan_rusak: m.alasanRusak,
-                      harga: m.harga,
-                      datang: true,
-                    })),
-                  }),
-                });
+                let pesananBon;
+                if (existingIdBon) {
+                  // Bon ini di-RESUME dari baris pesanan_masuk anak yang
+                  // sudah ada (dipilih ulang lewat "Ganti box" waktu masih
+                  // draf/belum final — lihat bonBelumFinalByBox &
+                  // bonTambahanBaru(n, existing) di forms.jsx). PATCH baris
+                  // yang SAMA supaya tidak bikin kode BON- baru & data lama
+                  // tidak dobel/hilang.
+                  [pesananBon] = await sb(`pesanan_masuk?id=eq.${existingIdBon}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                      tanggal_pesan: tanggal,
+                      jumlah_pesan: Math.max(totalKotorBon, 1),
+                      jumlah_diterima: totalKotorBon,
+                      dibatalkan: false,
+                      draft,
+                      catatan: catatanBon,
+                      no_box: noBoxBon,
+                      no_invoice: noInvoiceBon,
+                      foto_bon_url: fotoBonUrlBon,
+                      foto_bon_urls: fotoBonUrlsBon,
+                      detail_model: detailModelBon,
+                    }),
+                  });
+                } else {
+                  const kodeBonBaru = `BON-${String(nomorAwal + i).padStart(4, "0")}`;
+                  [pesananBon] = await sb("pesanan_masuk", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      tanggal_pesan: tanggal,
+                      supplier: p.supplier,
+                      jenis: p.jenis,
+                      jumlah_pesan: Math.max(totalKotorBon, 1),
+                      jumlah_diterima: totalKotorBon,
+                      dibatalkan: false,
+                      draft,
+                      catatan: catatanBon,
+                      no_box: noBoxBon,
+                      no_invoice: noInvoiceBon,
+                      // induk_id nunjuk balik ke pesanan PSN-xxxx yang bon
+                      // tambahan ini dibuat dari — dipakai rincianBongkarBox
+                      // (lib/api.js) buat menjumlah box mana saja yang sudah
+                      // dibongkar untuk SATU pesanan yang sama, walau bon-nya
+                      // kepecah jadi beberapa baris pesanan_masuk. SENGAJA pakai
+                      // rootId (bukan p.id) — kalau form ini dibuka dari baris
+                      // invoice tambahan (p sendiri sudah anak), invoice baru
+                      // harus tetap nempel ke induk paling atas, bukan ke p.
+                      induk_id: rootId,
+                      foto_bon_url: fotoBonUrlBon,
+                      foto_bon_urls: fotoBonUrlsBon,
+                      kode_pesanan: kodeBonBaru,
+                      detail_model: detailModelBon,
+                    }),
+                  });
+                }
 
-                kodeTersimpan = pesananBon?.kode_pesanan || kodeBonBaru;
+                kodeTersimpan = pesananBon?.kode_pesanan || kodeTersimpan;
 
                 if (!draft) {
                   for (const m of modelsBon) {

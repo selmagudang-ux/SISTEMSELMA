@@ -381,15 +381,28 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
 // Datang) — tidak punya harga kesepakatan sendiri karena memang bukan
 // bagian dari pesanan yang di-PO-kan.
 let _bonTambahanSeq = 0;
-function bonTambahanBaru(noBox) {
+// `existing` (opsional) = baris pesanan_masuk anak yang SUDAH ada di
+// database tapi belum final (draft, atau kelewat waktu deteksi "final" di
+// KonfirmasiDatangForm) — kalau diisi, bon tambahan yang dibikin di sini
+// LANGSUNG pre-fill dari data itu & disimpan lewat PATCH ke baris yang sama
+// (lihat `existingId` di bawah & pemakaiannya di ModalRouter), bukan bikin
+// baris BON- baru — supaya data yang sudah pernah diisi untuk box ini tidak
+// hilang/dobel begitu box-nya dipilih ulang lewat "Ganti box".
+function bonTambahanBaru(noBox, existing) {
+  const existingFotoBon = Array.isArray(existing?.foto_bon_urls) && existing.foto_bon_urls.length > 0
+    ? existing.foto_bon_urls
+    : existing?.foto_bon_url
+    ? [existing.foto_bon_url]
+    : [];
   return {
     id: `bont-${++_bonTambahanSeq}`,
     noBox: noBox ?? "",
-    noInvoice: "",
+    noInvoice: existing?.no_invoice || "",
     fotoBonList: [],
-    existingFotoBon: [],
-    models: [barisBarangDatang()],
-    catatan: "",
+    existingFotoBon,
+    models: existing ? modelsDariDraf(existing) : [barisBarangDatang()],
+    catatan: existing?.catatan || "",
+    existingId: existing?.id || null,
   };
 }
 
@@ -517,6 +530,23 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
     (row) => row.id !== pesanan?.id && (row.id === rootId || row.induk_id === rootId) && finalDenganBoxDb(row)
   );
   const boxFinalDariDb = new Set(bonFinalLain.map((row) => Number(row.no_box)));
+  // Baris anak yang SUDAH ada di database untuk pesanan ini tapi BELUM
+  // final (draft:true, atau final-checknya gagal karena jumlah_diterima/
+  // no_box belum lengkap) — dipetakan per no_box supaya begitu box itu
+  // dipilih lagi lewat "Ganti box" -> PilihBoxScreen, datanya di-RESUME ke
+  // extraBonList (lewat bonTambahanBaru(n, existing) di onPilih di bawah),
+  // BUKAN malah dibikin bon tambahan baru yang kosong (itu penyebab data
+  // box yang sudah diisi kelihatan "hilang" waktu dibuka lagi).
+  const bonBelumFinalLain = (pesananMasuk || []).filter(
+    (row) =>
+      row.id !== pesanan?.id &&
+      (row.id === rootId || row.induk_id === rootId) &&
+      !row.dibatalkan &&
+      !finalDenganBoxDb(row)
+  );
+  const bonBelumFinalByBox = new Map(
+    bonBelumFinalLain.filter((row) => Number(row.no_box) > 0).map((row) => [Number(row.no_box), row])
+  );
   // boxFinalDariDb di atas SENGAJA mengecualikan baris pesanan/bon yang lagi
   // dibuka ini sendiri (row.id !== pesanan?.id) — supaya box-nya sendiri
   // tidak dobel dihitung waktu dijumlah bareng noBoxUtama di boxTerisi
@@ -643,6 +673,10 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
     setExtraBonList((rows) =>
       rows.map((r) => (r.id === bonId ? { ...r, fotoBonList: r.fotoBonList.filter((_, i) => i !== idx) } : r))
     );
+  const hapusFotoBonTambahanLama = (bonId, idx) =>
+    setExtraBonList((rows) =>
+      rows.map((r) => (r.id === bonId ? { ...r, existingFotoBon: r.existingFotoBon.filter((_, i) => i !== idx) } : r))
+    );
   const updateModelTambahan = (bonId, idx, patch) =>
     setExtraBonList((rows) =>
       rows.map((r) =>
@@ -768,9 +802,12 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
     noBox: bon.noBox === "" ? null : Number(bon.noBox) || null,
     noInvoice: bon.noInvoice.trim() || null,
     fotoBonFiles: bon.fotoBonList.map((f) => f.file),
-    existingFotoBonUrls: [],
+    existingFotoBonUrls: bon.existingFotoBon || [],
     models: bon.models.map(modelPayload),
     catatan: bon.catatan.trim() || null,
+    // Baris pesanan_masuk anak yang mau di-UPDATE (resume) alih-alih bikin
+    // baris BON- baru — lihat bonTambahanBaru & onPilih di atas.
+    existingId: bon.existingId || null,
   });
   // (semuaBoxTerisi sudah dihitung di atas, dipakai juga buat
   // wajibKeteranganSelisih — sekarang MEMANG termasuk box yang final duluan
@@ -824,9 +861,12 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           // box baru yang dipilih di sini jadi INVOICE TAMBAHAN baru
           // (masuk extraBonList, jadi baris pesanan_masuk tersendiri lewat
           // "Tambah Bon" di ModalRouter), bukan noBoxUtama, supaya data Box
-          // 1 yang sudah tersimpan tidak ikut berubah label/datanya.
+          // 1 yang sudah tersimpan tidak ikut berubah label/datanya. Kalau
+          // box ini kebetulan SUDAH ada baris draf/belum-final tersimpan
+          // (bonBelumFinalByBox), resume dari situ — jangan bikin kosong.
           if (utamaSudahFinalAwal) {
-            setExtraBonList((rows) => [...rows, bonTambahanBaru(n)]);
+            const existing = bonBelumFinalByBox.get(Number(n));
+            setExtraBonList((rows) => [...rows, bonTambahanBaru(n, existing)]);
           } else {
             setNoBoxUtama(n);
           }
@@ -1164,8 +1204,25 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
               className={inputClass}
             />
           </Field>
-          {bon.fotoBonList.length > 0 && (
+          {(bon.existingFotoBon.length > 0 || bon.fotoBonList.length > 0) && (
             <div className="grid grid-cols-3 gap-2 mb-3">
+              {bon.existingFotoBon.map((url, idx) => (
+                <div key={`lama-${idx}`} className="relative">
+                  <img
+                    src={url}
+                    alt={`Foto bon/nota lama ${idx + 1}`}
+                    className="w-full h-24 object-cover rounded-lg border border-slate-800 bg-slate-950"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => hapusFotoBonTambahanLama(bon.id, idx)}
+                    title="Hapus foto ini"
+                    className="absolute top-1 right-1 bg-slate-950/80 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full p-0.5"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
               {bon.fotoBonList.map((f, idx) => (
                 <div key={idx} className="relative">
                   <img
