@@ -2,32 +2,52 @@ import { useState } from "react";
 import { Home, Plus, Trash2, Wallet, Landmark, TrendingUp, AlertTriangle } from "lucide-react";
 import {
   PageHeader, EmptyState, StatCard, Field, InputTanggal, InputRupiah,
-  SearchableSelect, Badge, formatTanggalID,
+  Badge, formatTanggalID, suggestKode,
 } from "../components/ui";
 import { sb, fmtRp } from "../lib/api";
+import {
+  REKENING_TOKO_OFFLINE_CASH,
+  REKENING_TOKO_OFFLINE_CASHLESS,
+  KODE_REKENING_TOKO_OFFLINE_CASHLESS,
+} from "../lib/constants";
 
 // =========================================================
 // TOKO OFFLINE — Input harian penjualan toko offline.
 // SENGAJA TIDAK bikin tabel baru — tiap input langsung dicatat sebagai 1-2
 // baris transaksi "masuk" di keuangan_transaksi yang sudah ada (satu baris
-// untuk Cash, satu lagi untuk Transfer, masing-masing ke rekening penampung
-// yang dipilih dari master data "rekening" yang SAMA dengan yang dipakai
-// Keuangan > Rekening & Kategori — jadi otomatis sinkron, tidak perlu
-// disamakan manual). Supaya baris-baris ini bisa dikenali balik sebagai
-// "input Toko Offline" (buat Riwayat & StatCard di halaman ini), keterangan-nya
-// diawali penanda tetap "Toko Offline ·" — lihat isEntriTokoOffline().
+// untuk Cash, satu lagi untuk Cashless).
+//
+// Rekening penampung SELALU tetap (tidak bisa dipilih manual) — sama pola
+// dengan REKENING_PEMBAYARAN_SUPPLIER / REKENING_ONGKIR_BARANG_DATANG di
+// lib/constants.js:
+//   Cash     -> Petty Cash               (REKENING_TOKO_OFFLINE_CASH)
+//   Cashless -> BCA a/n Teh Oca, "BCA2"  (REKENING_TOKO_OFFLINE_CASHLESS)
+// Dicocokkan by label (case-insensitive) ke master data "rekening" yang SAMA
+// dengan yang dipakai Keuangan > Rekening & Kategori — jadi otomatis sinkron.
+// Kalau rekeningnya belum ada di master, dibuatkan otomatis sekali saat
+// Simpan — lihat resolveRekeningTetap() di bawah. Supaya baris-baris ini bisa
+// dikenali balik sebagai "input Toko Offline" (buat Riwayat & StatCard di
+// halaman ini), keterangan-nya diawali penanda tetap "Toko Offline ·" —
+// lihat isEntriTokoOffline().
 // =========================================================
 
 const PENANDA = "Toko Offline ·";
 
-// Kategori pemasukan untuk Cash & Transfer di halaman ini FIXED (tidak bisa
-// dipilih manual) — supaya tidak pernah salah kategori:
-//   Cash     -> kategori berlabel "OFFLINE"
-//   Transfer -> kategori berlabel "OFFLINE TF"
-// Nama kategori harus persis dibuat di Keuangan > Rekening & Kategori
-// (whitespace & besar/kecil huruf diabaikan saat mencocokkan).
+// Kategori pemasukan untuk Cash di halaman ini FIXED (tidak bisa dipilih
+// manual) — supaya tidak pernah salah kategori. Untuk Cashless, kategorinya
+// dipilih user dari 2 metode tetap (Transfer / QRIS) — dua-duanya sama-sama
+// masuk ke rekening penampung Cashless yang sama (BCA2), cuma beda kategori
+// pencatatan di Keuangan. Sama seperti kategori Cash, kategori-kategori ini
+// TIDAK dibuat otomatis — harus didaftarkan dulu lewat Keuangan > Rekening &
+// Kategori dengan nama persis di bawah ini:
+//   Cash              -> kategori berlabel "OFFLINE CASH"
+//   Cashless (Transfer) -> kategori berlabel "OFFLINE TRANSFER"
+//   Cashless (QRIS)      -> kategori berlabel "OFFLINE QRIS"
 const LABEL_KATEGORI_CASH = "OFFLINE CASH";
-const LABEL_KATEGORI_TRANSFER = "OFFLINE TRANSFER";
+const METODE_CASHLESS = [
+  { value: "Transfer", labelKategori: "OFFLINE TRANSFER" },
+  { value: "QRIS", labelKategori: "Offline Qris by BCA" },
+];
 
 function normalisasiLabel(s) {
   return (s || "").toLowerCase().replace(/\s+/g, "").trim();
@@ -43,10 +63,14 @@ function buatKeterangan(jenis, catatan) {
   return catatan?.trim() ? `${inti} — ${catatan.trim()}` : inti;
 }
 
-// Pisahkan lagi jenis (Cash/Transfer) & catatan dari keterangan yang sudah
+// Pisahkan lagi jenis (Cash/Cashless) & catatan dari keterangan yang sudah
 // dibentuk buatKeterangan() di atas, buat ditampilkan di tabel Riwayat.
+// Entri lama yang masih berlabel "Transfer" (sebelum di-rename ke
+// "Cashless") tetap kebaca apa adanya di sini — teksnya saja, data lama
+// TIDAK diubah — dan tetap terhitung di StatCard lewat jumlahByJenis() di
+// bawah (dianggap "bukan Cash", sama seperti "Cashless").
 function uraiKeterangan(keterangan) {
-  const sisa = (keterangan || "").slice(PENANDA.length).trim(); // "Cash — catatan" / "Transfer"
+  const sisa = (keterangan || "").slice(PENANDA.length).trim(); // "Cash — catatan" / "Cashless"
   const [jenisPart, ...catatanPart] = sisa.split(" — ");
   return { jenis: jenisPart.trim(), catatan: catatanPart.join(" — ").trim() };
 }
@@ -70,43 +94,66 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
   const todayIso = hariIniIso();
   const [tanggal, setTanggal] = useState(todayIso);
   const [cash, setCash] = useState("");
-  const [rekeningCash, setRekeningCash] = useState("");
-  const [transfer, setTransfer] = useState("");
-  const [rekeningTransfer, setRekeningTransfer] = useState("");
+  const [cashless, setCashless] = useState("");
+  const [metodeCashless, setMetodeCashless] = useState(METODE_CASHLESS[0].value);
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
 
   const daftarRekening = master?.rekening || [];
   const daftarKategori = master?.kategori_masuk || [];
-  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
 
   // Kategori pemasukan FIXED, dicocokkan persis by nama — lihat catatan di
-  // atas file (cariKategoriByLabel). Tidak ada lagi pilihan manual di sini.
+  // atas file (cariKategoriByLabel). Cash tidak ada pilihan; Cashless
+  // kategorinya mengikuti metode (Transfer/QRIS) yang dipilih di bawah.
   const kategoriCashObj = cariKategoriByLabel(daftarKategori, LABEL_KATEGORI_CASH);
-  const kategoriTransferObj = cariKategoriByLabel(daftarKategori, LABEL_KATEGORI_TRANSFER);
+  const labelKategoriCashless = METODE_CASHLESS.find((m) => m.value === metodeCashless)?.labelKategori || "";
+  const kategoriCashlessObj = cariKategoriByLabel(daftarKategori, labelKategoriCashless);
   const kategoriCash = kategoriCashObj?.kode || "";
-  const kategoriTransfer = kategoriTransferObj?.kode || "";
+  const kategoriCashless = kategoriCashlessObj?.kode || "";
+
+  // Rekening penampung FIXED juga — dicocokkan by label sama seperti
+  // kategori di atas. Beda dengan kategori, kalau belum ada di master, TIDAK
+  // perlu warning "belum ada" — akan dibuatkan otomatis saat Simpan (lihat
+  // resolveRekeningTetap di bawah), sama pola dengan
+  // REKENING_PEMBAYARAN_SUPPLIER / REKENING_ONGKIR_BARANG_DATANG.
+  const rekeningCashObj = daftarRekening.find(
+    (r) => normalisasiLabel(r.label) === normalisasiLabel(REKENING_TOKO_OFFLINE_CASH)
+  );
+  const rekeningCashlessObj = daftarRekening.find(
+    (r) => normalisasiLabel(r.label) === normalisasiLabel(REKENING_TOKO_OFFLINE_CASHLESS)
+  );
 
   const cashNum = Number(cash) || 0;
-  const transferNum = Number(transfer) || 0;
-  const totalPenjualan = cashNum + transferNum;
-  const rekeningBentrok = cashNum > 0 && transferNum > 0 && rekeningCash && rekeningCash === rekeningTransfer;
+  const cashlessNum = Number(cashless) || 0;
+  const totalPenjualan = cashNum + cashlessNum;
 
   const canSubmit =
     !saving &&
     tanggal &&
     totalPenjualan > 0 &&
-    (cashNum <= 0 || (rekeningCash && kategoriCash)) &&
-    (transferNum <= 0 || (rekeningTransfer && kategoriTransfer)) &&
-    !rekeningBentrok;
+    (cashNum <= 0 || kategoriCash) &&
+    (cashlessNum <= 0 || kategoriCashless);
 
   const resetSetelahSimpan = () => {
     setCash("");
-    setTransfer("");
+    setCashless("");
     setCatatan("");
-    // Tanggal & rekening sengaja TIDAK direset — input harian sering diisi
-    // berkali-kali di hari & pola yang sama (per shift/kasir), jadi biar bisa
-    // langsung isi nominal berikutnya tanpa pilih ulang dari awal.
+    // Tanggal sengaja TIDAK direset — input harian sering diisi berkali-kali
+    // di hari & pola yang sama (per shift/kasir), jadi biar bisa langsung
+    // isi nominal berikutnya tanpa pilih ulang dari awal.
+  };
+
+  // Cari rekening di master by label (case-insensitive); kalau belum ada,
+  // buatkan sekali di master_data (tipe "rekening") dengan kode yang
+  // ditentukan (kodeTetap, kalau ada) — pola sama seperti
+  // cariAtauBuatMasterTetap di ModalRouter.jsx.
+  const resolveRekeningTetap = async (labelTetap, kodeTetap) => {
+    const ada = daftarRekening.find((r) => normalisasiLabel(r.label) === normalisasiLabel(labelTetap));
+    if (ada) return ada.kode;
+    let kode = kodeTetap || suggestKode(labelTetap);
+    if (daftarRekening.some((r) => r.kode === kode)) kode = `${kode}-2`;
+    await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening", kode, label: labelTetap }) });
+    return kode;
   };
 
   const simpan = async () => {
@@ -115,15 +162,17 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
     try {
       const rows = [];
       if (cashNum > 0) {
+        const rekeningCash = await resolveRekeningTetap(REKENING_TOKO_OFFLINE_CASH);
         rows.push({
           tanggal, tipe: "masuk", rekening: rekeningCash, kategori: kategoriCash,
           jumlah: cashNum, keterangan: buatKeterangan("Cash", catatan),
         });
       }
-      if (transferNum > 0) {
+      if (cashlessNum > 0) {
+        const rekeningCashless = await resolveRekeningTetap(REKENING_TOKO_OFFLINE_CASHLESS, KODE_REKENING_TOKO_OFFLINE_CASHLESS);
         rows.push({
-          tanggal, tipe: "masuk", rekening: rekeningTransfer, kategori: kategoriTransfer,
-          jumlah: transferNum, keterangan: buatKeterangan("Transfer", catatan),
+          tanggal, tipe: "masuk", rekening: rekeningCashless, kategori: kategoriCashless,
+          jumlah: cashlessNum, keterangan: buatKeterangan(`Cashless (${metodeCashless})`, catatan),
         });
       }
       // Satu-satu (bukan bulk insert), pola sama seperti form Transaksi Keuangan —
@@ -155,8 +204,15 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
   const semuaEntri = (keuanganTransaksi || []).filter(isEntriTokoOffline);
   const entriBulanIni = semuaEntri.filter((t) => t.tanggal >= awalBulanIni());
   const entriHariIni = semuaEntri.filter((t) => t.tanggal === todayIso);
+  // "Cashless" mencakup entri lama yang masih berlabel "Transfer" (sebelum
+  // rename) — dihitung sebagai "bukan Cash", bukan dicocokkan literal ke satu
+  // nama saja, supaya data lama & baru tetap terjumlah sejajar di StatCard.
   const jumlahByJenis = (list, jenis) =>
-    list.reduce((a, t) => a + (uraiKeterangan(t.keterangan).jenis === jenis ? Number(t.jumlah) || 0 : 0), 0);
+    list.reduce((a, t) => {
+      const j = uraiKeterangan(t.keterangan).jenis;
+      const cocok = jenis === "Cash" ? j === "Cash" : j !== "Cash";
+      return a + (cocok ? Number(t.jumlah) || 0 : 0);
+    }, 0);
 
   const riwayat = [...semuaEntri].sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : (b.id || 0) - (a.id || 0)));
 
@@ -167,22 +223,22 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
         description="Input harian penjualan toko offline — tersimpan langsung sebagai transaksi pemasukan di Keuangan."
       />
 
-      {daftarRekening.length === 0 || daftarKategori.length === 0 ? (
-        <EmptyState label='Rekening atau Kategori Pemasukan belum ada — daftarkan dulu lewat menu Keuangan > Rekening & Kategori.' />
+      {daftarKategori.length === 0 ? (
+        <EmptyState label='Kategori Pemasukan belum ada — daftarkan dulu lewat menu Keuangan > Rekening & Kategori.' />
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             <StatCard label="Cash Hari Ini" value={fmtRp(jumlahByJenis(entriHariIni, "Cash"))} icon={Wallet} />
-            <StatCard label="Transfer Hari Ini" value={fmtRp(jumlahByJenis(entriHariIni, "Transfer"))} icon={Landmark} />
+            <StatCard label="Cashless Hari Ini" value={fmtRp(jumlahByJenis(entriHariIni, "Cashless"))} icon={Landmark} />
             <StatCard
               label="Total Hari Ini"
-              value={fmtRp(jumlahByJenis(entriHariIni, "Cash") + jumlahByJenis(entriHariIni, "Transfer"))}
+              value={fmtRp(jumlahByJenis(entriHariIni, "Cash") + jumlahByJenis(entriHariIni, "Cashless"))}
               icon={TrendingUp}
               accent="text-md-primary"
             />
             <StatCard
               label="Total Bulan Ini"
-              value={fmtRp(jumlahByJenis(entriBulanIni, "Cash") + jumlahByJenis(entriBulanIni, "Transfer"))}
+              value={fmtRp(jumlahByJenis(entriBulanIni, "Cash") + jumlahByJenis(entriBulanIni, "Cashless"))}
               icon={Home}
             />
           </div>
@@ -203,13 +259,10 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
                   <InputRupiah value={cash} onChange={setCash} placeholder="0" />
                 </Field>
                 <Field label="Rekening Penampung">
-                  <SearchableSelect
-                    value={rekeningCash}
-                    onChange={setRekeningCash}
-                    options={rekeningOptions}
-                    placeholder="Pilih rekening kas…"
-                    disabled={cashNum <= 0}
-                  />
+                  <div className="h-[38px] flex items-center px-3 rounded-md-md bg-md-container-highest text-sm text-md-on-surface-variant">
+                    {rekeningCashObj?.label || REKENING_TOKO_OFFLINE_CASH}
+                    <span className="ml-1.5 text-[11px] opacity-70">(otomatis)</span>
+                  </div>
                 </Field>
                 <Field label="Kategori Pemasukan">
                   {kategoriCashObj ? (
@@ -227,34 +280,46 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
 
               <div className="rounded-md-md border border-md-outline-variant p-3">
                 <div className="text-xs font-medium text-sky-400 mb-2 flex items-center gap-1.5">
-                  <Landmark size={13} /> Transfer
+                  <Landmark size={13} /> Cashless
                 </div>
                 <Field label="Jumlah">
-                  <InputRupiah value={transfer} onChange={setTransfer} placeholder="0" />
+                  <InputRupiah value={cashless} onChange={setCashless} placeholder="0" />
                 </Field>
                 <Field label="Rekening Penampung">
-                  <SearchableSelect
-                    value={rekeningTransfer}
-                    onChange={setRekeningTransfer}
-                    options={rekeningOptions}
-                    placeholder="Pilih rekening transfer/bank…"
-                    disabled={transferNum <= 0}
-                  />
-                  {rekeningBentrok && (
-                    <div className="text-[11px] text-red-400 mt-1">
-                      Rekening Cash & Transfer tidak boleh sama.
-                    </div>
-                  )}
+                  <div className="h-[38px] flex items-center px-3 rounded-md-md bg-md-container-highest text-sm text-md-on-surface-variant">
+                    {rekeningCashlessObj?.label || REKENING_TOKO_OFFLINE_CASHLESS}
+                    <span className="ml-1.5 text-[11px] opacity-70">
+                      ({rekeningCashlessObj?.kode || KODE_REKENING_TOKO_OFFLINE_CASHLESS}, otomatis)
+                    </span>
+                  </div>
+                </Field>
+                <Field label="Metode Cashless">
+                  <div className="flex gap-1.5">
+                    {METODE_CASHLESS.map((m) => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        onClick={() => setMetodeCashless(m.value)}
+                        className={`flex-1 px-3 py-2 rounded-md-md text-sm font-medium border transition-colors ${
+                          metodeCashless === m.value
+                            ? "bg-md-primary text-md-on-primary border-md-primary"
+                            : "bg-md-container-highest text-md-on-surface-variant border-md-outline-variant hover:border-md-primary"
+                        }`}
+                      >
+                        {m.value}
+                      </button>
+                    ))}
+                  </div>
                 </Field>
                 <Field label="Kategori Pemasukan">
-                  {kategoriTransferObj ? (
+                  {kategoriCashlessObj ? (
                     <div className="h-[38px] flex items-center px-3 rounded-md-md bg-md-container-highest text-sm text-md-on-surface-variant">
-                      {kategoriTransferObj.label} <span className="ml-1.5 text-[11px] opacity-70">(otomatis)</span>
+                      {kategoriCashlessObj.label} <span className="ml-1.5 text-[11px] opacity-70">(otomatis)</span>
                     </div>
                   ) : (
                     <div className="text-[11px] text-amber-400 flex items-start gap-1.5 px-1 py-1.5">
                       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                      Kategori "{LABEL_KATEGORI_TRANSFER}" belum ada. Buat dulu di Keuangan {'>'} Rekening & Kategori dengan nama persis ini.
+                      Kategori "{labelKategoriCashless}" belum ada. Buat dulu di Keuangan {'>'} Rekening & Kategori dengan nama persis ini.
                     </div>
                   )}
                 </Field>

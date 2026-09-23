@@ -371,12 +371,15 @@ function MainApp({ session, onLogout }) {
   //                    Absensi sendiri sudah narik datanya sendiri-sendiri,
   //                    lihat pages/Absensi.jsx) — cuma ditarik kalau lagi
   //                    buka Dashboard.
-  // loadAll() (gabungan keempatnya) TETAP dipakai untuk: load pertama kali
-  // app dibuka, tombol "Muat ulang" manual di header, dan tiap kali ada
-  // form/modal yang habis disimpan (reload={loadAll} di banyak tempat) —
-  // supaya data yang direfresh setelah SIMPAN tetap lengkap seperti semula,
-  // TIDAK ada perubahan di situ. Yang berubah cuma pemicu OTOMATIS saat
-  // pindah-pindah menu (lihat loadForMenu & fungsi navigate di bawah).
+  // loadAll() (gabungan kelimanya) dipakai untuk: load pertama kali app
+  // dibuka & tombol "Muat ulang" manual di header — dua tempat yang memang
+  // butuh SEMUA grup data sekaligus. Setelah form/modal disimpan/dihapus,
+  // dulu juga pakai loadAll (reload={loadAll} di banyak tempat) sehingga
+  // tiap Simpan/Hapus menarik ulang ~25 tabel walau cuma satu menu kecil
+  // yang lagi dibuka — bikin app kerasa lambat tiap kali submit. Sekarang
+  // dipakai reloadCurrentMenu() (bungkus loadForMenu dengan force=true) di
+  // situ, supaya cuma grup yang relevan buat menu yang lagi aktif yang
+  // ditarik ulang.
   // Cache singkat per grup data — supaya pindah-pindah menu dalam waktu
   // dekat (mis. Dashboard -> Stok -> Dashboard lagi dalam <1 menit) tidak
   // narik ulang tabel yang sama dari nol tiap kali, padahal datanya baru
@@ -385,9 +388,11 @@ function MainApp({ session, onLogout }) {
   // menghapus pemborosan pindah-menu yang terjadi dalam hitungan detik,
   // BUKAN mengubah freshness untuk penggunaan normal sehari-hari.
   // Aksi yang menulis data (quickAdvance, ackNotif, & semua form lewat
-  // reload={loadAll}) selalu lewat parameter force=true di bawah, jadi
-  // TIDAK PERNAH kena skip cache ini — user yang baru saja menyimpan
-  // selalu langsung lihat data terbaru miliknya sendiri.
+  // reload={reloadCurrentMenu}) selalu lewat parameter force=true di bawah,
+  // jadi TIDAK PERNAH kena skip cache ini — user yang baru saja menyimpan
+  // selalu langsung lihat data terbaru miliknya sendiri (untuk grup data
+  // yang relevan di menu yang lagi dibuka; grup lain tetap fresh nanti
+  // begitu menu itu dibuka, lihat catatan di reloadCurrentMenu).
   const CACHE_TTL_MS = 45_000;
   const lastLoadedRef = useRef({});
   const masihSegar = (kunci) => Date.now() - (lastLoadedRef.current[kunci] || 0) < CACHE_TTL_MS;
@@ -522,9 +527,9 @@ function MainApp({ session, onLogout }) {
     }
   }, []);
 
-  // loadAll SELALU force (bypass cache) — dipakai tombol "Muat ulang" manual
-  // dan reload={loadAll} setelah form/modal disimpan, jadi hasil simpanan
-  // sendiri selalu langsung kelihatan, tidak pernah ketahan cache 45 detik.
+  // loadAll SELALU force (bypass cache) — sekarang cuma dipakai load pertama
+  // app dibuka & tombol "Muat ulang" manual. Refresh setelah form/modal
+  // disimpan pakai reloadCurrentMenu() (di bawah loadForMenu), bukan ini lagi.
   const loadAll = useCallback(
     () => runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi], true),
     [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
@@ -536,34 +541,56 @@ function MainApp({ session, onLogout }) {
   // data gabungan seperti skuMasterGrosir), sisanya cukup loadCore saja.
   // TIDAK pakai force — kalau grup datanya baru saja dimuat (<45 detik
   // lalu) lewat pindah menu sebelumnya, loader di atas otomatis skip.
+  // `force` diteruskan ke runLoaders/tiap loader — dipakai reloadCurrentMenu()
+  // di bawah supaya refresh setelah SIMPAN/HAPUS tetap bypass cache 45 detik
+  // (sama seperti loadAll dulu), tapi cuma buat grup data yang relevan untuk
+  // menu yang lagi dibuka, bukan lagi SEMUA 25 tabel tiap kali.
   const loadForMenu = useCallback(
-    (menu) => {
-      if (menu === "dashboard") return runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]);
-      if (menu === "grosir") return runLoaders([loadCore, loadGrosir]);
+    (menu, force = false) => {
+      if (menu === "dashboard") return runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi], force);
+      if (menu === "grosir") return runLoaders([loadCore, loadGrosir], force);
       // Pelanggan dulunya sub-menu "grosir" (jadi datanya otomatis ikut ke-load
       // lewat baris di atas) — sekarang menu sendiri, jadi didaftarkan terpisah
       // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
-      if (menu === "pelanggan") return runLoaders([loadCore, loadGrosir]);
+      if (menu === "pelanggan") return runLoaders([loadCore, loadGrosir], force);
       // Sama seperti "pelanggan" di atas — "toko" (Toko Pengirim) juga dulu
       // sub-menu "grosir", sekarang menu sendiri, jadi didaftarkan terpisah
       // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
-      if (menu === "toko") return runLoaders([loadCore, loadGrosir]);
+      if (menu === "toko") return runLoaders([loadCore, loadGrosir], force);
+      // Reseller pakai data Grosir (pelanggan/produk manual/pesanan/pembayaran/
+      // deposit) SEKALIGUS Keuangan (riwayat transaksi ditampilkan di sana) —
+      // sebelum ini menu "reseller" tidak terdaftar sama sekali di sini
+      // (jatuh ke fallback loadCore saja), makanya dulu masih dipaksa pakai
+      // loadAll penuh supaya kedua grup itu ikut ke-refresh setelah simpan.
+      if (menu === "reseller") return runLoaders([loadCore, loadGrosir, loadKeuangan], force);
       // loadMarketplace juga ditarik di sini supaya Laporan Keuangan bisa
       // menampilkan info tambahan "Iklan Marketplace" periode berjalan
       // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
-      if (menu === "keuangan") return runLoaders([loadCore, loadKeuangan, loadMarketplace]);
+      if (menu === "keuangan") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
-      if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan]);
+      if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan], force);
       // Marketplace butuh master (rekening, buat form Pencairan) + data
       // marketplace_transaksi sendiri. loadKeuangan TIDAK perlu ditarik di
       // sini — pencairan cuma nulis satu baris baru ke keuangan_transaksi,
       // tidak perlu baca isinya dulu.
-      if (menu === "penjualan-marketplace") return runLoaders([loadCore, loadMarketplace]);
-      return runLoaders([loadCore]);
+      if (menu === "penjualan-marketplace") return runLoaders([loadCore, loadMarketplace], force);
+      return runLoaders([loadCore], force);
     },
     [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
   );
+
+  // Dipakai sebagai `reload` di ModalRouter & tiap halaman (dulu semuanya
+  // pakai loadAll langsung) — sekarang setelah SIMPAN/HAPUS cuma menarik
+  // ulang grup data yang relevan untuk menu yang SEDANG dibuka (persis
+  // logika loadForMenu di atas), bukan lagi SEMUA 25 tabel tiap kali. Tetap
+  // force=true supaya cache 45 detik tidak bikin hasil simpanan sendiri
+  // ketahan/telat kelihatan. Data grup lain (mis. Keuangan waktu lagi buka
+  // Barang Datang) tetap otomatis ke-refresh nanti begitu user pindah ke
+  // menu itu (lihat navigate() -> loadForMenu), jadi tidak ada yang jadi
+  // basi permanen — cuma tidak lagi ditarik sia-sia di menu yang tidak
+  // menampilkannya.
+  const reloadCurrentMenu = useCallback(() => loadForMenu(nav.menu, true), [loadForMenu, nav.menu]);
 
   useEffect(() => {
     // Sengaja cuma sekali saat app pertama dibuka, pakai menu awal (nav.menu)
@@ -742,7 +769,7 @@ function MainApp({ session, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex">
+    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex overflow-x-hidden">
       <AppShell
         active={nav}
         onNavigate={navigate}
@@ -844,7 +871,7 @@ function MainApp({ session, onLogout }) {
                   master={master}
                   penempatan={penempatan}
                   setModal={setModal}
-                  reload={loadAll}
+                  reload={reloadCurrentMenu}
                   showToast={showToast}
                   session={session}
                   barangRusak={barangRusak}
@@ -912,7 +939,7 @@ function MainApp({ session, onLogout }) {
                   detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
-                  reload={loadAll}
+                  reload={reloadCurrentMenu}
                   showToast={showToast}
                   setModal={setModal}
                 />
@@ -934,7 +961,7 @@ function MainApp({ session, onLogout }) {
                   sub={nav.sub || "input-harian"}
                   master={master}
                   keuanganTransaksi={keuanganTransaksi}
-                  reload={loadAll}
+                  reload={reloadCurrentMenu}
                   showToast={showToast}
                 />
               )}
@@ -943,7 +970,7 @@ function MainApp({ session, onLogout }) {
                   sub={nav.sub || "shopee"}
                   marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
-                  reload={loadAll}
+                  reload={reloadCurrentMenu}
                   showToast={showToast}
                   setModal={setModal}
                 />
@@ -961,7 +988,7 @@ function MainApp({ session, onLogout }) {
                   depositGrosir={depositGrosir}
                   keuanganTransaksi={keuanganTransaksi}
                   session={session}
-                  reload={loadAll}
+                  reload={reloadCurrentMenu}
                   showToast={showToast}
                   setModal={setModal}
                 />
@@ -972,7 +999,7 @@ function MainApp({ session, onLogout }) {
                   keuanganTransaksi={keuanganTransaksi}
                   marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
-                  reload={loadAll}
+                  reload={reloadCurrentMenu}
                   showToast={showToast}
                   setModal={setModal}
                 />
@@ -981,7 +1008,7 @@ function MainApp({ session, onLogout }) {
                 <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} />
               )}
               {nav.menu === "pengaturan" && (
-                <Pengaturan settings={settings} reload={loadAll} showToast={showToast} session={session} />
+                <Pengaturan settings={settings} reload={reloadCurrentMenu} showToast={showToast} session={session} />
               )}
               {nav.menu === "panduan" && <Panduan session={session} />}
             </Suspense>
@@ -1005,7 +1032,7 @@ function MainApp({ session, onLogout }) {
           marketplaceTransaksi={marketplaceTransaksi}
           saving={saving}
           setSaving={setSaving}
-          reload={loadAll}
+          reload={reloadCurrentMenu}
           showToast={showToast}
           session={session}
           quickAdvance={quickAdvance}

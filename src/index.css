@@ -5,6 +5,15 @@
 @tailwind utilities;
 
 @layer base {
+  html,
+  body {
+    /* Kunci halaman biar ga bisa geser ke samping (horizontal).
+       Kalau ada elemen lebar (misal tabel Pesanan Barang) yang
+       melebihi layar, yang boleh di-scroll cuma elemen itu sendiri
+       (lewat .overflow-x-auto di tabelnya), bukan seluruh halaman. */
+    overflow-x: hidden;
+    width: 100%;
+  }
   body {
     @apply font-sans;
   }

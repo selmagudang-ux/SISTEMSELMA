@@ -365,7 +365,7 @@ function FotoYatimCleaner({ reload, showToast }) {
     try {
       const [items, penerimaan] = await Promise.all([
         sbAll("items?select=id,sku,foto_url&foto_url=not.is.null"),
-        sbAll("pesanan_masuk?select=id,kode_bon,foto_bon_url,foto_bon_urls"),
+        sbAll("pesanan_masuk?select=id,kode_pesanan,foto_bon_url,foto_bon_urls"),
       ]);
 
       // Barang: satu foto per baris (foto_url).
@@ -384,7 +384,7 @@ function FotoYatimCleaner({ reload, showToast }) {
           : p.foto_bon_url
           ? [p.foto_bon_url]
           : [];
-        urls.forEach((url) => url && bonList.push({ pesananMasukId: p.id, kode_bon: p.kode_bon, url }));
+        urls.forEach((url) => url && bonList.push({ pesananMasukId: p.id, kode_pesanan: p.kode_pesanan, url }));
       }
 
       const semuaUrl = [...barangList.map((b) => b.foto_url), ...bonList.map((b) => b.url)];
@@ -396,7 +396,7 @@ function FotoYatimCleaner({ reload, showToast }) {
         .map((it) => ({ jenis: "barang", id: it.id, label: it.sku, url: it.foto_url }));
       const yatimBon = bonList
         .filter((it) => benarHilang.has(it.url))
-        .map((it) => ({ jenis: "bon", id: it.pesananMasukId, label: it.kode_bon || "—", url: it.url }));
+        .map((it) => ({ jenis: "bon", id: it.pesananMasukId, label: it.kode_pesanan || "—", url: it.url }));
 
       const yatim = [...yatimBarang, ...yatimBon];
       setOrphans(yatim);

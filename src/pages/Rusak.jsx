@@ -151,14 +151,14 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
         { key: "tanggal", label: "Tanggal" },
         { key: "sku", label: "SKU" },
         { key: "qty", label: "Qty Rusak" },
-        { key: "kode_bon", label: "Dari Bon" },
+        { key: "kode_pesanan", label: "Dari Bon" },
         { key: "catatan", label: "Catatan" },
       ],
       list.map((r) => ({
         tanggal: fmtTgl(r.created_at),
         sku: r.sku,
         qty: r.qty,
-        kode_bon: r.kode_bon || "",
+        kode_pesanan: r.kode_pesanan || "",
         catatan: r.catatan || "",
       }))
     );
@@ -223,13 +223,13 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
                     <td className="px-4 py-2.5 font-mono text-xs">{r.sku}</td>
                     <td className="px-4 py-2.5 text-red-400 font-semibold">{r.qty}x</td>
                     <td className="px-4 py-2.5 font-mono text-[11px]">
-                      {r.kode_bon ? (
+                      {r.kode_pesanan ? (
                         <button
-                          onClick={() => setDetailBon(r.kode_bon)}
+                          onClick={() => setDetailBon(r.kode_pesanan)}
                           className="text-amber-400 hover:text-amber-300 hover:underline"
                           title="Lihat rincian bon ini"
                         >
-                          {r.kode_bon}
+                          {r.kode_pesanan}
                         </button>
                       ) : (
                         <span className="text-slate-600">—</span>
@@ -284,7 +284,7 @@ export default function Rusak({ barangRusak, pesananMasuk, setModal }) {
       {detailBon && (
         <DetailBonModal
           kodeBon={detailBon}
-          pesanan={(pesananMasuk || []).find((p) => p.kode_bon === detailBon) || null}
+          pesanan={(pesananMasuk || []).find((p) => p.kode_pesanan === detailBon) || null}
           onClose={() => setDetailBon(null)}
         />
       )}

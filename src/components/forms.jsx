@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -234,8 +234,8 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   );
 }
 
-// Form "Input Barang Datang" — SATU LANGKAH: dicatat begitu barang fisik
-// sudah di tangan (bukan janji pesanan dulu baru dikonfirmasi belakangan).
+// Rincian barang datang (dipakai form Konfirmasi Datang): dicatat begitu barang
+// fisik sudah di tangan.
 // Tiap model: "Qty Datang" = TOTAL fisik yang diterima (baik + rusak jadi
 // satu angka), "Qty Rusak" = berapa dari total itu yang rusak (subset dari
 // Qty Datang, jadi tidak boleh lebih besar). SELURUH Qty Datang (totalnya)
@@ -243,15 +243,15 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
 // SKU seperti biasa. Begitu SKU-nya dibuat (lihat ModalRouter "buat-sku"),
 // qty rusak otomatis dipisah: qty final (Qty Datang - Qty Rusak) yang masuk
 // stok/rak, dan qty rusak tercatat ke menu "Rusak" (SKU + qty rusak).
-// Satu baris model dalam input barang datang (dipakai berulang di
-// BarangDatangForm).
+// Satu baris model dalam form Konfirmasi Datang (dipakai berulang di
+// KonfirmasiDatangForm).
 function barisBarangDatang() {
   return { nama: "", jumlahDatang: 1, jumlahRusak: 0, alasanRusak: "", harga: "" };
 }
 
 // Ubah rincian model tersimpan (bentuk database: jumlah = qty BAIK saja,
 // rusak terpisah) balik ke bentuk form (jumlahDatang = TOTAL baik+rusak) —
-// dipakai untuk pre-fill form ini waktu melanjutkan draf "Input Barang
+// dipakai untuk pre-fill form ini waktu melanjutkan draf "Konfirmasi
 // Datang" yang sudah disimpan sebelumnya lewat "Simpan sebagai Draf".
 function modelsDariDraf(p) {
   const detail = Array.isArray(p?.detail_model) ? p.detail_model : [];
@@ -265,302 +265,6 @@ function modelsDariDraf(p) {
   }));
 }
 
-// `initial` (opsional) dipakai waktu melanjutkan draf yang sudah disimpan
-// sebelumnya — form dibuka sudah terisi persis seperti draf itu, lalu bisa
-// diubah/dilengkapi lagi sebelum disimpan ulang sebagai draf atau
-// difinalisasi. `initial.id` menandai ini draf yang sudah ada di database
-// (jadi disimpan lewat PATCH, bukan bikin baris baru).
-export function BarangDatangForm({ onClose, onSubmit, saving, suppliers, initial = {} }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const draftId = initial?.id || null;
-  const [tanggal, setTanggal] = useState(initial?.tanggal_pesan || today);
-  // Foto bon sekarang bisa lebih dari satu (mis. bon multi-halaman, atau
-  // beberapa nota terpisah dalam satu transaksi datang) — disimpan sebagai
-  // array file + array preview URL, urutannya sama seperti dipilih. Foto
-  // yang sudah ada dari draf sebelumnya (sudah terupload, tinggal URL)
-  // disimpan terpisah di `existingFotoBon` supaya tidak ikut diupload ulang.
-  const [fotoBonList, setFotoBonList] = useState([]);
-  const [existingFotoBon, setExistingFotoBon] = useState(() => {
-    if (Array.isArray(initial?.foto_bon_urls) && initial.foto_bon_urls.length > 0) {
-      return initial.foto_bon_urls;
-    }
-    return initial?.foto_bon_url ? [initial.foto_bon_url] : [];
-  });
-  const [supplier, setSupplier] = useState(initial?.supplier || "");
-  const jenisAwalKustom = initial?.jenis && !JENIS_BARANG_MASUK.includes(initial.jenis);
-  const [jenis, setJenis] = useState(jenisAwalKustom ? "Lainnya" : initial?.jenis || "Pembelian");
-  const [jenisLainnya, setJenisLainnya] = useState(jenisAwalKustom ? initial.jenis : "");
-  const [models, setModels] = useState(() => modelsDariDraf(initial));
-  const [catatan, setCatatan] = useState(initial?.catatan || "");
-
-  const handleFotoBon = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setFotoBonList((list) => [
-      ...list,
-      ...files.map((f) => ({ file: f, preview: URL.createObjectURL(f) })),
-    ]);
-    // Reset input supaya bisa pilih file yang sama lagi kalau perlu, dan
-    // supaya tiap kali dipakai selalu nambah (bukan ganti) foto yang sudah ada.
-    e.target.value = "";
-  };
-  const hapusFotoBon = (idx) => setFotoBonList((list) => list.filter((_, i) => i !== idx));
-  const hapusFotoBonLama = (idx) => setExistingFotoBon((list) => list.filter((_, i) => i !== idx));
-
-  const updateModel = (idx, patch) =>
-    setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
-  const tambahModel = () => setModels((rows) => [...rows, barisBarangDatang()]);
-  const hapusModel = (idx) => setModels((rows) => rows.filter((_, i) => i !== idx));
-
-  // totalDatang = total fisik yang diterima (sudah termasuk rusak, karena
-  // Qty Datang sekarang memang diisi sebagai TOTAL, bukan cuma yang baik).
-  const totalDatang = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
-  const totalRusak = models.reduce((sum, m) => sum + (Number(m.jumlahRusak) || 0), 0);
-  // Nilai (Rp) dihitung dari TOTAL qty datang (bukan cuma qty baik) — qty
-  // rusak tetap ikut dihitung nilainya, karena barang rusak yang diterima
-  // tetap dianggap dibeli/dibayar penuh (klaim ke supplier itu urusan
-  // terpisah, bukan pengurang nilai pembelian di sini).
-  const totalNilai = models.reduce(
-    (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
-    0
-  );
-  const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
-  // Qty rusak tidak boleh lebih besar dari qty datang di baris yang sama —
-  // rusak itu bagian DARI yang datang, jadi maksimal ya sebanyak yang datang.
-  const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
-  // Valid untuk FINAL ("Simpan & Lanjut ke Alur Barang") — sama seperti
-  // sebelumnya, rincian model/qty harus lengkap & wajar karena langsung
-  // dikirim ke Alur Barang/stok.
-  const valid =
-    models.length > 0 &&
-    models.every((m) => (Number(m.jumlahDatang) || 0) >= 1) &&
-    models.every((m) => !rusakMelebihiDatang(m)) &&
-    (jenis !== "Lainnya" || jenisLainnya.trim());
-  // Valid untuk DRAF — jauh lebih longgar karena draf memang buat nyimpen
-  // progres yang belum lengkap (mis. qty/harga sebagian model belum
-  // ketahuan). Cuma dicegah kalau ada input yang jelas tidak masuk akal
-  // (qty rusak lebih besar dari qty datang di baris yang sama).
-  const validDraft = models.every((m) => !rusakMelebihiDatang(m));
-
-  return (
-    <ModalShell title={draftId ? "Lanjutkan Draf Barang Datang" : "Input Barang Datang"} onClose={onClose}>
-      <Field label="Tanggal">
-        <InputTanggal value={tanggal} onChange={setTanggal} />
-      </Field>
-
-      <Field label="Foto Bon (opsional, boleh lebih dari satu)">
-        <input type="file" accept="image/*" multiple onChange={handleFotoBon} className={inputClass} />
-      </Field>
-      {(existingFotoBon.length > 0 || fotoBonList.length > 0) && (
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {existingFotoBon.map((url, idx) => (
-            <div key={`lama-${idx}`} className="relative">
-              <img
-                src={url}
-                alt={`Foto bon tersimpan ${idx + 1}`}
-                className="w-full h-24 object-cover rounded-lg border border-slate-800 bg-slate-950"
-              />
-              <button
-                type="button"
-                onClick={() => hapusFotoBonLama(idx)}
-                title="Hapus foto ini"
-                className="absolute top-1 right-1 bg-slate-950/80 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full p-0.5"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-          {fotoBonList.map((f, idx) => (
-            <div key={idx} className="relative">
-              <img
-                src={f.preview}
-                alt={`Preview bon/nota ${idx + 1}`}
-                className="w-full h-24 object-cover rounded-lg border border-slate-800 bg-slate-950"
-              />
-              <button
-                type="button"
-                onClick={() => hapusFotoBon(idx)}
-                title="Hapus foto ini"
-                className="absolute top-1 right-1 bg-slate-950/80 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full p-0.5"
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <Field label="Supplier/Distributor (opsional)">
-        <input
-          className={inputClass}
-          value={supplier}
-          onChange={(e) => setSupplier(e.target.value)}
-          placeholder="Nama supplier/distributor"
-          list="supplier-datalist"
-        />
-        <SupplierDatalist suppliers={suppliers} />
-      </Field>
-      <ModelNamaDatalist id="barang-datang-model-datalist" suppliers={suppliers} supplierNama={supplier} />
-      <Field label="Jenis Barang Datang">
-        <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
-          {JENIS_BARANG_MASUK.map((j) => (
-            <option key={j} value={j}>{j}</option>
-          ))}
-        </select>
-      </Field>
-      {jenis === "Lainnya" && (
-        <Field label="Keterangan">
-          <input
-            className={inputClass}
-            value={jenisLainnya}
-            onChange={(e) => setJenisLainnya(e.target.value)}
-            placeholder="Contoh: Konsinyasi, Hadiah, dll"
-          />
-        </Field>
-      )}
-
-      <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang</p>
-      <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1 mb-1">
-        {models.map((m, idx) => {
-          // Qty Datang = TOTAL fisik baris ini (baik + rusak jadi satu angka).
-          // Qty baik yang bakal masuk stok = Qty Datang - Qty Rusak.
-          const totalQtyBaris = Number(m.jumlahDatang) || 0;
-          const qtyBaikBaris = Math.max(totalQtyBaris - (Number(m.jumlahRusak) || 0), 0);
-          return (
-            <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
-              <div className="flex-1 space-y-2">
-                <input
-                  className={inputClass}
-                  value={m.nama}
-                  onChange={(e) => updateModel(idx, { nama: e.target.value })}
-                  placeholder={`Kode/nama model ${idx + 1} (opsional)`}
-                  list="barang-datang-model-datalist"
-                />
-                <div className="flex gap-2">
-                  <Field label="Qty Datang (total)">
-                    <input
-                      type="number"
-                      min="0"
-                      className={inputClass}
-                      value={m.jumlahDatang}
-                      onChange={(e) => updateModel(idx, { jumlahDatang: Number(e.target.value) })}
-                    />
-                  </Field>
-                  <Field label="Qty Rusak">
-                    <input
-                      type="number"
-                      min="0"
-                      className={`${inputClass} ${rusakMelebihiDatang(m) ? "border-red-500" : ""}`}
-                      value={m.jumlahRusak}
-                      onChange={(e) => updateModel(idx, { jumlahRusak: Number(e.target.value) })}
-                    />
-                  </Field>
-                </div>
-                <p className="text-[11px] text-slate-500 -mt-1">
-                  Isi Qty Datang dengan TOTAL fisik yang diterima (baik + rusak jadi satu angka).
-                </p>
-                {rusakMelebihiDatang(m) && (
-                  <p className="text-[11px] text-red-400">Qty rusak tidak boleh lebih dari qty datang.</p>
-                )}
-                {Number(m.jumlahRusak) > 0 && (
-                  <input
-                    className={inputClass}
-                    value={m.alasanRusak}
-                    onChange={(e) => updateModel(idx, { alasanRusak: e.target.value })}
-                    placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
-                  />
-                )}
-                <InputRupiah
-                  value={m.harga}
-                  onChange={(v) => updateModel(idx, { harga: v })}
-                  placeholder="Harga/pcs"
-                />
-                <p className="text-[11px] text-slate-500">
-                  Total qty baris ini: {totalQtyBaris}x
-                  {Number(m.jumlahRusak) > 0 ? ` (baik: ${qtyBaikBaris}x, rusak: ${m.jumlahRusak}x)` : ""}
-                  {totalQtyBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(totalQtyBaris * (Number(m.harga) || 0))}` : ""}
-                </p>
-              </div>
-              {models.length > 1 && (
-                <button
-                  onClick={() => hapusModel(idx)}
-                  className="text-slate-500 hover:text-red-400 mt-1"
-                  title="Hapus model ini"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <button
-        onClick={tambahModel}
-        className="w-full mb-3 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
-      >
-        <Plus size={14} /> Tambah Model
-      </button>
-      <p className="text-[11px] text-slate-500 -mt-2 mb-3">
-        Total: {models.length} model / {totalDatang}x datang
-        {totalRusak > 0 ? ` · ${totalRusak}x rusak` : ""}
-        {totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
-      </p>
-
-      <Field label="Catatan (opsional)">
-        <input
-          className={inputClass}
-          value={catatan}
-          onChange={(e) => setCatatan(e.target.value)}
-          placeholder="Contoh: no. bon, keterangan tambahan, dll"
-        />
-      </Field>
-      {(() => {
-        const buatPayload = (draft) => ({
-          draft,
-          draftId,
-          tanggal,
-          fotoBonFiles: fotoBonList.map((f) => f.file),
-          existingFotoBonUrls: existingFotoBon,
-          supplier: supplier.trim() || null,
-          jenis: jenisFinal || null,
-          models: models.map((m) => ({
-            nama: m.nama.trim() || null,
-            jumlahDatang: Number(m.jumlahDatang) || 0,
-            jumlahRusak: Number(m.jumlahRusak) || 0,
-            alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
-            harga: Number(m.harga) || 0,
-          })),
-          catatan: catatan.trim() || null,
-        });
-        return (
-          <div className="flex gap-2 mt-2">
-            <button
-              disabled={saving || !validDraft}
-              onClick={() => onSubmit(buatPayload(true))}
-              title="Simpan progres tanpa masuk ke Alur Barang/stok — bisa dilanjutkan & dilengkapi lagi nanti"
-              className="flex-1 border border-slate-700 hover:border-violet-500 text-slate-300 hover:text-violet-400 disabled:opacity-50 font-semibold text-sm py-2.5 rounded-lg"
-            >
-              {saving ? "Menyimpan…" : "Simpan sebagai Draf"}
-            </button>
-            <button
-              disabled={saving || !valid}
-              onClick={() => onSubmit(buatPayload(false))}
-              className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
-            >
-              {saving ? "Menyimpan…" : "Simpan & Lanjut ke Alur Barang"}
-            </button>
-          </div>
-        );
-      })()}
-      <p className="text-[11px] text-slate-500 mt-2">
-        "Simpan sebagai Draf" cuma menyimpan progresnya — belum masuk Alur Barang/stok sampai
-        nanti dilanjutkan &amp; disimpan sebagai final dari baris berstatus <span className="text-violet-400">Draf</span> di
-        daftar.
-      </p>
-    </ModalShell>
-  );
-}
-
 // Form "Pesan Barang" — dicatat begitu ORDER ke supplier dibuat, bukan pas
 // barangnya sudah sampai. Sengaja TIDAK minta rincian model/qty karena pada
 // prakteknya itu baru ketahuan begitu barang dibuka fisiknya — saat pesan,
@@ -572,6 +276,12 @@ export function BarangDatangForm({ onClose, onSubmit, saving, suppliers, initial
 // `initial` (opsional) dipakai untuk pre-fill saat form dibuka dari pengajuan
 // restock yang sudah disetujui — supplier/catatan diisi otomatis dari riwayat
 // SKU tersebut, tapi tetap bisa diubah manual sebelum disimpan.
+// Catatan: form ini SENGAJA cuma satu bon per pesanan (fitur "Tambah Bon"
+// sempat ada di sini, sekarang dipindah/dihapus) — pemisahan per-bon untuk
+// barang yang datang sekarang ditangani di form "Input Barang Datang"
+// (BarangDatangForm) begitu barangnya benar-benar sampai. `onSubmit` tetap
+// mengirim `bonList` berisi SATU elemen supaya handler "pesan-barang" di
+// ModalRouter.jsx (yang menerima banyak bon sekaligus) tidak perlu diubah.
 export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppliers }) {
   const today = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(today);
@@ -627,22 +337,23 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
           />
         </Field>
       )}
-      <Field label="Total Harga Kesepakatan (opsional)">
-        <InputRupiah value={harga} onChange={setHarga} placeholder="Total nilai pesanan (bukan harga per pcs)" />
+
+      <Field label="Total Harga (opsional)">
+        <InputRupiah value={harga} onChange={setHarga} placeholder="Total harga kesepakatan (opsional)" />
       </Field>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3">
-        Ini TOTAL nilai/nota yang disepakati untuk seluruh pesanan — bukan harga per pcs, karena
-        model &amp; qty per model memang belum ketahuan sekarang. Harga per pcs tiap model diisi
-        nanti pas "Konfirmasi Datang", setelah rinciannya jelas.
+        TOTAL nilai kesepakatan (bukan harga per pcs) — rincian model &amp; harga per pcs diisi
+        belakangan lewat "Konfirmasi Datang".
       </p>
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
           value={catatan}
           onChange={(e) => setCatatan(e.target.value)}
-          placeholder="Contoh: perkiraan qty, model yang dipesan, dll"
+          placeholder="Contoh: no. nota, perkiraan qty, model, dll"
         />
       </Field>
+
       <button
         disabled={saving || !valid}
         onClick={() =>
@@ -650,14 +361,106 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
             tanggal,
             supplier: supplier.trim(),
             jenis: jenisFinal || null,
-            totalHarga: Number(harga) || 0,
-            catatan: catatan.trim() || null,
+            bonList: [{ totalHarga: Number(harga) || 0, catatan: catatan.trim() || null }],
           })
         }
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan Pesanan"}
       </button>
+    </ModalShell>
+  );
+}
+
+// Bon TAMBAHAN di form Konfirmasi Datang — dipakai kalau barang yang datang
+// fisik untuk SATU pesanan (PSN-xxxx) ini ternyata dibarengi lebih dari satu
+// bon/nota dari supplier (mis. pesan sekali tapi dikirim jadi 2 nota
+// terpisah). Bon #1 tetap PATCH baris pesanan yang sudah ada (kode PSN-xxxx
+// tidak berubah); tiap bon tambahan di sini jadi baris pesanan_masuk BARU
+// sendiri-sendiri (kode BON- otomatis, sama seperti bon di Input Barang
+// Datang) — tidak punya harga kesepakatan sendiri karena memang bukan
+// bagian dari pesanan yang di-PO-kan.
+let _bonTambahanSeq = 0;
+function bonTambahanBaru(noBox) {
+  return {
+    id: `bont-${++_bonTambahanSeq}`,
+    noBox: noBox ?? "",
+    noInvoice: "",
+    fotoBonList: [],
+    existingFotoBon: [],
+    models: [barisBarangDatang()],
+    catatan: "",
+  };
+}
+
+// Input "No. Box" dipakai di bon utama & tiap bon tambahan (Konfirmasi
+// Datang) — kalau jumlah box totalnya sudah diketahui (diisi waktu "Tandai
+// Status Kedatangan"), tampil sebagai pilihan Box 1..N supaya user tidak
+// salah ketik; kalau belum, fallback ke input angka bebas.
+function NoBoxField({ value, onChange, jumlahBoxTotal }) {
+  if (jumlahBoxTotal > 0) {
+    return (
+      <select
+        className={inputClass}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Pilih box…</option>
+        {Array.from({ length: jumlahBoxTotal }, (_, i) => i + 1).map((n) => (
+          <option key={n} value={n}>Box {n}</option>
+        ))}
+      </select>
+    );
+  }
+  return (
+    <input
+      type="number"
+      min="1"
+      inputMode="numeric"
+      className={inputClass}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="No. box (opsional)"
+    />
+  );
+}
+
+// Layar "Pilih Box" — tampil DULU sebelum form rincian begitu jumlah_box
+// pesanan ini > 1, supaya user memilih box mana yang mau dibongkar & diisi
+// dulu, bukan langsung nyemplung ke form yang default-nya Box 1 (lihat
+// KonfirmasiDatangForm — dipisah jadi layar sendiri atas permintaan supaya
+// "pilih box" jadi langkah eksplisit, bukan cuma dropdown di dalam form).
+// Box yang sudah final (sudah ada bon dengan jumlah_diterima > 0 untuk
+// no_box itu) ditandai & tidak bisa dipilih lagi dari sini — untuk mengubah
+// box yang sudah final, pakai "Edit" di tabel Pesanan Barang, bukan alur ini.
+function PilihBoxScreen({ jumlahBoxTotal, boxFinal, onClose, onPilih, kodeReferensi }) {
+  return (
+    <ModalShell title={`Konfirmasi Datang — ${kodeReferensi || ""}`} onClose={onClose}>
+      <p className="text-[11px] text-slate-400 mb-3">
+        Pesanan ini punya {jumlahBoxTotal} box fisik. Pilih box mana yang mau dibongkar &amp; diisi rinciannya sekarang — box lain bisa menyusul kapan saja lewat "Konfirmasi Datang" lagi.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {Array.from({ length: jumlahBoxTotal }, (_, i) => i + 1).map((n) => {
+          const sudahFinal = boxFinal.has(n);
+          return (
+            <button
+              key={n}
+              type="button"
+              disabled={sudahFinal}
+              onClick={() => onPilih(n)}
+              title={sudahFinal ? "Sudah final — ubah lewat Edit di tabel Pesanan Barang" : `Bongkar Box ${n}`}
+              className={`rounded-lg border px-3 py-3 text-center ${
+                sudahFinal
+                  ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-400 cursor-not-allowed"
+                  : "border-slate-800 bg-slate-900 hover:border-amber-500 hover:bg-slate-800 text-slate-200"
+              }`}
+            >
+              <div className="text-sm font-semibold">Box {n}</div>
+              <div className="text-[10px] mt-1">{sudahFinal ? "Sudah final" : "Belum diisi"}</div>
+            </button>
+          );
+        })}
+      </div>
     </ModalShell>
   );
 }
@@ -669,14 +472,96 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
 // (bukan bikin baris baru), supaya kode/toko/riwayatnya tetap satu dari pesan
 // sampai datang. Total harga kesepakatan waktu pesan ditampilkan sebagai info
 // di atas (BUKAN harga per pcs — itu memang beda satuan), jadi harga per pcs
-// tiap model tetap harus diisi manual di sini setelah rinciannya jelas.
-export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppliers, master }) {
+// tiap model tetap harus diisi manual di sini setelah rinciannya jelas. Kalau
+// fisiknya ternyata dibarengi lebih dari satu bon, bisa "Tambah Bon" — lihat
+// bonTambahanBaru di atas & `extraBonList` di bawah.
+export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppliers, master, pesananMasuk }) {
   const today = new Date().toISOString().slice(0, 10);
+  // `pesanan` yang dibuka bisa jadi pesanan ROOT (PSN-xxxx) atau salah satu
+  // bon tambahannya (BON-xxxx, induk_id menunjuk ke root) — tergantung baris
+  // mana yang diklik "Konfirmasi Datang"-nya di tabel Pesanan Barang. Data
+  // "keseluruhan pesanan" (harga kesepakatan, jumlah box) SELALU tersimpan
+  // di baris root, jadi selalu cari root-nya dulu supaya perhitungan
+  // selisih & "box terakhir" di bawah tetap benar walau yang dibuka
+  // kebetulan bon tambahan.
+  const rootId = pesanan?.induk_id || pesanan?.id;
+  const rootPesanan = pesanan?.induk_id
+    ? (pesananMasuk || []).find((row) => row.id === pesanan.induk_id) || pesanan
+    : pesanan;
   // harga_kesepakatan = kolom baru (persisten, tidak hilang setelah konfirmasi).
   // Fallback ke detail_model[0].harga_total_pesan untuk pesanan lama yang
   // dibuat sebelum kolom ini ada.
-  const totalHargaAwal = Number(pesanan?.harga_kesepakatan ?? pesanan?.detail_model?.[0]?.harga_total_pesan) || 0;
+  const totalHargaAwal = Number(rootPesanan?.harga_kesepakatan ?? rootPesanan?.detail_model?.[0]?.harga_total_pesan) || 0;
   const [tanggal, setTanggal] = useState(today);
+  // Total box fisik untuk pesanan ini (diisi sekali waktu "Tandai Status
+  // Kedatangan", lihat TandaiStatusKedatanganForm) — dipakai di sini cuma
+  // untuk bikin pilihan "No. Box" (1..jumlahBoxTotal) supaya user tidak
+  // salah ketik. Kalau belum pernah diisi (pesanan lama), fallback ke input
+  // angka bebas.
+  const jumlahBoxTotal = Number(rootPesanan?.jumlah_box) || 0;
+  // Pesanan berstatus "Sebagian Datang" yang dibuka lagi = bon utamanya SUDAH
+  // pernah disimpan final (mis. lewat "Simpan Bon #1 & Lanjut ke Alur Barang"
+  // sementara bon tambahan belum lengkap), jadi bon utama ditampilkan sudah
+  // tersimpan & terkunci — jangan diisi ulang (nanti barangnya dobel).
+  // (Dideklarasikan di sini, sebelum boxFinalDariDb/boxFinalUntukPilih di
+  // bawah, karena keduanya butuh nilai ini.)
+  const utamaSudahFinalAwal = !!pesanan && !pesanan.draft && (Number(pesanan.jumlah_diterima) || 0) > 0;
+  // Box-box yang datanya SUDAH final tersimpan di database — bisa dari
+  // sesi modal yang BEDA (mis. Box 1 & 2 disimpan kemarin, modal ditutup,
+  // baru sekarang lanjut isi Box 3) — supaya deteksi "box terakhir sedang
+  // dibongkar" & total nilai kumulatif di bawah tetap akurat, bukan cuma
+  // menghitung box yang kepakai di sesi form yang sedang jalan sekarang.
+  const finalDenganBoxDb = (row) =>
+    !row.dibatalkan && !row.draft && (Number(row.jumlah_diterima) || 0) > 0 && Number(row.no_box) > 0;
+  const bonFinalLain = (pesananMasuk || []).filter(
+    (row) => row.id !== pesanan?.id && (row.id === rootId || row.induk_id === rootId) && finalDenganBoxDb(row)
+  );
+  const boxFinalDariDb = new Set(bonFinalLain.map((row) => Number(row.no_box)));
+  // boxFinalDariDb di atas SENGAJA mengecualikan baris pesanan/bon yang lagi
+  // dibuka ini sendiri (row.id !== pesanan?.id) — supaya box-nya sendiri
+  // tidak dobel dihitung waktu dijumlah bareng noBoxUtama di boxTerisi
+  // (lihat di bawah). TAPI itu bikin masalah kalau bon utama pesanan ini
+  // SUDAH final (mis. Box 1 sudah disimpan sesi sebelumnya) lalu form
+  // dibuka lagi — box-nya sendiri jadi tidak pernah ketandai "final" di
+  // layar Pilih Box, sehingga box yang sebenarnya sudah selesai kelihatan
+  // seperti masih kosong & malah bisa dipilih ulang. boxFinalUntukPilih di
+  // sini melengkapi boxFinalDariDb dengan box milik bon utama SENDIRI kalau
+  // memang sudah final, dan box-box yang sudah dipakai di daftar bon
+  // tambahan sesi ini (extraBonList) — khusus dipakai untuk PilihBoxScreen
+  // (bukan buat boxTerisi/wajibKeteranganSelisih di bawah, itu tetap pakai
+  // boxFinalDariDb seperti semula).
+  const boxFinalUntukPilih = new Set(boxFinalDariDb);
+  if (utamaSudahFinalAwal && Number(pesanan?.no_box) > 0) {
+    boxFinalUntukPilih.add(Number(pesanan.no_box));
+  }
+  const nilaiFinalDariDb = bonFinalLain.reduce(
+    (sum, row) =>
+      sum +
+      (row.detail_model || []).reduce(
+        (s, m) => s + ((Number(m.jumlah) || 0) + (Number(m.rusak) || 0)) * (Number(m.harga) || 0),
+        0
+      ),
+    0
+  );
+  // No. Box untuk bon utama — tiap bon (utama maupun tambahan) sekarang
+  // ditandai masuk box fisik yang mana, supaya rincian per bon di form ini
+  // sekaligus kelihatan pengelompokannya per box (lihat juga `noBox` di
+  // bonTambahanBaru untuk bon tambahan).
+  // Kalau box-nya lebih dari satu DAN belum ada box yang dipilih untuk
+  // pesanan/bon ini (belum pernah final), noBoxUtama sengaja dikosongkan
+  // dulu — baru diisi begitu user memilih box-nya di PilihBoxScreen di
+  // bawah (lihat `langkah`). Kalau cuma 1 box (atau jumlah box belum
+  // pernah diisi), langsung fallback ke perilaku lama (Box 1 otomatis /
+  // input bebas), tidak perlu layar pilih box.
+  const [noBoxUtama, setNoBoxUtama] = useState(() => {
+    if (pesanan?.no_box) return pesanan.no_box;
+    if (jumlahBoxTotal > 1) return "";
+    return jumlahBoxTotal > 0 ? 1 : "";
+  });
+  // No. Invoice — nomor invoice/nota ASLI dari supplier (bukan kode BON-/
+  // PSN- internal, dan bukan No. Resi pengiriman) — murni catatan referensi,
+  // tidak dipakai buat penomoran otomatis apapun.
+  const [noInvoiceUtama, setNoInvoiceUtama] = useState(pesanan?.no_invoice || "");
   // Foto bon bisa lebih dari satu, sama seperti Input Barang Datang. Foto
   // yang sudah ada dari draf sebelumnya (sudah terupload, tinggal URL)
   // disimpan terpisah di `existingFotoBon` supaya tidak ikut diupload ulang.
@@ -691,8 +576,15 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   // ini, rincian modelnya sudah terisi — pre-fill dari situ. Pesanan yang
   // masih murni "Menunggu" (belum pernah diisi sama sekali) tetap mulai dari
   // satu baris kosong seperti biasa.
+  // "pilih-box" = tampil layar pemilihan box dulu, "isi" = form rincian
+  // seperti biasa. Cuma relevan kalau jumlah box > 1 dan bon utamanya belum
+  // final (kalau sudah final, pesanan yang dibuka memang box tertentu yang
+  // sudah dipilih dari awal, jadi langsung ke "isi").
+  const [langkah, setLangkah] = useState(
+    jumlahBoxTotal > 1 && boxFinalUntukPilih.size < jumlahBoxTotal ? "pilih-box" : "isi"
+  );
   const [models, setModels] = useState(() =>
-    pesanan?.draft ? modelsDariDraf(pesanan) : [barisBarangDatang()]
+    pesanan?.draft || utamaSudahFinalAwal ? modelsDariDraf(pesanan) : [barisBarangDatang()]
   );
   const [catatan, setCatatan] = useState(pesanan?.catatan || "");
   const [keteranganSelisih, setKeteranganSelisih] = useState(pesanan?.keterangan_selisih || "");
@@ -701,6 +593,59 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   // Kedatangan" (toggle cepat) begitu ditandai sudah datang. Lihat
   // TandaiStatusKedatanganForm di bawah & handler "toggle-konfirmasi-datang"
   // di ModalRouter.jsx.
+
+  // Bon TAMBAHAN (di luar pesanan PSN-xxxx ini) — kosong secara default,
+  // cuma dipakai kalau user klik "Tambah Bon" karena fisiknya ternyata
+  // dibarengi lebih dari satu bon. Lihat bonTambahanBaru di atas.
+  const [extraBonList, setExtraBonList] = useState([]);
+  // Kode bon utama (PSN-xxxx / BON-xxxx) kalau sudah disimpan final lewat
+  // tombol "Simpan Bon #1 & Lanjut ke Alur Barang" — false selama belum.
+  // Bon tambahan yang sudah disimpan sendiri ditandai lewat `bon.tersimpan`.
+  const [utamaTersimpan, setUtamaTersimpan] = useState(utamaSudahFinalAwal ? pesanan?.kode_pesanan || true : false);
+  // true = bon utama sudah masuk Alur Barang tapi pesanannya masih berstatus
+  // "Sebagian Datang" karena masih ada bon lain yang belum masuk. Jadi false
+  // begitu bon terakhir masuk (pesanan otomatis "Selesai") atau lewat tombol
+  // "Tandai Pesanan Selesai".
+  const [utamaMasihSebagian, setUtamaMasihSebagian] = useState(utamaSudahFinalAwal);
+  const boxTerisi = new Set(
+    [noBoxUtama, ...extraBonList.map((b) => b.noBox), ...boxFinalDariDb]
+      .filter((n) => n !== "" && n != null)
+      .map(Number)
+  );
+  const tambahBon = () => setExtraBonList((rows) => [...rows, bonTambahanBaru(noBoxUtama || "")]);
+  const hapusBon = (bonId) => setExtraBonList((rows) => rows.filter((r) => r.id !== bonId));
+  const ubahBon = (bonId, patch) =>
+    setExtraBonList((rows) => rows.map((r) => (r.id === bonId ? { ...r, ...patch } : r)));
+  const handleFotoBonTambahan = (bonId, e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setExtraBonList((rows) =>
+      rows.map((r) =>
+        r.id === bonId
+          ? { ...r, fotoBonList: [...r.fotoBonList, ...files.map((f) => ({ file: f, preview: URL.createObjectURL(f) }))] }
+          : r
+      )
+    );
+    e.target.value = "";
+  };
+  const hapusFotoBonTambahan = (bonId, idx) =>
+    setExtraBonList((rows) =>
+      rows.map((r) => (r.id === bonId ? { ...r, fotoBonList: r.fotoBonList.filter((_, i) => i !== idx) } : r))
+    );
+  const updateModelTambahan = (bonId, idx, patch) =>
+    setExtraBonList((rows) =>
+      rows.map((r) =>
+        r.id === bonId ? { ...r, models: r.models.map((m, i) => (i === idx ? { ...m, ...patch } : m)) } : r
+      )
+    );
+  const tambahModelTambahan = (bonId) =>
+    setExtraBonList((rows) =>
+      rows.map((r) => (r.id === bonId ? { ...r, models: [...r.models, barisBarangDatang()] } : r))
+    );
+  const hapusModelTambahan = (bonId, idx) =>
+    setExtraBonList((rows) =>
+      rows.map((r) => (r.id === bonId ? { ...r, models: r.models.filter((_, i) => i !== idx) } : r))
+    );
 
   const handleFotoBon = (e) => {
     const files = Array.from(e.target.files || []);
@@ -727,26 +672,170 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
     (sum, m) => sum + (Number(m.jumlahDatang) || 0) * (Number(m.harga) || 0),
     0
   );
+  // Nilai bon tambahan yang ADA DI SESI FORM ini (baik yang sudah
+  // tersimpan lewat "Simpan Bon #N" maupun yang masih diisi) — dijumlah
+  // pakai rumus yang sama seperti totalNilai di atas (qty datang + rusak,
+  // dikali harga/pcs).
+  const totalNilaiBonTambahan = extraBonList.reduce(
+    (sum, b) =>
+      sum +
+      b.models.reduce(
+        (s, m) => s + ((Number(m.jumlahDatang) || 0) + (Number(m.jumlahRusak) || 0)) * (Number(m.harga) || 0),
+        0
+      ),
+    0
+  );
+  // Total harga barang datang untuk SELURUH pesanan (semua box, bukan cuma
+  // box yang lagi diisi di bon utama) — box yang sudah final duluan di
+  // database (nilaiFinalDariDb) + box yang ada di sesi form ini sekarang
+  // (bon utama + bon tambahan). Dibandingkan ke harga kesepakatan supaya
+  // "selisih" berarti selisih pesanan secara keseluruhan, bukan cuma satu
+  // box dibanding harga total pesanan (yang hampir pasti selalu "beda"
+  // walau sebenarnya belum ada masalah, karena box lain belum kehitung).
+  const totalNilaiKeseluruhan = totalNilai + totalNilaiBonTambahan + nilaiFinalDariDb;
   // Selisih antara total harga kesepakatan (waktu pesan) dan total harga
-  // barang yang benar-benar datang (qty total x harga/pcs, diisi di atas).
-  // Cuma relevan kalau ada harga kesepakatan tercatat (totalHargaAwal > 0).
+  // barang yang benar-benar datang, dihitung dari SELURUH box pesanan ini
+  // (lihat totalNilaiKeseluruhan). Cuma relevan kalau ada harga kesepakatan
+  // tercatat (totalHargaAwal > 0).
   const adaKesepakatan = totalHargaAwal > 0;
-  const selisih = adaKesepakatan ? totalNilai - totalHargaAwal : 0;
+  const selisih = adaKesepakatan ? totalNilaiKeseluruhan - totalHargaAwal : 0;
   const adaSelisih = adaKesepakatan && selisih !== 0;
+  // "Box terakhir sedang dibongkar" = begitu sesi form ini disimpan, semua
+  // box fisik pesanan (1..jumlahBoxTotal) akan lengkap punya bon final —
+  // baik yang sudah final duluan di sesi/database lain, maupun yang baru
+  // kepakai di sesi form ini. Keterangan selisih BARU wajib diisi begitu
+  // ini terjadi — supaya box-box awal yang memang belum lengkap (masih
+  // menunggu box lain) tidak dipaksa isi keterangan padahal totalnya
+  // memang belum bisa dibandingkan secara adil ke harga kesepakatan.
+  const semuaBoxTerisi = jumlahBoxTotal === 0 || boxTerisi.size >= jumlahBoxTotal;
+  const wajibKeteranganSelisih = adaSelisih && semuaBoxTerisi;
   const rusakMelebihiDatang = (m) => (Number(m.jumlahRusak) || 0) > (Number(m.jumlahDatang) || 0);
-  const valid =
+  // Satu bon dianggap lengkap kalau tiap model punya qty datang & qty rusak
+  // yang wajar. Tiap bon dicek SENDIRI-SENDIRI supaya bon yang sudah beres
+  // bisa langsung masuk Alur Barang tanpa menunggu bon lain selesai diisi.
+  // (Syarat "keterangan selisih" TIDAK dicek di sini per-bon — itu properti
+  // seluruh pesanan, dicek sekali di `valid` di bawah lewat
+  // wajibKeteranganSelisih, supaya benar juga kalau box terakhirnya
+  // kebetulan sebuah bon tambahan, bukan bon utama.)
+  const bonTambahanValid = (b) =>
+    b.models.length > 0 &&
+    b.models.every((m) => (Number(m.jumlahDatang) || 0) >= 1) &&
+    b.models.every((m) => !rusakMelebihiDatang(m)) &&
+    b.noInvoice.trim() !== "";
+  const bonUtamaValid =
     models.length > 0 &&
     models.every((m) => (Number(m.jumlahDatang) || 0) >= 1) &&
     models.every((m) => !rusakMelebihiDatang(m)) &&
-    // Kalau harga kesepakatan & harga barang datang tidak sama persis,
-    // wajib isi keterangan (alasan kurang/lebihnya) sebelum bisa disimpan.
-    (!adaSelisih || keteranganSelisih.trim() !== "");
-  // Valid untuk DRAF — longgar, sama seperti Input Barang Datang, supaya
-  // rincian yang belum lengkap tetap bisa disimpan progresnya dulu.
-  const validDraft = models.every((m) => !rusakMelebihiDatang(m));
+    noInvoiceUtama.trim() !== "";
+  // Bon tambahan yang BELUM disimpan — yang sudah disimpan sendiri sudah
+  // masuk Alur Barang & terkunci, jadi tidak ikut divalidasi/dikirim lagi.
+  const extraBelum = extraBonList.filter((b) => !b.tersimpan);
+  const adaSisa = !utamaTersimpan || extraBelum.length > 0;
+  // Valid untuk FINAL gabungan — semua bon yang belum disimpan harus lengkap.
+  // Kalau cuma mau memasukkan sebagian bon yang sudah beres, pakai tombol
+  // simpan per bon di tiap blok bon.
+  const valid =
+    adaSisa &&
+    (utamaTersimpan || bonUtamaValid) &&
+    extraBelum.every(bonTambahanValid) &&
+    (!wajibKeteranganSelisih || keteranganSelisih.trim() !== "");
+  // Valid untuk DRAF — longgar, sama seperti sebelumnya, supaya rincian yang
+  // belum lengkap tetap bisa disimpan progresnya dulu.
+  const validDraft =
+    adaSisa &&
+    (utamaTersimpan || models.every((m) => !rusakMelebihiDatang(m))) &&
+    extraBelum.every((b) => b.models.every((m) => !rusakMelebihiDatang(m)));
+
+  const modelPayload = (m) => ({
+    nama: m.nama.trim() || null,
+    jumlahDatang: Number(m.jumlahDatang) || 0,
+    jumlahRusak: Number(m.jumlahRusak) || 0,
+    alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
+    harga: Number(m.harga) || 0,
+  });
+  const bonTambahanPayload = (bon) => ({
+    noBox: bon.noBox === "" ? null : Number(bon.noBox) || null,
+    noInvoice: bon.noInvoice.trim() || null,
+    fotoBonFiles: bon.fotoBonList.map((f) => f.file),
+    existingFotoBonUrls: [],
+    models: bon.models.map(modelPayload),
+    catatan: bon.catatan.trim() || null,
+  });
+  // (semuaBoxTerisi sudah dihitung di atas, dipakai juga buat
+  // wajibKeteranganSelisih — sekarang MEMANG termasuk box yang final duluan
+  // di database, bukan cuma yang kepakai di sesi form ini, supaya "Selesai"
+  // di bawah ini konsisten dengan deteksi "box terakhir" di atas.)
+  // opsi.skipUtama: true = bon utama (PSN-xxxx) TIDAK diproses lagi (sudah
+  // disimpan sendiri). opsi.extras = daftar bon tambahan yang ikut dikirim
+  // (default: semua yang belum disimpan).
+  const buatPayload = (draft, opsi = {}) => {
+    const extras = opsi.extras || extraBelum;
+    return {
+      draft,
+      tanggal,
+      skipUtama: opsi.skipUtama ?? !!utamaTersimpan,
+      // Bon utama disimpan duluan padahal masih ada bon lain YA (extraBelum)
+      // yang belum masuk, ATAU masih ada box yang belum kepakai sama sekali
+      // di form ini -> pesanan ditandai "Sebagian Datang" (bukan "Selesai")
+      // dengan jumlah_pesan dilebihkan.
+      tandaiSebagian: opsi.tandaiSebagian !== undefined ? !!opsi.tandaiSebagian : !semuaBoxTerisi,
+      sisaQty: opsi.sisaQty || 0,
+      // Bon terakhir yang belum masuk sudah ikut disimpan, DAN semua box
+      // sudah kepakai -> pesanan yang tadinya "Sebagian Datang" sekarang
+      // dilengkapi jadi "Selesai".
+      selesaikanUtama:
+        opsi.selesaikanUtama ??
+        (!draft && utamaMasihSebagian && extras.length >= extraBelum.length && semuaBoxTerisi),
+      noBox: noBoxUtama === "" ? null : Number(noBoxUtama) || null,
+      noInvoice: noInvoiceUtama.trim() || null,
+      fotoBonFiles: fotoBonList.map((f) => f.file),
+      existingFotoBonUrls: existingFotoBon,
+      models: models.map(modelPayload),
+      catatan: catatan.trim() || null,
+      hargaKesepakatan: adaKesepakatan ? totalHargaAwal : null,
+      keteranganSelisih: adaSelisih ? keteranganSelisih.trim() : null,
+      // Bon tambahan (opsional) — tiap elemen jadi baris pesanan_masuk
+      // BARU sendiri (kode BON- otomatis) di ModalRouter, terpisah dari
+      // pesanan utama yang di-PATCH.
+      bonTambahan: extras.map(bonTambahanPayload),
+    };
+  };
+
+  if (langkah === "pilih-box") {
+    return (
+      <PilihBoxScreen
+        jumlahBoxTotal={jumlahBoxTotal}
+        boxFinal={boxFinalUntukPilih}
+        onClose={onClose}
+        kodeReferensi={pesanan?.resi || pesanan?.kode_pesanan}
+        onPilih={(n) => {
+          // Kalau bon utama (Box 1, biasanya) SUDAH final, jangan timpa —
+          // box baru yang dipilih di sini jadi INVOICE TAMBAHAN baru
+          // (masuk extraBonList, jadi baris pesanan_masuk tersendiri lewat
+          // "Tambah Bon" di ModalRouter), bukan noBoxUtama, supaya data Box
+          // 1 yang sudah tersimpan tidak ikut berubah label/datanya.
+          if (utamaSudahFinalAwal) {
+            setExtraBonList((rows) => [...rows, bonTambahanBaru(n)]);
+          } else {
+            setNoBoxUtama(n);
+          }
+          setLangkah("isi");
+        }}
+      />
+    );
+  }
 
   return (
-    <ModalShell title={`Konfirmasi Datang — ${pesanan?.kode_bon || ""}`} onClose={onClose}>
+    <ModalShell title={`Konfirmasi Datang — ${pesanan?.resi || pesanan?.kode_pesanan || ""}`} onClose={onClose}>
+      {jumlahBoxTotal > 1 && boxFinalUntukPilih.size < jumlahBoxTotal && (
+        <button
+          type="button"
+          onClick={() => setLangkah("pilih-box")}
+          className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-amber-400 mb-2"
+        >
+          <ChevronLeft size={12} /> Ganti box
+        </button>
+      )}
       <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2.5 mb-3 text-[11px] text-slate-400 space-y-0.5">
         <div>
           Toko/Supplier: <span className="text-slate-200 font-medium">{pesanan?.supplier || "—"}</span>
@@ -772,8 +861,8 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
             <span className="text-slate-300 font-medium">{fmtRp(totalHargaAwal)}</span>
           </div>
           <div className="flex justify-between text-slate-400">
-            <span>Total harga barang datang</span>
-            <span className="text-slate-300 font-medium">{fmtRp(totalNilai)}</span>
+            <span>Total harga barang datang{jumlahBoxTotal > 1 ? " (semua box)" : ""}</span>
+            <span className="text-slate-300 font-medium">{fmtRp(totalNilaiKeseluruhan)}</span>
           </div>
           {adaSelisih ? (
             <div className={`flex justify-between font-semibold ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
@@ -783,6 +872,11 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           ) : (
             <div className="text-emerald-400 font-semibold">Sesuai kesepakatan</div>
           )}
+          {adaSelisih && !semuaBoxTerisi && (
+            <div className="text-slate-500">
+              Masih ada box lain yang belum final — selisih di atas baru sementara, keterangan baru wajib diisi begitu box terakhir dibongkar.
+            </div>
+          )}
         </div>
       )}
 
@@ -790,7 +884,36 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
 
-      <Field label="Foto Bon (opsional, boleh lebih dari satu)">
+      <ModelNamaDatalist id="konfirmasi-datang-model-datalist" suppliers={suppliers} supplierNama={pesanan?.supplier} />
+      {utamaTersimpan ? (
+        <div className="border border-emerald-500/30 rounded-xl p-3 bg-emerald-500/5 mb-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-mono font-semibold text-amber-400">Box {noBoxUtama || 1}</span>
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+              <CheckCircle2 size={13} /> Sudah masuk Alur Barang
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1.5">
+            Kode: <span className="font-mono text-amber-400">{utamaTersimpan}</span>
+            {noBoxUtama !== "" ? <> · Box {noBoxUtama}</> : ""} · {models.length} model /{" "}
+            {totalDatang}x datang
+            {totalRusak > 0 ? ` · ${totalRusak}x rusak` : ""}
+            {totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
+          </p>
+        </div>
+      ) : (
+      <>
+      {extraBonList.length > 0 && (
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[11px] font-mono font-semibold text-amber-400">Box {noBoxUtama || 1} · {pesanan?.resi || pesanan?.kode_pesanan || ""}</span>
+        </div>
+      )}
+
+      <Field label="No. Box">
+        <NoBoxField value={noBoxUtama} onChange={setNoBoxUtama} jumlahBoxTotal={jumlahBoxTotal} />
+      </Field>
+
+      <Field label="Foto Invoice (opsional, boleh lebih dari satu)">
         <input type="file" accept="image/*" multiple onChange={handleFotoBon} className={inputClass} />
       </Field>
       {(existingFotoBon.length > 0 || fotoBonList.length > 0) && (
@@ -832,76 +955,91 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         </div>
       )}
 
+      <Field label="No. Invoice">
+        <input
+          autoFocus
+          className={inputClass}
+          value={noInvoiceUtama}
+          onChange={(e) => setNoInvoiceUtama(e.target.value)}
+          placeholder="Nomor invoice/nota dari supplier"
+        />
+      </Field>
+
       <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang yang Datang</p>
-      <ModelNamaDatalist id="konfirmasi-datang-model-datalist" suppliers={suppliers} supplierNama={pesanan?.supplier} />
-      <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-1 mb-1">
+      <div className="space-y-2.5 max-h-[42vh] overflow-y-auto pr-1 mb-1">
         {models.map((m, idx) => {
           const totalQtyBaris = Number(m.jumlahDatang) || 0;
           const qtyBaikBaris = Math.max(totalQtyBaris - (Number(m.jumlahRusak) || 0), 0);
+          const nilaiBaris = totalQtyBaris * (Number(m.harga) || 0);
           return (
-            <div key={idx} className="rounded-lg border border-slate-800 p-2.5 flex items-start gap-2">
-              <div className="flex-1 space-y-2">
-                <input
-                  className={inputClass}
-                  value={m.nama}
-                  onChange={(e) => updateModel(idx, { nama: e.target.value })}
-                  placeholder={`Kode/nama model ${idx + 1} (opsional)`}
-                  list="konfirmasi-datang-model-datalist"
-                />
-                <div className="flex gap-2">
-                  <Field label="Qty Datang (total)">
-                    <input
-                      type="number"
-                      min="0"
-                      className={inputClass}
-                      value={m.jumlahDatang}
-                      onChange={(e) => updateModel(idx, { jumlahDatang: Number(e.target.value) })}
-                    />
-                  </Field>
-                  <Field label="Qty Rusak">
-                    <input
-                      type="number"
-                      min="0"
-                      className={`${inputClass} ${rusakMelebihiDatang(m) ? "border-red-500" : ""}`}
-                      value={m.jumlahRusak}
-                      onChange={(e) => updateModel(idx, { jumlahRusak: Number(e.target.value) })}
-                    />
-                  </Field>
-                </div>
-                <p className="text-[11px] text-slate-500 -mt-1">
-                  Isi Qty Datang dengan TOTAL fisik yang diterima (baik + rusak jadi satu angka).
-                </p>
-                {rusakMelebihiDatang(m) && (
-                  <p className="text-[11px] text-red-400">Qty rusak tidak boleh lebih dari qty datang.</p>
+            <div key={idx} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model {idx + 1}</span>
+                {models.length > 1 && (
+                  <button
+                    onClick={() => hapusModel(idx)}
+                    className="text-slate-500 hover:text-red-400"
+                    title="Hapus model ini"
+                  >
+                    <X size={14} />
+                  </button>
                 )}
-                {Number(m.jumlahRusak) > 0 && (
-                  <input
-                    className={inputClass}
-                    value={m.alasanRusak}
-                    onChange={(e) => updateModel(idx, { alasanRusak: e.target.value })}
-                    placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
-                  />
-                )}
-                <InputRupiah
-                  value={m.harga}
-                  onChange={(v) => updateModel(idx, { harga: v })}
-                  placeholder="Harga/pcs"
-                />
-                <p className="text-[11px] text-slate-500">
-                  Total qty baris ini: {totalQtyBaris}x
-                  {Number(m.jumlahRusak) > 0 ? ` (baik: ${qtyBaikBaris}x, rusak: ${m.jumlahRusak}x)` : ""}
-                  {totalQtyBaris > 0 && Number(m.harga) > 0 ? ` · Nilai ${fmtRp(totalQtyBaris * (Number(m.harga) || 0))}` : ""}
-                </p>
               </div>
-              {models.length > 1 && (
-                <button
-                  onClick={() => hapusModel(idx)}
-                  className="text-slate-500 hover:text-red-400 mt-1"
-                  title="Hapus model ini"
-                >
-                  <X size={14} />
-                </button>
+              <input
+                className={`${inputClass} mb-2`}
+                value={m.nama}
+                onChange={(e) => updateModel(idx, { nama: e.target.value })}
+                placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                list="konfirmasi-datang-model-datalist"
+              />
+              <div className="grid grid-cols-2 gap-2 mb-1">
+                <Field label="Qty Datang (total)">
+                  <input
+                    type="number"
+                    min="0"
+                    className={inputClass}
+                    value={m.jumlahDatang}
+                    onChange={(e) => updateModel(idx, { jumlahDatang: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label="Qty Rusak">
+                  <input
+                    type="number"
+                    min="0"
+                    className={`${inputClass} ${rusakMelebihiDatang(m) ? "border-red-500" : ""}`}
+                    value={m.jumlahRusak}
+                    onChange={(e) => updateModel(idx, { jumlahRusak: Number(e.target.value) })}
+                  />
+                </Field>
+              </div>
+              <p className="text-[11px] text-slate-500 mb-1.5">
+                Isi Qty Datang dengan TOTAL fisik yang diterima (baik + rusak jadi satu angka).
+              </p>
+              {rusakMelebihiDatang(m) && (
+                <p className="text-[11px] text-red-400 mb-1.5">Qty rusak tidak boleh lebih dari qty datang.</p>
               )}
+              {Number(m.jumlahRusak) > 0 && (
+                <input
+                  className={`${inputClass} mb-2`}
+                  value={m.alasanRusak}
+                  onChange={(e) => updateModel(idx, { alasanRusak: e.target.value })}
+                  placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
+                />
+              )}
+              <InputRupiah
+                value={m.harga}
+                onChange={(v) => updateModel(idx, { harga: v })}
+                placeholder="Harga/pcs"
+              />
+              <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-800/60 text-[11px]">
+                <span className="text-slate-500">
+                  Total <span className="text-emerald-400 font-semibold">{totalQtyBaris}x</span>
+                  {Number(m.jumlahRusak) > 0 ? (
+                    <span className="text-slate-600"> (baik {qtyBaikBaris}x, rusak {m.jumlahRusak}x)</span>
+                  ) : null}
+                </span>
+                {nilaiBaris > 0 && <span className="text-slate-300 font-semibold">{fmtRp(nilaiBaris)}</span>}
+              </div>
             </div>
           );
         })}
@@ -918,68 +1056,285 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         {totalNilai > 0 ? ` · ${fmtRp(totalNilai)}` : ""}
       </p>
 
-      {adaSelisih && (
-        <Field label="Keterangan Selisih (wajib diisi)">
-          <input
-            className={`${inputClass} ${keteranganSelisih.trim() === "" ? "border-amber-500" : ""}`}
-            value={keteranganSelisih}
-            onChange={(e) => setKeteranganSelisih(e.target.value)}
-            placeholder="Contoh: diskon tambahan dari supplier, ongkir dipisah, dll"
-            autoFocus
-          />
-          <p className="text-[11px] text-amber-400/80 mt-1">
-            Total harga barang datang tidak sama dengan harga kesepakatan — jelaskan alasannya
-            sebelum bisa disimpan.
-          </p>
-        </Field>
-      )}
-
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
           value={catatan}
           onChange={(e) => setCatatan(e.target.value)}
-          placeholder="Contoh: no. bon, keterangan tambahan, dll"
+          placeholder="Contoh: no. invoice, keterangan tambahan, dll"
         />
       </Field>
 
-      {(() => {
-        const buatPayload = (draft) => ({
-          draft,
-          tanggal,
-          fotoBonFiles: fotoBonList.map((f) => f.file),
-          existingFotoBonUrls: existingFotoBon,
-          models: models.map((m) => ({
-            nama: m.nama.trim() || null,
-            jumlahDatang: Number(m.jumlahDatang) || 0,
-            jumlahRusak: Number(m.jumlahRusak) || 0,
-            alasanRusak: Number(m.jumlahRusak) > 0 ? m.alasanRusak.trim() || null : null,
-            harga: Number(m.harga) || 0,
-          })),
-          catatan: catatan.trim() || null,
-          hargaKesepakatan: adaKesepakatan ? totalHargaAwal : null,
-          keteranganSelisih: adaSelisih ? keteranganSelisih.trim() : null,
-        });
-        return (
-          <div className="flex gap-2 mt-2">
+      </>
+      )}
+
+      <div className="flex items-center justify-between mb-1.5 mt-4 pt-3 border-t border-slate-800">
+        <span className="text-xs font-medium text-slate-400">Invoice Tambahan (opsional)</span>
+        <button
+          type="button"
+          onClick={tambahBon}
+          className="flex items-center gap-1 text-[11px] font-semibold text-amber-400 hover:text-amber-300"
+        >
+          <Plus size={12} /> Tambah Invoice
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Untuk invoice lain di box yang sama (satu box bisa berisi lebih dari satu invoice/nota) — biarkan No.
+        Box di bawah tetap sama. Semua invoice di sini disimpan bareng lewat tombol "Konfirmasi & Lanjut ke Alur
+        Barang" di bawah.
+        {jumlahBoxTotal > 1 && (
+          <>
+            {" "}
+            Mau isi box lain (bukan invoice tambahan untuk box yang sama)? Klik "Ganti box" di bagian atas
+            form ini untuk pilih box-nya.
+          </>
+        )}
+      </p>
+
+      {extraBonList.map((bon, bonIdx) => bon.tersimpan ? (
+        <div key={bon.id} className="border border-emerald-500/30 rounded-xl p-3 bg-emerald-500/5 mb-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-mono font-semibold text-amber-400">Box {bon.noBox || (bonIdx + 2)} (invoice tambahan)</span>
+            <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+              <CheckCircle2 size={13} /> Sudah masuk Alur Barang
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1.5">
+            Kode: <span className="font-mono text-amber-400">{bon.tersimpan}</span>
+            {bon.noBox !== "" ? <> · Box {bon.noBox}</> : ""} · {bon.models.length} model /{" "}
+            {bon.models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0)}x datang
+          </p>
+        </div>
+      ) : (
+        <div key={bon.id} className="rounded-xl border border-slate-800 bg-slate-900/30 border-l-2 border-l-amber-500/60 p-3 mb-3">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="flex items-center gap-1.5 text-[11px] font-mono font-semibold text-amber-400">
+              <Receipt size={12} /> Box {bon.noBox || (bonIdx + 2)} · Invoice tambahan
+            </span>
             <button
-              disabled={saving || !validDraft}
-              onClick={() => onSubmit(buatPayload(true))}
-              title="Simpan progres tanpa masuk ke Alur Barang/stok — bisa dilanjutkan & dilengkapi lagi nanti"
-              className="flex-1 border border-slate-700 hover:border-violet-500 text-slate-300 hover:text-violet-400 disabled:opacity-50 font-semibold text-sm py-2.5 rounded-lg"
+              type="button"
+              onClick={() => hapusBon(bon.id)}
+              className="text-slate-600 hover:text-red-400"
+              title="Hapus invoice ini"
             >
-              {saving ? "Menyimpan…" : "Simpan sebagai Draf"}
-            </button>
-            <button
-              disabled={saving || !valid}
-              onClick={() => onSubmit(buatPayload(false))}
-              className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
-            >
-              {saving ? "Menyimpan…" : "Konfirmasi & Lanjut ke Alur Barang"}
+              <Trash2 size={13} />
             </button>
           </div>
-        );
-      })()}
+
+          <Field label="No. Box">
+            <NoBoxField
+              value={bon.noBox}
+              onChange={(v) => ubahBon(bon.id, { noBox: v })}
+              jumlahBoxTotal={jumlahBoxTotal}
+            />
+          </Field>
+
+          <Field label="Foto Invoice (opsional, boleh lebih dari satu)">
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => handleFotoBonTambahan(bon.id, e)}
+              className={inputClass}
+            />
+          </Field>
+          {bon.fotoBonList.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {bon.fotoBonList.map((f, idx) => (
+                <div key={idx} className="relative">
+                  <img
+                    src={f.preview}
+                    alt={`Preview bon/nota ${idx + 1}`}
+                    className="w-full h-24 object-cover rounded-lg border border-slate-800 bg-slate-950"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => hapusFotoBonTambahan(bon.id, idx)}
+                    title="Hapus foto ini"
+                    className="absolute top-1 right-1 bg-slate-950/80 hover:bg-red-500/80 text-slate-300 hover:text-white rounded-full p-0.5"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Field label="No. Invoice">
+            <input
+              className={inputClass}
+              value={bon.noInvoice}
+              onChange={(e) => ubahBon(bon.id, { noInvoice: e.target.value })}
+              placeholder="Nomor invoice/nota dari supplier"
+            />
+          </Field>
+
+          <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang</p>
+          <div className="space-y-2.5 max-h-[42vh] overflow-y-auto pr-1 mb-1">
+            {bon.models.map((m, idx) => {
+              const totalQtyBaris = Number(m.jumlahDatang) || 0;
+              const qtyBaikBaris = Math.max(totalQtyBaris - (Number(m.jumlahRusak) || 0), 0);
+              const nilaiBaris = totalQtyBaris * (Number(m.harga) || 0);
+              return (
+                <div key={idx} className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model {idx + 1}</span>
+                    {bon.models.length > 1 && (
+                      <button
+                        onClick={() => hapusModelTambahan(bon.id, idx)}
+                        className="text-slate-500 hover:text-red-400"
+                        title="Hapus model ini"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    className={`${inputClass} mb-2`}
+                    value={m.nama}
+                    onChange={(e) => updateModelTambahan(bon.id, idx, { nama: e.target.value })}
+                    placeholder={`Kode/nama model ${idx + 1} (opsional)`}
+                    list="konfirmasi-datang-model-datalist"
+                  />
+                  <div className="grid grid-cols-2 gap-2 mb-1">
+                    <Field label="Qty Datang (total)">
+                      <input
+                        type="number"
+                        min="0"
+                        className={inputClass}
+                        value={m.jumlahDatang}
+                        onChange={(e) => updateModelTambahan(bon.id, idx, { jumlahDatang: Number(e.target.value) })}
+                      />
+                    </Field>
+                    <Field label="Qty Rusak">
+                      <input
+                        type="number"
+                        min="0"
+                        className={`${inputClass} ${rusakMelebihiDatang(m) ? "border-red-500" : ""}`}
+                        value={m.jumlahRusak}
+                        onChange={(e) => updateModelTambahan(bon.id, idx, { jumlahRusak: Number(e.target.value) })}
+                      />
+                    </Field>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mb-1.5">
+                    Isi Qty Datang dengan TOTAL fisik yang diterima (baik + rusak jadi satu angka).
+                  </p>
+                  {rusakMelebihiDatang(m) && (
+                    <p className="text-[11px] text-red-400 mb-1.5">Qty rusak tidak boleh lebih dari qty datang.</p>
+                  )}
+                  {Number(m.jumlahRusak) > 0 && (
+                    <input
+                      className={`${inputClass} mb-2`}
+                      value={m.alasanRusak}
+                      onChange={(e) => updateModelTambahan(bon.id, idx, { alasanRusak: e.target.value })}
+                      placeholder="Alasan rusak (contoh: sobek, cacat produksi, dll)"
+                    />
+                  )}
+                  <InputRupiah
+                    value={m.harga}
+                    onChange={(v) => updateModelTambahan(bon.id, idx, { harga: v })}
+                    placeholder="Harga/pcs"
+                  />
+                  <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-slate-800/60 text-[11px]">
+                    <span className="text-slate-500">
+                      Total <span className="text-emerald-400 font-semibold">{totalQtyBaris}x</span>
+                      {Number(m.jumlahRusak) > 0 ? (
+                        <span className="text-slate-600"> (baik {qtyBaikBaris}x, rusak {m.jumlahRusak}x)</span>
+                      ) : null}
+                    </span>
+                    {nilaiBaris > 0 && <span className="text-slate-300 font-semibold">{fmtRp(nilaiBaris)}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => tambahModelTambahan(bon.id)}
+            className="w-full mb-3 flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 text-xs font-semibold py-2 rounded-lg"
+          >
+            <Plus size={14} /> Tambah Model
+          </button>
+
+          <Field label="Catatan (opsional)">
+            <input
+              className={inputClass}
+              value={bon.catatan}
+              onChange={(e) => ubahBon(bon.id, { catatan: e.target.value })}
+              placeholder="Contoh: no. invoice, keterangan tambahan, dll"
+            />
+          </Field>
+
+        </div>
+      ))}
+
+      {/* Keterangan Selisih SENGAJA ditaruh di sini (tepat di atas tombol
+          Simpan/Konfirmasi di bawah) — bukan lagi menempel di form bon
+          utama saja — karena field ini soal selisih harga SELURUH pesanan
+          (dibanding total semua box), jadi harus tetap bisa diisi walau
+          bon utama (Box 1) sudah final dan yang sedang dikerjakan cuma
+          box/invoice tambahan. */}
+      {adaSelisih && (
+        <Field label={wajibKeteranganSelisih ? "Keterangan Selisih (wajib diisi)" : "Keterangan Selisih (opsional dulu)"}>
+          <input
+            className={`${inputClass} ${wajibKeteranganSelisih && keteranganSelisih.trim() === "" ? "border-amber-500" : ""}`}
+            value={keteranganSelisih}
+            onChange={(e) => setKeteranganSelisih(e.target.value)}
+            placeholder="Contoh: diskon tambahan dari supplier, ongkir dipisah, dll"
+          />
+          <p className="text-[11px] text-amber-400/80 mt-1">
+            {wajibKeteranganSelisih
+              ? "Total harga barang datang (semua box) tidak sama dengan harga kesepakatan — jelaskan alasannya sebelum bisa disimpan."
+              : "Ada selisih sementara, tapi masih boleh disimpan dulu — box lain belum semua final. Keterangan wajib diisi begitu box terakhir dibongkar."}
+          </p>
+        </Field>
+      )}
+
+      {adaSisa ? (
+        <div className="flex gap-2 mt-2">
+          <button
+            disabled={saving || !validDraft}
+            onClick={() => onSubmit(buatPayload(true))}
+            title="Simpan progres tanpa masuk ke Alur Barang/stok — bisa dilanjutkan & dilengkapi lagi nanti"
+            className="flex-1 border border-slate-700 hover:border-violet-500 text-slate-300 hover:text-violet-400 disabled:opacity-50 font-semibold text-sm py-2.5 rounded-lg"
+          >
+            {saving ? "Menyimpan…" : utamaTersimpan || extraBonList.some((b) => b.tersimpan) ? "Simpan Sisanya sebagai Draf" : "Simpan sebagai Draf"}
+          </button>
+          <button
+            disabled={saving || !valid}
+            onClick={() => onSubmit(buatPayload(false))}
+            className="flex-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+          >
+            {(() => {
+              if (saving) return "Menyimpan…";
+              const jumlahSisa = (utamaTersimpan ? 0 : 1) + extraBelum.length;
+              if (jumlahSisa <= 1) return "Konfirmasi & Lanjut ke Alur Barang";
+              const sudahAda = utamaTersimpan || extraBonList.some((b) => b.tersimpan);
+              return `Konfirmasi ${sudahAda ? `${jumlahSisa} Invoice Sisanya` : `${jumlahSisa} Invoice`} & Lanjut ke Alur Barang`;
+            })()}
+          </button>
+        </div>
+      ) : utamaMasihSebagian ? (
+        <>
+          <button
+            disabled={saving}
+            onClick={() => onSubmit({ ...buatPayload(false, { skipUtama: true, extras: [], selesaikanUtama: true }) })}
+            className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+          >
+            {saving ? "Menyimpan…" : "Tandai Pesanan Selesai (tidak ada bon lain)"}
+          </button>
+          <p className="text-[11px] text-slate-500 mt-1.5">
+            Pesanan ini masih berstatus Sebagian Datang. Kalau masih ada invoice lain, klik Tambah Invoice di atas;
+            kalau sudah tidak ada, tandai selesai.
+          </p>
+        </>
+      ) : (
+        <button
+          onClick={onClose}
+          className="w-full mt-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        >
+          Selesai — semua bon sudah masuk Alur Barang
+        </button>
+      )}
       <p className="text-[11px] text-slate-500 mt-2">
         "Simpan sebagai Draf" cuma menyimpan progresnya — belum masuk Alur Barang/stok sampai
         nanti dilanjutkan &amp; disimpan sebagai final dari baris berstatus <span className="text-violet-400">Draf</span> di
@@ -998,19 +1353,24 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
 // datang" ini daripada dicampur ke rincian isi barang. Ongkir cuma muncul
 // kalau ditandai jadi "sudah" (balik ke "belum" tidak perlu ongkir).
 export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose, onSubmit, saving }) {
+  const [resi, setResi] = useState(pesanan.resi || "");
+  const [jumlahBox, setJumlahBox] = useState(pesanan.jumlah_box ?? "");
   const [bayarOngkir, setBayarOngkir] = useState(false);
   const [ongkirJumlah, setOngkirJumlah] = useState("");
-  const [ongkirRekening, setOngkirRekening] = useState("");
-  const [ongkirRekeningBaruKode, setOngkirRekeningBaruKode] = useState("");
-  const [ongkirRekeningBaru, setOngkirRekeningBaru] = useState("");
-  const rekeningOptions = (master?.rekening || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
-  const ongkirRekeningTerisi = !!(ongkirRekening || ongkirRekeningBaru.trim());
-  // Kategori pengeluaran ongkir SENGAJA tidak ada pilihan di sini — selalu
-  // otomatis tercatat ke kategori tetap KATEGORI_ONGKIR_BARANG_DATANG
-  // (dibuatkan/dicocokkan otomatis di ModalRouter.jsx), supaya semua ongkir
-  // barang datang konsisten kekelompokkan jadi satu kategori yang sama.
-  const ongkirValid = !bayarOngkir || (Number(ongkirJumlah) > 0 && ongkirRekeningTerisi);
+  // Kategori & sumber dana pengeluaran ongkir SENGAJA tidak ada pilihan di
+  // sini — selalu otomatis tercatat ke kategori tetap
+  // KATEGORI_ONGKIR_BARANG_DATANG dan sumber dana tetap
+  // REKENING_ONGKIR_BARANG_DATANG ("Petty Cash"), dicocokkan/dibuatkan
+  // otomatis di ModalRouter.jsx, supaya semua ongkir barang datang konsisten
+  // kekelompokkan jadi satu kategori & satu sumber dana yang sama.
   const tandaiKeDatang = akanJadi === "sudah";
+  // No. Resi & Jumlah Box WAJIB diisi begitu ditandai "sudah datang" — dua
+  // info ini dipakai terus di alur berikutnya (pengelompokan box di
+  // Konfirmasi Datang/Barang Datang, rincianBongkarBox, dst), jadi tidak
+  // boleh dikosongkan supaya box tidak "nyasar"/tidak konsisten belakangan.
+  const resiValid = !tandaiKeDatang || resi.trim() !== "";
+  const jumlahBoxValid = !tandaiKeDatang || (jumlahBox !== "" && Number(jumlahBox) > 0);
+  const ongkirValid = !bayarOngkir || Number(ongkirJumlah) > 0;
 
   return (
     <ModalShell title="Tandai Status Kedatangan" onClose={onClose}>
@@ -1018,7 +1378,12 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
         <Truck size={16} className="flex-shrink-0 mt-0.5 text-sky-400" />
         <div>
           Pesanan {pesanan.supplier ? <span className="font-medium">{pesanan.supplier}</span> : "ini"}
-          {pesanan.kode_bon ? <span className="font-mono text-amber-400"> ({pesanan.kode_bon})</span> : ""} akan ditandai{" "}
+          {pesanan.resi || pesanan.kode_pesanan ? (
+            <span className="font-mono text-amber-400"> ({pesanan.resi || pesanan.kode_pesanan})</span>
+          ) : (
+            ""
+          )}{" "}
+          akan ditandai{" "}
           <span className="font-medium">{KONFIRMASI_DATANG_META[akanJadi].label.toLowerCase()}</span>.
           {!tandaiKeDatang && (
             <span className="block text-amber-400/80 text-[11px] mt-1">
@@ -1031,6 +1396,25 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
 
       {tandaiKeDatang && (
         <>
+          <Field label="No. Resi">
+            <input
+              className={inputClass}
+              value={resi}
+              onChange={(e) => setResi(e.target.value)}
+              placeholder="Nomor resi pengiriman dari kurir/ekspedisi"
+            />
+          </Field>
+          <Field label="Jumlah Box">
+            <input
+              type="number"
+              min="1"
+              inputMode="numeric"
+              className={inputClass}
+              value={jumlahBox}
+              onChange={(e) => setJumlahBox(e.target.value)}
+              placeholder="Jumlah box/koli yang datang"
+            />
+          </Field>
           <Field label="Ongkir/Ongkos Kirim">
             <div className="grid grid-cols-2 gap-1.5">
               <button
@@ -1062,23 +1446,10 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
               <Field label="Jumlah Ongkir">
                 <InputRupiah value={ongkirJumlah} onChange={setOngkirJumlah} placeholder="Nominal ongkir yang dibayar" />
               </Field>
-              <Field label="Sumber Dana">
-                <SearchableSelectOrNew
-                  value={ongkirRekening}
-                  onChange={setOngkirRekening}
-                  newKode={ongkirRekeningBaruKode}
-                  onNewKodeChange={setOngkirRekeningBaruKode}
-                  newLabel={ongkirRekeningBaru}
-                  onNewLabelChange={setOngkirRekeningBaru}
-                  options={rekeningOptions}
-                  placeholder="Cari rekening yang sudah ada…"
-                  newPlaceholder="Atau ketik nama rekening baru"
-                />
-              </Field>
               <p className="text-[11px] text-slate-500 -mt-2 mb-3">
                 Akan dicatat sebagai Pengeluaran di Keuangan (kategori{" "}
-                <span className="text-slate-400 font-medium">Ongkir Barang Datang</span>) begitu ditandai sudah
-                datang.
+                <span className="text-slate-400 font-medium">Ongkir Barang Datang</span>, sumber dana{" "}
+                <span className="text-slate-400 font-medium">Petty Cash</span>) begitu ditandai sudah datang.
               </p>
             </>
           )}
@@ -1094,16 +1465,15 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
           Batal
         </button>
         <button
-          disabled={saving || !ongkirValid}
+          disabled={saving || !ongkirValid || !resiValid || !jumlahBoxValid}
           onClick={() =>
             onSubmit({
+              resi: tandaiKeDatang ? resi.trim() || null : undefined,
+              jumlahBox: tandaiKeDatang ? (jumlahBox === "" ? null : Number(jumlahBox) || 0) : undefined,
               ongkir:
                 tandaiKeDatang && bayarOngkir
                   ? {
                       jumlah: Number(ongkirJumlah) || 0,
-                      rekening: ongkirRekening || null,
-                      rekeningBaruKode: ongkirRekeningBaruKode.trim() || null,
-                      rekeningBaru: ongkirRekeningBaru.trim() || null,
                     }
                   : null,
             })
@@ -1146,6 +1516,8 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
     detailAwal.map((m) => ({ ...m, nama: m.nama || "", harga: m.harga ?? "", alasan_rusak: m.alasan_rusak || "" }))
   );
   const [catatan, setCatatan] = useState(pesanan?.catatan || "");
+  const [resi, setResi] = useState(pesanan?.resi || "");
+  const [jumlahBox, setJumlahBox] = useState(pesanan?.jumlah_box ?? "");
 
   const handleFotoBon = (e) => {
     const f = e.target.files?.[0];
@@ -1158,10 +1530,17 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
     setModels((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
-  const valid = jenis !== "Lainnya" || jenisLainnya.trim();
+  // No. Resi & Jumlah Box WAJIB diisi (sama seperti di "Tandai Status
+  // Kedatangan") — kalau riwayat lama ini kebetulan belum punya salah
+  // satunya, wajib dilengkapi dulu di sini sebelum bisa disimpan.
+  const valid =
+    (jenis !== "Lainnya" || jenisLainnya.trim()) &&
+    resi.trim() !== "" &&
+    jumlahBox !== "" &&
+    Number(jumlahBox) > 0;
 
   return (
-    <ModalShell title={`Edit Riwayat — ${pesanan?.kode_bon || ""}`} onClose={onClose}>
+    <ModalShell title={`Edit Riwayat — ${pesanan?.resi || pesanan?.kode_pesanan || ""}`} onClose={onClose}>
       <div className="mb-3 flex items-start gap-2 bg-slate-950 border border-slate-800 text-slate-400 text-[11px] px-3 py-2.5 rounded-lg">
         <span>
           Qty datang &amp; qty rusak tidak bisa diubah di sini karena sudah jadi barang di alur
@@ -1173,7 +1552,7 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
 
-      <Field label="Foto Bon (opsional — kosongkan kalau tidak ganti)">
+      <Field label="Foto Invoice (opsional — kosongkan kalau tidak ganti)">
         <input type="file" accept="image/*" onChange={handleFotoBon} className={inputClass} />
       </Field>
       {fotoBonPreview && (
@@ -1258,12 +1637,33 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         </>
       )}
 
+      <Field label="No. Resi">
+        <input
+          className={inputClass}
+          value={resi}
+          onChange={(e) => setResi(e.target.value)}
+          placeholder="Nomor resi pengiriman dari kurir/ekspedisi"
+        />
+      </Field>
+
+      <Field label="Jumlah Box">
+        <input
+          type="number"
+          min="1"
+          inputMode="numeric"
+          className={inputClass}
+          value={jumlahBox}
+          onChange={(e) => setJumlahBox(e.target.value)}
+          placeholder="Jumlah box/koli yang datang"
+        />
+      </Field>
+
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
           value={catatan}
           onChange={(e) => setCatatan(e.target.value)}
-          placeholder="Contoh: no. bon, keterangan tambahan, dll"
+          placeholder="Contoh: no. invoice, keterangan tambahan, dll"
         />
       </Field>
 
@@ -1282,6 +1682,8 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
               alasan_rusak: Number(m.rusak) > 0 ? (m.alasan_rusak || "").trim() || null : null,
             })),
             catatan: catatan.trim() || null,
+            resi: resi.trim() || null,
+            jumlahBox: jumlahBox === "" ? null : Number(jumlahBox) || 0,
           })
         }
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
@@ -1540,7 +1942,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
             <div className="font-mono text-sm text-slate-300">{fmtRp(selected.harga_asli)}</div>
           </div>
 
-          <Field label="Harga Asli barang ini (dari bon barang datang — kosongkan kalau sama)">
+          <Field label="Harga Asli barang ini (dari invoice barang datang — kosongkan kalau sama)">
             <input
               type="number"
               className={inputClass}
@@ -1778,7 +2180,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
               </div>
               <div>
                 <div className="font-semibold text-slate-300">Standar</div>
-                <div className="text-slate-500">Pakai Harga Asli apa adanya (sesuai bon), tidak ada rumus.</div>
+                <div className="text-slate-500">Pakai Harga Asli apa adanya (sesuai invoice), tidak ada rumus.</div>
               </div>
             </div>
           )}

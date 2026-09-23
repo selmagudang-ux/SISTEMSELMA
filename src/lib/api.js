@@ -584,7 +584,7 @@ export function statusPesananMasuk(p) {
 // default belum ada (undefined/null) dianggap "belum". Baris "batal" balikin
 // null (tidak akan ditagih lagi, jadi toggle-nya tidak relevan).
 // Baris "draft" JUGA balikin null — TAPI dikecualikan untuk pesanan yang
-// dibuat lewat "Pesan Barang" (kode_bon berprefix "PSN-"): untuk PSN-,
+// dibuat lewat "Pesan Barang" (kode_pesanan berprefix "PSN-"): untuk PSN-,
 // `draft` cuma dipakai KonfirmasiDatangForm buat menyimpan progres rincian
 // model (tombol "Simpan sebagai Draf") — pesanannya sendiri sudah pasti ada
 // sejak dibuat, jadi toggle "sudah datang secara fisik" tetap harus bisa
@@ -594,7 +594,7 @@ export function statusPesananMasuk(p) {
 export function statusKonfirmasiDatang(p) {
   const status = statusPesananMasuk(p);
   if (status === "batal") return null;
-  if (status === "draft" && !p.kode_bon?.startsWith("PSN-")) return null;
+  if (status === "draft" && !p.kode_pesanan?.startsWith("PSN-")) return null;
   return p.konfirmasi_datang ? "sudah" : "belum";
 }
 
@@ -620,6 +620,32 @@ export function statusBongkar(p) {
   if (status === "draft") return "sebagian";
   if (status === "selesai") return "sudah";
   return "belum";
+}
+
+// Rincian jumlah box yang sudah dibongkar (dicek/dikonfirmasi) dari total box
+// fisik pesanan ini — dipakai kalau pesanannya sudah punya `jumlah_box`
+// (diisi waktu "Tandai Status Kedatangan"), supaya progres bongkarnya
+// kelihatan konkret per box (mis. "2/5"), bukan cuma label belum/sebagian/
+// sudah dari statusBongkar di atas. Balikin null kalau jumlah_box belum
+// pernah diisi — UI fallback ke badge statusBongkar biasa.
+//
+// Satu box dihitung "sudah dibongkar" begitu ADA bon (bon utama pesanan ini
+// SENDIRI, atau bon tambahan "BON-xxxx" yang `induk_id`-nya nunjuk balik ke
+// pesanan ini — lihat KonfirmasiDatangForm/ModalRouter "konfirmasi-datang")
+// yang no_box-nya cocok DAN sudah final (bukan draft, jumlah_diterima > 0).
+// Box yang sama dihitung sekali walau ada >1 bon final dengan no_box yang
+// sama (mis. box itu sengaja dipecah beberapa bon tapi tetap 1 box fisik).
+export function rincianBongkarBox(p, semuaPesanan) {
+  const total = Number(p?.jumlah_box) || 0;
+  if (total <= 0) return null;
+  const finalDenganBox = (row) =>
+    !row.dibatalkan && !row.draft && (Number(row.jumlah_diterima) || 0) > 0 && Number(row.no_box) > 0;
+  const boxSelesai = new Set();
+  if (finalDenganBox(p)) boxSelesai.add(Number(p.no_box));
+  for (const row of semuaPesanan || []) {
+    if (row.induk_id === p.id && finalDenganBox(row)) boxSelesai.add(Number(row.no_box));
+  }
+  return { selesai: boxSelesai.size, total };
 }
 
 // Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, harga, datang }].

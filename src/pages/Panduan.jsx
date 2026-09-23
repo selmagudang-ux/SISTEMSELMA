@@ -24,7 +24,7 @@ const SECTIONS = [
     poin: [
       "Buat pesanan baru ke supplier: pilih supplier, isi tanggal, jenis pesanan, dan model/harga yang dipesan. Bisa disimpan dulu sebagai Draf kalau datanya belum lengkap, lalu dilanjutkan/difinalisasi belakangan.",
       "Begitu barang fisik sampai, tandai dulu status \"Sudah Datang\" (Konfirmasi Datang) sebelum bisa mulai dibongkar & dicek satu-satu.",
-      "Isi rincian model & qty yang BENAR-BENAR diterima saat membongkar — status pesanan otomatis jadi \"Sebagian Datang\" atau \"Selesai\" tergantung sudah sesuai jumlah pesan atau belum.",
+      "Isi rincian model & qty yang BENAR-BENAR diterima saat membongkar — status pesanan otomatis jadi \"Sebagian Bongkar\" atau \"Selesai\" tergantung sudah sesuai jumlah pesan atau belum.",
       "Kelola daftar supplier/distributor di tab \"Data Supplier\" — daftarkan dulu di sini sebelum bisa dipilih waktu membuat pesanan.",
     ],
   },

@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
-import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG } from "../lib/constants";
+import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG, KATEGORI_PEMBAYARAN_SUPPLIER, REKENING_PEMBAYARAN_SUPPLIER, REKENING_ONGKIR_BARANG_DATANG } from "../lib/constants";
 import {
   sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
@@ -11,7 +11,7 @@ import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
   GantiPasswordForm, PelangganForm, TokoForm, SupplierForm, BayarHutangForm, BayarHutangPelangganForm, CairkanDepositForm, KeuanganTransaksiForm, EditPembayaranForm,
   LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT,
-  BarangDatangForm, PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm, BatalkanPesananForm,
+  PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm, BatalkanPesananForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
@@ -529,7 +529,11 @@ export default function ModalRouter({
 }) {
   const close = () => setModal(null);
 
-  const run = async (fn, successMsg) => {
+  // opts.keepOpen: true = modal TIDAK ditutup setelah sukses (dipakai form
+  // yang menyimpan bertahap, mis. simpan per bon di "Konfirmasi Datang").
+  // Balikan: true kalau sukses, false kalau gagal — pemanggil lama yang
+  // mengabaikan balikan ini tidak terpengaruh.
+  const run = async (fn, successMsg, opts = {}) => {
     setSaving(true);
     try {
       // Kalau fn() mengembalikan string, dipakai sebagai pesan sukses
@@ -538,9 +542,11 @@ export default function ModalRouter({
       const result = await fn();
       await reload();
       showToast(typeof result === "string" ? result : successMsg);
-      close();
+      if (!opts.keepOpen) close();
+      return true;
     } catch (e) {
       showToast(e.message || "Gagal menyimpan", "err");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -615,14 +621,14 @@ export default function ModalRouter({
       .filter((i) => i.sku === p.sku && i.foto_url)
       .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
     // Nama toko/supplier ditelusuri dari barang masuk TERBARU untuk SKU ini
-    // (items.kode_bon -> pesanan_masuk.kode_bon -> pesanan_masuk.supplier) —
+    // (items.kode_pesanan -> pesanan_masuk.kode_pesanan -> pesanan_masuk.supplier) —
     // supaya owner langsung tahu SKU ini biasanya dipasok dari toko/supplier
     // mana saat meninjau pengajuan restock-nya.
     const itemTerbaru = (items || [])
-      .filter((i) => i.sku === p.sku && i.kode_bon)
+      .filter((i) => i.sku === p.sku && i.kode_pesanan)
       .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
     const pesananTerkait = itemTerbaru
-      ? (pesananMasuk || []).find((pm) => pm.kode_bon === itemTerbaru.kode_bon)
+      ? (pesananMasuk || []).find((pm) => pm.kode_pesanan === itemTerbaru.kode_pesanan)
       : null;
     return (
       <ResponPengajuanForm
@@ -3321,10 +3327,10 @@ export default function ModalRouter({
     let prefill = null;
     if (restock) {
       const itemTerbaru = (items || [])
-        .filter((i) => i.sku === restock.sku && i.kode_bon)
+        .filter((i) => i.sku === restock.sku && i.kode_pesanan)
         .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
       const pesananTerkait = itemTerbaru
-        ? (pesananMasuk || []).find((pm) => pm.kode_bon === itemTerbaru.kode_bon)
+        ? (pesananMasuk || []).find((pm) => pm.kode_pesanan === itemTerbaru.kode_pesanan)
         : null;
       prefill = {
         dariRestock: true,
@@ -3341,45 +3347,105 @@ export default function ModalRouter({
         saving={saving}
         initial={prefill || undefined}
         suppliers={suppliers}
-        onSubmit={({ tanggal, supplier, jenis, totalHarga, catatan }) =>
+        onSubmit={({ tanggal, supplier, jenis, bonList }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, supplier);
-            const kodePesan = nextKode(pesananMasuk, "kode_bon", "PSN-");
-            await sb("pesanan_masuk", {
-              method: "POST",
-              body: JSON.stringify({
-                tanggal_pesan: tanggal,
-                supplier,
-                jenis,
-                // jumlah_pesan cuma placeholder (1) — DB tidak boleh 0 (check
-                // constraint), sedangkan qty aslinya memang belum ketahuan
-                // waktu pesan. Angka ini diganti dengan qty sebenarnya begitu
-                // "Konfirmasi Datang" disimpan (lihat handler di bawah).
-                // statusPesananMasuk tidak terpengaruh angka placeholder ini —
-                // status "Menunggu" ditentukan dari jumlah_diterima <= 0 saja.
-                jumlah_pesan: 1,
-                jumlah_diterima: 0,
-                dibatalkan: false,
-                catatan,
-                foto_bon_url: null,
-                kode_bon: kodePesan,
-                // harga_kesepakatan = TOTAL nilai kesepakatan (bukan per pcs —
-                // itu memang belum bisa dihitung karena qty/model per model
-                // belum ketahuan). Disimpan di kolom sendiri (bukan cuma di
-                // dalam detail_model) supaya tidak hilang begitu detail_model
-                // ditimpa isi sebenarnya waktu "Konfirmasi Datang" — dipakai
-                // untuk validasi selisih harga kesepakatan vs harga barang
-                // datang di form itu. Harga per pcs tiap model baru diisi
-                // nanti waktu "Konfirmasi Datang" (field "harga" di
-                // detail_model yang dipakai untuk nilaiModel/laporan tetap
-                // murni per pcs).
-                harga_kesepakatan: totalHarga || null,
-                detail_model: [
-                  { nama: null, jumlah: 0, rusak: 0, alasan_rusak: null, harga: null, harga_total_pesan: totalHarga, datang: false },
-                ],
-              }),
-            });
-          }, "Pesanan dicatat — konfirmasi begitu barang datang")
+            // Satu toko/supplier bisa sekaligus input beberapa bon (lihat
+            // PesanBarangForm) — tiap bon jadi baris pesanan_masuk sendiri
+            // dengan kode_pesanan PSN- sendiri-sendiri, tapi toko & tanggal
+            // pesannya sama. Kode dibuat berurutan dalam satu loop (bukan
+            // lewat nextKode(pesananMasuk, ...) tiap kali) karena state
+            // pesananMasuk belum ke-refresh di tengah loop — kalau dipanggil
+            // ulang tiap iterasi, semua bon bisa kebagian kode yang sama.
+            let kodeTerakhir = nextKode(pesananMasuk, "kode_pesanan", "PSN-");
+            const nomorAwal = parseInt(kodeTerakhir.slice("PSN-".length), 10);
+
+            // Kategori & rekening pembayaran supplier SELALU tetap
+            // (KATEGORI_PEMBAYARAN_SUPPLIER / REKENING_PEMBAYARAN_SUPPLIER)
+            // — tidak ada pilihan lain di form "Buat Pesan Barang". Cari dulu
+            // entri kategori_keluar/rekening yang labelnya sama persis (case-
+            // insensitive) di master; kalau belum ada, baru dibuatkan sekali
+            // di master_data — pola sama seperti KATEGORI_ONGKIR_BARANG_DATANG
+            // di modal "toggle-konfirmasi-datang" di bawah.
+            const cariAtauBuatMasterTetap = async (tipe, labelTetap) => {
+              const daftar = master?.[tipe] || [];
+              const ada = daftar.find((m) => (m.label || "").trim().toLowerCase() === labelTetap.toLowerCase());
+              if (ada) return ada.kode;
+              let kode = suggestKode(labelTetap);
+              if (daftar.some((m) => m.kode === kode)) kode = `${kode}${daftar.length + 1}`;
+              await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: labelTetap }) });
+              return kode;
+            };
+
+            for (let i = 0; i < bonList.length; i++) {
+              const { totalHarga, catatan } = bonList[i];
+              const kodePesan = `PSN-${String(nomorAwal + i).padStart(4, "0")}`;
+              const [pesananBaru] = await sb("pesanan_masuk", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal_pesan: tanggal,
+                  supplier,
+                  jenis,
+                  // jumlah_pesan cuma placeholder (1) — DB tidak boleh 0 (check
+                  // constraint), sedangkan qty aslinya memang belum ketahuan
+                  // waktu pesan. Angka ini diganti dengan qty sebenarnya begitu
+                  // "Konfirmasi Datang" disimpan (lihat handler di bawah).
+                  // statusPesananMasuk tidak terpengaruh angka placeholder ini —
+                  // status "Menunggu" ditentukan dari jumlah_diterima <= 0 saja.
+                  jumlah_pesan: 1,
+                  jumlah_diterima: 0,
+                  dibatalkan: false,
+                  catatan,
+                  foto_bon_url: null,
+                  kode_pesanan: kodePesan,
+                  // harga_kesepakatan = TOTAL nilai kesepakatan bon ini (bukan
+                  // per pcs — itu memang belum bisa dihitung karena qty/model
+                  // per model belum ketahuan). Disimpan di kolom sendiri
+                  // (bukan cuma di dalam detail_model) supaya tidak hilang
+                  // begitu detail_model ditimpa isi sebenarnya waktu
+                  // "Konfirmasi Datang" — dipakai untuk validasi selisih
+                  // harga kesepakatan vs harga barang datang di form itu.
+                  // Harga per pcs tiap model baru diisi nanti waktu
+                  // "Konfirmasi Datang" (field "harga" di detail_model yang
+                  // dipakai untuk nilaiModel/laporan tetap murni per pcs).
+                  harga_kesepakatan: totalHarga || null,
+                  detail_model: [
+                    { nama: null, jumlah: 0, rusak: 0, alasan_rusak: null, harga: null, harga_total_pesan: totalHarga, datang: false },
+                  ],
+                }),
+              });
+
+              // Begitu bon dipesan (ada nominal kesepakatan), langsung catat
+              // sebagai Pengeluaran di Keuangan — TIDAK menunggu barang
+              // datang/dikonfirmasi, karena pembayaran ke supplier biasanya
+              // sudah keluar duluan saat pesan.
+              if (totalHarga > 0) {
+                const kategoriSupplier = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_PEMBAYARAN_SUPPLIER);
+                const rekeningSupplier = await cariAtauBuatMasterTetap("rekening", REKENING_PEMBAYARAN_SUPPLIER);
+                const [transaksiSupplier] = await sb("keuangan_transaksi", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    tanggal,
+                    tipe: "keluar",
+                    rekening: rekeningSupplier,
+                    kategori: kategoriSupplier,
+                    jumlah: totalHarga,
+                    keterangan: `Pesan Barang · ${kodePesan}${supplier ? ` — ${supplier}` : ""}`,
+                  }),
+                });
+                // Simpan id baris Keuangan ini di pesanan_masuk-nya
+                // (`keuangan_transaksi_id`) supaya begitu No. Resi diisi
+                // nanti di "Tandai Status Kedatangan", keterangannya bisa
+                // ditimpa dari kode pesan (PSN-xxxx, belum berarti apa-apa
+                // buat orang lain) jadi No. Resi yang sebenarnya — lihat
+                // handler "toggle-konfirmasi-datang" di bawah.
+                await sb(`pesanan_masuk?id=eq.${pesananBaru.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ keuangan_transaksi_id: transaksiSupplier.id }),
+                });
+              }
+            }
+          }, bonList.length > 1 ? `${bonList.length} bon dicatat — konfirmasi tiap bon begitu barangnya datang` : "Pesanan dicatat — konfirmasi begitu barang datang")
         }
       />
     );
@@ -3394,116 +3460,277 @@ export default function ModalRouter({
   // difinalisasi (draft=false — lanjut ke alur SKU seperti biasa).
   if (modal.type === "konfirmasi-datang") {
     const p = modal.item;
+    // rootId = id pesanan INDUK paling atas. `p` yang dibuka bisa jadi baris
+    // induk (PSN-/BON- asli) ATAU salah satu invoice tambahannya sendiri
+    // (p.induk_id sudah menunjuk ke induk) — kalau dari baris anak ini user
+    // klik "Tambah Invoice" lagi, invoice barunya HARUS tetap nempel ke induk
+    // paling atas (rootId), bukan ke p.id (anak yang sedang dibuka), supaya
+    // tidak jadi "cucu" yang tidak ketemu di manapun saat ditampilkan (lihat
+    // anakDari di BarangDatang.jsx yang cuma cari anak satu tingkat dari induk).
+    const rootId = p.induk_id || p.id;
     return (
       <KonfirmasiDatangForm
         pesanan={p}
+        pesananMasuk={pesananMasuk}
         onClose={close}
         saving={saving}
         suppliers={suppliers}
         master={master}
-        onSubmit={({ draft, tanggal, fotoBonFiles, existingFotoBonUrls, models, catatan, hargaKesepakatan, keteranganSelisih }) =>
-          run(async () => {
-            await syncSupplierMaster(suppliers, p.supplier, models.map((m) => m.nama));
+        onSubmit={async ({ draft, tanggal, noBox, noInvoice, fotoBonFiles, existingFotoBonUrls, models, catatan, hargaKesepakatan, keteranganSelisih, bonTambahan, skipUtama, simpanSatu, tandaiSebagian, sisaQty, selesaikanUtama }) => {
+          // skipUtama = bon utama (baris pesanan ini) sudah disimpan sendiri
+          // sebelumnya, jadi tidak di-PATCH/dibuatkan item lagi — cuma bon
+          // tambahan yang diproses. simpanSatu = tombol "Simpan Bon #N &
+          // Lanjut ke Alur Barang" di form (satu bon saja, langsung final):
+          // modal dibiarkan terbuka supaya bon lain masih bisa diisi/disimpan,
+          // dan kode bon yang baru disimpan dikembalikan ke form.
+          let kodeTersimpan = null;
+          const jumlahBon = (skipUtama ? 0 : 1) + (bonTambahan ? bonTambahan.length : 0);
+          // Total fisik bon utama (baik + rusak) — dipakai untuk menandai
+          // pesanan "Selesai" begitu semua bon sudah masuk (lihat bawah).
+          const totalKotorUtama = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+          const ok = await run(async () => {
+            await syncSupplierMaster(
+              suppliers,
+              p.supplier,
+              models.map((m) => m.nama).concat((bonTambahan || []).flatMap((b) => b.models.map((m) => m.nama)))
+            );
 
-            const fotoBonUrlsBaru = [];
-            for (const f of fotoBonFiles || []) {
-              const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
-              const path = `bon-${Date.now()}-${fotoBonUrlsBaru.length}.${ext}`;
-              fotoBonUrlsBaru.push(await sbUploadFoto(f, path));
+            if (!skipUtama) {
+              const fotoBonUrlsBaru = [];
+              for (const f of fotoBonFiles || []) {
+                const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+                const path = `bon-${Date.now()}-${fotoBonUrlsBaru.length}.${ext}`;
+                fotoBonUrlsBaru.push(await sbUploadFoto(f, path));
+              }
+              const fotoBonUrls = [...(existingFotoBonUrls || []), ...fotoBonUrlsBaru];
+              const fotoBonUrl = fotoBonUrls[0] || null;
+
+              // totalKotor = TOTAL fisik semua model (baik + rusak) — dipakai
+              // buat jumlah_pesan & jumlah_diterima header di bawah (lihat
+              // catatan panjang di situ soal kenapa rusak tidak dikurangi).
+              const totalKotor = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+
+              const patchPayload = {
+                draft,
+                catatan,
+                no_box: noBox,
+                no_invoice: noInvoice,
+                foto_bon_url: fotoBonUrl,
+                foto_bon_urls: fotoBonUrls,
+                // harga_kesepakatan dibawa apa adanya dari form (sudah dibaca
+                // dari kolom ini waktu form dibuka) supaya tetap tersimpan di
+                // kolomnya sendiri, tidak ikut hilang saat detail_model
+                // ditimpa isi sebenarnya di bawah. keterangan_selisih dicatat
+                // kalau total harga barang datang tidak sama dengan
+                // kesepakatan (validasi wajib isi ada di form, hanya untuk
+                // simpan final — draf tidak wajib).
+                harga_kesepakatan: hargaKesepakatan,
+                keterangan_selisih: keteranganSelisih,
+                detail_model: models.map((m) => ({
+                  nama: m.nama,
+                  jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+                  rusak: m.jumlahRusak,
+                  alasan_rusak: m.alasanRusak,
+                  harga: m.harga,
+                  datang: true,
+                })),
+              };
+              // jumlah_pesan/jumlah_diterima cuma diganti ke qty sebenarnya
+              // begitu difinalisasi — selama masih draf, dibiarkan seperti
+              // placeholder awal (DB tidak boleh 0 lewat check constraint).
+              // jumlah_diterima SENGAJA disamakan dengan totalKotor (baik +
+              // rusak) — BUKAN dikurangi rusak dulu seperti sebelumnya — sama
+              // seperti pola di "Input Barang Datang" (BarangDatangForm) di
+              // bawah. Barang rusak tetap dianggap "sudah diterima" secara
+              // fisik (sudah dibayar ke supplier, cuma tidak masuk stok),
+              // jadi tidak boleh bikin status jadi "Sebagian Datang" padahal
+              // semua model sudah dikonfirmasi lengkap. Qty baik-saja (dikurangi
+              // rusak) tetap dipakai apa adanya per model lewat `detail_model`
+              // di atas & buat baris "items"/stok di bawah — cuma tidak lagi
+              // dipakai untuk header jumlah_diterima ini.
+              if (!draft) {
+                // tandaiSebagian: bon utama disimpan duluan padahal masih ada
+                // bon lain yang belum masuk -> jumlah_pesan dilebihkan supaya
+                // status pesanan "Sebagian Datang", bukan "Selesai". Nanti
+                // disamakan lagi lewat selesaikanUtama di bawah.
+                patchPayload.jumlah_pesan =
+                  Math.max(totalKotor, 1) + (tandaiSebagian ? Math.max(Number(sisaQty) || 0, 1) : 0);
+                patchPayload.jumlah_diterima = totalKotor;
+              }
+
+              await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                method: "PATCH",
+                body: JSON.stringify(patchPayload),
+              });
+
+              // Draf BELUM masuk Alur Barang/stok — "items" & "pesanan_penerimaan"
+              // baru dibuat begitu disimpan sebagai FINAL, sama seperti "Input
+              // Barang Datang".
+              if (!draft) {
+                for (const m of models) {
+                  const totalQtyModel = m.jumlahDatang;
+                  if (totalQtyModel <= 0) continue;
+                  const [itemBaru] = await sb("items", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      tanggal,
+                      gudang: p.jenis,
+                      jumlah: totalQtyModel,
+                      jumlah_rusak: m.jumlahRusak || 0,
+                      alasan_rusak: m.alasanRusak || null,
+                      harga: m.harga || null,
+                      stage: "sku",
+                      kode_pesanan: p.kode_pesanan,
+                      // Nama model yang diketik di Barang Datang sebenarnya barcode/kode
+                      // dari supplier — dibawa terus di sini supaya nanti ikut disalin
+                      // ke sku_master.barcode_supplier saat SKU dibuat (lihat "buat-sku").
+                      barcode_supplier: m.nama || null,
+                    }),
+                  });
+                  await sb("pesanan_penerimaan", {
+                    method: "POST",
+                    body: JSON.stringify({
+                      pesanan_id: p.id,
+                      tanggal,
+                      jumlah: totalQtyModel,
+                      item_id: itemBaru?.id || null,
+                      foto_bon_url: fotoBonUrl,
+                      foto_bon_urls: fotoBonUrls,
+                    }),
+                  });
+                }
+              }
+              kodeTersimpan = p.kode_pesanan || null;
             }
-            const fotoBonUrls = [...(existingFotoBonUrls || []), ...fotoBonUrlsBaru];
-            const fotoBonUrl = fotoBonUrls[0] || null;
 
-            // totalKotor = TOTAL fisik semua model (baik + rusak) — dipakai
-            // buat jumlah_pesan & jumlah_diterima header di bawah (lihat
-            // catatan panjang di situ soal kenapa rusak tidak dikurangi).
-            const totalKotor = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+            // BON TAMBAHAN (opsional) — kalau barang untuk pesanan PSN ini
+            // ternyata dibarengi lebih dari satu bon fisik (lihat "Tambah
+            // Bon" di KonfirmasiDatangForm), tiap bon tambahan jadi baris
+            // pesanan_masuk BARU sendiri (bukan nimpa/nambah ke baris p.id
+            // di atas) dengan kode BON- otomatis — sama seperti pola bon di
+            // "Input Barang Datang" (handler "barang-datang" di bawah).
+            // Bon-bon ini tidak punya harga_kesepakatan sendiri karena
+            // memang bukan bagian dari pesanan yang di-PO-kan.
+            if (bonTambahan && bonTambahan.length > 0) {
+              const kodeAwal = nextKode(pesananMasuk, "kode_pesanan", "BON-");
+              let nomorAwal = parseInt(kodeAwal.slice("BON-".length), 10);
+              // Simpan per bon bikin form ini bisa menyimpan berkali-kali
+              // tanpa ditutup — ambil juga nomor BON- terakhir langsung dari
+              // database supaya kode tidak pernah bentrok, sekalipun state
+              // pesananMasuk belum sempat ke-refresh.
+              try {
+                const terakhir = await sb("pesanan_masuk?select=kode_pesanan&kode_pesanan=like.BON-*&order=kode_pesanan.desc&limit=1");
+                const nomorDb = parseInt(String(terakhir?.[0]?.kode_pesanan || "").slice("BON-".length), 10);
+                if (!isNaN(nomorDb) && nomorDb + 1 > nomorAwal) nomorAwal = nomorDb + 1;
+              } catch (e) {
+                console.error("Gagal cek nomor BON terakhir dari database:", e);
+              }
+              for (let i = 0; i < bonTambahan.length; i++) {
+                const { noBox: noBoxBon, noInvoice: noInvoiceBon, fotoBonFiles: fotoFilesBon, existingFotoBonUrls: fotoUrlsLamaBon, models: modelsBon, catatan: catatanBon } = bonTambahan[i];
 
-            const patchPayload = {
-              draft,
-              catatan,
-              foto_bon_url: fotoBonUrl,
-              foto_bon_urls: fotoBonUrls,
-              // harga_kesepakatan dibawa apa adanya dari form (sudah dibaca
-              // dari kolom ini waktu form dibuka) supaya tetap tersimpan di
-              // kolomnya sendiri, tidak ikut hilang saat detail_model
-              // ditimpa isi sebenarnya di bawah. keterangan_selisih dicatat
-              // kalau total harga barang datang tidak sama dengan
-              // kesepakatan (validasi wajib isi ada di form, hanya untuk
-              // simpan final — draf tidak wajib).
-              harga_kesepakatan: hargaKesepakatan,
-              keterangan_selisih: keteranganSelisih,
-              detail_model: models.map((m) => ({
-                nama: m.nama,
-                jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-                rusak: m.jumlahRusak,
-                alasan_rusak: m.alasanRusak,
-                harga: m.harga,
-                datang: true,
-              })),
-            };
-            // jumlah_pesan/jumlah_diterima cuma diganti ke qty sebenarnya
-            // begitu difinalisasi — selama masih draf, dibiarkan seperti
-            // placeholder awal (DB tidak boleh 0 lewat check constraint).
-            // jumlah_diterima SENGAJA disamakan dengan totalKotor (baik +
-            // rusak) — BUKAN dikurangi rusak dulu seperti sebelumnya — sama
-            // seperti pola di "Input Barang Datang" (BarangDatangForm) di
-            // bawah. Barang rusak tetap dianggap "sudah diterima" secara
-            // fisik (sudah dibayar ke supplier, cuma tidak masuk stok),
-            // jadi tidak boleh bikin status jadi "Sebagian Datang" padahal
-            // semua model sudah dikonfirmasi lengkap. Qty baik-saja (dikurangi
-            // rusak) tetap dipakai apa adanya per model lewat `detail_model`
-            // di atas & buat baris "items"/stok di bawah — cuma tidak lagi
-            // dipakai untuk header jumlah_diterima ini.
-            if (!draft) {
-              patchPayload.jumlah_pesan = Math.max(totalKotor, 1);
-              patchPayload.jumlah_diterima = totalKotor;
-            }
+                const fotoBonUrlsBaruBon = [];
+                for (const f of fotoFilesBon || []) {
+                  const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+                  const path = `bon-${Date.now()}-tambahan-${i}-${fotoBonUrlsBaruBon.length}.${ext}`;
+                  fotoBonUrlsBaruBon.push(await sbUploadFoto(f, path));
+                }
+                const fotoBonUrlsBon = [...(fotoUrlsLamaBon || []), ...fotoBonUrlsBaruBon];
+                const fotoBonUrlBon = fotoBonUrlsBon[0] || null;
+                const totalKotorBon = modelsBon.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
+                const kodeBonBaru = `BON-${String(nomorAwal + i).padStart(4, "0")}`;
 
-            await sb(`pesanan_masuk?id=eq.${p.id}`, {
-              method: "PATCH",
-              body: JSON.stringify(patchPayload),
-            });
-
-            // Draf BELUM masuk Alur Barang/stok — "items" & "pesanan_penerimaan"
-            // baru dibuat begitu disimpan sebagai FINAL, sama seperti "Input
-            // Barang Datang".
-            if (!draft) {
-              for (const m of models) {
-                const totalQtyModel = m.jumlahDatang;
-                if (totalQtyModel <= 0) continue;
-                const [itemBaru] = await sb("items", {
+                const [pesananBon] = await sb("pesanan_masuk", {
                   method: "POST",
                   body: JSON.stringify({
-                    tanggal,
-                    gudang: p.jenis,
-                    jumlah: totalQtyModel,
-                    jumlah_rusak: m.jumlahRusak || 0,
-                    alasan_rusak: m.alasanRusak || null,
-                    harga: m.harga || null,
-                    stage: "sku",
-                    kode_bon: p.kode_bon,
-                    // Nama model yang diketik di Barang Datang sebenarnya barcode/kode
-                    // dari supplier — dibawa terus di sini supaya nanti ikut disalin
-                    // ke sku_master.barcode_supplier saat SKU dibuat (lihat "buat-sku").
-                    barcode_supplier: m.nama || null,
+                    tanggal_pesan: tanggal,
+                    supplier: p.supplier,
+                    jenis: p.jenis,
+                    jumlah_pesan: Math.max(totalKotorBon, 1),
+                    jumlah_diterima: totalKotorBon,
+                    dibatalkan: false,
+                    draft,
+                    catatan: catatanBon,
+                    no_box: noBoxBon,
+                    no_invoice: noInvoiceBon,
+                    // induk_id nunjuk balik ke pesanan PSN-xxxx yang bon
+                    // tambahan ini dibuat dari — dipakai rincianBongkarBox
+                    // (lib/api.js) buat menjumlah box mana saja yang sudah
+                    // dibongkar untuk SATU pesanan yang sama, walau bon-nya
+                    // kepecah jadi beberapa baris pesanan_masuk. SENGAJA pakai
+                    // rootId (bukan p.id) — kalau form ini dibuka dari baris
+                    // invoice tambahan (p sendiri sudah anak), invoice baru
+                    // harus tetap nempel ke induk paling atas, bukan ke p.
+                    induk_id: rootId,
+                    foto_bon_url: fotoBonUrlBon,
+                    foto_bon_urls: fotoBonUrlsBon,
+                    kode_pesanan: kodeBonBaru,
+                    detail_model: modelsBon.map((m) => ({
+                      nama: m.nama,
+                      jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
+                      rusak: m.jumlahRusak,
+                      alasan_rusak: m.alasanRusak,
+                      harga: m.harga,
+                      datang: true,
+                    })),
                   }),
                 });
-                await sb("pesanan_penerimaan", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    pesanan_id: p.id,
-                    tanggal,
-                    jumlah: totalQtyModel,
-                    item_id: itemBaru?.id || null,
-                    foto_bon_url: fotoBonUrl,
-                    foto_bon_urls: fotoBonUrls,
-                  }),
-                });
+
+                kodeTersimpan = pesananBon?.kode_pesanan || kodeBonBaru;
+
+                if (!draft) {
+                  for (const m of modelsBon) {
+                    const totalQtyModelBon = m.jumlahDatang;
+                    if (totalQtyModelBon <= 0) continue;
+                    const [itemBaruBon] = await sb("items", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        tanggal,
+                        gudang: p.jenis,
+                        jumlah: totalQtyModelBon,
+                        jumlah_rusak: m.jumlahRusak || 0,
+                        alasan_rusak: m.alasanRusak || null,
+                        harga: m.harga || null,
+                        stage: "sku",
+                        kode_pesanan: pesananBon?.kode_pesanan,
+                        barcode_supplier: m.nama || null,
+                      }),
+                    });
+                    await sb("pesanan_penerimaan", {
+                      method: "POST",
+                      body: JSON.stringify({
+                        pesanan_id: pesananBon?.id || null,
+                        tanggal,
+                        jumlah: totalQtyModelBon,
+                        item_id: itemBaruBon?.id || null,
+                        foto_bon_url: fotoBonUrlBon,
+                        foto_bon_urls: fotoBonUrlsBon,
+                      }),
+                    });
+                  }
+                }
               }
             }
-          }, draft ? "Rincian barang datang disimpan sebagai draf" : "Barang datang dikonfirmasi — lanjut ke alur SKU")
-        }
+            // Semua bon sudah masuk (atau user menandai selesai) -> pesanan yang
+            // tadinya "Sebagian Datang" (lihat tandaiSebagian di atas) dilengkapi
+            // jadi "Selesai": jumlah_pesan disamakan dengan jumlah_diterima.
+            if (selesaikanUtama && !draft) {
+              await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  jumlah_pesan: Math.max(totalKotorUtama, 1),
+                  jumlah_diterima: totalKotorUtama,
+                }),
+              });
+            }
+
+            if (simpanSatu) return `Bon ${kodeTersimpan || ""} dikonfirmasi — lanjut ke alur SKU`;
+          }, draft
+            ? (jumlahBon > 1 ? `Rincian barang datang (${jumlahBon} bon) disimpan sebagai draf` : "Rincian barang datang disimpan sebagai draf")
+            : (jumlahBon > 1 ? `${jumlahBon} bon dikonfirmasi — lanjut ke alur SKU` : "Barang datang dikonfirmasi — lanjut ke alur SKU"),
+          { keepOpen: !!simpanSatu }
+          );
+          return ok ? kodeTersimpan : null;
+        }}
       />
     );
   }
@@ -3521,7 +3748,7 @@ export default function ModalRouter({
         onClose={close}
         saving={saving}
         suppliers={suppliers}
-        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan }) =>
+        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan, resi, jumlahBox }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
             let fotoBonUrl = p.foto_bon_url || null;
@@ -3537,6 +3764,8 @@ export default function ModalRouter({
                 supplier,
                 jenis,
                 catatan,
+                resi,
+                jumlah_box: jumlahBox,
                 foto_bon_url: fotoBonUrl,
                 detail_model: models,
               }),
@@ -3559,132 +3788,6 @@ export default function ModalRouter({
   // modal.item (opsional) = baris draf yang sedang dilanjutkan — kalau ada,
   // header transaksi di-PATCH ke baris yang SAMA (bukan bikin baris baru),
   // supaya kode bonnya tetap satu dari draf sampai final.
-  if (modal.type === "barang-datang") {
-    const draftItem = modal.item || null;
-    return (
-      <BarangDatangForm
-        onClose={close}
-        saving={saving}
-        suppliers={suppliers}
-        initial={draftItem || undefined}
-        onSubmit={({ draft, draftId, tanggal, fotoBonFiles, existingFotoBonUrls, supplier, jenis, models, catatan }) =>
-          run(async () => {
-            await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
-            // Foto bon (opsional, boleh lebih dari satu) — dipakai untuk
-            // seluruh transaksi ini, ditempel juga di tiap baris penerimaan
-            // per model. `foto_bon_urls` menyimpan SEMUA foto (lama yang
-            // dipertahankan + baru diupload); `foto_bon_url` (kolom lama)
-            // tetap diisi foto PERTAMA saja supaya layar/kode lain yang masih
-            // baca kolom tunggal itu (mis. menu Rusak) tetap dapat satu foto
-            // yang wajar tanpa perlu ikut diubah.
-            const fotoBonUrlsBaru = [];
-            for (const f of fotoBonFiles || []) {
-              const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
-              const path = `bon-${Date.now()}-${fotoBonUrlsBaru.length}.${ext}`;
-              fotoBonUrlsBaru.push(await sbUploadFoto(f, path));
-            }
-            const fotoBonUrls = [...(existingFotoBonUrls || []), ...fotoBonUrlsBaru];
-            const fotoBonUrl = fotoBonUrls[0] || null;
-
-            // m.jumlahDatang = TOTAL fisik baris ini (baik + rusak jadi satu
-            // angka, diisi begitu di form). jumlah_pesan/jumlah_diterima
-            // header dihitung dari TOTAL ini (sama seperti kolom "Qty
-            // Datang" di halaman Riwayat Barang Datang) — qty rusak tetap
-            // ditampilkan terpisah di detail_model.
-            const totalKotor = models.reduce((sum, m) => sum + (Number(m.jumlahDatang) || 0), 0);
-
-            const headerPayload = {
-              tanggal_pesan: tanggal,
-              supplier,
-              jenis,
-              // DB tidak boleh 0 (check constraint) — minimal 1 walau
-              // draf-nya masih kosong/belum lengkap sama sekali.
-              jumlah_pesan: Math.max(totalKotor, 1),
-              jumlah_diterima: totalKotor,
-              dibatalkan: false,
-              draft,
-              catatan,
-              foto_bon_url: fotoBonUrl,
-              foto_bon_urls: fotoBonUrls,
-              detail_model: models.map((m) => ({
-                nama: m.nama,
-                jumlah: Math.max(m.jumlahDatang - m.jumlahRusak, 0),
-                rusak: m.jumlahRusak,
-                alasan_rusak: m.alasanRusak,
-                harga: m.harga,
-                datang: true,
-              })),
-            };
-
-            let pesanan;
-            if (draftId) {
-              // Melanjutkan/menyimpan-ulang draf yang sudah ada — PATCH baris
-              // yang SAMA (kode bon & id tetap), bukan bikin baris baru.
-              const [updated] = await sb(`pesanan_masuk?id=eq.${draftId}`, {
-                method: "PATCH",
-                body: JSON.stringify(headerPayload),
-              });
-              pesanan = updated || { id: draftId, kode_bon: draftItem?.kode_bon };
-            } else {
-              // Kode bon otomatis (BON-0001, BON-0002, ...) — dipakai untuk
-              // cocokkan riwayat di sistem dengan bon fisik dari supplier, dan
-              // ikut ditempel ke tiap item hasil transaksi ini supaya kalau
-              // ada yang rusak, menu "Rusak" bisa tahu itu dari bon yang mana.
-              const kodeBon = nextKode(pesananMasuk, "kode_bon", "BON-");
-              const [created] = await sb("pesanan_masuk", {
-                method: "POST",
-                body: JSON.stringify({ ...headerPayload, kode_bon: kodeBon }),
-              });
-              pesanan = created;
-            }
-
-            // Draf BELUM masuk Alur Barang/stok — "items" & "pesanan_penerimaan"
-            // baru dibuat begitu disimpan sebagai FINAL (draft === false),
-            // baik langsung dari form baru maupun waktu draf ini dilanjutkan
-            // & akhirnya difinalisasi. Tiap model dengan Qty Datang (TOTAL,
-            // sudah termasuk rusak) > 0 jadi baris Barang Masuk tersendiri
-            // (stage "sku") & lanjut alur SKU-nya sendiri-sendiri.
-            if (!draft) {
-              for (const m of models) {
-                const totalQtyModel = m.jumlahDatang;
-                if (totalQtyModel <= 0) continue;
-                const [itemBaru] = await sb("items", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    tanggal,
-                    gudang: jenis,
-                    jumlah: totalQtyModel,
-                    jumlah_rusak: m.jumlahRusak || 0,
-                    alasan_rusak: m.alasanRusak || null,
-                    harga: m.harga || null,
-                    stage: "sku",
-                    kode_bon: pesanan?.kode_bon,
-                    // Nama model yang diketik di sini adalah barcode/kode dari
-                    // supplier — harus ikut disalin ke barcode_supplier item,
-                    // sama seperti alur Konfirmasi Datang, supaya muncul di
-                    // kolom "Model/Barcode Supplier" pada Alur Barang.
-                    barcode_supplier: m.nama || null,
-                  }),
-                });
-                await sb("pesanan_penerimaan", {
-                  method: "POST",
-                  body: JSON.stringify({
-                    pesanan_id: pesanan?.id || null,
-                    tanggal,
-                    jumlah: totalQtyModel,
-                    item_id: itemBaru?.id || null,
-                    foto_bon_url: fotoBonUrl,
-                    foto_bon_urls: fotoBonUrls,
-                  }),
-                });
-              }
-            }
-          }, draft ? "Barang datang disimpan sebagai draf" : "Barang datang dicatat — lanjut ke alur SKU")
-        }
-      />
-    );
-  }
-
   // Hapus satu baris Riwayat Barang Datang — SEKARANG cascade: barang yang
   // sudah tercatat lewat transaksi ini (via pesanan_penerimaan -> items),
   // beserta SKU/penempatan rak/riwayat stok yang jadi yatim karenanya, ikut
@@ -3693,6 +3796,15 @@ export default function ModalRouter({
   if (modal.type === "hapus-pesanan-masuk") {
     const p = modal.item;
     const jumlahModel = detailModelPesanan(p).length;
+    // Invoice tambahan ("Tambah Invoice" di Konfirmasi Datang) tersimpan
+    // sebagai baris pesanan_masuk TERPISAH dengan induk_id menunjuk balik ke
+    // p.id (lihat handler "konfirmasi-datang" di atas). Kalau baris-baris
+    // anak ini masih ada saat p dihapus, DELETE ke pesanan_masuk akan
+    // ditolak database (masih direferensikan lewat induk_id) — makanya
+    // sebelumnya tombol "Hapus" terlihat seperti tidak berfungsi. Di sini
+    // anak-anaknya dikumpulkan dulu supaya ikut dibersihkan & dihapus lebih
+    // dulu daripada induknya (lihat urutan di tombol "Ya, Hapus" di bawah).
+    const anakPesanan = (pesananMasuk || []).filter((row) => row.induk_id === p.id);
     return (
       <ModalShell title="Hapus Riwayat Barang Datang" onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
@@ -3704,6 +3816,11 @@ export default function ModalRouter({
               Semua barang yang tercatat dari transaksi ini (Barang Masuk, SKU, penempatan rak,
               riwayat stok) ikut dihapus. Tindakan ini tidak bisa dibatalkan.
             </div>
+            {anakPesanan.length > 0 && (
+              <div className="mt-1.5 text-red-200/90">
+                Pesanan ini punya {anakPesanan.length} invoice tambahan ({anakPesanan.map((a) => a.kode_pesanan || a.no_invoice || "—").join(", ")}) — ikut dihapus semua.
+              </div>
+            )}
           </div>
         </div>
         <div className="flex gap-2">
@@ -3718,86 +3835,103 @@ export default function ModalRouter({
             disabled={saving}
             onClick={() =>
               run(async () => {
-                // 1) Ambil semua barang (items) yang lahir dari transaksi
-                //    pesanan ini lewat pesanan_penerimaan.
-                const penerimaanList =
-                  (await sb(`pesanan_penerimaan?select=item_id&pesanan_id=eq.${p.id}`)) || [];
-                const itemIds = [...new Set(penerimaanList.map((r) => r.item_id).filter(Boolean))];
+                // Bersihkan & hapus SATU baris pesanan_masuk (barang-barang,
+                // SKU/rak/riwayat stok yatim, lalu pesanan_penerimaan & baris
+                // pesanan_masuk itu sendiri). Dipakai untuk pesanan induk
+                // MAUPUN tiap invoice tambahannya — logikanya identik per
+                // baris, cuma id-nya beda.
+                const hapusSatuPesanan = async (pesananId) => {
+                  // 1) Ambil semua barang (items) yang lahir dari transaksi
+                  //    pesanan ini lewat pesanan_penerimaan.
+                  const penerimaanList =
+                    (await sb(`pesanan_penerimaan?select=item_id&pesanan_id=eq.${pesananId}`)) || [];
+                  const itemIds = [...new Set(penerimaanList.map((r) => r.item_id).filter(Boolean))];
 
-                // 2) Untuk tiap barang, hapus (dan bersihkan SKU/rak/riwayat
-                //    stok yang jadi yatim) — logikanya sama seperti "Hapus
-                //    Barang" satu-satu di menu SKU/Barang Masuk.
-                for (const itemId of itemIds) {
-                  const item = (items || []).find((i) => i.id === itemId);
-                  const stokSudahMasuk = !!item?.sku && item.stage !== "sku";
+                  // 2) Untuk tiap barang, hapus (dan bersihkan SKU/rak/riwayat
+                  //    stok yang jadi yatim) — logikanya sama seperti "Hapus
+                  //    Barang" satu-satu di menu SKU/Barang Masuk.
+                  for (const itemId of itemIds) {
+                    const item = (items || []).find((i) => i.id === itemId);
+                    const stokSudahMasuk = !!item?.sku && item.stage !== "sku";
 
-                  // Catatan "Rusak" (barang_rusak) ikut lahir dari item ini
-                  // (lihat modal "buat-sku") lewat kolom item_id — dihapus
-                  // DULU, SEBELUM baris items-nya sendiri dihapus di bawah,
-                  // supaya (a) tidak ada FK constraint yang menahan DELETE
-                  // items gara-gara masih direferensikan barang_rusak, dan
-                  // (b) tidak ada catatan rusak yang "nyangkut" di menu Rusak
-                  // setelah riwayat pesanannya sendiri dihapus.
-                  await sb(`barang_rusak?item_id=eq.${itemId}`, { method: "DELETE" });
+                    // Catatan "Rusak" (barang_rusak) ikut lahir dari item ini
+                    // (lihat modal "buat-sku") lewat kolom item_id — dihapus
+                    // DULU, SEBELUM baris items-nya sendiri dihapus di bawah,
+                    // supaya (a) tidak ada FK constraint yang menahan DELETE
+                    // items gara-gara masih direferensikan barang_rusak, dan
+                    // (b) tidak ada catatan rusak yang "nyangkut" di menu Rusak
+                    // setelah riwayat pesanannya sendiri dihapus.
+                    await sb(`barang_rusak?item_id=eq.${itemId}`, { method: "DELETE" });
 
-                  if (item && stokSudahMasuk) {
-                    const existing = (skuMaster || []).find((s) => s.sku === item.sku);
-                    await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
+                    if (item && stokSudahMasuk) {
+                      const existing = (skuMaster || []).find((s) => s.sku === item.sku);
+                      await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
 
-                    if (existing) {
-                      const barangLain =
-                        (await sb(`items?select=id&sku=eq.${encodeURIComponent(item.sku)}`)) || [];
-                      const skuMasihDipakai = barangLain.length > 0;
+                      if (existing) {
+                        const barangLain =
+                          (await sb(`items?select=id&sku=eq.${encodeURIComponent(item.sku)}`)) || [];
+                        const skuMasihDipakai = barangLain.length > 0;
 
-                      if (skuMasihDipakai) {
-                        const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
-                        await sb("stock_history", {
-                          method: "POST",
-                          body: JSON.stringify({
-                            sku: item.sku,
-                            type: "keluar",
-                            qty_before: existing.stok,
-                            qty_change: -(item.jumlah || 0),
-                            qty_after: stokBaru,
-                            note: "Riwayat pesanan dihapus",
-                          }),
-                        });
-                        await sb(`sku_master?id=eq.${existing.id}`, {
-                          method: "PATCH",
-                          body: JSON.stringify({ stok: stokBaru }),
-                        });
-                      } else {
-                        try {
-                          await sb(`stock_history?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
-                          await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
-                          await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
-                        } catch (e) {
-                          if (e.pgCode === "23503") {
-                            try {
-                              await sb(`sku_master?id=eq.${existing.id}`, {
-                                method: "PATCH",
-                                body: JSON.stringify({ nonaktif: true }),
-                              });
-                            } catch (e2) {
-                              console.error("Gagal menonaktifkan SKU yatim:", e2);
+                        if (skuMasihDipakai) {
+                          const stokBaru = Math.max(existing.stok - (item.jumlah || 0), 0);
+                          await sb("stock_history", {
+                            method: "POST",
+                            body: JSON.stringify({
+                              sku: item.sku,
+                              type: "keluar",
+                              qty_before: existing.stok,
+                              qty_change: -(item.jumlah || 0),
+                              qty_after: stokBaru,
+                              note: "Riwayat pesanan dihapus",
+                            }),
+                          });
+                          await sb(`sku_master?id=eq.${existing.id}`, {
+                            method: "PATCH",
+                            body: JSON.stringify({ stok: stokBaru }),
+                          });
+                        } else {
+                          try {
+                            await sb(`stock_history?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                            await sb(`penempatan?sku=eq.${encodeURIComponent(item.sku)}`, { method: "DELETE" });
+                            await sb(`sku_master?id=eq.${existing.id}`, { method: "DELETE" });
+                          } catch (e) {
+                            if (e.pgCode === "23503") {
+                              try {
+                                await sb(`sku_master?id=eq.${existing.id}`, {
+                                  method: "PATCH",
+                                  body: JSON.stringify({ nonaktif: true }),
+                                });
+                              } catch (e2) {
+                                console.error("Gagal menonaktifkan SKU yatim:", e2);
+                              }
+                            } else {
+                              console.error("Gagal membersihkan SKU/penempatan yatim:", e);
                             }
-                          } else {
-                            console.error("Gagal membersihkan SKU/penempatan yatim:", e);
                           }
                         }
                       }
+                    } else {
+                      // Barang belum sampai tahap SKU (masih di tahap "sku"/
+                      // proses awal) — belum pernah masuk stok, jadi cukup
+                      // hapus baris items-nya saja.
+                      await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
                     }
-                  } else {
-                    // Barang belum sampai tahap SKU (masih di tahap "sku"/
-                    // proses awal) — belum pernah masuk stok, jadi cukup
-                    // hapus baris items-nya saja.
-                    await sb(`items?id=eq.${itemId}`, { method: "DELETE" });
                   }
-                }
 
-                // 3) Baru hapus riwayat penerimaan & pesanannya sendiri.
-                await sb(`pesanan_penerimaan?pesanan_id=eq.${p.id}`, { method: "DELETE" });
-                await sb(`pesanan_masuk?id=eq.${p.id}`, { method: "DELETE" });
+                  // 3) Baru hapus riwayat penerimaan & baris pesanan ini.
+                  await sb(`pesanan_penerimaan?pesanan_id=eq.${pesananId}`, { method: "DELETE" });
+                  await sb(`pesanan_masuk?id=eq.${pesananId}`, { method: "DELETE" });
+                };
+
+                // Invoice tambahan (anakPesanan) HARUS dihapus duluan —
+                // induk_id-nya menunjuk ke p.id, jadi kalau p dihapus lebih
+                // dulu sementara anaknya masih ada, database menolak DELETE
+                // (FK constraint) dan tombol ini terlihat seperti tidak
+                // berfungsi. Setelah semua anak beres, baru induknya (p).
+                for (const anak of anakPesanan) {
+                  await hapusSatuPesanan(anak.id);
+                }
+                await hapusSatuPesanan(p.id);
               }, "Riwayat pesanan & barang terkait dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
@@ -3827,65 +3961,78 @@ export default function ModalRouter({
         master={master}
         onClose={close}
         saving={saving}
-        onSubmit={({ ongkir }) =>
+        onSubmit={({ ongkir, resi, jumlahBox }) =>
           run(async () => {
             // Field `dibongkar` (manual, lama) sudah tidak dipakai lagi —
             // status bongkar sekarang otomatis mengikuti progres rincian
             // model di "Konfirmasi Datang" (lihat statusBongkar di
             // lib/api.js), jadi cukup update konfirmasi_datang saja di sini.
+            // `resi`/`jumlahBox` cuma dikirim (bukan undefined) waktu
+            // ditandai SUDAH datang — dibiarkan begitu ditandai balik jadi
+            // belum, supaya nomor resi & jumlah box yang sudah diisi
+            // sebelumnya tidak ikut kehapus.
+            // Begitu resi diisi waktu ditandai "sudah datang" DAN kode_pesanan
+            // baris ini masih placeholder PSN-xxxx (dari "Pesan Barang", belum
+            // pernah di-rename), kode_pesanan langsung di-rename jadi nomor
+            // resi itu sendiri — supaya sejak saat ini kode_pesanan sudah jadi
+            // identitas yang dikenal gudang/kurir (resi), bukan kode internal
+            // PSN- yang tidak berarti buat orang lain. Kalau kode_pesanan
+            // sudah bukan PSN- (mis. BON-, atau sudah pernah di-rename jadi
+            // resi sebelumnya), dibiarkan apa adanya — tidak ditimpa lagi.
+            const kodePesananBaru =
+              resi && resi.trim() && p.kode_pesanan?.startsWith("PSN-") ? resi.trim() : undefined;
+
             await sb(`pesanan_masuk?id=eq.${p.id}`, {
               method: "PATCH",
-              body: JSON.stringify({ konfirmasi_datang: akanJadi === "sudah" }),
+              body: JSON.stringify({
+                konfirmasi_datang: akanJadi === "sudah",
+                ...(resi !== undefined ? { resi } : {}),
+                ...(jumlahBox !== undefined ? { jumlah_box: jumlahBox } : {}),
+                ...(kodePesananBaru ? { kode_pesanan: kodePesananBaru } : {}),
+              }),
             });
+
+            // Begitu No. Resi diisi, timpa keterangan transaksi "Pembayaran
+            // Barang Supplier" yang sudah tercatat duluan waktu "Pesan
+            // Barang" (masih pakai kode pesan PSN-xxxx karena resinya belum
+            // ada) — supaya di Keuangan langsung kelihatan No. Resi-nya,
+            // bukan kode internal yang tidak berarti buat orang lain. Lihat
+            // `keuangan_transaksi_id` yang disimpan di modal "pesan-barang".
+            if (resi && p.keuangan_transaksi_id) {
+              await sb(`keuangan_transaksi?id=eq.${p.keuangan_transaksi_id}`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  keterangan: `Pesan Barang · ${resi}${p.supplier ? ` — ${p.supplier}` : ""}`,
+                }),
+              });
+            }
 
             // Ongkir (opsional) — dicatat sebagai Pengeluaran terpisah di
             // Keuangan, TIDAK ikut ditambahkan ke harga_kesepakatan/harga
-            // barang. Rekening/kategori baru (kalau user ketik nama baru
-            // lewat SearchableSelectOrNew) dibuat dulu di master_data
-            // sebelum baris keuangan_transaksi-nya disimpan — pola sama
-            // persis seperti "buatEntriBaru" di handler "keuangan-transaksi".
+            // barang. Kategori & sumber dana SELALU tetap
+            // (KATEGORI_ONGKIR_BARANG_DATANG / REKENING_ONGKIR_BARANG_DATANG,
+            // "Petty Cash") — tidak ada pilihan lain di form (lihat
+            // TandaiStatusKedatanganForm). Cari dulu entri kategori_keluar/
+            // rekening yang labelnya sama persis (case-insensitive) di
+            // master; kalau belum ada, baru dibuatkan sekali di master_data —
+            // pola sama persis seperti cariAtauBuatMasterTetap di modal
+            // "pesan-barang" (KATEGORI_PEMBAYARAN_SUPPLIER /
+            // REKENING_PEMBAYARAN_SUPPLIER).
             if (ongkir && ongkir.jumlah > 0) {
-              const buatEntriMasterOngkir = async (tipe, kodeInput, label) => {
-                const kode = (kodeInput || suggestKode(label)).trim().toUpperCase();
-                const daftar = master[tipe] || [];
-                if (daftar.some((m) => m.kode === kode)) {
-                  throw new Error(`Kode "${kode}" sudah dipakai — pilih dari daftar atau ganti kode.`);
-                }
-                await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: label.trim() }) });
+              const cariAtauBuatMasterTetap = async (tipe, labelTetap) => {
+                const daftar = master?.[tipe] || [];
+                const ada = daftar.find((m) => (m.label || "").trim().toLowerCase() === labelTetap.toLowerCase());
+                if (ada) return ada.kode;
+                let kode = suggestKode(labelTetap);
+                if (daftar.some((m) => m.kode === kode)) kode = `${kode}${daftar.length + 1}`;
+                await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: labelTetap }) });
                 return kode;
               };
 
-              let rekeningOngkir = ongkir.rekening;
-              if (!rekeningOngkir && ongkir.rekeningBaru) {
-                rekeningOngkir = await buatEntriMasterOngkir("rekening", ongkir.rekeningBaruKode, ongkir.rekeningBaru);
-              }
+              const kategoriOngkir = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_ONGKIR_BARANG_DATANG);
+              const rekeningOngkir = await cariAtauBuatMasterTetap("rekening", REKENING_ONGKIR_BARANG_DATANG);
 
-              // Kategori pengeluaran ongkir SELALU kategori tetap
-              // KATEGORI_ONGKIR_BARANG_DATANG — tidak ada pilihan kategori
-              // lain di form (lihat TandaiStatusKedatanganForm). Cari dulu
-              // entri kategori_keluar yang labelnya sama persis (case-
-              // insensitive) di master; kalau belum ada, baru dibuatkan
-              // sekali di master_data — pola sama seperti kategori tetap
-              // "Pencairan Marketplace" / "Biaya Iklan Marketplace" di modal
-              // "marketplace-pencairan".
-              const daftarKategoriKeluar = master?.kategori_keluar || [];
-              const kategoriOngkirAda = daftarKategoriKeluar.find(
-                (k) => (k.label || "").trim().toLowerCase() === KATEGORI_ONGKIR_BARANG_DATANG.toLowerCase()
-              );
-              let kategoriOngkir;
-              if (kategoriOngkirAda) {
-                kategoriOngkir = kategoriOngkirAda.kode;
-              } else {
-                kategoriOngkir = suggestKode(KATEGORI_ONGKIR_BARANG_DATANG);
-                if (daftarKategoriKeluar.some((k) => k.kode === kategoriOngkir)) {
-                  kategoriOngkir = `${kategoriOngkir}${daftarKategoriKeluar.length + 1}`;
-                }
-                await sb("master_data", {
-                  method: "POST",
-                  body: JSON.stringify({ tipe: "kategori_keluar", kode: kategoriOngkir, label: KATEGORI_ONGKIR_BARANG_DATANG }),
-                });
-              }
-
+              const resiOngkir = (resi !== undefined ? resi : p.resi) || p.kode_pesanan || "";
               await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
@@ -3894,7 +4041,13 @@ export default function ModalRouter({
                   rekening: rekeningOngkir,
                   kategori: kategoriOngkir,
                   jumlah: ongkir.jumlah,
-                  keterangan: `Ongkir · ${p.kode_bon || ""}${p.supplier ? ` — ${p.supplier}` : ""}`.trim(),
+                  // Keterangan pakai No. Resi yang baru diinput di form ini
+                  // (bukan kode_pesanan internal) — resi lebih dikenali gudang/
+                  // finance buat nyocokin ke fisik paketnya. Fallback ke
+                  // resi lama pesanan (kalau field-nya dibiarkan kosong) lalu
+                  // kode_pesanan, cuma buat jaga-jaga kalau resi belum pernah
+                  // diisi sama sekali.
+                  keterangan: `Ongkir · ${resiOngkir}${p.supplier ? ` — ${p.supplier}` : ""}`.trim(),
                 }),
               });
             }
@@ -4008,7 +4161,7 @@ export default function ModalRouter({
                   tanggal: new Date().toISOString().slice(0, 10),
                   catatan: modal.item.alasan_rusak || null,
                   item_id: modal.item.id,
-                  kode_bon: modal.item.kode_bon || null,
+                  kode_pesanan: modal.item.kode_pesanan || null,
                 }),
               });
             }
@@ -4104,7 +4257,7 @@ export default function ModalRouter({
                   tanggal: new Date().toISOString().slice(0, 10),
                   catatan: modal.item.alasan_rusak || null,
                   item_id: modal.item.id,
-                  kode_bon: modal.item.kode_bon || null,
+                  kode_pesanan: modal.item.kode_pesanan || null,
                 }),
               });
             }
@@ -4117,7 +4270,7 @@ export default function ModalRouter({
         // totalnya sudah dijamin PAS sama qty item ini sebelum sampai sini).
         // Baris pertama menimpa item asal (id-nya dipertahankan), baris
         // sisanya jadi item baru terpisah — supaya tidak perlu hapus item
-        // asal (menjaga referensi kode_bon/riwayat penerimaan tetap utuh).
+        // asal (menjaga referensi kode_pesanan/riwayat penerimaan tetap utuh).
         onSubmitSplit={(skuFieldsUmum, hargaAsli, hargaManual, rows) =>
           run(async () => {
             if (!settings) throw new Error("Pengaturan harga belum termuat");
@@ -4230,7 +4383,7 @@ export default function ModalRouter({
                       tanggal: new Date().toISOString().slice(0, 10),
                       catatan: modal.item.alasan_rusak || null,
                       item_id: modal.item.id,
-                      kode_bon: modal.item.kode_bon || null,
+                      kode_pesanan: modal.item.kode_pesanan || null,
                     }),
                   });
                 }

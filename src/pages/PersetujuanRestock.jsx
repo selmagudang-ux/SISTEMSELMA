@@ -275,10 +275,10 @@ function PemesananSupplier({ pengajuanRestock, skuMaster, items, suppliers, pesa
       .filter((i) => i.sku === p.sku && i.foto_url)
       .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
     const itemTerbaru = (items || [])
-      .filter((i) => i.sku === p.sku && i.kode_bon)
+      .filter((i) => i.sku === p.sku && i.kode_pesanan)
       .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
     const pesananTerkait = itemTerbaru
-      ? (pesananMasuk || []).find((pm) => pm.kode_bon === itemTerbaru.kode_bon)
+      ? (pesananMasuk || []).find((pm) => pm.kode_pesanan === itemTerbaru.kode_pesanan)
       : null;
     const ov = overrides[p.id] || {};
     // Label subkategori dari Master Data (skuRow.subkategori masih berupa

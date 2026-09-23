@@ -419,15 +419,15 @@ function DashboardGudang({
     const semuaPengajuan = pengajuanRestockPeriode;
 
     // Nama toko/supplier untuk sebuah SKU ditelusuri dari barang masuk
-    // TERBARU dengan SKU tsb (items.kode_bon -> pesanan_masuk.kode_bon ->
+    // TERBARU dengan SKU tsb (items.kode_pesanan -> pesanan_masuk.kode_pesanan ->
     // pesanan_masuk.supplier) — pola yang sama dipakai di modal "Tinjau
     // Pengajuan Restock" (lihat ModalRouter.jsx).
     const cariSupplier = (sku) => {
       const itemTerbaru = items
-        .filter((i) => i.sku === sku && i.kode_bon)
+        .filter((i) => i.sku === sku && i.kode_pesanan)
         .sort((a, b) => new Date(b.tanggal || 0) - new Date(a.tanggal || 0))[0];
       if (!itemTerbaru) return null;
-      const pesanan = pesananMasuk.find((pm) => pm.kode_bon === itemTerbaru.kode_bon);
+      const pesanan = pesananMasuk.find((pm) => pm.kode_pesanan === itemTerbaru.kode_pesanan);
       return pesanan?.supplier || null;
     };
 
@@ -512,7 +512,7 @@ function DashboardGudang({
     // model (created_at, lalu tanggal, lalu id sebagai tie-break terakhir).
     const kodeModelKeOriginKodeBon = {};
     [...(items || [])]
-      .filter((i) => i.barcode_supplier && i.kode_bon)
+      .filter((i) => i.barcode_supplier && i.kode_pesanan)
       .sort((a, b) => {
         const byCreated = new Date(a.created_at || 0) - new Date(b.created_at || 0);
         if (byCreated !== 0) return byCreated;
@@ -523,7 +523,7 @@ function DashboardGudang({
       .forEach((i) => {
         const kode = (i.barcode_supplier || "").trim().toLowerCase();
         if (kode && !(kode in kodeModelKeOriginKodeBon)) {
-          kodeModelKeOriginKodeBon[kode] = i.kode_bon;
+          kodeModelKeOriginKodeBon[kode] = i.kode_pesanan;
         }
       });
 
@@ -543,7 +543,7 @@ function DashboardGudang({
           if (!kode) return;
           const skuRow = skuMasterByKode.get(kode);
           if (!skuRow) return; // belum ada SKU yang cocok -> bukan "Model Lama"
-          if (kodeModelKeOriginKodeBon[kode] === p.kode_bon) return; // origin, bukan restock
+          if (kodeModelKeOriginKodeBon[kode] === p.kode_pesanan) return; // origin, bukan restock
 
           const jumlah = Number(m.jumlah) || 0;
           const existing = modelLamaMap.get(skuRow.id);
@@ -594,7 +594,7 @@ function DashboardGudang({
           const kode = m.nama.trim().toLowerCase();
           if (!kode) return;
           const skuRow = skuMasterByKode.get(kode);
-          const sudahRestock = skuRow && kodeModelKeOriginKodeBon[kode] !== p.kode_bon;
+          const sudahRestock = skuRow && kodeModelKeOriginKodeBon[kode] !== p.kode_pesanan;
           if (sudahRestock) return; // sudah dihitung sebagai "Model Lama"
 
           const jumlah = Number(m.jumlah) || 0;
@@ -1486,26 +1486,30 @@ function MiniLaporanPeriode({ hariIniStr, periodeLabel, tahunTerpilih, harian, b
   );
 }
 
-// Uraikan lagi jenis (Cash/Transfer) dari keterangan entri Toko Offline —
+// Uraikan lagi jenis (Cash/Cashless) dari keterangan entri Toko Offline —
 // re-export pola yang sama seperti uraiKeterangan() di pages/TokoOffline.jsx,
-// dipakai buat pecah Cash vs Transfer per hari di Riwayat Harian bawah ini.
+// dipakai buat pecah Cash vs Cashless per hari di Riwayat Harian bawah ini.
 const PENANDA_TOKO_OFFLINE = "Toko Offline ·";
 function jenisEntriTokoOffline(keterangan) {
   const sisa = (keterangan || "").slice(PENANDA_TOKO_OFFLINE.length).trim();
   return sisa.split(" — ")[0]?.trim() || "";
 }
 
-// Riwayat Harian Toko Offline — rekap per tanggal (Cash, Transfer, Total),
+// Riwayat Harian Toko Offline — rekap per tanggal (Cash, Cashless, Total),
 // dipakai di kartu "Laporan Toko Offline" pada Dashboard Penjualan supaya
 // sejajar dengan "Pesanan Grosir Hari Ini" di tab Grosir. Detail per baris
 // transaksi tetap di halaman Toko Offline (tombol "Buka Toko Offline").
+// "Cashless" mencakup entri lama yang masih berlabel "Transfer" (sebelum
+// rename dari Transfer ke Cashless) — dihitung sebagai "bukan Cash", sama
+// seperti jumlahByJenis() di pages/TokoOffline.jsx, supaya data lama & baru
+// tetap terjumlah sejajar.
 function riwayatHarianTokoOffline(keuanganTransaksi, limit = 10) {
   const map = new Map();
   (keuanganTransaksi || []).filter(isEntriTokoOffline).forEach((t) => {
-    const row = map.get(t.tanggal) || { tanggal: t.tanggal, cash: 0, transfer: 0, jumlahEntri: 0 };
+    const row = map.get(t.tanggal) || { tanggal: t.tanggal, cash: 0, cashless: 0, jumlahEntri: 0 };
     const jenis = jenisEntriTokoOffline(t.keterangan);
     if (jenis === "Cash") row.cash += Number(t.jumlah) || 0;
-    else if (jenis === "Transfer") row.transfer += Number(t.jumlah) || 0;
+    else row.cashless += Number(t.jumlah) || 0;
     row.jumlahEntri += 1;
     map.set(t.tanggal, row);
   });
@@ -2567,7 +2571,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                 <tr className="text-left text-xs text-slate-500 border-b border-slate-800">
                   <th className="px-4 py-2.5 font-medium">Tanggal</th>
                   <th className="px-4 py-2.5 font-medium text-right">Cash</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Transfer</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Cashless</th>
                   <th className="px-4 py-2.5 font-medium text-right">Total</th>
                 </tr>
               </thead>
@@ -2576,8 +2580,8 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                   <tr key={r.tanggal} className="border-b border-slate-800/60 last:border-0">
                     <td className="px-4 py-2.5 whitespace-nowrap">{formatTanggalID(r.tanggal)}</td>
                     <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.cash)}</td>
-                    <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.transfer)}</td>
-                    <td className="px-4 py-2.5 text-right font-medium text-amber-400">{fmtRp(r.cash + r.transfer)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.cashless)}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-amber-400">{fmtRp(r.cash + r.cashless)}</td>
                   </tr>
                 ))}
               </tbody>

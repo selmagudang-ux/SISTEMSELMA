@@ -42,7 +42,7 @@ export const STAGE_META = {
 export const PO_STATUS_META = {
   draft: { label: "Draf", color: "violet" },
   menunggu: { label: "Menunggu", color: "amber" },
-  sebagian: { label: "Sebagian Datang", color: "sky" },
+  sebagian: { label: "Sebagian Bongkar", color: "sky" },
   selesai: { label: "Selesai", color: "emerald" },
   batal: { label: "Dibatalkan", color: "slate" },
 };
@@ -85,6 +85,41 @@ export const KONFIRMASI_DATANG_META = {
 // master_data (tipe kategori_keluar) kalau belum ada — lihat ModalRouter.jsx
 // (modal "toggle-konfirmasi-datang").
 export const KATEGORI_ONGKIR_BARANG_DATANG = "Ongkir Barang Datang";
+
+// Sama pola dengan KATEGORI_ONGKIR_BARANG_DATANG di atas, tapi untuk
+// pembayaran ke supplier saat "Buat Pesan Barang" (modal "pesan-barang" di
+// ModalRouter.jsx) — begitu bon disimpan, nominalnya (harga_kesepakatan)
+// OTOMATIS dicatat sebagai Pengeluaran di Keuangan, kategori TETAP
+// KATEGORI_PEMBAYARAN_SUPPLIER dan sumber dana TETAP
+// REKENING_PEMBAYARAN_SUPPLIER — user tidak perlu (dan tidak bisa) memilih
+// kategori/rekening lain di form itu, supaya semua pengeluaran pembayaran
+// barang supplier konsisten kekelompokkan jadi satu kategori & satu
+// rekening yang sama di Keuangan. Entrinya dibuat otomatis di master_data
+// (tipe kategori_keluar / rekening) kalau belum ada — lihat ModalRouter.jsx
+// (modal "pesan-barang").
+export const KATEGORI_PEMBAYARAN_SUPPLIER = "Pembayaran Barang Supplier";
+export const REKENING_PEMBAYARAN_SUPPLIER = "BCA a/n Sandi Purwoto";
+
+// Sumber dana ongkir barang datang SELALU tetap Petty Cash — sama pola
+// dengan REKENING_PEMBAYARAN_SUPPLIER di atas. User tidak diberi pilihan
+// rekening lain di "Tandai Status Kedatangan" (lihat TandaiStatusKedatanganForm,
+// components/forms.jsx), supaya semua ongkir barang datang konsisten
+// kepotong dari satu sumber dana yang sama. Entrinya dibuat otomatis di
+// master_data (tipe rekening) kalau belum ada — lihat ModalRouter.jsx
+// (modal "toggle-konfirmasi-datang").
+export const REKENING_ONGKIR_BARANG_DATANG = "Petty Cash";
+
+// Rekening penampung Toko Offline (pages/TokoOffline.jsx) SELALU tetap
+// (tidak bisa dipilih manual) — sama pola dengan REKENING_PEMBAYARAN_SUPPLIER
+// / REKENING_ONGKIR_BARANG_DATANG di atas:
+//   Cash     -> Petty Cash (rekening yang sama dengan REKENING_ONGKIR_BARANG_DATANG)
+//   Cashless -> BCA a/n Teh Oca, kode "BCA2"
+// Dicocokkan by label (case-insensitive) di master data "rekening"; kalau
+// belum ada, dibuatkan otomatis sekali (lihat resolveRekeningTetap() di
+// TokoOffline.jsx).
+export const REKENING_TOKO_OFFLINE_CASH = "Petty Cash";
+export const REKENING_TOKO_OFFLINE_CASHLESS = "BCA a/n Teh Oca";
+export const KODE_REKENING_TOKO_OFFLINE_CASHLESS = "BCA2";
 
 export const STAGE_ROLE = {
   sku: "gudang",
