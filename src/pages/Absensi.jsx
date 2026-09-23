@@ -25,7 +25,8 @@ import {
 } from "../lib/absensi";
 
 // Hanya superadmin, superappa, & owner yang boleh: (1) mengedit/menandai
-// absensi manual (Sakit/Izin/Libur) untuk karyawan yang tidak absen, dan (2)
+// absensi manual (Sakit/Izin/Libur/Tanpa Keterangan) untuk karyawan yang
+// tidak absen, dan (2)
 // mengubah nama data karyawan. Role lain yang mungkin nanti dibuka aksesnya
 // ke menu Absensi tetap hanya bisa LIHAT, tidak bisa mengedit kedua hal ini.
 const ROLE_BOLEH_EDIT = ["superadmin", "superappa", "owner"];
@@ -40,7 +41,15 @@ function warnaManual(tipe) {
   if (tipe === "Sakit") return "pink";
   if (tipe === "Izin") return "amber";
   if (tipe === "Libur") return "sky";
+  if (tipe === "Tanpa Keterangan") return "red";
   return "slate";
+}
+
+// Label singkat buat Badge di kolom/sel yang sempit (rekap mingguan) —
+// "Tanpa Keterangan" kepanjangan buat sel tabel, versi lengkapnya tetap
+// dipakai di modal, tombol, dan CSV.
+function singkatManual(tipe) {
+  return tipe === "Tanpa Keterangan" ? "TK" : tipe;
 }
 
 export default function Absensi({ sub, showToast, session }) {
@@ -283,6 +292,7 @@ function RekapAbsensi({ showToast, role }) {
           { key: "hariSakit", label: "Total Hari Sakit" },
           { key: "hariIzin", label: "Total Hari Izin" },
           { key: "hariLibur", label: "Total Hari Libur" },
+          { key: "hariTanpaKeterangan", label: "Total Hari Tanpa Keterangan" },
           { key: "hariTelat", label: "Total Hari Telat" },
           { key: "totalTelatMenit", label: "Total Telat (menit)" },
           { key: "totalLemburJam", label: "Total Lembur (jam)" },
@@ -362,7 +372,7 @@ function RekapAbsensi({ showToast, role }) {
             onClick={() => bukaManual({ idKaryawan: "", nama: "", tanggal: new Date().toISOString().slice(0, 10) })}
             className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg"
           >
-            <Stethoscope size={14} /> Tandai Sakit/Izin/Libur
+            <Stethoscope size={14} /> Tandai Sakit/Izin/Libur/TK
           </button>
         )}
         <button
@@ -445,11 +455,11 @@ function RekapAbsensi({ showToast, role }) {
                           )
                         ) : r.manual ? (
                           bolehEdit ? (
-                            <button onClick={() => bukaDariSel(r.manual)}>
-                              <Badge color={warnaManual(r.manual)}>{r.manual}</Badge>
+                            <button onClick={() => bukaDariSel(r.manual)} title={r.manual}>
+                              <Badge color={warnaManual(r.manual)}>{singkatManual(r.manual)}</Badge>
                             </button>
                           ) : (
-                            <Badge color={warnaManual(r.manual)}>{r.manual}</Badge>
+                            <Badge color={warnaManual(r.manual)}>{singkatManual(r.manual)}</Badge>
                           )
                         ) : !r.masuk ? (
                           bolehEdit ? (
@@ -538,7 +548,7 @@ function RekapAbsensi({ showToast, role }) {
                     <div className="flex justify-end gap-1.5">
                       {bolehEdit && (
                         <button
-                          title="Tandai/ubah Sakit, Izin, atau Libur"
+                          title="Tandai/ubah Sakit, Izin, Libur, atau Tanpa Keterangan"
                           onClick={() =>
                             bukaManual({
                               idKaryawan: r.idKaryawan,
@@ -579,6 +589,7 @@ function RekapAbsensi({ showToast, role }) {
                 <th className="text-left px-3 py-2.5 font-medium">Sakit</th>
                 <th className="text-left px-3 py-2.5 font-medium">Izin</th>
                 <th className="text-left px-3 py-2.5 font-medium">Libur</th>
+                <th className="text-left px-3 py-2.5 font-medium">TK</th>
                 <th className="text-left px-3 py-2.5 font-medium">Hari Telat</th>
                 <th className="text-left px-3 py-2.5 font-medium">Total Telat</th>
                 <th className="text-left px-3 py-2.5 font-medium">Total Lembur</th>
@@ -594,6 +605,7 @@ function RekapAbsensi({ showToast, role }) {
                   <td className="px-3 py-2.5">{r.hariSakit}</td>
                   <td className="px-3 py-2.5">{r.hariIzin}</td>
                   <td className="px-3 py-2.5">{r.hariLibur}</td>
+                  <td className="px-3 py-2.5">{r.hariTanpaKeterangan}</td>
                   <td className="px-3 py-2.5">{r.hariTelat}</td>
                   <td className="px-3 py-2.5">{r.totalTelatMenit} menit</td>
                   <td className="px-3 py-2.5">{r.totalLemburJam} jam</td>
@@ -609,7 +621,7 @@ function RekapAbsensi({ showToast, role }) {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
             <div className="text-sm font-semibold mb-3">
-              {manualFor.tipe === "Masuk" ? "Tulis Jam Masuk" : "Tandai Sakit / Izin / Libur"}
+              {manualFor.tipe === "Masuk" ? "Tulis Jam Masuk" : "Tandai Absensi Manual"}
             </div>
             <div className="space-y-3">
               {manualFor.idKaryawan ? (
@@ -641,14 +653,15 @@ function RekapAbsensi({ showToast, role }) {
               </Field>
               <Field label="Status">
                 <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-1">
-                  {["Sakit", "Izin", "Libur", ...(bolehEditJam ? ["Masuk"] : [])].map((t) => (
+                  {["Sakit", "Izin", "Libur", "Tanpa Keterangan", ...(bolehEditJam ? ["Masuk"] : [])].map((t) => (
                     <button
                       key={t}
                       type="button"
+                      title={t}
                       onClick={() => setManualFor((f) => ({ ...f, tipe: t }))}
-                      className={`flex-1 px-3 py-1.5 text-xs font-semibold rounded-md ${manualFor.tipe === t ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
+                      className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md whitespace-nowrap ${manualFor.tipe === t ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
                     >
-                      {t}
+                      {singkatManual(t)}
                     </button>
                   ))}
                 </div>

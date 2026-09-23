@@ -309,21 +309,24 @@ export async function hapusAbsensiHarian(idKaryawan, tanggal) {
   );
 }
 
-// ---- Absensi manual (Sakit/Izin/Libur) — khusus superadmin & owner. ----
+// ---- Absensi manual (Sakit/Izin/Libur/Tanpa Keterangan) — khusus superadmin,
+// superappa, & owner (ROLE_BOLEH_EDIT di pages/Absensi.jsx). ----
 // Dipakai kalau ada karyawan yang tidak absen (lupa / memang tidak masuk)
-// tapi ternyata izin atau sakit, supaya rekap tidak menampilkan "Tidak
-// Absen" begitu saja. Disimpan sebagai SATU baris di tabel `absensi` dengan
-// tipe "Sakit"/"Izin"/"Libur" (bukan Masuk/Pulang). Baris asli (kalau ada, mis. mau
-// mengoreksi absen asli jadi izin) dihapus dulu supaya tidak dobel dan rekap
-// harian/mingguan/bulanan tetap konsisten karena semua dihitung ulang dari
-// tabel ini.
+// tapi ternyata izin, sakit, atau memang bolos tanpa kabar ("Tanpa
+// Keterangan"), supaya rekap tidak menampilkan "Tidak Absen" begitu saja.
+// Disimpan sebagai SATU baris di tabel `absensi` dengan tipe
+// "Sakit"/"Izin"/"Libur"/"Tanpa Keterangan" (bukan Masuk/Pulang). Baris asli
+// (kalau ada, mis. mau mengoreksi absen asli jadi izin) dihapus dulu supaya
+// tidak dobel dan rekap harian/mingguan/bulanan tetap konsisten karena semua
+// dihitung ulang dari tabel ini.
 // CATATAN: kolom jam/latitude/longitude/jarak_meter sengaja diisi nilai 0 /
 // "00:00:00" (bukan null) — kolom-kolom itu selalu terisi oleh submitAbsen()
 // jadi kemungkinan besar NOT NULL di tabel Supabase-nya. Tidak dibaca ulang
-// di rekap manapun untuk baris bertipe Sakit/Izin/Libur, jadi aman dipakai
-// sebagai nilai pengganti (placeholder).
+// di rekap manapun untuk baris bertipe manual ini, jadi aman dipakai sebagai
+// nilai pengganti (placeholder).
 export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tanggal, tipe, keterangan }) {
-  if (!["Sakit", "Izin", "Libur"].includes(tipe)) throw new Error("Status wajib Sakit, Izin, atau Libur.");
+  if (!["Sakit", "Izin", "Libur", "Tanpa Keterangan"].includes(tipe))
+    throw new Error("Status wajib Sakit, Izin, Libur, atau Tanpa Keterangan.");
   if (!idKaryawan || !tanggal) throw new Error("Karyawan dan tanggal wajib diisi.");
 
   await hapusAbsensiHarian(idKaryawan, tanggal);
@@ -467,7 +470,7 @@ export function rekapHarianAbsensi(absensiRows) {
         pulang: "",
         telatMenit: 0,
         lemburJam: 0,
-        manual: null, // "Sakit" | "Izin" | "Libur" — ditandai manual oleh admin, bukan absen asli
+        manual: null, // "Sakit" | "Izin" | "Libur" | "Tanpa Keterangan" — ditandai manual oleh admin, bukan absen asli
         keteranganManual: "",
       });
     }
@@ -478,7 +481,7 @@ export function rekapHarianAbsensi(absensiRows) {
     } else if (r.tipe === "Pulang") {
       v.pulang = String(r.jam).slice(0, 5);
       v.lemburJam = Number(r.lembur_jam) || 0;
-    } else if (r.tipe === "Sakit" || r.tipe === "Izin" || r.tipe === "Libur") {
+    } else if (r.tipe === "Sakit" || r.tipe === "Izin" || r.tipe === "Libur" || r.tipe === "Tanpa Keterangan") {
       v.manual = r.tipe;
       v.keteranganManual = r.keterangan || r.tipe;
     }
@@ -587,6 +590,7 @@ export function rekapBulananAbsensi(rekapHarian) {
         hariSakit: 0,
         hariIzin: 0,
         hariLibur: 0,
+        hariTanpaKeterangan: 0,
         totalTelatMenit: 0,
         totalLemburJam: 0,
         totalJamKerja: 0,
@@ -596,6 +600,7 @@ export function rekapBulananAbsensi(rekapHarian) {
     if (v.manual === "Sakit") b.hariSakit += 1;
     else if (v.manual === "Izin") b.hariIzin += 1;
     else if (v.manual === "Libur") b.hariLibur += 1;
+    else if (v.manual === "Tanpa Keterangan") b.hariTanpaKeterangan += 1;
     else if (v.masuk) b.hariMasuk += 1;
     if (v.telatMenit > 0) {
       b.hariTelat += 1;
