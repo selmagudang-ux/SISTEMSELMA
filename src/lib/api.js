@@ -565,11 +565,48 @@ export function sisaHutangPesanan(pesanan, pembayaranList) {
 // terpisah juga) menang atas SEMUANYA kecuali dibatalkan — dipakai untuk
 // baris "Input Barang Datang" yang disimpan sementara lewat tombol "Simpan
 // sebagai Draf" dan belum dikirim ke Alur Barang/stok.
+// versi_struktur = 2 (satu baris per pesanan, banyak invoice di
+// rincian_invoice) punya hitungan sendiri — lihat statusPesananMasukV2 di
+// bawah — supaya baris lama (versi_struktur = 1, default) tidak kena
+// pengaruh apa-apa dari perubahan ini.
 export function statusPesananMasuk(p) {
+  if (p.versi_struktur === 2) return statusPesananMasukV2(p);
   if (p.dibatalkan) return "batal";
   if (p.draft) return "draft";
   if ((p.jumlah_diterima || 0) <= 0) return "menunggu";
   if (p.jumlah_diterima < p.jumlah_pesan) return "sebagian";
+  return "selesai";
+}
+
+// Status untuk pesanan versi_struktur = 2 — dihitung dari rincian_invoice
+// (array invoice, tiap elemen punya status sendiri "draft"|"final") DAN
+// jumlah_box (total box fisik pesanan ini, diisi waktu "Tandai Status
+// Kedatangan", sama seperti versi lama):
+//  - dibatalkan menang atas semuanya (sama seperti v1).
+//  - selesai_manual (tombol "Tandai Pesanan Selesai") memaksa "selesai"
+//    biar bisa dipakai walau box-nya belum genap semua, sama kegunaannya
+//    dengan "Tandai Pesanan Selesai" versi lama.
+//  - kalau jumlah_box belum diisi (pesanan lama/pendek, cuma 1 box tidak
+//    pernah diisi jumlah_box-nya secara eksplisit): "selesai" begitu ADA
+//    minimal satu invoice final, "draft" kalau ada invoice tapi belum ada
+//    yang final, "menunggu" kalau rincian_invoice masih kosong sama sekali.
+//  - kalau jumlah_box > 0: dihitung dari BANYAKNYA no_box unik yang punya
+//    invoice final dibanding jumlah_box (sama logika dengan
+//    rincianBongkarBox versi lama) — menunggu/sebagian/selesai.
+function statusPesananMasukV2(p) {
+  if (p.dibatalkan) return "batal";
+  if (p.selesai_manual) return "selesai";
+  const rincian = Array.isArray(p.rincian_invoice) ? p.rincian_invoice : [];
+  if (rincian.length === 0) return "menunggu";
+  const boxFinal = new Set(
+    rincian.filter((inv) => inv.status === "final" && Number(inv.no_box) > 0).map((inv) => Number(inv.no_box))
+  );
+  const totalBox = Number(p.jumlah_box) || 0;
+  if (totalBox <= 0) {
+    return boxFinal.size > 0 || rincian.some((inv) => inv.status === "final") ? "selesai" : "draft";
+  }
+  if (boxFinal.size === 0) return "draft";
+  if (boxFinal.size < totalBox) return "sebagian";
   return "selesai";
 }
 
@@ -638,6 +675,13 @@ export function statusBongkar(p) {
 export function rincianBongkarBox(p, semuaPesanan) {
   const total = Number(p?.jumlah_box) || 0;
   if (total <= 0) return null;
+  if (p?.versi_struktur === 2) {
+    const rincian = Array.isArray(p.rincian_invoice) ? p.rincian_invoice : [];
+    const boxSelesai = new Set(
+      rincian.filter((inv) => inv.status === "final" && Number(inv.no_box) > 0).map((inv) => Number(inv.no_box))
+    );
+    return { selesai: boxSelesai.size, total };
+  }
   const finalDenganBox = (row) =>
     !row.dibatalkan && !row.draft && (Number(row.jumlah_diterima) || 0) > 0 && Number(row.no_box) > 0;
   const boxSelesai = new Set();
@@ -656,7 +700,21 @@ export function rincianBongkarBox(p, semuaPesanan) {
 // Pesanan lama (sebelum fitur rincian per-model, atau dari format lama yang
 // masih pakai angka "diterima") tetap didukung — "datang" diturunkan dari
 // diterima >= jumlah kalau field "datang"-nya sendiri belum ada.
+// versi_struktur = 2: gabungan (flatten) model dari SEMUA invoice di
+// rincian_invoice — dipakai tempat-tempat yang cuma butuh total qty/nilai
+// pesanan ini tanpa peduli invoice mana asalnya (mis. baris ringkas di
+// tabel). Tempat yang perlu tampilan PER-invoice (SemuaInvoicePanel) baca
+// rincian_invoice langsung, bukan lewat fungsi ini.
 export function detailModelPesanan(p) {
+  if (p?.versi_struktur === 2) {
+    const rincian = Array.isArray(p.rincian_invoice) ? p.rincian_invoice : [];
+    return rincian.flatMap((inv) =>
+      (Array.isArray(inv.models) ? inv.models : []).map((m) => ({
+        ...m,
+        datang: inv.status === "final",
+      }))
+    );
+  }
   const raw =
     Array.isArray(p.detail_model) && p.detail_model.length > 0
       ? p.detail_model
