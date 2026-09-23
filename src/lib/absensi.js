@@ -288,11 +288,33 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings, shift })
   };
 }
 
+// Batas bawah default buat listAbsensi() — awal bulan sebelumnya (bulan
+// berjalan + 1 bulan ke belakang). Dipakai supaya rekap Harian/Mingguan/
+// Bulanan & unduhan CSV yang biasa dipakai sehari-hari tidak perlu narik
+// SELURUH histori absensi (lihat catatan di listAbsensi di bawah).
+function awalRentangAbsensiDefault() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return keTanggalStr(d);
+}
+
 export async function listAbsensi(force = false) {
   if (!force && _absensiCache.data && Date.now() - _absensiCache.at < ABSEN_CACHE_TTL_MS) {
     return _absensiCache.data;
   }
-  const data = await sbAll("absensi?select=*&order=tanggal.desc,jam.desc");
+  // Dibatasi ke bulan berjalan + 1 bulan sebelumnya (BUKAN seluruh histori
+  // sejak awal) — tabel `absensi` cuma nambah terus tiap hari (minimal 2
+  // baris/karyawan/hari, Masuk & Pulang) dan tidak pernah berkurang, jadi
+  // narik semuanya tiap kali halaman Absensi/Dashboard dibuka bikin
+  // PostgREST egress naik terus-menerus seiring waktu (biang keladi utama
+  // pemborosan egress Okt 2026, sama pola dengan stock_history/rak_events
+  // yang sudah dibenahi Sept 2026 — lihat catatan loadCore() di App.jsx).
+  // 2 bulan cukup untuk pemakaian rekap harian/mingguan/bulanan/CSV
+  // sehari-hari (dikonfirmasi user). Kalau suatu saat butuh histori lebih
+  // lama, tambah parameter rentang tanggal custom di sini alih-alih
+  // menghapus batasnya sepenuhnya.
+  const batasAwal = awalRentangAbsensiDefault();
+  const data = await sbAll(`absensi?select=*&tanggal=gte.${batasAwal}&order=tanggal.desc,jam.desc`);
   _absensiCache = { data, at: Date.now() };
   return data;
 }
