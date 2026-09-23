@@ -300,6 +300,11 @@ function MainApp({ session, onLogout }) {
     if (menu === "stok" && sub === "riwayat") {
       loadRiwayatStokFull();
     }
+    // Barang Rusak (Data Barang > Reject) — sama polanya, cuma ditarik saat
+    // sub-halaman ini benar-benar dibuka (lihat loadBarangRusak di atas).
+    if (menu === "sku-harga" && sub === "reject") {
+      loadBarangRusak();
+    }
   };
 
   // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
@@ -409,7 +414,7 @@ function MainApp({ session, onLogout }) {
     // ditarik terpisah oleh loadRiwayatStokFull(), cuma saat halaman Stok >
     // Riwayat Stok dibuka. Ini perubahan Sept 2026 buat menekan PostgREST
     // egress yang sebelumnya ~500MB/hari — dua tabel log inilah biang utamanya.
-    const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsSkuRes, rakEventsRakDariRes, barangRusakRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
+    const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsSkuRes, rakEventsRakDariRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
       sbAll("items?select=*&order=created_at.desc"),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
       sbAll("suppliers?select=*&order=nama"),
@@ -421,7 +426,6 @@ function MainApp({ session, onLogout }) {
       sbAll("stock_history_latest?select=*"),
       sbAll("rak_events_latest_sku?select=*"),
       sbAll("rak_events_latest_rak_dari?select=*"),
-      sbAll("barang_rusak?select=*&order=created_at.desc"),
       sbAll("marketplace_notif_ack?select=*"),
       sbAll("pengajuan_restock?select=*&order=created_at.desc"),
     ]);
@@ -443,7 +447,6 @@ function MainApp({ session, onLogout }) {
     // di lib/marketplaceNotif.js membandingkan created_at sendiri per key,
     // jadi aman digabung begini walau urutannya tidak dijamin selang-seling.
     setRakEvents([...(rakEventsSkuRes || []), ...(rakEventsRakDariRes || [])]);
-    setBarangRusak(barangRusakRes || []);
     setMarketplaceNotifAck(notifAckRes || []);
     setPengajuanRestock(pengajuanRestockRes || []);
     tandaiSudahDimuat("core");
@@ -481,6 +484,21 @@ function MainApp({ session, onLogout }) {
     const res = await sbAll("stock_history?select=*&order=created_at.desc");
     setStockHistoryFull(res || []);
     tandaiSudahDimuat("riwayat-stok");
+  }, []);
+
+  // Riwayat Barang Rusak — dulu ikut ditarik di loadCore() SETIAP pindah
+  // menu (termasuk menu yang sama sekali tidak menampilkannya), padahal
+  // cuma dipakai di satu halaman (Data Barang > Reject, lihat pages/Rusak.jsx
+  // — dicek: TIDAK dipakai di badge/ringkasan Dashboard manapun). Tabel ini
+  // terus bertambah seiring waktu (log kerusakan barang, tidak pernah
+  // berkurang), jadi dipisah jadi loader sendiri seperti loadRiwayatStokFull,
+  // cuma dipanggil saat sub-halaman itu benar-benar dibuka — supaya tidak
+  // ikut membebani egress di menu-menu lain.
+  const loadBarangRusak = useCallback(async (force = false) => {
+    if (!force && masihSegar("barang-rusak")) return;
+    const res = await sbAll("barang_rusak?select=*&order=created_at.desc");
+    setBarangRusak(res || []);
+    tandaiSudahDimuat("barang-rusak");
   }, []);
 
   const loadKeuangan = useCallback(async (force = false) => {
@@ -531,8 +549,8 @@ function MainApp({ session, onLogout }) {
   // app dibuka & tombol "Muat ulang" manual. Refresh setelah form/modal
   // disimpan pakai reloadCurrentMenu() (di bawah loadForMenu), bukan ini lagi.
   const loadAll = useCallback(
-    () => runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi], true),
-    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
+    () => runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi, loadBarangRusak], true),
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi, loadBarangRusak]
   );
 
   // Data apa saja yang perlu ditarik tergantung menu yang dituju — dashboard
@@ -590,7 +608,16 @@ function MainApp({ session, onLogout }) {
   // menu itu (lihat navigate() -> loadForMenu), jadi tidak ada yang jadi
   // basi permanen — cuma tidak lagi ditarik sia-sia di menu yang tidak
   // menampilkannya.
-  const reloadCurrentMenu = useCallback(() => loadForMenu(nav.menu, true), [loadForMenu, nav.menu]);
+  const reloadCurrentMenu = useCallback(() => {
+    const p = [loadForMenu(nav.menu, true)];
+    // Reject (Data Barang > Reject) punya aksi hapus/tambah catatan rusak
+    // langsung di halamannya sendiri — loadForMenu("sku-harga") TIDAK ikut
+    // menarik loadBarangRusak lagi (lihat catatan di loadBarangRusak),
+    // jadi ditambahkan manual di sini supaya catatan yang baru
+    // disimpan/dihapus langsung kelihatan tanpa pindah menu dulu.
+    if (nav.menu === "sku-harga" && nav.sub === "reject") p.push(loadBarangRusak(true));
+    return Promise.all(p);
+  }, [loadForMenu, nav.menu, nav.sub, loadBarangRusak]);
 
   useEffect(() => {
     // Sengaja cuma sekali saat app pertama dibuka, pakai menu awal (nav.menu)
@@ -603,6 +630,8 @@ function MainApp({ session, onLogout }) {
     // ini) tidak ikut kepanggil saat mount pertama.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     if (nav.menu === "stok" && nav.sub === "riwayat") loadRiwayatStokFull();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (nav.menu === "sku-harga" && nav.sub === "reject") loadBarangRusak();
   }, []);
 
   // Seluruh badge/ringkasan/notifikasi di bawah ini dihitung ulang dari
