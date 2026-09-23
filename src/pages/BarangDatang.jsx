@@ -126,7 +126,7 @@ function TabelModelInvoice({ detail }) {
 // Tidak perlu expand box/expand per-invoice lagi — cukup satu klik di baris
 // pesanan. Invoice tambahan TETAP data pesanan yang sama (lihat induk_id di
 // ModalRouter "konfirmasi-datang"), cuma disatukan tampilannya di sini.
-function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakatan, keteranganSelisih }) {
+function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakatan, keteranganSelisih, setModal }) {
   const nilaiGabungan = daftarInvoice.reduce(
     (sum, inv) => sum + totalNilaiTransaksi(detailModelPesanan(inv)),
     0
@@ -184,6 +184,18 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
                         )}
                       </button>
                     )}
+                    {/* Edit KHUSUS invoice/box ini — kirim `inv` (baris data
+                        box ini sendiri), BUKAN `p` (baris root/box 1) yang
+                        dipakai tombol Edit di baris utama tabel. Sebelum ada
+                        tombol ini, tidak ada cara membuka EditBarangDatangForm
+                        untuk box 2/3/dst, jadi Edit selalu jatuh ke box 1. */}
+                    <button
+                      onClick={() => setModal({ type: "edit-barang-datang", item: inv })}
+                      className="p-1 rounded text-slate-500 hover:bg-slate-800 hover:text-amber-400"
+                      title="Edit invoice/box ini"
+                    >
+                      <Pencil size={12} />
+                    </button>
                   </div>
                 </div>
                 <TabelModelInvoice detail={detail} />
@@ -535,6 +547,7 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
           onLihatFoto={lihatFoto}
           hargaKesepakatan={p.harga_kesepakatan}
           keteranganSelisih={p.keterangan_selisih}
+          setModal={setModal}
         />
       )}
     </Fragment>

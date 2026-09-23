@@ -580,16 +580,19 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   // seperti biasa. Cuma relevan kalau jumlah box > 1 dan bon utamanya belum
   // final (kalau sudah final, pesanan yang dibuka memang box tertentu yang
   // sudah dipilih dari awal, jadi langsung ke "isi").
-  // Kalau baris yang dibuka SUDAH tahu box-nya sendiri (pesanan.no_box sudah
-  // keisi — entah itu draf box tertentu yang mau dilanjutkan, atau bon yang
-  // sudah final), langsung ke layar isi rincian — TIDAK perlu ke Pilih Box
-  // lagi. Layar Pilih Box cuma relevan waktu bon utamanya masih benar-benar
-  // baru (belum pernah pilih/simpan box manapun), supaya box 2/3/dst yang
-  // sudah ada drafnya tidak kelihatan seperti "Belum diisi" & rinciannya
-  // tidak kelihatan seperti hilang begitu draf itu dibuka lagi lewat
-  // "Lanjutkan mengisi draf".
+  // Skip Pilih Box (langsung ke "isi") HANYA kalau baris yang dibuka masih
+  // DRAF untuk box-nya sendiri (no_box sudah keisi, draft masih true) —
+  // supaya draf box 2/3/dst yang mau dilanjutkan tidak kelihatan seperti
+  // "Belum diisi" & rinciannya tidak kelihatan seperti hilang.
+  // SENGAJA TIDAK di-skip kalau baris ini SUDAH FINAL (draft:false) walau
+  // no_box-nya sudah keisi — itu artinya user membuka baris yang sudah
+  // selesai justru untuk LANJUT ke box berikutnya (pesanan masih "Sebagian
+  // Datang"), jadi layar Pilih Box tetap harus muncul supaya box lain bisa
+  // dipilih (lihat tombol "Konfirmasi Datang" di BarangDatang.jsx yang
+  // masih aktif untuk baris final selama status masih "sebagian").
+  const langsungIsiDrafSendiri = !!(pesanan?.no_box && pesanan?.draft);
   const [langkah, setLangkah] = useState(
-    jumlahBoxTotal > 1 && !pesanan?.no_box && boxFinalUntukPilih.size < jumlahBoxTotal ? "pilih-box" : "isi"
+    jumlahBoxTotal > 1 && !langsungIsiDrafSendiri && boxFinalUntukPilih.size < jumlahBoxTotal ? "pilih-box" : "isi"
   );
   const [models, setModels] = useState(() =>
     pesanan?.draft || utamaSudahFinalAwal ? modelsDariDraf(pesanan) : [barisBarangDatang()]
@@ -836,13 +839,28 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   return (
     <ModalShell title={`Konfirmasi Datang — ${pesanan?.resi || pesanan?.kode_pesanan || ""}`} onClose={onClose}>
       {jumlahBoxTotal > 1 && boxFinalUntukPilih.size < jumlahBoxTotal && (
-        <button
-          type="button"
-          onClick={() => setLangkah("pilih-box")}
-          className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-amber-400 mb-2"
-        >
-          <ChevronLeft size={12} /> Ganti box
-        </button>
+        utamaTersimpan ? (
+          <button
+            type="button"
+            onClick={() => setLangkah("pilih-box")}
+            className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-amber-400 mb-2"
+          >
+            <ChevronLeft size={12} /> Ganti box
+          </button>
+        ) : (
+          // Box yang lagi dibuka BELUM disimpan (masih diisi) — sengaja
+          // tidak boleh pindah box dulu, supaya rincian yang lagi diketik
+          // untuk box ini tidak ketimpa/ketuker jadi milik box lain begitu
+          // noBoxUtama diganti (models tidak ikut direset waktu ganti box).
+          // Selesaikan (simpan sebagai draf atau final) box ini dulu, baru
+          // box lain bisa dibuka lewat sesi "Konfirmasi Datang" berikutnya.
+          <p
+            className="flex items-center gap-1 text-[11px] text-slate-600 mb-2 cursor-not-allowed"
+            title="Simpan box ini dulu (draf atau final) sebelum bisa buka/pilih box lain"
+          >
+            <ChevronLeft size={12} /> Ganti box (selesaikan box ini dulu)
+          </p>
+        )
       )}
       <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2.5 mb-3 text-[11px] text-slate-400 space-y-0.5">
         <div>
@@ -1325,11 +1343,34 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         <>
           <button
             disabled={saving}
-            onClick={() => onSubmit({ ...buatPayload(false, { skipUtama: true, extras: [], selesaikanUtama: true }) })}
+            onClick={() => {
+              // jumlahBoxTotal & boxTerisi sudah dihitung di atas — boxTerisi
+              // di titik ini SUDAH termasuk box punya sesi ini sendiri (sudah
+              // tersimpan final) + box final dari bon lain di database, jadi
+              // selisihnya representatif untuk box yang BENAR-BENAR belum
+              // pernah diisi sama sekali. Tombol ini sebelumnya langsung
+              // menutup pesanan tanpa cek ini — bisa salah klik dan menutup
+              // pesanan padahal masih banyak box fisik yang belum kepakai.
+              const sisaBox = jumlahBoxTotal > 0 ? jumlahBoxTotal - boxTerisi.size : 0;
+              if (
+                sisaBox > 0 &&
+                !confirm(
+                  `Pesanan ini punya ${jumlahBoxTotal} box, tapi baru ${boxTerisi.size} yang tercatat — masih ada ${sisaBox} box yang belum pernah diisi rinciannya sama sekali.\n\nYakin mau tandai pesanan ini SELESAI sekarang? Box yang belum diisi tidak akan bisa ditambahkan lagi setelah ini.`
+                )
+              ) {
+                return;
+              }
+              onSubmit({ ...buatPayload(false, { skipUtama: true, extras: [], selesaikanUtama: true }) });
+            }}
             className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
           >
             {saving ? "Menyimpan…" : "Tandai Pesanan Selesai (tidak ada bon lain)"}
           </button>
+          {jumlahBoxTotal > 0 && jumlahBoxTotal - boxTerisi.size > 0 && (
+            <p className="text-[11px] text-amber-400/90 mt-1.5">
+              ⚠ Masih ada {jumlahBoxTotal - boxTerisi.size} dari {jumlahBoxTotal} box yang belum pernah diisi rinciannya.
+            </p>
+          )}
           <p className="text-[11px] text-slate-500 mt-1.5">
             Pesanan ini masih berstatus Sebagian Datang. Kalau masih ada invoice lain, klik Tambah Invoice di atas;
             kalau sudah tidak ada, tandai selesai.
