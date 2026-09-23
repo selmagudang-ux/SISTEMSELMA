@@ -580,8 +580,16 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   // seperti biasa. Cuma relevan kalau jumlah box > 1 dan bon utamanya belum
   // final (kalau sudah final, pesanan yang dibuka memang box tertentu yang
   // sudah dipilih dari awal, jadi langsung ke "isi").
+  // Kalau baris yang dibuka SUDAH tahu box-nya sendiri (pesanan.no_box sudah
+  // keisi — entah itu draf box tertentu yang mau dilanjutkan, atau bon yang
+  // sudah final), langsung ke layar isi rincian — TIDAK perlu ke Pilih Box
+  // lagi. Layar Pilih Box cuma relevan waktu bon utamanya masih benar-benar
+  // baru (belum pernah pilih/simpan box manapun), supaya box 2/3/dst yang
+  // sudah ada drafnya tidak kelihatan seperti "Belum diisi" & rinciannya
+  // tidak kelihatan seperti hilang begitu draf itu dibuka lagi lewat
+  // "Lanjutkan mengisi draf".
   const [langkah, setLangkah] = useState(
-    jumlahBoxTotal > 1 && boxFinalUntukPilih.size < jumlahBoxTotal ? "pilih-box" : "isi"
+    jumlahBoxTotal > 1 && !pesanan?.no_box && boxFinalUntukPilih.size < jumlahBoxTotal ? "pilih-box" : "isi"
   );
   const [models, setModels] = useState(() =>
     pesanan?.draft || utamaSudahFinalAwal ? modelsDariDraf(pesanan) : [barisBarangDatang()]
