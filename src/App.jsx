@@ -514,7 +514,13 @@ function MainApp({ session, onLogout }) {
   // selalu langsung lihat data terbaru miliknya sendiri (untuk grup data
   // yang relevan di menu yang lagi dibuka; grup lain tetap fresh nanti
   // begitu menu itu dibuka, lihat catatan di reloadCurrentMenu).
-  const CACHE_TTL_MS = 45_000;
+  // Dinaikkan dari 45 detik -> 90 detik (Sept 2026, lanjutan penekanan
+  // egress PostgREST) — trade-off nya: perubahan yang dibuat staf LAIN baru
+  // kelihatan maksimal 90 detik kemudian saat pindah menu (bukan 45 detik),
+  // TAPI perubahan yang kamu buat SENDIRI tetap langsung kelihatan (lihat
+  // reloadCurrentMenu, selalu force=true, tidak kena cache ini). Kalau nanti
+  // kerasa data dari staf lain terlalu lama update, turunkan lagi angka ini.
+  const CACHE_TTL_MS = 90_000;
   const lastLoadedRef = useRef({});
   const masihSegar = (kunci) => Date.now() - (lastLoadedRef.current[kunci] || 0) < CACHE_TTL_MS;
   const tandaiSudahDimuat = (kunci) => {
