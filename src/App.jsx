@@ -122,11 +122,24 @@ export default function SistemSelmaApp() {
   // ringan daripada grup data MainApp yang mau kita hentikan.
   // Karyawan yang sedang absen SENGAJA tidak ikut dipoll sama sekali —
   // absen harus tetap jalan mulus tanpa gangguan walau mode ini aktif.
-  const MAINTENANCE_POLL_MS = 20_000;
+  const MAINTENANCE_POLL_MS = 8_000;
   useEffect(() => {
     if (!session || session.role === "superappa") return;
     const id = setInterval(cekMaintenance, MAINTENANCE_POLL_MS);
-    return () => clearInterval(id);
+    // Tab yang di-background di-throttle browser (setInterval bisa molor
+    // jauh lebih dari 8 detik kalau tab tidak sedang aktif dilihat) — begitu
+    // tab ini balik jadi aktif/fokus lagi (switch tab, buka HP lagi, dst),
+    // langsung cek ulang instan alih-alih nunggu antrian interval berikutnya.
+    const cekUlangKalauAktif = () => {
+      if (document.visibilityState === "visible") cekMaintenance();
+    };
+    document.addEventListener("visibilitychange", cekUlangKalauAktif);
+    window.addEventListener("focus", cekUlangKalauAktif);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", cekUlangKalauAktif);
+      window.removeEventListener("focus", cekUlangKalauAktif);
+    };
   }, [session, cekMaintenance]);
 
   // Begitu mode perbaikan ketahuan AKTIF untuk sesi yang BUKAN "superappa"
