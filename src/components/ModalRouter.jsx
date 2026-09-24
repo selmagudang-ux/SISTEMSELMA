@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG, KATEGORI_PEMBAYARAN_SUPPLIER, REKENING_PEMBAYARAN_SUPPLIER, REKENING_ONGKIR_BARANG_DATANG } from "../lib/constants";
@@ -522,12 +522,58 @@ function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
   );
 }
 
+// Tipe modal yang membaca detail item pesanan grosir (lihat komentar di
+// dalam ModalRouter). Semuanya memakai modal.item = baris grosir_pesanan.
+const MODAL_BUTUH_DETAIL_GROSIR = new Set([
+  "grosir-detail-pesanan",
+  "grosir-hapus-pesanan",
+  "grosir-cetak-nota",
+  "grosir-cetak-label",
+  "grosir-edit-pesanan",
+  "grosir-batalkan-pesanan",
+]);
+
 export default function ModalRouter({
   modal, setModal, master, settings, rakList, skuMaster, penempatan, items, pesananMasuk, suppliers, keuanganTransaksi, marketplaceTransaksi, saving, setSaving, reload, showToast, session,
   quickAdvance,
-  pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir,
+  pelangganGrosir, tokoGrosir, produkManualGrosir, pesananGrosir, pembayaranGrosir, depositGrosir,
 }) {
   const close = () => setModal(null);
+
+  // Detail item pesanan grosir (tabel grosir_detail_pesanan, baris per barang
+  // per pesanan — tabel grosir yang paling cepat membesar) TIDAK lagi ikut
+  // ditarik di loadGrosir(). Dulu semua barisnya ditarik tiap buka menu
+  // Grosir/Reseller/Dashboard, padahal cuma dibaca modal-modal di bawah yang
+  // masing-masing hanya butuh detail SATU pesanan (modal.item). Sekarang
+  // ditarik on-demand per pesanan begitu modalnya dibuka, dan modalnya
+  // menampilkan "Memuat…" dulu sampai datanya siap (penting: form edit
+  // membaca detailItems sebagai nilai awal, jadi tidak boleh dirender
+  // sebelum datanya ada). Ditarik ulang setiap modal dibuka, jadi selalu
+  // fresh setelah edit/hapus. Kalau ada modal BARU yang membaca
+  // detailPesananGrosir, tambahkan type-nya ke MODAL_BUTUH_DETAIL_GROSIR.
+  const butuhDetailGrosir = MODAL_BUTUH_DETAIL_GROSIR.has(modal.type) && !!modal.item?.id;
+  const [detailGrosir, setDetailGrosir] = useState({ modal: null, rows: [] });
+  useEffect(() => {
+    if (!butuhDetailGrosir) return undefined;
+    let batal = false;
+    sb(`grosir_detail_pesanan?select=*&pesanan_id=eq.${modal.item.id}`)
+      .then((rows) => {
+        if (!batal) setDetailGrosir({ modal, rows: rows || [] });
+      })
+      .catch((e) => {
+        if (batal) return;
+        showToast(e.message || "Gagal memuat detail pesanan", "err");
+        setModal(null);
+      });
+    return () => {
+      batal = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modal, butuhDetailGrosir]);
+  if (butuhDetailGrosir && detailGrosir.modal !== modal) {
+    return <ModalLoading onClose={close} />;
+  }
+  const detailPesananGrosir = detailGrosir.rows;
 
   // opts.keepOpen: true = modal TIDAK ditutup setelah sukses (dipakai form
   // yang menyimpan bertahap, mis. simpan per bon di "Konfirmasi Datang").

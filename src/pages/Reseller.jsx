@@ -84,7 +84,7 @@ function infoKamis() {
 export default function Reseller({
   sub,
   pelangganGrosir, produkManualGrosir, skuMaster, penempatan,
-  pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
+  pesananGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
   session, reload, showToast, setModal,
 }) {
   const pesananReseller = (pesananGrosir || []).filter((p) => p.jenis_transaksi === "reseller");

@@ -12,7 +12,7 @@ import {
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 
 export default function Grosir({
-  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, detailPesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
+  sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
 }) {
   if (sub === "produk-manual")
     return <ProdukManualList produkManualGrosir={produkManualGrosir} setModal={setModal} />;

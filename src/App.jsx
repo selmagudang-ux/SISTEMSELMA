@@ -379,7 +379,6 @@ function MainApp({ session, onLogout }) {
   const [tokoGrosir, setTokoGrosir] = useState([]);
   const [produkManualGrosir, setProdukManualGrosir] = useState([]);
   const [pesananGrosir, setPesananGrosir] = useState([]);
-  const [detailPesananGrosir, setDetailPesananGrosir] = useState([]);
   const [pembayaranGrosir, setPembayaranGrosir] = useState([]);
   const [depositGrosir, setDepositGrosir] = useState([]);
   const [keuanganTransaksi, setKeuanganTransaksi] = useState([]);
@@ -627,12 +626,11 @@ function MainApp({ session, onLogout }) {
 
   const loadGrosir = useCallback(async (force = false) => {
     if (!force && masihSegar("grosir")) return;
-    const [pelangganRes, tokoRes, produkManualRes, pesananRes, detailPesananRes, pembayaranRes, depositRes] = await Promise.all([
+    const [pelangganRes, tokoRes, produkManualRes, pesananRes, pembayaranRes, depositRes] = await Promise.all([
       sbAll("grosir_pelanggan?select=*&order=nama"),
       sbAll("grosir_toko?select=*&order=nama_toko"),
       sbAll("grosir_produk_manual?select=*&order=nama_produk"),
       sbAll("grosir_pesanan?select=*&order=created_at.desc"),
-      sbAll("grosir_detail_pesanan?select=*"),
       sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
       sbAll("grosir_deposit?select=*&order=created_at.desc"),
     ]);
@@ -640,7 +638,6 @@ function MainApp({ session, onLogout }) {
     setTokoGrosir(tokoRes || []);
     setProdukManualGrosir(produkManualRes || []);
     setPesananGrosir(pesananRes || []);
-    setDetailPesananGrosir(detailPesananRes || []);
     setPembayaranGrosir(pembayaranRes || []);
     setDepositGrosir(depositRes || []);
     tandaiSudahDimuat("grosir");
@@ -1147,7 +1144,6 @@ function MainApp({ session, onLogout }) {
                   produkManualGrosir={produkManualGrosir}
                   skuMaster={skuMasterGrosir}
                   pesananGrosir={pesananGrosir}
-                  detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
                   reload={reloadCurrentMenu}
@@ -1194,7 +1190,6 @@ function MainApp({ session, onLogout }) {
                   skuMaster={skuMasterGrosir}
                   penempatan={penempatan}
                   pesananGrosir={pesananGrosir}
-                  detailPesananGrosir={detailPesananGrosir}
                   pembayaranGrosir={pembayaranGrosir}
                   depositGrosir={depositGrosir}
                   keuanganTransaksi={keuanganTransaksi}
@@ -1251,7 +1246,6 @@ function MainApp({ session, onLogout }) {
           tokoGrosir={tokoGrosir}
           produkManualGrosir={produkManualGrosir}
           pesananGrosir={pesananGrosir}
-          detailPesananGrosir={detailPesananGrosir}
           pembayaranGrosir={pembayaranGrosir}
           depositGrosir={depositGrosir}
         />
