@@ -1,9 +1,9 @@
 // =========================================================
 // KONEKSI SUPABASE (REST / PostgREST — anon key)
 // =========================================================
-const SUPABASE_URL = "https://noasaytuzpdbqluogjqz.supabase.co";
+const SUPABASE_URL = "https://imjmpbswccmizxtazcty.supabase.co";
 const SUPABASE_ANON_KEY =
-  "sb_publishable_5sHmaxGt4oiA_bUeD8QGhg_QPd1YGuI";
+  "sb_publishable_i02DQrFExZbx0HTdouHD8A_KiRl1j6q";
 export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 // Terjemahan kode error Postgres (lewat PostgREST) jadi pesan yang bisa dibaca
