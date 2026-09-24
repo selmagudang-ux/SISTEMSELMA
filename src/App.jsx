@@ -122,7 +122,17 @@ export default function SistemSelmaApp() {
   // ringan daripada grup data MainApp yang mau kita hentikan.
   // Karyawan yang sedang absen SENGAJA tidak ikut dipoll sama sekali —
   // absen harus tetap jalan mulus tanpa gangguan walau mode ini aktif.
-  const MAINTENANCE_POLL_MS = 8_000;
+  // Dinaikkan dari 8 detik -> 60 detik (Sept 2026, ketahuan dari Log
+  // Explorer Supabase: poll 8 detik ini bikin ratusan request/jam per tab
+  // yang terbuka, non-stop, dikali berapa pun staf yang lagi login —
+  // volume request inilah yang bikin egress PostgREST boros, BUKAN ukuran
+  // datanya (cuma 1 kolom boolean per request). Delay maksimal 1 menit buat
+  // admin lain ke-logout otomatis setelah superappa aktifkan mode perbaikan
+  // masih sangat wajar (dibanding 8 detik yang berlebihan untuk kebutuhan
+  // ini). "focus"/"visibilitychange" di bawah tetap bikin pengecekan
+  // instan begitu tab dibuka/difokuskan lagi, jadi tidak kerasa lambat
+  // buat pemakaian normal sehari-hari.
+  const MAINTENANCE_POLL_MS = 60_000;
   useEffect(() => {
     if (!session || session.role === "superappa") return;
     const id = setInterval(cekMaintenance, MAINTENANCE_POLL_MS);
