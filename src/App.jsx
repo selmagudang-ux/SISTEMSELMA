@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
-import { RefreshCw, AlertCircle, Loader2, Bell, MapPin } from "lucide-react";
+import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
@@ -46,6 +46,39 @@ const Panduan = lazy(() => import("./pages/Panduan"));
 import { FormAbsen } from "./pages/AbsenKaryawan";
 import { listAbsensi, listKaryawan } from "./lib/absensi";
 
+// Halaman "Sedang Dalam Perbaikan" — ditampilkan pengganti MainApp untuk
+// SEMUA role kecuali "superappa" (role tersembunyi, lihat catatan di
+// lib/constants.js) selagi settings.maintenance_mode aktif. Karyawan yang
+// login untuk absen TIDAK LEWAT sini sama sekali — dicek terpisah di
+// SistemSelmaApp di bawah, jadi absen tetap jalan normal walau mode ini aktif.
+function MaintenancePage({ onLogout, onRetry, checking }) {
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
+      <div className="max-w-sm text-center">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-4">
+          <Wrench size={26} className="text-slate-950" />
+        </div>
+        <div className="font-bold text-lg mb-1">Sedang Dalam Perbaikan</div>
+        <p className="text-sm text-slate-400 mb-6">
+          Sistem sedang dalam perbaikan/pemeliharaan. Silakan coba lagi beberapa saat lagi.
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={onRetry}
+            disabled={checking}
+            className="text-xs font-medium bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-2 rounded-lg border border-slate-700"
+          >
+            {checking ? "Mengecek…" : "Coba Lagi"}
+          </button>
+          <button onClick={onLogout} className="text-xs text-slate-500 hover:text-slate-300 underline">
+            Keluar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Satu gerbang login untuk semua orang — link yang dibagikan ke karyawan
 // maupun ke pemegang role SELMA (admin, gudang, dst.) SAMA PERSIS. Login.jsx
 // (lewat lib/unifiedLogin.js) yang menentukan jenis akunnya (admin/app_users
@@ -54,10 +87,50 @@ export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
   const [absenSession, setAbsenSession] = useState(() => getAbsenSession());
 
+  // Status mode perbaikan (kolom settings.maintenance_mode) — ditarik
+  // TERPISAH dari loadCore() di MainApp (yang jauh lebih berat & baru jalan
+  // setelah MainApp benar-benar dimount), supaya begitu ketahuan mode ini
+  // aktif, MainApp untuk role selain "superappa" tidak sempat dimuat sama
+  // sekali. Dicek ulang tiap kali sesi berubah (login/logout) supaya begitu
+  // superappa menyalakan/mematikan mode ini, akun lain yang login berikutnya
+  // langsung dapat status terbaru.
+  const [maintenance, setMaintenance] = useState(false);
+  const [checkingMaintenance, setCheckingMaintenance] = useState(false);
+
+  const cekMaintenance = useCallback(async () => {
+    setCheckingMaintenance(true);
+    try {
+      const res = await sb("settings?select=maintenance_mode");
+      setMaintenance(!!res?.[0]?.maintenance_mode);
+    } catch {
+      // Gagal cek (mis. offline) — biarkan status lama, jangan asal kunci akses.
+    } finally {
+      setCheckingMaintenance(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cekMaintenance();
+  }, [cekMaintenance, session, absenSession]);
+
   if (session) {
+    // "superappa" (Super Admin tersembunyi) TETAP bisa akses penuh walau
+    // mode perbaikan aktif — supaya selalu ada jalan untuk mematikannya
+    // lagi lewat Pengaturan > Mode Perbaikan.
+    if (maintenance && session.role !== "superappa") {
+      return (
+        <MaintenancePage
+          checking={checkingMaintenance}
+          onRetry={cekMaintenance}
+          onLogout={() => { logout(); setSession(null); }}
+        />
+      );
+    }
     return <MainApp session={session} onLogout={() => { logout(); setSession(null); }} />;
   }
 
+  // Karyawan absen SENGAJA tidak dicek ke `maintenance` sama sekali di sini
+  // — absen harus tetap bisa dilakukan walau mode perbaikan aktif.
   if (absenSession) {
     return (
       <FormAbsen

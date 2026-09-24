@@ -1,11 +1,18 @@
 import { useState, useEffect } from "react";
-import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff } from "lucide-react";
+import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb, sbAll } from "../lib/api";
 import { ROLES, roleLabel, isSuperadminLike } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
+  // Mode Perbaikan HANYA untuk role "superappa" (Super Admin tersembunyi) —
+  // SENGAJA lebih sempit dari isSuperadminLike (yang juga meng-cakup
+  // "superadmin" biasa), karena begitu mode ini aktif superadmin biasa pun
+  // ikut terkunci dari MainApp (lihat App.jsx) — cuma superappa yang selalu
+  // punya jalan untuk menyalakan/mematikannya lagi.
+  const isSuperappa = session?.role === "superappa";
+
   if (!settings) {
     return (
       <div>
@@ -20,11 +27,79 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
     <div>
       <PageHeader title="Pengaturan" />
 
+      {isSuperappa && <MaintenanceToggle settings={settings} reload={reload} showToast={showToast} />}
+
       <SkuYatimCleaner reload={reload} showToast={showToast} />
 
       <FotoYatimCleaner reload={reload} showToast={showToast} />
 
       {isSuperadminLike(session?.role) && <UserManager showToast={showToast} />}
+    </div>
+  );
+}
+
+// Mode Perbaikan — begitu diaktifkan, SistemSelmaApp (lihat App.jsx) akan
+// mengunci akses MainApp untuk SEMUA role KECUALI "superappa" dan
+// menampilkan halaman "Sedang Dalam Perbaikan". Karyawan yang login untuk
+// absen (FormAbsen) TIDAK terpengaruh sama sekali — jalur absen dicek
+// terpisah dari flag ini di App.jsx, jadi karyawan tetap bisa absen normal.
+function MaintenanceToggle({ settings, reload, showToast }) {
+  const [saving, setSaving] = useState(false);
+  const aktif = !!settings?.maintenance_mode;
+
+  const toggle = async () => {
+    if (!settings?.id) {
+      showToast("Baris settings belum punya id — tidak bisa disimpan.", "err");
+      return;
+    }
+    setSaving(true);
+    try {
+      await sb(`settings?id=eq.${settings.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ maintenance_mode: !aktif }),
+      });
+      await reload();
+      showToast(!aktif ? "Mode perbaikan diaktifkan" : "Mode perbaikan dimatikan");
+    } catch (e) {
+      showToast(e.message || "Gagal mengubah mode perbaikan", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold mb-1 flex items-center gap-1.5">
+            <Wrench size={14} /> Mode Perbaikan
+          </div>
+          <p className="text-xs text-slate-500 max-w-xl">
+            Kalau diaktifkan, semua user (selain akun Super Admin ini) akan melihat tulisan
+            "Sedang Dalam Perbaikan" begitu login dan tidak bisa mengakses sistem sama sekali.
+            Absen karyawan TETAP berjalan normal, tidak ikut terkunci oleh mode ini.
+          </p>
+        </div>
+        <button
+          onClick={toggle}
+          disabled={saving}
+          className={`flex-shrink-0 relative w-12 h-7 rounded-full transition-colors ${
+            aktif ? "bg-amber-500" : "bg-slate-700"
+          } disabled:opacity-50`}
+          title={aktif ? "Matikan mode perbaikan" : "Aktifkan mode perbaikan"}
+        >
+          <span
+            className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${
+              aktif ? "translate-x-5" : ""
+            }`}
+          />
+        </button>
+      </div>
+      {aktif && (
+        <div className="mt-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg">
+          <AlertTriangle size={13} className="flex-shrink-0" /> Mode perbaikan sedang AKTIF sekarang.
+        </div>
+      )}
     </div>
   );
 }
