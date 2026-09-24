@@ -83,6 +83,26 @@ function MaintenancePage({ onLogout, onRetry, checking }) {
 // maupun ke pemegang role SELMA (admin, gudang, dst.) SAMA PERSIS. Login.jsx
 // (lewat lib/unifiedLogin.js) yang menentukan jenis akunnya (admin/app_users
 // vs karyawan absen), lalu di sini tinggal dirutekan ke tampilan yang sesuai.
+// Daftar kolom eksplisit buat 3 tabel terbesar yang ditarik di loadCore()
+// (menggantikan select=*). Hasil audit pemakaian di seluruh src/ (Sept 2026):
+// cuma kolom yang benar-benar DIBACA frontend yang ditarik, sisanya (kolom
+// yang tidak pernah dirujuk kode) tidak ikut dikirim PostgREST lagi.
+// PENTING: kalau nanti ada fitur baru yang baca kolom lain dari items /
+// sku_master / penempatan, tambahkan namanya di sini — kalau lupa, field-nya
+// akan `undefined` tanpa error apa pun.
+const KOLOM_ITEMS = [
+  "id", "created_at", "tanggal", "gudang", "jumlah", "jumlah_rusak", "alasan_rusak",
+  "harga", "stage", "stage_setelah_rak", "kode_pesanan", "barcode_supplier", "sku",
+  "foto_url", "rak_code", "perlu_foto_ulang", "harga_lama_foto", "harga_baru_foto",
+  "marketplace_status", "marketplace_uploaded_at",
+].join(",");
+const KOLOM_SKU_MASTER = [
+  "id", "created_at", "sku", "bahan", "peruntukan", "kategori", "subkategori", "model",
+  "warna", "ukuran", "harga_asli", "harga_asli_baru", "hpp", "grosir", "tengah", "ecer",
+  "stok", "barcode_supplier", "nonaktif",
+].join(",");
+const KOLOM_PENEMPATAN = ["id", "created_at", "sku", "rak_code", "qty"].join(",");
+
 export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
   const [absenSession, setAbsenSession] = useState(() => getAbsenSession());
@@ -561,14 +581,14 @@ function MainApp({ session, onLogout }) {
     // Riwayat Stok dibuka. Ini perubahan Sept 2026 buat menekan PostgREST
     // egress yang sebelumnya ~500MB/hari — dua tabel log inilah biang utamanya.
     const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsSkuRes, rakEventsRakDariRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
-      sbAll("items?select=*&order=created_at.desc"),
+      sbAll(`items?select=${KOLOM_ITEMS}&order=created_at.desc`),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
       sbAll("suppliers?select=*&order=nama"),
-      sbAll("sku_master?select=*&order=created_at.desc"),
+      sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
       sbAll("rak?select=*&order=code"),
       sbAll("master_data?select=*&order=label"),
       sb("settings?select=*"),
-      sbAll("penempatan?select=*&order=created_at.desc"),
+      sbAll(`penempatan?select=${KOLOM_PENEMPATAN}&order=created_at.desc`),
       sbAll("stock_history_latest?select=*"),
       sbAll("rak_events_latest_sku?select=*"),
       sbAll("rak_events_latest_rak_dari?select=*"),
