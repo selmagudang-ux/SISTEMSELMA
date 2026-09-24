@@ -113,6 +113,36 @@ export default function SistemSelmaApp() {
     cekMaintenance();
   }, [cekMaintenance, session, absenSession]);
 
+  // Poll berkala SELAMA ada sesi admin aktif (kecuali "superappa") — supaya
+  // begitu superappa MENGAKTIFKAN mode perbaikan dari tab/perangkat lain,
+  // user yang SUDAH terlanjur login duluan (dan sedang duduk di MainApp)
+  // ikut ketahuan & langsung ditendang (lihat efek logout otomatis di
+  // bawah) — bukan cuma dicegah masuk pada login berikutnya. Query yang
+  // dipoll cuma 1 kolom kecil (settings.maintenance_mode), jauh lebih
+  // ringan daripada grup data MainApp yang mau kita hentikan.
+  // Karyawan yang sedang absen SENGAJA tidak ikut dipoll sama sekali —
+  // absen harus tetap jalan mulus tanpa gangguan walau mode ini aktif.
+  const MAINTENANCE_POLL_MS = 20_000;
+  useEffect(() => {
+    if (!session || session.role === "superappa") return;
+    const id = setInterval(cekMaintenance, MAINTENANCE_POLL_MS);
+    return () => clearInterval(id);
+  }, [session, cekMaintenance]);
+
+  // Begitu mode perbaikan ketahuan AKTIF untuk sesi yang BUKAN "superappa"
+  // — langsung logout PAKSA dari sessionStorage (bukan cuma disembunyikan
+  // di balik halaman perbaikan sementara sesinya tetap "nyala" di
+  // background). Efeknya dua: (1) kalau tab ini di-refresh, user balik ke
+  // Login (bukan otomatis masuk lagi), dan (2) begitu kita render
+  // MaintenancePage di bawah (bukan MainApp lagi), semua proses tarik-data
+  // MainApp (loadAll & polling internalnya) ikut berhenti seketika karena
+  // MainApp-nya sendiri di-unmount — bukan cuma disembunyikan doang.
+  useEffect(() => {
+    if (maintenance && session && session.role !== "superappa") {
+      logout();
+    }
+  }, [maintenance, session]);
+
   if (session) {
     // "superappa" (Super Admin tersembunyi) TETAP bisa akses penuh walau
     // mode perbaikan aktif — supaya selalu ada jalan untuk mematikannya
@@ -122,7 +152,7 @@ export default function SistemSelmaApp() {
         <MaintenancePage
           checking={checkingMaintenance}
           onRetry={cekMaintenance}
-          onLogout={() => { logout(); setSession(null); }}
+          onLogout={() => setSession(null)}
         />
       );
     }
