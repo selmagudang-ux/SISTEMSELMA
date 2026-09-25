@@ -389,6 +389,7 @@ function DashboardGudang({
   const [halamanModelLama, setHalamanModelLama] = useState(1);
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
+  const [filterSupplierBarangDatang, setFilterSupplierBarangDatang] = useState(""); // "" = semua supplier — dropdown di kartu "Total Pesanan" (tab Barang yang Sudah Datang), polanya sama seperti filter supplier di Laporan Grosir
   const [stageTerbuka, setStageTerbuka] = useState(null); // null | salah satu key STAGE_ORDER — tahap yang listnya sedang ditampilkan di tab "Tahapan Barang"
   const [showDataBarang, setShowDataBarang] = useState(false); // panel "Data Barang" (sumber: skuMaster, sama seperti Master Barang di menu SKU & Harga)
   const [qDataBarang, setQDataBarang] = useState("");
@@ -498,8 +499,15 @@ function DashboardGudang({
     });
 
     // Total MODEL (jumlah baris/model, bukan qty) dari pesanan yang sudah
-    // selesai — ditampilkan sebagai kartu "Total Barang".
+    // selesai — ditampilkan sebagai kartu "Total Pesanan".
     const totalBarangDipesan = rincianBarangDipesan.length;
+
+    // Daftar supplier unik dari rincianBarangDipesan — dipakai dropdown filter
+    // supplier di kartu "Total Pesanan", polanya sama seperti filter supplier
+    // di Laporan Grosir / panel "Restok (SKU) — Disetujui" di atas.
+    const daftarSupplierBarangDatang = [
+      ...new Set(rincianBarangDipesan.map((r) => r.supplier).filter((s) => s && s !== "—")),
+    ].sort();
 
     // "Model Lama" = model yang, PAS DATANG/DIKONFIRMASI DITERIMA, ternyata
     // supplier-nya sudah pernah dipakai bikin SKU kita sebelumnya (restock ke
@@ -649,6 +657,7 @@ function DashboardGudang({
       barangSelesai,
       rincianBarangDipesan,
       totalBarangDipesan,
+      daftarSupplierBarangDatang,
       rincianModelLama,
       totalModelLama,
       rincianModelBaruDatang,
@@ -669,6 +678,7 @@ function DashboardGudang({
     barangSelesai,
     rincianBarangDipesan,
     totalBarangDipesan,
+    daftarSupplierBarangDatang,
     rincianModelLama,
     totalModelLama,
     rincianModelBaruDatang,
@@ -680,6 +690,13 @@ function DashboardGudang({
   const restokDisetujui = filterSupplier
     ? restokDisetujuiSemua.filter((p) => p._supplier === filterSupplier)
     : restokDisetujuiSemua;
+
+  // Sama seperti restokDisetujui di atas — cuma memfilter rincianBarangDipesan
+  // yang sudah dihitung berdasarkan pilihan dropdown supplier di kartu "Total
+  // Pesanan" (tab Barang yang Sudah Datang).
+  const rincianBarangDipesanTerfilter = filterSupplierBarangDatang
+    ? rincianBarangDipesan.filter((r) => r.supplier === filterSupplierBarangDatang)
+    : rincianBarangDipesan;
 
   const STATUS_MODEL_BARU_META = {
     disetujui: { label: "Disetujui", color: "emerald" },
@@ -1079,7 +1096,7 @@ function DashboardGudang({
               )}
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <StatCard
-                  label="Total Barang"
+                  label="Total Pesanan"
                   value={totalBarangDipesan}
                   accent="text-amber-400"
                   icon={Boxes}
@@ -1118,11 +1135,32 @@ function DashboardGudang({
 
               {showTotalBarangDatang && (
                 <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
-                    Total Barang — Rincian Pesanan yang Sudah Selesai
+                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="text-sm font-semibold">Total Pesanan — Rincian Pesanan yang Sudah Selesai</div>
+                    {daftarSupplierBarangDatang.length > 0 && (
+                      <select
+                        value={filterSupplierBarangDatang}
+                        onChange={(e) => {
+                          setFilterSupplierBarangDatang(e.target.value);
+                          setHalamanBarangDatang(1);
+                        }}
+                        className="text-[11px] bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
+                      >
+                        <option value="">Semua Supplier</option>
+                        {daftarSupplierBarangDatang.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    )}
                   </div>
-                  {rincianBarangDipesan.length === 0 ? (
-                    <EmptyState label="Belum ada pesanan yang sudah selesai." />
+                  {rincianBarangDipesanTerfilter.length === 0 ? (
+                    <EmptyState
+                      label={
+                        filterSupplierBarangDatang
+                          ? `Belum ada pesanan selesai dari supplier "${filterSupplierBarangDatang}".`
+                          : "Belum ada pesanan yang sudah selesai."
+                      }
+                    />
                   ) : (
                     <>
                       <table className="w-full text-sm">
@@ -1135,7 +1173,7 @@ function DashboardGudang({
                           </tr>
                         </thead>
                         <tbody>
-                          {rincianBarangDipesan
+                          {rincianBarangDipesanTerfilter
                             .slice(
                               (halamanBarangDatang - 1) * BARIS_PER_HALAMAN_BARANG_DATANG,
                               halamanBarangDatang * BARIS_PER_HALAMAN_BARANG_DATANG
@@ -1150,11 +1188,11 @@ function DashboardGudang({
                             ))}
                         </tbody>
                       </table>
-                      {rincianBarangDipesan.length > BARIS_PER_HALAMAN_BARANG_DATANG && (
+                      {rincianBarangDipesanTerfilter.length > BARIS_PER_HALAMAN_BARANG_DATANG && (
                         <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
                           <span>
                             Halaman {halamanBarangDatang} dari{" "}
-                            {Math.ceil(rincianBarangDipesan.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
+                            {Math.ceil(rincianBarangDipesanTerfilter.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
                           </span>
                           <div className="flex items-center gap-2">
                             <button
@@ -1169,10 +1207,16 @@ function DashboardGudang({
                               type="button"
                               onClick={() =>
                                 setHalamanBarangDatang((h) =>
-                                  Math.min(Math.ceil(rincianBarangDipesan.length / BARIS_PER_HALAMAN_BARANG_DATANG), h + 1)
+                                  Math.min(
+                                    Math.ceil(rincianBarangDipesanTerfilter.length / BARIS_PER_HALAMAN_BARANG_DATANG),
+                                    h + 1
+                                  )
                                 )
                               }
-                              disabled={halamanBarangDatang >= Math.ceil(rincianBarangDipesan.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
+                              disabled={
+                                halamanBarangDatang >=
+                                Math.ceil(rincianBarangDipesanTerfilter.length / BARIS_PER_HALAMAN_BARANG_DATANG)
+                              }
                               className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
                             >
                               Berikutnya
