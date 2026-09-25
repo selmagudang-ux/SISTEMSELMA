@@ -1,6 +1,6 @@
 import { useState, Fragment } from "react";
 import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, PackageOpen, Clock, Pencil, Search, Truck } from "lucide-react";
-import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID } from "../components/ui";
+import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID, InputTanggal } from "../components/ui";
 import { detailModelPesanan, fmtRp, statusPesananMasuk, statusBongkar, statusKonfirmasiDatang, rincianBongkarBox } from "../lib/api";
 import { PO_STATUS_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 
@@ -564,6 +564,13 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
     );
   const [halaman, setHalaman] = useState(1);
   const [showRincianBongkar, setShowRincianBongkar] = useState(false);
+  // Filter periode (tanggal_pesan) buat tabel di bawah — "" berarti tidak
+  // dibatasi di sisi itu. Ganti tanggal -> balik ke halaman 1 supaya tidak
+  // nyangkut di halaman kosong kalau hasil filter barunya lebih sedikit.
+  const [dariTanggal, setDariTanggal] = useState("");
+  const [sampaiTanggal, setSampaiTanggal] = useState("");
+  const ubahDariTanggal = (v) => { setDariTanggal(v); setHalaman(1); };
+  const ubahSampaiTanggal = (v) => { setSampaiTanggal(v); setHalaman(1); };
   const toggle = (id) =>
     setExpanded((s) => {
       const next = new Set(s);
@@ -601,20 +608,22 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const top = semua.filter((p) => !p.induk_id || !semuaId.has(p.induk_id));
   const anakDari = (id) => semua.filter((p) => p.induk_id === id);
 
-  const jumlahBelumBongkar = semua.filter((p) => statusBongkar(p) === "belum").length;
-  // Total BOX fisik yang belum dibongkar, dijumlah dari SEMUA pesanan top-level
-  // (bukan cuma jumlah pesanan seperti jumlahBelumBongkar di atas) — satu
-  // pesanan bisa punya banyak box (jumlah_box), jadi dihitung per box lewat
-  // rincianBongkarBox (total - selesai). Pesanan yang belum pernah diisi
-  // jumlah_box (rincianBox null, biasanya cuma 1 box fisik) dianggap 1 box
-  // yang belum dibongkar kalau statusBongkar-nya masih "belum" sama sekali.
-  const totalBoxBelumBongkar = top.reduce((sum, p) => {
+  // Rincian box (bukan jumlah pesanan) untuk pesanan yang statusnya SUDAH
+  // ditandai datang — dipakai di panel "Barang Sudah Datang" di bawah:
+  // Total Box / Sudah Dibongkar / Belum Dibongkar, semuanya dihitung per
+  // box fisik lewat rincianBongkarBox. Pesanan yang belum pernah diisi
+  // jumlah_box (rincianBox null) dianggap 1 box.
+  const pesananSudahDatang = top.filter((p) => statusKonfirmasiDatang(p) === "sudah");
+  const totalBoxKeseluruhan = pesananSudahDatang.reduce((sum, p) => {
     const rincian = rincianBongkarBox(p, semua);
-    if (rincian) return sum + Math.max(rincian.total - rincian.selesai, 0);
-    return sum + (statusBongkar(p) === "belum" ? 1 : 0);
+    return sum + (rincian ? rincian.total : 1);
   }, 0);
-  const jumlahSebagianBongkar = semua.filter((p) => statusBongkar(p) === "sebagian").length;
-  const jumlahSudahBongkar = semua.filter((p) => statusBongkar(p) === "sudah").length;
+  const totalBoxSudahDibongkar = pesananSudahDatang.reduce((sum, p) => {
+    const rincian = rincianBongkarBox(p, semua);
+    if (rincian) return sum + rincian.selesai;
+    return sum + (statusBongkar(p) === "sudah" ? 1 : 0);
+  }, 0);
+  const totalBoxBelumBongkar = totalBoxKeseluruhan - totalBoxSudahDibongkar;
   // Laporan kedatangan — dihitung dari SEMUA pesanan aktif (bukan cuma yang
   // sudah datang, beda dari 2 angka bongkar di atas), supaya kelihatan juga
   // berapa yang masih menunggu ditandai datang.
@@ -625,7 +634,15 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   // tabel) — bon tambahan ikut baris induknya, jadi tidak dihitung sebagai
   // baris sendiri di sini walau tetap kelihatan (sebagai sub-baris) di
   // halaman yang sama dengan induknya.
-  const list = top;
+  // Filter periode diterapkan DI SINI (bukan ke `top`) supaya StatCard di
+  // atas (Total Pesanan/Sudah Datang/Belum Datang/box) tetap menghitung dari
+  // SEMUA data, tidak ikut kepotong filter tanggal tabel.
+  const list = top.filter((p) => {
+    const tgl = p.tanggal_pesan || "";
+    if (dariTanggal && tgl < dariTanggal) return false;
+    if (sampaiTanggal && tgl > sampaiTanggal) return false;
+    return true;
+  });
 
   // Kalau halaman aktif jadi kelebihan (mis. sebelumnya di halaman 5 lalu
   // sebagian riwayat dihapus sehingga cuma tersisa 2 halaman), tarik balik
@@ -668,25 +685,56 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
             <Truck size={15} />
           </div>
           <div className="text-2xl font-medium text-sky-400">{jumlahSudahDatang}</div>
-          <div className="text-xs text-md-on-surface-variant mt-1">Sudah Datang</div>
+          <div className="text-xs text-md-on-surface-variant mt-1">Barang Sudah Datang</div>
           {showRincianBongkar && (
-            <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center gap-1.5 flex-wrap">
-              <PackageOpen size={11} className="text-emerald-500" />
-              <span className="text-emerald-400">{jumlahSudahBongkar} dibongkar</span>
-              <span className="text-slate-700">·</span>
-              <span className="text-sky-400">{jumlahSebagianBongkar} sebagian</span>
-              <span className="text-slate-700">·</span>
-              <span className="text-amber-400">{jumlahBelumBongkar} belum dibongkar</span>
-              <span className="text-slate-700">·</span>
-              <span className="text-amber-400">{totalBoxBelumBongkar} box belum dibongkar</span>
+            <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span>Total Box</span>
+                <span className="text-slate-300 font-semibold">{totalBoxKeseluruhan}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1"><PackageOpen size={11} className="text-emerald-500" /> Sudah Dibongkar</span>
+                <span className="text-emerald-400 font-semibold">{totalBoxSudahDibongkar}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span>Belum Dibongkar</span>
+                <span className="text-amber-400 font-semibold">{totalBoxBelumBongkar}</span>
+              </div>
             </div>
           )}
         </div>
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
       </div>
 
+      {/* Filter periode — cuma memotong tabel di bawah (berdasar tanggal
+          pesan), tidak memengaruhi angka StatCard di atas. */}
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div className="w-40">
+          <label className="block text-[11px] uppercase text-slate-500 font-semibold mb-1">Dari Tanggal</label>
+          <InputTanggal value={dariTanggal} onChange={ubahDariTanggal} />
+        </div>
+        <div className="w-40">
+          <label className="block text-[11px] uppercase text-slate-500 font-semibold mb-1">Sampai Tanggal</label>
+          <InputTanggal value={sampaiTanggal} onChange={ubahSampaiTanggal} />
+        </div>
+        {(dariTanggal || sampaiTanggal) && (
+          <button
+            onClick={() => { setDariTanggal(""); setSampaiTanggal(""); setHalaman(1); }}
+            className="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2 mb-2"
+          >
+            Reset periode
+          </button>
+        )}
+      </div>
+
       {list.length === 0 ? (
-        <EmptyState label="Belum ada barang datang yang dicatat." />
+        <EmptyState
+          label={
+            dariTanggal || sampaiTanggal
+              ? "Tidak ada pesanan di periode yang dipilih."
+              : "Belum ada barang datang yang dicatat."
+          }
+        />
       ) : (
         <div className="rounded-xl border border-slate-800">
         <div className="overflow-x-auto">
