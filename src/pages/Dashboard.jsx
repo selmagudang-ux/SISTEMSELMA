@@ -682,20 +682,25 @@ function DashboardGudang({
     ? restokDisetujuiSemua.filter((p) => p._supplier === filterSupplier)
     : restokDisetujuiSemua;
 
-  // Kelompokkan rincianBarangDipesan per supplier (bukan list model mentah) —
-  // tiap baris supplier menampilkan ringkasan (jumlah model & total nilai dari
-  // supplier itu), diklik untuk membuka/menutup rincian semua modelnya. Pola
-  // sama persis seperti LaporanGrosirPerPelanggan di Grosir.jsx.
+  // Kelompokkan SEMUA pesanan masuk pada periode ini (bukan cuma yang sudah
+  // selesai) per supplier — tiap baris supplier menampilkan ringkasan (jumlah
+  // pesanan & total nilai dari supplier itu), diklik untuk membuka/menutup
+  // rincian tiap pesanannya (lengkap dengan status: menunggu/sebagian/selesai/
+  // batal). Pola sama persis seperti LaporanGrosirPerPelanggan di Grosir.jsx.
   const perSupplierBarangDatangMap = new Map();
-  rincianBarangDipesan.forEach((r) => {
-    const key = r.supplier || "—";
+  pesananMasukPeriode.forEach((p) => {
+    const key = p.supplier || "—";
+    const nilai = detailModelPesanan(p).reduce(
+      (sum, m) => sum + (Number(m.jumlah) || 0) * (Number(m.harga) || 0),
+      0
+    );
     if (!perSupplierBarangDatangMap.has(key)) {
       perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0 });
     }
     const grup = perSupplierBarangDatangMap.get(key);
-    grup.items.push(r);
+    grup.items.push({ ...p, _nilai: nilai });
     grup.totalModel += 1;
-    grup.totalNilai += (Number(r.jumlah) || 0) * (Number(r.harga) || 0);
+    grup.totalNilai += nilai;
   });
   // Urutkan dari total nilai terbesar supaya supplier paling kontributif
   // langsung kelihatan di atas.
@@ -1110,7 +1115,7 @@ function DashboardGudang({
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <StatCard
                   label="Total Pesanan"
-                  value={totalBarangDipesan}
+                  value={pesananMasukPeriode.length}
                   accent="text-amber-400"
                   icon={Boxes}
                   iconColor="text-amber-500"
@@ -1148,10 +1153,10 @@ function DashboardGudang({
               {showTotalBarangDatang && (
                 <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
-                    Total Pesanan — per Supplier ({perSupplierBarangDatang.length} supplier, {totalBarangDipesan} model)
+                    Total Pesanan — per Supplier ({perSupplierBarangDatang.length} supplier, {pesananMasukPeriode.length} pesanan)
                   </div>
                   {perSupplierBarangDatang.length === 0 ? (
-                    <div className="p-6"><EmptyState label="Belum ada pesanan yang sudah selesai." /></div>
+                    <div className="p-6"><EmptyState label="Belum ada pesanan pada periode ini." /></div>
                   ) : (
                     <div className="max-h-[420px] overflow-y-auto">
                       <table className="w-full text-sm">
@@ -1172,7 +1177,7 @@ function DashboardGudang({
                                     <span className="text-slate-200 font-medium">{grup.supplier}</span>
                                   </td>
                                   <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
-                                    {grup.totalModel} model
+                                    {grup.totalModel} pesanan
                                   </td>
                                   <td className="px-4 py-2.5 text-right font-semibold text-slate-200">{fmtRp(grup.totalNilai)}</td>
                                 </tr>
@@ -1182,21 +1187,29 @@ function DashboardGudang({
                                       <table className="w-full text-sm">
                                         <thead className="text-slate-500 text-[11px]">
                                           <tr>
-                                            <th className="text-left py-1.5 pr-3 font-medium">Model</th>
-                                            <th className="text-right py-1.5 pr-3 font-medium">Qty</th>
-                                            <th className="text-right py-1.5 font-medium">Harga</th>
+                                            <th className="text-left py-1.5 pr-3 font-medium">Tanggal</th>
+                                            <th className="text-left py-1.5 pr-3 font-medium">Kode Pesanan</th>
+                                            <th className="text-left py-1.5 pr-3 font-medium">Status</th>
+                                            <th className="text-right py-1.5 font-medium">Nilai</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {[...grup.items]
-                                            .sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || ""))
-                                            .map((r) => (
-                                              <tr key={r.key} className="border-b border-slate-800/40 last:border-0">
-                                                <td className="py-2 pr-3 text-slate-300">{r.nama}</td>
-                                                <td className="py-2 pr-3 text-right font-medium text-slate-200">{r.jumlah}</td>
-                                                <td className="py-2 text-right text-slate-400">{fmtRp(r.harga)}</td>
-                                              </tr>
-                                            ))}
+                                            .sort((a, b) => (b.tanggal_pesan || "").localeCompare(a.tanggal_pesan || ""))
+                                            .map((p) => {
+                                              const st = statusPesananMasuk(p);
+                                              const meta = PO_STATUS_META[st];
+                                              return (
+                                                <tr key={p.id} className="border-b border-slate-800/40 last:border-0">
+                                                  <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{p.tanggal_pesan}</td>
+                                                  <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">{p.kode_pesanan || "—"}</td>
+                                                  <td className="py-2 pr-3">
+                                                    <Badge color={meta?.color || "slate"}>{meta?.label || st}</Badge>
+                                                  </td>
+                                                  <td className="py-2 text-right font-medium text-slate-200">{fmtRp(p._nilai)}</td>
+                                                </tr>
+                                              );
+                                            })}
                                         </tbody>
                                       </table>
                                     </td>
