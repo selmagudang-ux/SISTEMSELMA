@@ -834,11 +834,42 @@ export function TokoList({ tokoGrosir, setModal }) {
 // =========================================================
 function ProdukManualList({ produkManualGrosir, setModal }) {
   const [q, setQ] = useState("");
+  // Set berisi id produk yang dicentang — dipakai buat hapus banyak sekaligus.
+  // Dibersihkan (reset) tiap kali pencarian berubah, supaya tidak ada id yang
+  // "kecentang tapi nyasar" begitu daftar yang ditampilkan berubah.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
   const filtered = (produkManualGrosir || []).filter((p) => {
     const s = q.trim().toLowerCase();
     if (!s) return true;
     return p.nama_produk?.toLowerCase().includes(s) || p.kode?.toLowerCase().includes(s);
   });
+
+  const semuaTercentang = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
+
+  const toggleSatu = (id) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleSemua = () =>
+    setSelectedIds((prev) => {
+      if (semuaTercentang) {
+        // Uncheck semua yang lagi tampil (biarkan centang di luar hasil
+        // pencarian saat ini tetap ada, kalau kebetulan ada).
+        const next = new Set(prev);
+        filtered.forEach((p) => next.delete(p.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtered.forEach((p) => next.add(p.id));
+      return next;
+    });
+
+  const selectedItems = (produkManualGrosir || []).filter((p) => selectedIds.has(p.id));
 
   return (
     <div>
@@ -847,26 +878,60 @@ function ProdukManualList({ produkManualGrosir, setModal }) {
         description="Produk yang diketik langsung (bukan dari Data Barang) saat Buat Pesanan Grosir. Hapus di sini kalau sudah tidak dipakai."
       />
 
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari nama produk atau kode…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
-        />
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[220px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari nama produk atau kode…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+            <span className="text-xs text-red-300">{selectedIds.size} dipilih</span>
+            <button
+              onClick={() => setModal({ type: "hapus-bulk-grosir-produk-manual", item: selectedItems, onDone: () => setSelectedIds(new Set()) })}
+              className="flex items-center gap-1.5 text-xs font-semibold bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-lg"
+            >
+              <Trash2 size={13} /> Hapus Terpilih
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs text-slate-400 hover:text-slate-200 px-1"
+            >
+              Batal
+            </button>
+          </div>
+        )}
       </div>
 
       {filtered.length === 0 ? (
         <EmptyState label={q ? "Tidak ada produk yang cocok." : "Belum ada produk manual."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-2 bg-slate-950 border-b border-slate-800">
+            <input
+              type="checkbox"
+              checked={semuaTercentang}
+              onChange={toggleSemua}
+              className="accent-amber-500 w-3.5 h-3.5"
+            />
+            <span className="text-[11px] text-slate-500">Pilih semua yang tampil ({filtered.length})</span>
+          </div>
           {filtered.map((p, i) => (
             <div
               key={p.id}
-              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              className={`flex items-center gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
             >
-              <div className="min-w-0">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(p.id)}
+                onChange={() => toggleSatu(p.id)}
+                className="accent-amber-500 w-3.5 h-3.5 flex-shrink-0"
+              />
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[11px] text-amber-400">{p.kode}</span>
                   <span className="text-sm text-slate-200 truncate">{p.nama_produk}</span>

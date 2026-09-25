@@ -1095,6 +1095,68 @@ export default function ModalRouter({
     );
   }
 
+  if (modal.type === "hapus-bulk-grosir-produk-manual") {
+    const items = modal.item || [];
+    return (
+      <ModalShell title={`Hapus ${items.length} Produk Manual`} onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            {items.length} produk akan dihapus permanen. Yang sudah pernah dipakai di pesanan sebelumnya otomatis
+            DILEWATI (tidak dihapus) — pesanan lama tetap harus punya datanya.
+          </div>
+        </div>
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-800 mb-4">
+          {items.map((p, i) => (
+            <div
+              key={p.id}
+              className={`px-3 py-2 text-xs flex items-center gap-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <span className="font-mono text-amber-400">{p.kode}</span>
+              <span className="text-slate-300 truncate">{p.nama_produk}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                // Dihapus satu-satu (bukan satu request batch) SENGAJA —
+                // supaya kalau ada beberapa yang ternyata masih dipakai di
+                // pesanan (foreign key), yang lain tetap berhasil dihapus,
+                // bukan ikut gagal semua gara-gara satu baris bermasalah.
+                let berhasil = 0;
+                let dilewati = [];
+                for (const p of items) {
+                  try {
+                    await sb(`grosir_produk_manual?id=eq.${p.id}`, { method: "DELETE" });
+                    berhasil++;
+                  } catch {
+                    dilewati.push(p);
+                  }
+                }
+                modal.onDone?.();
+                if (dilewati.length === 0) return `${berhasil} produk manual dihapus`;
+                return `${berhasil} dihapus, ${dilewati.length} dilewati (masih dipakai di pesanan)`;
+              }, "Produk manual dihapus")
+            }
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            <Trash2 size={14} /> Ya, Hapus Semua
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
   if (modal.type === "hapus-grosir-toko") {    const t = modal.item;
     return (
       <ModalShell title="Hapus Toko" onClose={close}>
