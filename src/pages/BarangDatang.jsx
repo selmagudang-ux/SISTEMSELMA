@@ -602,6 +602,17 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const anakDari = (id) => semua.filter((p) => p.induk_id === id);
 
   const jumlahBelumBongkar = semua.filter((p) => statusBongkar(p) === "belum").length;
+  // Total BOX fisik yang belum dibongkar, dijumlah dari SEMUA pesanan top-level
+  // (bukan cuma jumlah pesanan seperti jumlahBelumBongkar di atas) — satu
+  // pesanan bisa punya banyak box (jumlah_box), jadi dihitung per box lewat
+  // rincianBongkarBox (total - selesai). Pesanan yang belum pernah diisi
+  // jumlah_box (rincianBox null, biasanya cuma 1 box fisik) dianggap 1 box
+  // yang belum dibongkar kalau statusBongkar-nya masih "belum" sama sekali.
+  const totalBoxBelumBongkar = top.reduce((sum, p) => {
+    const rincian = rincianBongkarBox(p, semua);
+    if (rincian) return sum + Math.max(rincian.total - rincian.selesai, 0);
+    return sum + (statusBongkar(p) === "belum" ? 1 : 0);
+  }, 0);
   const jumlahSebagianBongkar = semua.filter((p) => statusBongkar(p) === "sebagian").length;
   const jumlahSudahBongkar = semua.filter((p) => statusBongkar(p) === "sudah").length;
   // Laporan kedatangan — dihitung dari SEMUA pesanan aktif (bukan cuma yang
@@ -643,7 +654,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         }
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <StatCard label="Total Pesanan" value={top.length} icon={Clock} accent="text-slate-200" iconColor="text-slate-400" />
         <div
           role="button"
@@ -670,6 +681,13 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
           )}
         </div>
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
+        <StatCard
+          label="Box Belum Dibongkar"
+          value={totalBoxBelumBongkar}
+          icon={PackageOpen}
+          accent="text-amber-400"
+          iconColor="text-amber-500"
+        />
       </div>
 
       {list.length === 0 ? (
