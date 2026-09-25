@@ -110,6 +110,18 @@ const KOLOM_PENEMPATAN = ["id", "created_at", "sku", "rak_code", "qty"].join(","
 // dengan puluhan kolom & penamaan variabel yang tumpang tindih antar tabel —
 // tabel ini kecil & pemakaiannya sempit, jadi lebih aman diaudit sekarang.
 const KOLOM_SUPPLIERS = ["id", "kode", "nama", "alamat", "telepon", "catatan", "models"].join(",");
+// Sama — audit "rak" (dipakai Rak.jsx/MasterRak/Peta Rak, CetakLabel.jsx,
+// TempatkanRakForm/PindahRakForm/AturZonaForm/EditRakForm di forms.jsx &
+// ModalRouter.jsx): cuma id/code/meja/baris/zona yang pernah dibaca di
+// mana pun. "qty"/"stok"/"sku" yang kelihatan di Rak.jsx sebenarnya BUKAN
+// kolom tabel rak — itu dari tabel penempatan/sku_master yang digabung di
+// memori (skuForRak/skuDiRak), jadi sengaja TIDAK ikut di sini.
+const KOLOM_RAK = ["id", "code", "meja", "baris", "zona"].join(",");
+// master_data: dipakai luas (kategori/subkategori/warna/ukuran/rekening,
+// dll) tapi tabelnya sendiri sempit — semua POST/PATCH di ModalRouter.jsx
+// cuma pernah kirim tipe/kode/label, dan pembacaannya juga cuma 4 kolom ini
+// (id dipakai buat React key, tipe buat pengelompokan di loadCore).
+const KOLOM_MASTER_DATA = ["id", "tipe", "kode", "label"].join(",");
 
 export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
@@ -659,8 +671,8 @@ function MainApp({ session, onLogout }) {
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
       sbAll(`suppliers?select=${KOLOM_SUPPLIERS}&order=nama`),
       sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
-      sbAll("rak?select=*&order=code"),
-      sbAll("master_data?select=*&order=label"),
+      sbAll(`rak?select=${KOLOM_RAK}&order=code`),
+      sbAll(`master_data?select=${KOLOM_MASTER_DATA}&order=label`),
       sb("settings?select=*"),
       sbAll(`penempatan?select=${KOLOM_PENEMPATAN}&order=created_at.desc`),
       sbAll("stock_history_latest?select=*"),
