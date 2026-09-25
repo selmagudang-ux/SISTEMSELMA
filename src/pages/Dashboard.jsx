@@ -1,9 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import {
   Camera, MapPin, Tag, Boxes, PackageCheck, ClipboardList,
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
+  ChevronDown,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
 import {
@@ -385,11 +386,10 @@ function DashboardGudang({
   const showMenunggu = panelTerbuka === "menunggu";
   const [subTabDatang, setSubTabDatang] = useState(null); // null | "restok" | "model-baru" — null = semua panel tertutup by default, cuma satu yang boleh terbuka sekaligus
   const [showTotalBarangDatang, setShowTotalBarangDatang] = useState(false);
-  const [halamanBarangDatang, setHalamanBarangDatang] = useState(1);
+  const [expandedSupplierBarangDatang, setExpandedSupplierBarangDatang] = useState(() => new Set()); // panel "Total Pesanan" (tab Barang yang Sudah Datang) — dikelompokkan per supplier, polanya sama seperti LaporanGrosirPerPelanggan di Grosir.jsx
   const [halamanModelLama, setHalamanModelLama] = useState(1);
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
-  const [filterSupplierBarangDatang, setFilterSupplierBarangDatang] = useState(""); // "" = semua supplier — dropdown di kartu "Total Pesanan" (tab Barang yang Sudah Datang), polanya sama seperti filter supplier di Laporan Grosir
   const [stageTerbuka, setStageTerbuka] = useState(null); // null | salah satu key STAGE_ORDER — tahap yang listnya sedang ditampilkan di tab "Tahapan Barang"
   const [showDataBarang, setShowDataBarang] = useState(false); // panel "Data Barang" (sumber: skuMaster, sama seperti Master Barang di menu SKU & Harga)
   const [qDataBarang, setQDataBarang] = useState("");
@@ -501,13 +501,6 @@ function DashboardGudang({
     // Total MODEL (jumlah baris/model, bukan qty) dari pesanan yang sudah
     // selesai — ditampilkan sebagai kartu "Total Pesanan".
     const totalBarangDipesan = rincianBarangDipesan.length;
-
-    // Daftar supplier unik dari rincianBarangDipesan — dipakai dropdown filter
-    // supplier di kartu "Total Pesanan", polanya sama seperti filter supplier
-    // di Laporan Grosir / panel "Restok (SKU) — Disetujui" di atas.
-    const daftarSupplierBarangDatang = [
-      ...new Set(rincianBarangDipesan.map((r) => r.supplier).filter((s) => s && s !== "—")),
-    ].sort();
 
     // "Model Lama" = model yang, PAS DATANG/DIKONFIRMASI DITERIMA, ternyata
     // supplier-nya sudah pernah dipakai bikin SKU kita sebelumnya (restock ke
@@ -657,7 +650,6 @@ function DashboardGudang({
       barangSelesai,
       rincianBarangDipesan,
       totalBarangDipesan,
-      daftarSupplierBarangDatang,
       rincianModelLama,
       totalModelLama,
       rincianModelBaruDatang,
@@ -678,7 +670,6 @@ function DashboardGudang({
     barangSelesai,
     rincianBarangDipesan,
     totalBarangDipesan,
-    daftarSupplierBarangDatang,
     rincianModelLama,
     totalModelLama,
     rincianModelBaruDatang,
@@ -691,12 +682,34 @@ function DashboardGudang({
     ? restokDisetujuiSemua.filter((p) => p._supplier === filterSupplier)
     : restokDisetujuiSemua;
 
-  // Sama seperti restokDisetujui di atas — cuma memfilter rincianBarangDipesan
-  // yang sudah dihitung berdasarkan pilihan dropdown supplier di kartu "Total
-  // Pesanan" (tab Barang yang Sudah Datang).
-  const rincianBarangDipesanTerfilter = filterSupplierBarangDatang
-    ? rincianBarangDipesan.filter((r) => r.supplier === filterSupplierBarangDatang)
-    : rincianBarangDipesan;
+  // Kelompokkan rincianBarangDipesan per supplier (bukan list model mentah) —
+  // tiap baris supplier menampilkan ringkasan (jumlah model & total nilai dari
+  // supplier itu), diklik untuk membuka/menutup rincian semua modelnya. Pola
+  // sama persis seperti LaporanGrosirPerPelanggan di Grosir.jsx.
+  const perSupplierBarangDatangMap = new Map();
+  rincianBarangDipesan.forEach((r) => {
+    const key = r.supplier || "—";
+    if (!perSupplierBarangDatangMap.has(key)) {
+      perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0 });
+    }
+    const grup = perSupplierBarangDatangMap.get(key);
+    grup.items.push(r);
+    grup.totalModel += 1;
+    grup.totalNilai += (Number(r.jumlah) || 0) * (Number(r.harga) || 0);
+  });
+  // Urutkan dari total nilai terbesar supaya supplier paling kontributif
+  // langsung kelihatan di atas.
+  const perSupplierBarangDatang = [...perSupplierBarangDatangMap.values()].sort(
+    (a, b) => b.totalNilai - a.totalNilai
+  );
+
+  const toggleSupplierBarangDatang = (supplier) =>
+    setExpandedSupplierBarangDatang((prev) => {
+      const next = new Set(prev);
+      if (next.has(supplier)) next.delete(supplier);
+      else next.add(supplier);
+      return next;
+    });
 
   const STATUS_MODEL_BARU_META = {
     disetujui: { label: "Disetujui", color: "emerald" },
@@ -1104,7 +1117,6 @@ function DashboardGudang({
                   onClick={() => {
                     setShowTotalBarangDatang((v) => !v);
                     setSubTabDatang(null);
-                    setHalamanBarangDatang(1);
                   }}
                 />
                 <StatCard
@@ -1135,96 +1147,67 @@ function DashboardGudang({
 
               {showTotalBarangDatang && (
                 <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
-                    <div className="text-sm font-semibold">Total Pesanan — Rincian Pesanan yang Sudah Selesai</div>
-                    {daftarSupplierBarangDatang.length > 0 && (
-                      <select
-                        value={filterSupplierBarangDatang}
-                        onChange={(e) => {
-                          setFilterSupplierBarangDatang(e.target.value);
-                          setHalamanBarangDatang(1);
-                        }}
-                        className="text-[11px] bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-slate-300"
-                      >
-                        <option value="">Semua Supplier</option>
-                        {daftarSupplierBarangDatang.map((s) => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    )}
+                  <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
+                    Total Pesanan — per Supplier ({perSupplierBarangDatang.length} supplier, {totalBarangDipesan} model)
                   </div>
-                  {rincianBarangDipesanTerfilter.length === 0 ? (
-                    <EmptyState
-                      label={
-                        filterSupplierBarangDatang
-                          ? `Belum ada pesanan selesai dari supplier "${filterSupplierBarangDatang}".`
-                          : "Belum ada pesanan yang sudah selesai."
-                      }
-                    />
+                  {perSupplierBarangDatang.length === 0 ? (
+                    <div className="p-6"><EmptyState label="Belum ada pesanan yang sudah selesai." /></div>
                   ) : (
-                    <>
+                    <div className="max-h-[420px] overflow-y-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-900/70 text-slate-400 text-xs">
-                          <tr>
-                            <th className="text-left px-4 py-2.5 font-medium">Supplier</th>
-                            <th className="text-left px-4 py-2.5 font-medium">Model</th>
-                            <th className="text-right px-4 py-2.5 font-medium">Qty</th>
-                            <th className="text-right px-4 py-2.5 font-medium">Harga</th>
-                          </tr>
-                        </thead>
                         <tbody>
-                          {rincianBarangDipesanTerfilter
-                            .slice(
-                              (halamanBarangDatang - 1) * BARIS_PER_HALAMAN_BARANG_DATANG,
-                              halamanBarangDatang * BARIS_PER_HALAMAN_BARANG_DATANG
-                            )
-                            .map((r) => (
-                              <tr key={r.key} className="border-t border-slate-800/70">
-                                <td className="px-4 py-2.5 text-slate-300">{r.supplier}</td>
-                                <td className="px-4 py-2.5 text-slate-300">{r.nama}</td>
-                                <td className="px-4 py-2.5 text-right font-semibold">{r.jumlah}</td>
-                                <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.harga)}</td>
-                              </tr>
-                            ))}
+                          {perSupplierBarangDatang.map((grup) => {
+                            const isOpen = expandedSupplierBarangDatang.has(grup.supplier);
+                            return (
+                              <Fragment key={grup.supplier}>
+                                <tr
+                                  onClick={() => toggleSupplierBarangDatang(grup.supplier)}
+                                  className="border-b border-slate-800/60 last:border-0 cursor-pointer hover:bg-slate-800/40"
+                                >
+                                  <td className="px-4 py-2.5">
+                                    <ChevronDown
+                                      size={14}
+                                      className={`inline-block mr-1.5 -mt-0.5 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                                    />
+                                    <span className="text-slate-200 font-medium">{grup.supplier}</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
+                                    {grup.totalModel} model
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-semibold text-slate-200">{fmtRp(grup.totalNilai)}</td>
+                                </tr>
+                                {isOpen && (
+                                  <tr className="bg-slate-900/40">
+                                    <td colSpan={3} className="px-4 pb-3 pt-0">
+                                      <table className="w-full text-sm">
+                                        <thead className="text-slate-500 text-[11px]">
+                                          <tr>
+                                            <th className="text-left py-1.5 pr-3 font-medium">Model</th>
+                                            <th className="text-right py-1.5 pr-3 font-medium">Qty</th>
+                                            <th className="text-right py-1.5 font-medium">Harga</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {[...grup.items]
+                                            .sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || ""))
+                                            .map((r) => (
+                                              <tr key={r.key} className="border-b border-slate-800/40 last:border-0">
+                                                <td className="py-2 pr-3 text-slate-300">{r.nama}</td>
+                                                <td className="py-2 pr-3 text-right font-medium text-slate-200">{r.jumlah}</td>
+                                                <td className="py-2 text-right text-slate-400">{fmtRp(r.harga)}</td>
+                                              </tr>
+                                            ))}
+                                        </tbody>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            );
+                          })}
                         </tbody>
                       </table>
-                      {rincianBarangDipesanTerfilter.length > BARIS_PER_HALAMAN_BARANG_DATANG && (
-                        <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
-                          <span>
-                            Halaman {halamanBarangDatang} dari{" "}
-                            {Math.ceil(rincianBarangDipesanTerfilter.length / BARIS_PER_HALAMAN_BARANG_DATANG)}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setHalamanBarangDatang((h) => Math.max(1, h - 1))}
-                              disabled={halamanBarangDatang <= 1}
-                              className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                            >
-                              Sebelumnya
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setHalamanBarangDatang((h) =>
-                                  Math.min(
-                                    Math.ceil(rincianBarangDipesanTerfilter.length / BARIS_PER_HALAMAN_BARANG_DATANG),
-                                    h + 1
-                                  )
-                                )
-                              }
-                              disabled={
-                                halamanBarangDatang >=
-                                Math.ceil(rincianBarangDipesanTerfilter.length / BARIS_PER_HALAMAN_BARANG_DATANG)
-                              }
-                              className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                            >
-                              Berikutnya
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </>
+                    </div>
                   )}
                 </div>
               )}
