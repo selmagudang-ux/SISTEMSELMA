@@ -654,7 +654,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         }
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
         <StatCard label="Total Pesanan" value={top.length} icon={Clock} accent="text-slate-200" iconColor="text-slate-400" />
         <div
           role="button"
@@ -670,24 +670,19 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
           <div className="text-2xl font-medium text-sky-400">{jumlahSudahDatang}</div>
           <div className="text-xs text-md-on-surface-variant mt-1">Sudah Datang</div>
           {showRincianBongkar && (
-            <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center gap-1.5">
+            <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 flex items-center gap-1.5 flex-wrap">
               <PackageOpen size={11} className="text-emerald-500" />
               <span className="text-emerald-400">{jumlahSudahBongkar} dibongkar</span>
               <span className="text-slate-700">·</span>
               <span className="text-sky-400">{jumlahSebagianBongkar} sebagian</span>
               <span className="text-slate-700">·</span>
               <span className="text-amber-400">{jumlahBelumBongkar} belum dibongkar</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-amber-400">{totalBoxBelumBongkar} box belum dibongkar</span>
             </div>
           )}
         </div>
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
-        <StatCard
-          label="Box Belum Dibongkar"
-          value={totalBoxBelumBongkar}
-          icon={PackageOpen}
-          accent="text-amber-400"
-          iconColor="text-amber-500"
-        />
       </div>
 
       {list.length === 0 ? (
