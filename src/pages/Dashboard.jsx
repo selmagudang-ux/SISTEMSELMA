@@ -423,6 +423,24 @@ function DashboardGudang({
     const pesananMasukPeriode = (pesananMasuk || []).filter((p) => dalamPeriode(p.tanggal_pesan));
     const pengajuanRestockPeriode = (pengajuanRestock || []).filter((p) => dalamPeriode(p.created_at));
 
+    // Box/invoice tambahan (dari "Tambah Invoice" di Konfirmasi Datang)
+    // disimpan sebagai baris pesanan_masuk TERPISAH dengan induk_id
+    // menunjuk balik ke pesanan induknya — tapi itu TETAP 1 pesanan yang
+    // sama secara fisik/bisnis, cuma barangnya datang bertahap per box,
+    // BUKAN pesanan baru. pesananIndukPeriode cuma baris TOP-LEVEL (bukan
+    // anak box) — dipakai buat hitungan "berapa pesanan" (StatCard "Total
+    // Pesanan" & tabel per-supplier di bawah) supaya box tambahan tidak
+    // ke-hitung sebagai pesanan sendiri-sendiri. Pola sama persis seperti
+    // top/anakDari di BarangDatang.jsx. Kalau induknya kebetulan tidak ada
+    // di periode ini (mis. dipesan bulan lalu, box terakhir baru datang
+    // bulan ini), anak box itu fallback dihitung sebagai baris sendiri
+    // supaya datanya tidak "hilang" dari hitungan.
+    const pesananMasukPeriodeIds = new Set(pesananMasukPeriode.map((p) => p.id));
+    const pesananIndukPeriode = pesananMasukPeriode.filter(
+      (p) => !p.induk_id || !pesananMasukPeriodeIds.has(p.induk_id)
+    );
+    const anakBoxDari = (id) => pesananMasukPeriode.filter((p) => p.induk_id === id);
+
     const semuaPengajuan = pengajuanRestockPeriode;
 
     // Nama toko/supplier untuk sebuah SKU ditelusuri dari barang masuk
@@ -639,6 +657,7 @@ function DashboardGudang({
 
     return {
       pesananMasukPeriode,
+      pesananIndukPeriode,
       restokDisetujuiSemua,
       daftarSupplier,
       totalRestokSku,
@@ -659,6 +678,7 @@ function DashboardGudang({
 
   const {
     pesananMasukPeriode,
+    pesananIndukPeriode,
     restokDisetujuiSemua,
     daftarSupplier,
     totalRestokSku,
@@ -688,17 +708,26 @@ function DashboardGudang({
   // rincian tiap pesanannya (lengkap dengan status: menunggu/sebagian/selesai/
   // batal). Pola sama persis seperti LaporanGrosirPerPelanggan di Grosir.jsx.
   const perSupplierBarangDatangMap = new Map();
-  pesananMasukPeriode.forEach((p) => {
+  pesananIndukPeriode.forEach((p) => {
     const key = p.supplier || "—";
-    const nilai = detailModelPesanan(p).reduce(
-      (sum, m) => sum + (Number(m.jumlah) || 0) * (Number(m.harga) || 0),
+    // Nilai pesanan ini = nilai baris induk + nilai SEMUA box/invoice
+    // tambahannya (anakBoxDari) digabung jadi satu angka — supaya total
+    // per-supplier tetap benar walau barangnya datang lewat beberapa box
+    // terpisah, tanpa box tambahan itu munculnya sebagai baris "pesanan"
+    // sendiri.
+    const anakBox = anakBoxDari(p.id);
+    const jumlahBox = anakBox.length + 1;
+    const nilai = [p, ...anakBox].reduce(
+      (sum, row) =>
+        sum +
+        detailModelPesanan(row).reduce((s, m) => s + (Number(m.jumlah) || 0) * (Number(m.harga) || 0), 0),
       0
     );
     if (!perSupplierBarangDatangMap.has(key)) {
       perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0 });
     }
     const grup = perSupplierBarangDatangMap.get(key);
-    grup.items.push({ ...p, _nilai: nilai });
+    grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox });
     grup.totalModel += 1;
     grup.totalNilai += nilai;
   });
@@ -1115,7 +1144,7 @@ function DashboardGudang({
               <div className="grid grid-cols-3 gap-3 mb-4">
                 <StatCard
                   label="Total Pesanan"
-                  value={pesananMasukPeriode.length}
+                  value={pesananIndukPeriode.length}
                   accent="text-amber-400"
                   icon={Boxes}
                   iconColor="text-amber-500"
@@ -1153,7 +1182,7 @@ function DashboardGudang({
               {showTotalBarangDatang && (
                 <div className="mb-4 rounded-xl border border-slate-800 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
-                    Total Pesanan — per Supplier ({perSupplierBarangDatang.length} supplier, {pesananMasukPeriode.length} pesanan)
+                    Total Pesanan — per Supplier ({perSupplierBarangDatang.length} supplier, {pesananIndukPeriode.length} pesanan)
                   </div>
                   {perSupplierBarangDatang.length === 0 ? (
                     <div className="p-6"><EmptyState label="Belum ada pesanan pada periode ini." /></div>
@@ -1202,7 +1231,17 @@ function DashboardGudang({
                                               return (
                                                 <tr key={p.id} className="border-b border-slate-800/40 last:border-0">
                                                   <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{p.tanggal_pesan}</td>
-                                                  <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">{p.kode_pesanan || "—"}</td>
+                                                  <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">
+                                                    {p.kode_pesanan || "—"}
+                                                    {p._jumlahBox > 1 && (
+                                                      <span
+                                                        className="ml-1.5 font-sans text-[10px] text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-full"
+                                                        title="Pesanan ini datang lewat beberapa box/invoice terpisah"
+                                                      >
+                                                        {p._jumlahBox} box
+                                                      </span>
+                                                    )}
+                                                  </td>
                                                   <td className="py-2 pr-3">
                                                     <Badge color={meta?.color || "slate"}>{meta?.label || st}</Badge>
                                                   </td>
