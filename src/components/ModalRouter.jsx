@@ -4302,7 +4302,7 @@ export default function ModalRouter({
                   tanggal: new Date().toISOString().slice(0, 10),
                   catatan: modal.item.alasan_rusak || null,
                   item_id: modal.item.id,
-                  kode_pesanan: modal.item.kode_pesanan || null,
+                  kode_bon: modal.item.kode_pesanan || null,
                 }),
               });
             }
@@ -4398,7 +4398,7 @@ export default function ModalRouter({
                   tanggal: new Date().toISOString().slice(0, 10),
                   catatan: modal.item.alasan_rusak || null,
                   item_id: modal.item.id,
-                  kode_pesanan: modal.item.kode_pesanan || null,
+                  kode_bon: modal.item.kode_pesanan || null,
                 }),
               });
             }
@@ -4524,7 +4524,7 @@ export default function ModalRouter({
                       tanggal: new Date().toISOString().slice(0, 10),
                       catatan: modal.item.alasan_rusak || null,
                       item_id: modal.item.id,
-                      kode_pesanan: modal.item.kode_pesanan || null,
+                      kode_bon: modal.item.kode_pesanan || null,
                     }),
                   });
                 }
