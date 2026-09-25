@@ -439,7 +439,6 @@ function DashboardGudang({
     const pesananIndukPeriode = pesananMasukPeriode.filter(
       (p) => !p.induk_id || !pesananMasukPeriodeIds.has(p.induk_id)
     );
-    const anakBoxDari = (id) => pesananMasukPeriode.filter((p) => p.induk_id === id);
 
     const semuaPengajuan = pengajuanRestockPeriode;
 
@@ -707,6 +706,12 @@ function DashboardGudang({
   // pesanan & total nilai dari supplier itu), diklik untuk membuka/menutup
   // rincian tiap pesanannya (lengkap dengan status: menunggu/sebagian/selesai/
   // batal). Pola sama persis seperti LaporanGrosirPerPelanggan di Grosir.jsx.
+  // anakBoxDari didefinisikan ULANG di sini (bukan dari dalam useMemo) karena
+  // fungsi lokal di dalam useMemo tidak ikut ke-return/destructure — dipakai
+  // buat gabungin nilai box tambahan ke pesanan induknya, lihat komentar di
+  // pesananIndukPeriode (derivedGudang) di atas.
+  const anakBoxDari = (id) => pesananMasukPeriode.filter((p) => p.induk_id === id);
+
   const perSupplierBarangDatangMap = new Map();
   pesananIndukPeriode.forEach((p) => {
     const key = p.supplier || "—";
