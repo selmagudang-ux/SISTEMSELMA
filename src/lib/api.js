@@ -1,1394 +1,1342 @@
-// =========================================================
-// KONEKSI SUPABASE (REST / PostgREST — anon key)
-// =========================================================
-const SUPABASE_URL = "https://imjmpbswccmizxtazcty.supabase.co";
-const SUPABASE_ANON_KEY =
-  "sb_publishable_i02DQrFExZbx0HTdouHD8A_KiRl1j6q";
-export { SUPABASE_URL, SUPABASE_ANON_KEY };
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
+import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
+import { sb, sbAll } from "./lib/api";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
+import { getSession, logout } from "./lib/auth";
+import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
+import Sidebar, { MobileMenuButton } from "./components/Sidebar";
+import { rippleEffect, iconBtnClass } from "./components/ui";
+import ModalRouter from "./components/ModalRouter";
+import Login from "./pages/Login";
 
-// Terjemahan kode error Postgres (lewat PostgREST) jadi pesan yang bisa dibaca
-// orang biasa, bukan JSON mentah. code 23503 = foreign key violation (data
-// masih dipakai/direferensikan di tabel lain), 23505 = unique violation (data
-// sudah ada), 23502 = not-null violation (kolom wajib kosong), dst.
-function friendlyDbError(parsed, status) {
-  const code = parsed?.code;
-  if (code === "23503") {
-    return "Data ini masih dipakai di bagian lain sistem (mis. sudah ada di transaksi/pesanan), jadi tidak bisa dihapus. Nonaktifkan saja kalau memang tidak mau dipakai lagi.";
-  }
-  if (code === "23505") {
-    return "Data dengan kode/SKU yang sama sudah ada sebelumnya.";
-  }
-  if (code === "23502") {
-    return "Ada isian wajib yang belum diisi. Cek lagi formnya ya.";
-  }
-  if (code === "22P02") {
-    return "Ada isian yang formatnya tidak sesuai (mis. angka diisi huruf).";
-  }
-  if (status === 401 || status === 403) {
-    return "Tidak punya akses untuk melakukan ini. Coba login ulang.";
-  }
-  if (status >= 500) {
-    return "Server sedang bermasalah. Coba lagi sebentar lagi.";
-  }
-  return null;
-}
+// Halaman-halaman di bawah ini di-load "malas" (lazy) — kode & library
+// beratnya (mis. jszip/html2canvas dipakai Keuangan, SkuHarga) baru diambil
+// browser begitu menu itu benar-benar dibuka, bukan ikut numpuk di bundle
+// awal. Tidak mengubah tampilan/fitur sama sekali, cuma mempercepat loading.
+// "Rak" TETAP diimpor biasa (bukan lazy) karena beberapa fungsinya
+// (cariPerluDitempatkanUlang, dst) dipakai di luar halaman Rak sendiri, mis.
+// untuk badge & notifikasi di Dashboard/Sidebar yang selalu dihitung.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const PersetujuanRestock = lazy(() => import("./pages/PersetujuanRestock"));
+const BarangDatang = lazy(() => import("./pages/BarangDatang"));
+const BarangMasuk = lazy(() => import("./pages/BarangMasuk"));
+const DataBarang = lazy(() => import("./pages/DataBarang"));
+const SkuHarga = lazy(() => import("./pages/SkuHarga"));
+const Stok = lazy(() => import("./pages/Stok"));
+import Rak, { cariPerluDitempatkanUlang, rakTerpakai, barangSisaDiGudang } from "./pages/Rak";
+const CetakLabel = lazy(() => import("./pages/CetakLabel"));
+const FotoProduk = lazy(() => import("./pages/FotoProduk"));
+const Marketplace = lazy(() => import("./pages/Marketplace"));
+import { latestHistoryBySku, computeStokTipisNotifs, computeStokTambahNotifs, computeRakBerubahNotifs, computeRakPindahNotifs, computeRakKosongNotifs } from "./lib/marketplaceNotif";
+const Grosir = lazy(() => import("./pages/Grosir"));
+// "Pelanggan" sekarang menu sendiri (bukan sub "Grosir" lagi) tapi
+// komponennya tetap satu file dengan Grosir (named export) — lazy-load lewat
+// .then() supaya tetap satu chunk terpisah dari bundle utama.
+const PelangganList = lazy(() => import("./pages/Grosir").then((m) => ({ default: m.PelangganList })));
+// "Toko Pengirim" sekarang menu sendiri juga (bukan sub "Grosir" lagi),
+// pola sama persis seperti PelangganList di atas.
+const TokoList = lazy(() => import("./pages/Grosir").then((m) => ({ default: m.TokoList })));
+const TokoOffline = lazy(() => import("./pages/TokoOffline"));
+const Penjualanmarketplace = lazy(() => import("./pages/Penjualanmarketplace"));
+const Reseller = lazy(() => import("./pages/Reseller"));
+const Keuangan = lazy(() => import("./pages/Keuangan"));
+const Pengaturan = lazy(() => import("./pages/Pengaturan"));
+const Absensi = lazy(() => import("./pages/Absensi"));
+const Panduan = lazy(() => import("./pages/Panduan"));
+import { FormAbsen } from "./pages/AbsenKaryawan";
+import { listAbsensi, listKaryawan } from "./lib/absensi";
 
-// =========================================================
-// GERBANG READ-ONLY UNTUK ROLE OWNER
-// Owner boleh MELIHAT semua data (semua query GET tetap jalan seperti biasa)
-// tapi tidak boleh mengubah/menambah/menghapus apapun — KECUALI menyetujui
-// atau menolak pengajuan restock (menu sidebar "Persetujuan Restok"), karena
-// itu memang tugas owner (lihat modal "respon-pengajuan-restock" di
-// ModalRouter, satu-satunya tempat yang PATCH ke tabel "pengajuan_restock").
-// Session disimpan di sessionStorage oleh lib/auth.js (key "selma_session")
-// — dibaca langsung di sini (bukan import getSession dari auth.js) supaya
-// tidak bikin circular import (auth.js sendiri import sb dari file ini).
-// CATATAN: ini pembatasan di sisi tampilan (mencegah klik tidak sengaja),
-// bukan pengaman keamanan — anon key Supabase yang dipakai di sini sama
-// untuk semua role, jadi enforcement yang benar-benar tidak bisa ditembus
-// tetap harus lewat RLS/policy di database kalau suatu saat dibutuhkan.
-const SESSION_KEY_LOKAL = "selma_session";
-const ROLE_READONLY = ["owner"];
-
-function roleSaatIni() {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
-    return raw ? JSON.parse(raw).role : null;
-  } catch {
-    return null;
-  }
-}
-
-// Satu-satunya pengecualian untuk role read-only: PATCH ke pengajuan_restock
-// (approve/tolak). Path-nya selalu diawali "pengajuan_restock" (mis.
-// "pengajuan_restock?id=eq.123"), tidak pernah dipakai untuk tabel lain.
-function bolehWalauReadOnly(path, method) {
-  return method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path);
-}
-
-export async function sb(path, opts = {}) {
-  const method = (opts.method || "GET").toUpperCase();
-  if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method)) {
-    throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menambah, mengubah, atau menghapus data.");
-  }
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    cache: "no-store",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: opts.prefer || "return=representation",
-      ...(opts.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let parsed = null;
-    try {
-      parsed = text ? JSON.parse(text) : null;
-    } catch {
-      parsed = null;
-    }
-    const friendly = friendlyDbError(parsed, res.status);
-    const err = new Error(friendly || parsed?.message || text || `${res.status} ${res.statusText}`);
-    // pgCode dipakai di beberapa tempat (mis. hapus SKU) untuk tahu kapan harus
-    // fallback ke "nonaktifkan" alih-alih gagal total waktu kena foreign key.
-    if (parsed?.code) err.pgCode = parsed.code;
-    throw err;
-  }
-  if (res.status === 204) return null;
-  return res.json();
-}
-
-// PostgREST (API Supabase) cuma balikin maksimal 1000 baris per request
-// secara default. sbAll() otomatis "nyicil" pakai header Range sampai semua
-// baris kebawa, jadi aman dipakai untuk tabel yang datanya bisa > 1000 baris
-// (mis. items, sku_master, stock_history, dst). Query builder (select=,
-// order=, filter=, dst) tetap ditulis sama seperti biasa lewat sb().
-const SB_PAGE_SIZE = 1000;
-
-// Ambil satu halaman + (opsional) total jumlah baris dari header
-// "Content-Range" (butuh "Prefer: count=exact" supaya PostgREST menghitung
-// totalnya). Dipisah dari sb() karena perlu baca response header, bukan
-// cuma body JSON-nya.
-async function sbPage(path, opts, from, to, withCount) {
-  const prefer = [opts.prefer || "return=representation", withCount ? "count=exact" : null]
-    .filter(Boolean)
-    .join(",");
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    cache: "no-store",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: prefer,
-      Range: `${from}-${to}`,
-      ...(opts.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let parsed = null;
-    try {
-      parsed = text ? JSON.parse(text) : null;
-    } catch {
-      parsed = null;
-    }
-    const friendly = friendlyDbError(parsed, res.status);
-    const err = new Error(friendly || parsed?.message || text || `${res.status} ${res.statusText}`);
-    if (parsed?.code) err.pgCode = parsed.code;
-    throw err;
-  }
-  const rows = res.status === 204 ? [] : (await res.json()) || [];
-  // Content-Range formatnya "from-to/total" (mis. "0-999/4820"), atau
-  // "*/4820" kalau baris hasilnya kosong. Kalau total-nya "*" (tidak
-  // dihitung PostgREST) atau header tidak ada, total dianggap tidak
-  // diketahui -> sbAll fallback ke cara lama (nyicil satu-satu).
-  const range = res.headers.get("content-range") || "";
-  const totalPart = range.split("/")[1];
-  const total = totalPart && totalPart !== "*" ? Number(totalPart) : null;
-  return { rows, total: Number.isFinite(total) ? total : null };
-}
-
-export async function sbAll(path, opts = {}) {
-  // Halaman pertama sekalian minta total jumlah baris (lewat
-  // "Prefer: count=exact"), supaya begitu ketahuan ada berapa halaman lagi,
-  // SISANYA bisa diambil SEKALIGUS secara paralel — bukan satu-satu
-  // bergantian seperti sebelumnya (jauh lebih cepat untuk tabel besar).
-  const first = await sbPage(path, opts, 0, SB_PAGE_SIZE - 1, true);
-  if (first.total == null) {
-    // Total tidak diketahui (mis. server tidak mendukung count=exact) ->
-    // fallback ke cara lama, nyicil satu-satu sampai habis.
-    let all = [...first.rows];
-    let offset = SB_PAGE_SIZE;
-    let last = first.rows;
-    while (last.length === SB_PAGE_SIZE) {
-      const page = await sbPage(path, opts, offset, offset + SB_PAGE_SIZE - 1, false);
-      all = all.concat(page.rows);
-      last = page.rows;
-      offset += SB_PAGE_SIZE;
-    }
-    return all;
-  }
-
-  const totalPages = Math.max(1, Math.ceil(first.total / SB_PAGE_SIZE));
-  if (totalPages <= 1) return first.rows;
-
-  const rest = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, i) => {
-      const page = i + 1;
-      const from = page * SB_PAGE_SIZE;
-      const to = from + SB_PAGE_SIZE - 1;
-      return sbPage(path, opts, from, to, false).then((r) => r.rows);
-    })
+// Halaman "Sedang Dalam Perbaikan" — ditampilkan pengganti MainApp untuk
+// SEMUA role kecuali "superappa" (role tersembunyi, lihat catatan di
+// lib/constants.js) selagi settings.maintenance_mode aktif. Karyawan yang
+// login untuk absen TIDAK LEWAT sini sama sekali — dicek terpisah di
+// SistemSelmaApp di bawah, jadi absen tetap jalan normal walau mode ini aktif.
+function MaintenancePage({ onLogout, onRetry, checking }) {
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
+      <div className="max-w-sm text-center">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center mx-auto mb-4">
+          <Wrench size={26} className="text-slate-950" />
+        </div>
+        <div className="font-bold text-lg mb-1">Sedang Dalam Perbaikan</div>
+        <p className="text-sm text-slate-400 mb-6">
+          Sistem sedang dalam perbaikan/pemeliharaan. Silakan coba lagi beberapa saat lagi.
+        </p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={onRetry}
+            disabled={checking}
+            className="text-xs font-medium bg-slate-800 hover:bg-slate-700 disabled:opacity-50 px-3 py-2 rounded-lg border border-slate-700"
+          >
+            {checking ? "Mengecek…" : "Coba Lagi"}
+          </button>
+          <button onClick={onLogout} className="text-xs text-slate-500 hover:text-slate-300 underline">
+            Keluar
+          </button>
+        </div>
+      </div>
+    </div>
   );
-  return first.rows.concat(...rest);
 }
 
-// Nama bucket Storage di Supabase untuk menyimpan foto verifikasi.
-// Pastikan bucket ini sudah dibuat (public, dengan policy insert untuk anon).
-export const STORAGE_BUCKET = "verifikasi-foto";
+// Satu gerbang login untuk semua orang — link yang dibagikan ke karyawan
+// maupun ke pemegang role SELMA (admin, gudang, dst.) SAMA PERSIS. Login.jsx
+// (lewat lib/unifiedLogin.js) yang menentukan jenis akunnya (admin/app_users
+// vs karyawan absen), lalu di sini tinggal dirutekan ke tampilan yang sesuai.
+// Daftar kolom eksplisit buat 3 tabel terbesar yang ditarik di loadCore()
+// (menggantikan select=*). Hasil audit pemakaian di seluruh src/ (Sept 2026):
+// cuma kolom yang benar-benar DIBACA frontend yang ditarik, sisanya (kolom
+// yang tidak pernah dirujuk kode) tidak ikut dikirim PostgREST lagi.
+// PENTING: kalau nanti ada fitur baru yang baca kolom lain dari items /
+// sku_master / penempatan, tambahkan namanya di sini — kalau lupa, field-nya
+// akan `undefined` tanpa error apa pun.
+const KOLOM_ITEMS = [
+  "id", "created_at", "tanggal", "gudang", "jumlah", "jumlah_rusak", "alasan_rusak",
+  "harga", "stage", "stage_setelah_rak", "kode_pesanan", "barcode_supplier", "sku",
+  "foto_url", "rak_code", "perlu_foto_ulang", "harga_lama_foto", "harga_baru_foto",
+  "marketplace_status", "marketplace_uploaded_at",
+].join(",");
+const KOLOM_SKU_MASTER = [
+  "id", "created_at", "sku", "bahan", "peruntukan", "kategori", "subkategori", "model",
+  "warna", "ukuran", "harga_asli", "harga_asli_baru", "hpp", "grosir", "tengah", "ecer",
+  "stok", "barcode_supplier", "nonaktif",
+].join(",");
+const KOLOM_PENEMPATAN = ["id", "created_at", "sku", "rak_code", "qty"].join(",");
 
-export async function sbUploadFoto(file, path) {
-  const res = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${path}`,
-    {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        "Content-Type": file.type || "application/octet-stream",
-        "x-upsert": "true",
+export default function SistemSelmaApp() {
+  const [session, setSession] = useState(() => getSession());
+  const [absenSession, setAbsenSession] = useState(() => getAbsenSession());
+
+  // Status mode perbaikan (kolom settings.maintenance_mode) — ditarik
+  // TERPISAH dari loadCore() di MainApp (yang jauh lebih berat & baru jalan
+  // setelah MainApp benar-benar dimount), supaya begitu ketahuan mode ini
+  // aktif, MainApp untuk role selain "superappa" tidak sempat dimuat sama
+  // sekali. Dicek ulang tiap kali sesi berubah (login/logout) supaya begitu
+  // superappa menyalakan/mematikan mode ini, akun lain yang login berikutnya
+  // langsung dapat status terbaru.
+  const [maintenance, setMaintenance] = useState(false);
+  const [checkingMaintenance, setCheckingMaintenance] = useState(false);
+
+  const cekMaintenance = useCallback(async () => {
+    setCheckingMaintenance(true);
+    try {
+      const res = await sb("settings?select=maintenance_mode");
+      setMaintenance(!!res?.[0]?.maintenance_mode);
+    } catch {
+      // Gagal cek (mis. offline) — biarkan status lama, jangan asal kunci akses.
+    } finally {
+      setCheckingMaintenance(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    cekMaintenance();
+  }, [cekMaintenance, session, absenSession]);
+
+  // Poll berkala SELAMA ada sesi admin aktif (kecuali "superappa") — supaya
+  // begitu superappa MENGAKTIFKAN mode perbaikan dari tab/perangkat lain,
+  // user yang SUDAH terlanjur login duluan (dan sedang duduk di MainApp)
+  // ikut ketahuan & langsung ditendang (lihat efek logout otomatis di
+  // bawah) — bukan cuma dicegah masuk pada login berikutnya. Query yang
+  // dipoll cuma 1 kolom kecil (settings.maintenance_mode), jauh lebih
+  // ringan daripada grup data MainApp yang mau kita hentikan.
+  // Karyawan yang sedang absen SENGAJA tidak ikut dipoll sama sekali —
+  // absen harus tetap jalan mulus tanpa gangguan walau mode ini aktif.
+  // Dinaikkan dari 8 detik -> 60 detik (Sept 2026, ketahuan dari Log
+  // Explorer Supabase: poll 8 detik ini bikin ratusan request/jam per tab
+  // yang terbuka, non-stop, dikali berapa pun staf yang lagi login —
+  // volume request inilah yang bikin egress PostgREST boros, BUKAN ukuran
+  // datanya (cuma 1 kolom boolean per request). Delay maksimal 1 menit buat
+  // admin lain ke-logout otomatis setelah superappa aktifkan mode perbaikan
+  // masih sangat wajar (dibanding 8 detik yang berlebihan untuk kebutuhan
+  // ini). "focus"/"visibilitychange" di bawah tetap bikin pengecekan
+  // instan begitu tab dibuka/difokuskan lagi, jadi tidak kerasa lambat
+  // buat pemakaian normal sehari-hari.
+  const MAINTENANCE_POLL_MS = 60_000;
+  useEffect(() => {
+    if (!session || session.role === "superappa") return;
+    const id = setInterval(cekMaintenance, MAINTENANCE_POLL_MS);
+    // Tab yang di-background di-throttle browser (setInterval bisa molor
+    // jauh lebih dari 8 detik kalau tab tidak sedang aktif dilihat) — begitu
+    // tab ini balik jadi aktif/fokus lagi (switch tab, buka HP lagi, dst),
+    // langsung cek ulang instan alih-alih nunggu antrian interval berikutnya.
+    const cekUlangKalauAktif = () => {
+      if (document.visibilityState === "visible") cekMaintenance();
+    };
+    document.addEventListener("visibilitychange", cekUlangKalauAktif);
+    window.addEventListener("focus", cekUlangKalauAktif);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", cekUlangKalauAktif);
+      window.removeEventListener("focus", cekUlangKalauAktif);
+    };
+  }, [session, cekMaintenance]);
+
+  // Begitu mode perbaikan ketahuan AKTIF untuk sesi yang BUKAN "superappa"
+  // — langsung logout PAKSA dari sessionStorage (bukan cuma disembunyikan
+  // di balik halaman perbaikan sementara sesinya tetap "nyala" di
+  // background). Efeknya dua: (1) kalau tab ini di-refresh, user balik ke
+  // Login (bukan otomatis masuk lagi), dan (2) begitu kita render
+  // MaintenancePage di bawah (bukan MainApp lagi), semua proses tarik-data
+  // MainApp (loadAll & polling internalnya) ikut berhenti seketika karena
+  // MainApp-nya sendiri di-unmount — bukan cuma disembunyikan doang.
+  useEffect(() => {
+    if (maintenance && session && session.role !== "superappa") {
+      logout();
+    }
+  }, [maintenance, session]);
+
+  if (session) {
+    // "superappa" (Super Admin tersembunyi) TETAP bisa akses penuh walau
+    // mode perbaikan aktif — supaya selalu ada jalan untuk mematikannya
+    // lagi lewat Pengaturan > Mode Perbaikan.
+    if (maintenance && session.role !== "superappa") {
+      return (
+        <MaintenancePage
+          checking={checkingMaintenance}
+          onRetry={cekMaintenance}
+          onLogout={() => setSession(null)}
+        />
+      );
+    }
+    return <MainApp session={session} onLogout={() => { logout(); setSession(null); }} />;
+  }
+
+  // Karyawan absen SENGAJA tidak dicek ke `maintenance` sama sekali di sini
+  // — absen harus tetap bisa dilakukan walau mode perbaikan aktif.
+  if (absenSession) {
+    return (
+      <FormAbsen
+        session={absenSession}
+        onLogout={() => {
+          logoutKaryawan();
+          setAbsenSession(null);
+        }}
+      />
+    );
+  }
+
+  return (
+    <Login
+      onLogin={(result) => {
+        if (result.type === "admin") setSession(result.session);
+        else setAbsenSession(result.session);
+      }}
+    />
+  );
+}
+
+// Dipisah dari MainApp SENGAJA supaya state buka/tutup sidebar di HP
+// (mobileOpen) tidak ikut memicu render ulang seluruh halaman yang sedang
+// aktif (mis. tabel Stok/Data Barang yang bisa ribuan baris) — dulu
+// mobileOpen disimpan di MainApp yang sama dengan semua data aplikasi,
+// jadi tiap klik tombol ☰ ikut me-render ulang SEMUANYA (kerasa lag,
+// apalagi di halaman dengan tabel besar). Sekarang mobileOpen cuma dikenal
+// komponen ini sendiri — konten halaman (children) sudah "jadi" dari render
+// MainApp sebelumnya dan referensinya tidak berubah kalau MainApp sendiri
+// tidak re-render, jadi klik ☰ cuma menggeser sidebar tanpa menyentuh
+// konten halaman di baliknya. TIDAK ada perubahan tampilan/fitur, murni
+// perbaikan kecepatan.
+function AppShell({
+  active,
+  onNavigate,
+  badges,
+  allowedMenuKeys,
+  user,
+  onLogout,
+  setModal,
+  menuLabel,
+  subLabel,
+  canSee,
+  belumSelesaiCount,
+  tanpaRakCount,
+  navigate,
+  loadAll,
+  loading,
+  children,
+}) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <>
+      <Sidebar
+        active={active}
+        onNavigate={onNavigate}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        badges={badges}
+        allowedMenuKeys={allowedMenuKeys}
+        user={user}
+        onLogout={onLogout}
+        setModal={setModal}
+      />
+
+      <div className="flex-1 min-w-0">
+        {/* Top App Bar Material 3 — selalu tampil di semua halaman (termasuk
+            Cetak Label) supaya tombol buka menu di HP tetap bisa diakses.
+            Disembunyikan otomatis saat print lewat class print:hidden. */}
+        <header className="print:hidden sticky top-0 bg-md-surface/95 backdrop-blur z-20 h-16 flex items-center">
+          <div className="px-3 w-full flex items-center justify-between gap-4">
+            <div className="flex items-center gap-1 min-w-0">
+              <MobileMenuButton onClick={() => setMobileOpen(true)} />
+              <div className="min-w-0 px-2">
+                <div className="text-base font-medium text-md-on-surface truncate">
+                  {menuLabel}{subLabel ? <span className="text-md-on-surface-variant font-normal"> / {subLabel}</span> : ""}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {canSee("data-barang") && belumSelesaiCount > 0 && (
+                <button
+                  onClick={() => navigate("data-barang", null)}
+                  onMouseDown={rippleEffect}
+                  className={`relative ${iconBtnClass}`}
+                  title={`${belumSelesaiCount} barang belum selesai`}
+                >
+                  <Bell size={17} />
+                  <span className="absolute top-1 right-1 text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                    {belumSelesaiCount}
+                  </span>
+                </button>
+              )}
+              {canSee("rak") && (
+                <button
+                  onClick={() => navigate("rak", "tempatkan")}
+                  onMouseDown={rippleEffect}
+                  className={`relative ${iconBtnClass}`}
+                  title={tanpaRakCount > 0 ? `${tanpaRakCount} SKU belum punya rak` : "Tidak ada SKU tanpa rak"}
+                >
+                  <MapPin size={17} />
+                  {tanpaRakCount > 0 && (
+                    <span className="absolute top-1 right-1 text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[16px] h-[16px] flex items-center justify-center px-1 leading-none">
+                      {tanpaRakCount}
+                    </span>
+                  )}
+                </button>
+              )}
+              <button onClick={loadAll} onMouseDown={rippleEffect} className={iconBtnClass} title="Muat ulang">
+                <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {children}
+      </div>
+    </>
+  );
+}
+
+function MainApp({ session, onLogout }) {
+  const allowed = allowedMenus(session.role);
+
+  // Menu terakhir disimpan di sessionStorage supaya begitu halaman di-reload
+  // (lihat fungsi navigate di bawah), tampilan langsung kembali ke menu yang
+  // baru saja diklik, bukan balik lagi ke dashboard.
+  // Landing awal login pakai "dashboard" HANYA untuk role yang dashboard-nya
+  // memang halaman utama (superadmin/owner) — role operasional (termasuk
+  // gudang) tidak punya akses "dashboard" sama sekali, langsung ke halaman
+  // kerja masing-masing (allowed[0]).
+  const landingKeDashboard = allowed.includes("dashboard") && ["superadmin", "superappa", "owner"].includes(session.role);
+  const [nav, setNav] = useState(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");
+      if (saved && allowed.includes(saved.menu)) return saved;
+    } catch {}
+    return { menu: landingKeDashboard ? "dashboard" : allowed[0], sub: null };
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const [items, setItems] = useState([]);
+  const [pesananMasuk, setPesananMasuk] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [skuMaster, setSkuMaster] = useState([]);
+  const [rak, setRak] = useState([]);
+  const [master, setMaster] = useState({});
+  const [settings, setSettings] = useState(null);
+  const [penempatan, setPenempatan] = useState([]);
+  // stockHistory di sini SENGAJA cuma baris TERBARU per SKU (dari view
+  // stock_history_latest — lihat lib/api.js loadCore), bukan seluruh riwayat
+  // — dipakai untuk badge/notifikasi dashboard yang memang cuma butuh
+  // kondisi terkini. Riwayat LENGKAP (buat halaman Stok > Riwayat Stok)
+  // ditarik terpisah lewat stockHistoryFull, cuma saat halaman itu benar-
+  // benar dibuka (lihat loadRiwayatStokFull di bawah) — supaya tabel yang
+  // terus bertambah ini tidak ikut ditarik ulang di SETIAP pindah menu.
+  const [stockHistory, setStockHistory] = useState([]);
+  const [stockHistoryFull, setStockHistoryFull] = useState([]);
+  // rakEvents juga cuma baris terbaru per SKU + per rak asal (gabungan dua
+  // view rak_events_latest_sku & rak_events_latest_rak_dari) — dipakai murni
+  // untuk notifikasi "Cek Marketplace", tidak pernah ditampilkan sebagai
+  // daftar utuh di halaman manapun, jadi tabel rak_events aslinya (yang
+  // terus bertambah) tidak perlu ditarik penuh sama sekali.
+  const [rakEvents, setRakEvents] = useState([]);
+  const [barangRusak, setBarangRusak] = useState([]);
+  const [marketplaceNotifAck, setMarketplaceNotifAck] = useState([]);
+  const [pelangganGrosir, setPelangganGrosir] = useState([]);
+  const [tokoGrosir, setTokoGrosir] = useState([]);
+  const [produkManualGrosir, setProdukManualGrosir] = useState([]);
+  const [pesananGrosir, setPesananGrosir] = useState([]);
+  const [pembayaranGrosir, setPembayaranGrosir] = useState([]);
+  const [depositGrosir, setDepositGrosir] = useState([]);
+  const [keuanganTransaksi, setKeuanganTransaksi] = useState([]);
+  const [marketplaceTransaksi, setMarketplaceTransaksi] = useState([]);
+  const [absensiRows, setAbsensiRows] = useState([]);
+  const [karyawanList, setKaryawanList] = useState([]);
+  const [pengajuanRestock, setPengajuanRestock] = useState([]);
+
+  const [modal, setModal] = useState(null); // {type, item}
+  const [saving, setSaving] = useState(false);
+  const hasNotifiedRef = useRef(false);
+  const hasNotifiedRakRef = useRef(false);
+
+  const showToast = (msg, kind = "ok", duration = 3200) => {
+    setToast({ msg, kind });
+    setTimeout(() => setToast(null), duration);
+  };
+
+  // Setiap pindah menu, datanya tetap di-refresh (loadForMenu()) supaya
+  // selalu segar — penting karena sistemnya sering dipakai barengan
+  // beberapa staf sekaligus. TAPI sebelumnya ini dilakukan lewat
+  // window.location.reload() (reload total browser: layar putih kedip,
+  // seluruh JS di-parse ulang dari nol, sesi login di-cek ulang) — sekarang
+  // cukup ganti state `nav` dan panggil loadForMenu() di background. Selama
+  // data lama masih ada di memori (items.length > 0), tampilan lama tetap
+  // kelihatan sambil data baru dimuat (lihat kondisi "loading &&
+  // items.length === 0" di bawah), jadi pindah menu jadi terasa instan,
+  // bukan nunggu reload total tiap kali. loadForMenu() juga cuma menarik
+  // data yang relevan sama menu tujuan (bukan SEMUA tabel), lihat penjelasan
+  // lengkap di dekat definisinya.
+  const navigate = (menu, sub) => {
+    if (!allowed.includes(menu)) return;
+    const subs = allowedSubMenus(session.role, menu);
+    if (subs && sub && !subs.includes(sub)) return;
+
+    if (menu === nav.menu && (sub || null) === (nav.sub || null)) return; // sudah di menu itu, tidak perlu apa-apa
+
+    try {
+      sessionStorage.setItem("selma-nav", JSON.stringify({ menu, sub: sub || null }));
+    } catch {}
+    setModal(null); // dulu ikut ke-reset otomatis gara-gara reload total — sekarang ditutup manual
+    // loadForMenu() cuma nge-branch berdasarkan `menu` (lihat definisinya) —
+    // TIDAK PERNAH melihat `sub` sama sekali. Jadi kalau cuma pindah TAB di
+    // dalam menu yang sama (mis. Stok Barang -> Stok Menipis -> Riwayat
+    // Stok, atau Transaksi -> Laporan Keuangan di Keuangan), data yang mau
+    // ditarik ulang 100% SAMA PERSIS dengan yang baru saja ada di memori —
+    // sebelumnya ini tetap narik ulang SEMUA tabel grup itu (items, stok,
+    // riwayat, dst) tiap kali klik tab, padahal tidak ada yang berubah.
+    // Ini kemungkinan besar penyebab utama "lag" sehari-hari, karena
+    // pindah-pindah tab jauh lebih sering terjadi daripada pindah menu
+    // besar. Begitu benar-benar pindah ke MENU lain, loadForMenu tetap
+    // jalan seperti biasa (freshness lintas-staf yang dijaga di sini TIDAK
+    // berubah) — cuma reload yang percuma (klik tab tanpa ganti menu) yang
+    // dihapus.
+    const menuBerubah = menu !== nav.menu;
+    setNav({ menu, sub: sub || null });
+    if (menuBerubah) {
+      loadForMenu(menu);
+    }
+    // Riwayat Stok butuh data lengkap (bukan cuma yang terbaru per SKU) —
+    // ditarik di sini (bukan lewat loadForMenu) supaya HANYA jalan saat
+    // sub-halaman ini yang dibuka, tetap kena cache 45 detik yang sama biar
+    // tidak ditarik ulang tiap klik tab kalau memang baru saja dimuat.
+    if (menu === "stok" && sub === "riwayat") {
+      loadRiwayatStokFull();
+    }
+    // Barang Rusak (Data Barang > Reject) — sama polanya, cuma ditarik saat
+    // sub-halaman ini benar-benar dibuka (lihat loadBarangRusak di atas).
+    if (menu === "sku-harga" && sub === "reject") {
+      loadBarangRusak();
+    }
+  };
+
+  // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
+  const quickAdvance = async (item, stage) => {
+    const patches = {
+      marketplace: {
+        marketplace_status: "sudah",
+        marketplace_uploaded_at: new Date().toISOString(),
+        stage: "selesai",
       },
-      body: file,
-    }
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(text || `Gagal unggah foto (${res.status})`);
-  }
-  return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${path}`;
-}
-
-// Foto produk dari kamera HP biasanya 3000-4000px lebar (bisa beberapa MB),
-// padahal cuma ditampilkan sebagai thumbnail kecil (36-96px) di daftar SKU,
-// Marketplace, dashboard, dll. Ini yang bikin halaman-halaman itu berat
-// dibuka di HP — bukan cuma ukuran filenya, tapi juga waktu decode gambar
-// beresolusi tinggi itu di browser. Fungsi ini mengecilkan foto ke maksimal
-// 1280px sisi terpanjang (masih lebih dari cukup tajam untuk katalog/label)
-// dan kompres ke JPEG kualitas 0.82 sebelum diupload.
-//
-// SENGAJA dipisah dari sbUploadFoto biasa (bukan dipasang otomatis di semua
-// upload) — foto bon/nota (BarangDatang, Rusak) tidak lewat sini, karena
-// mengecilkan foto teks berisiko bikin nominal/tulisan di bon jadi buram.
-// Foto yang dipakai buat OCR SKU juga aman: OCR jalan di foto asli dulu
-// (lihat lib/ocrSku.js), baru setelah itu hasil kompresnya yang diupload.
-export async function kompresFotoProduk(file, { maxDim = 1280, quality = 0.82 } = {}) {
-  // Kalau bukan gambar (mis. HEIC yang gagal dibaca <img>) atau file sudah
-  // kecil, upload apa adanya saja — tidak usah dipaksa lewat canvas.
-  if (!file || !file.type?.startsWith("image/")) return file;
-
-  const objectUrl = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Gagal membaca gambar"));
-      el.src = objectUrl;
-    });
-
-    const skala = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
-    // Foto sudah lebih kecil dari batas DAN sudah berformat JPEG -> tidak
-    // perlu diproses ulang, upload aslinya saja supaya tidak ada kualitas
-    // yang hilang percuma.
-    // TAPI kalau formatnya BUKAN JPEG (mis. PNG/WebP dari screenshot atau
-    // render), tetap harus dikonversi ke JPEG walau dimensinya sudah kecil —
-    // PNG itu lossless, jadi untuk foto produk biasa ukurannya bisa 5-10x
-    // lebih besar dari JPEG kualitas setara di dimensi yang SAMA PERSIS.
-    // Ini yang sebelumnya bikin banyak foto SKU ".png" ikut lolos tanpa
-    // dikompres (dimensi sudah kecil, jadi skip) padahal ukurannya tetap
-    // 1-2MB per file dan jadi salah satu penyumbang terbesar pemakaian
-    // Storage egress bulanan.
-    const sudahJpeg = /^image\/jpe?g$/i.test(file.type || "");
-    if (skala >= 1 && sudahJpeg) return file;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(img.naturalWidth * skala);
-    canvas.height = Math.round(img.naturalHeight * skala);
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-    // Kalau browser gagal bikin blob (jarang terjadi), fallback ke file asli
-    // daripada gagal total upload-nya.
-    if (!blob) return file;
-
-    const namaBaru = (file.name || "foto").replace(/\.[a-zA-Z0-9]+$/, "") + ".jpg";
-    return new File([blob], namaBaru, { type: "image/jpeg" });
-  } catch {
-    // Apapun yang gagal di proses kompres (foto rusak, browser lama, dst)
-    // — jangan sampai bikin upload gagal total. Upload file aslinya saja.
-    return file;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-}
-
-export function calcHarga(hargaAsli, settings) {
-  const round = (n) => Math.round(n / settings.round_to) * settings.round_to;
-
-  // Harga asli minimal Rp 7.000.
-  const hargaAsliDipakai = Math.max(Number(hargaAsli) || 0, 7000);
-
-  // HPP = Harga Asli + 10%.
-  const hpp = hargaAsliDipakai * 1.1;
-
-  // Pengali Harga Tengah tergantung besar HPP.
-  let tengahMultiplier;
-  if (hpp < 10000) tengahMultiplier = 3;
-  else if (hpp < 20000) tengahMultiplier = 2.5;
-  else tengahMultiplier = 2;
-
-  const tengah = round(hpp * tengahMultiplier);
-  const ecer = round(tengah * 2);
-  const grosir = round(hpp * 1.5);
-
-  return { hargaDasar: hargaAsliDipakai, hpp, grosir, tengah, ecer };
-}
-
-export const fmtRp = (n) =>
-  "Rp " + Math.round(Number(n) || 0).toLocaleString("id-ID");
-
-// Kode harga untuk label: ambil ribuan tiap harga (000 dibuang), gabung jadi satu string.
-// Contoh: grosir 5.000, tengah 10.000, ecer 20.000 -> "5" + "10" + "20" = "51020"
-export function priceCode(grosir, tengah, ecer) {
-  const part = (n) => String(Math.round((Number(n) || 0) / 1000));
-  return `${part(grosir)}${part(tengah)}${part(ecer)}`;
-}
-
-export const fmtTgl = (iso) => {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-};
-
-// Susun ulang string SKU dari field-field pembentuknya — pola ini HARUS
-// selalu sama persis dengan yang dipakai waktu SKU pertama kali dibuat
-// (lihat SkuEntryForm/ModalRouter "buat-sku").
-export function buildSkuCode(f) {
-  return `${f.bahan}${f.peruntukan}${f.kategori}-${f.subkategori}-${f.model}-${f.warna}-${f.ukuran}`;
-}
-
-// Tabel-tabel lain (selain sku_master) yang menyimpan kode SKU sebagai teks
-// bebas (bukan foreign key ber-id) — semuanya perlu ikut di-update kalau ada
-// SKU yang berubah kodenya, termasuk data histori (stock_history, rak_events,
-// grosir_detail_pesanan) supaya laporan lama tetap nyambung ke SKU yang benar.
-const SKU_TEXT_TABLES = ["items", "stock_history", "penempatan", "rak_events", "grosir_detail_pesanan", "barang_rusak"];
-
-async function renameSkuEverywhere(oldSku, newSku) {
-  for (const table of SKU_TEXT_TABLES) {
-    await sb(`${table}?sku=eq.${encodeURIComponent(oldSku)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ sku: newSku }),
-    });
-  }
-}
-
-// Dipanggil begitu keputusan harga sebuah SKU dibuat (modal "pilih-harga"
-// atau "edit-harga" di Master Barang). Digabung jadi SATU fungsi (dulu ada 2
-// terpisah: tandaiPerluFotoUlang + resolveMenungguHarga) supaya barang yang
-// muncul di Pemotretan tab "Foto Ulang" untuk SKU ini SELALU cuma 1 — yang
-// paling baru ditambahkan (created_at terbesar) — bukan dobel dari 2 sumber
-// berbeda (barang yang lagi ditahan nunggu keputusan DAN barang lama yang
-// sudah pernah selesai/dipasarkan ditarik balik bersamaan).
-//
-// hargaLama/hargaBaru = harga_asli SKU sebelum & sesudah keputusan ini —
-// disimpan sebagai SNAPSHOT langsung di baris barang yang ditandai
-// perlu_foto_ulang (kolom harga_lama_foto/harga_baru_foto), BUKAN dibaca
-// belakangan dari sku_master.harga_asli_baru — soalnya kolom itu langsung
-// di-null-kan begitu keputusan ini selesai (lihat pemanggil di
-// ModalRouter.jsx), jadi begitu halaman Pemotretan reload, datanya sudah
-// hilang duluan kalau tidak di-snapshot di sini. Dengan snapshot di
-// barangnya sendiri, perbandingan "Lama vs Baru" di FotoProduk.jsx selalu
-// akurat walau SKU-nya sudah lanjut berubah-ubah lagi setelahnya.
-//
-// Cakupannya semua barang SKU ini yang statusnya:
-// - "menunggu-harga" (barang baru yang harganya beda, lagi ditahan nunggu
-//   keputusan ini) — bisa lebih dari satu kalau sempat restock beberapa kali
-//   sebelum diputuskan.
-// - "marketplace" / "selesai" (barang lama yang sudah pernah lewat
-//   Pemotretan, fotonya ikut usang begitu harga berubah).
-//
-// - harga yang ditetapkan BERUBAH dari harga lama -> dari SEMUA barang di
-//   atas, cuma yang PALING BARU yang ditarik ke Verifikasi Foto (ditandai
-//   perlu_foto_ulang, dengan snapshot harga lama/baru) — sisanya langsung
-//   Selesai (dianggap cukup terwakili oleh foto barang paling baru itu,
-//   tidak usah semuanya difoto ulang).
-// - harga yang ditetapkan TETAP (tidak berubah) -> semuanya langsung
-//   Selesai, tidak ada yang perlu difoto ulang sama sekali.
-export async function resolveHargaSku(sku, hargaBerubah, hargaLama, hargaBaru) {
-  const semua =
-    (await sb(
-      `items?select=id,created_at&sku=eq.${encodeURIComponent(sku)}&stage=in.(menunggu-harga,marketplace,selesai)&order=created_at.desc`
-    )) || [];
-  if (semua.length === 0) return;
-
-  if (!hargaBerubah) {
-    await sb(`items?sku=eq.${encodeURIComponent(sku)}&stage=eq.menunggu-harga`, {
-      method: "PATCH",
-      body: JSON.stringify({ stage: "selesai" }),
-    });
-    return;
-  }
-
-  const [terbaru, ...sisanya] = semua;
-  await sb(`items?id=eq.${terbaru.id}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      stage: "verifikasi",
-      perlu_foto_ulang: true,
-      harga_lama_foto: hargaLama,
-      harga_baru_foto: hargaBaru,
-    }),
-  });
-  const idSisanya = sisanya.map((i) => i.id);
-  if (idSisanya.length > 0) {
-    await sb(`items?id=in.(${idSisanya.join(",")})`, {
-      method: "PATCH",
-      body: JSON.stringify({ stage: "selesai", perlu_foto_ulang: false }),
-    });
-  }
-}
-
-// Ganti kode Master Data (mis. kategori "ANJ" -> "ANJB") dan rambatkan
-// perubahannya ke semua SKU yang sudah jadi yang masih memakai kode lama itu
-// — termasuk string SKU-nya sendiri (karena SKU dibentuk dari gabungan
-// kode-kode ini) dan semua tabel lain yang menyimpan SKU sebagai teks
-// (Stok, Rak, Riwayat Stok, histori Pesanan Grosir).
-//
-// Kalau hasil penggantian bikin ada SKU yang jadi kembar (baik sesama SKU
-// yang lagi diganti, maupun bentrok dengan SKU lain yang sudah ada), seluruh
-// operasi DIBATALKAN dari awal (tidak ada satupun PATCH yang dikirim) dan
-// melempar Error — supaya tidak ada data yang kepalang berubah separuh.
-export async function renameMasterKode({ masterDataId, tipe, oldKode, newKode, newLabel, skuMaster }) {
-  const affected = (skuMaster || []).filter((s) => s[tipe] === oldKode);
-
-  // Peta SKU lama -> SKU baru untuk baris yang kepengaruh oleh perubahan ini.
-  const rencana = affected.map((s) => ({
-    row: s,
-    skuLama: s.sku,
-    skuBaru: buildSkuCode({ ...s, [tipe]: newKode }),
-  }));
-
-  // Cek tabrakan: (a) dua SKU lama yang berbeda menghasilkan SKU baru yang
-  // sama persis, atau (b) SKU baru itu sudah dipakai SKU lain yang TIDAK ikut
-  // berubah di rencana ini.
-  const skuBaruSet = new Set();
-  const skuLamaYangBerubah = new Set(rencana.map((r) => r.skuLama));
-  for (const r of rencana) {
-    if (skuBaruSet.has(r.skuBaru)) {
-      throw new Error(`Gagal ubah kode: dua SKU akan jadi sama persis ("${r.skuBaru}"). Batal, tidak ada yang disimpan.`);
-    }
-    skuBaruSet.add(r.skuBaru);
-  }
-  const bentrokDenganLain = (skuMaster || []).find(
-    (s) => !skuLamaYangBerubah.has(s.sku) && skuBaruSet.has(s.sku)
-  );
-  if (bentrokDenganLain) {
-    throw new Error(
-      `Gagal ubah kode: SKU baru "${bentrokDenganLain.sku}" sudah dipakai SKU lain. Batal, tidak ada yang disimpan.`
-    );
-  }
-
-  // Aman, lanjut eksekusi — SKU dulu (di semua tabel), master_data terakhir,
-  // supaya kalau ada yang gagal di tengah jalan, kode di Master Data belum
-  // sempat berubah (masih konsisten dengan SKU yang belum sempat di-rename).
-  for (const r of rencana) {
-    await renameSkuEverywhere(r.skuLama, r.skuBaru);
-    await sb(`sku_master?id=eq.${r.row.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ [tipe]: newKode, sku: r.skuBaru }),
-    });
-  }
-  await sb(`master_data?id=eq.${masterDataId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ kode: newKode, label: newLabel }),
-  });
-
-  return { jumlahSkuBerubah: rencana.length };
-}
-
-
-export function labelFor(master, tipe, kode) {
-  const found = (master[tipe] || []).find((m) => m.kode === kode);
-  return found ? found.label : kode || "—";
-}
-
-// Dua SKU dianggap "produk yang sama" (boleh berbagi rak) kalau semua atribut
-// pembentuknya sama PERSIS kecuali ukuran. Butuh data sku_master untuk
-// membandingkan field-nya (kode SKU sendiri sudah menyertakan ukuran di dalamnya).
-const FIELD_PEMBANDING = ["bahan", "peruntukan", "kategori", "subkategori", "model", "warna"];
-
-export function sameProdukKecualiUkuran(skuA, skuB, skuMaster) {
-  if (!skuA || !skuB) return false;
-  if (skuA === skuB) return true;
-  const a = (skuMaster || []).find((s) => s.sku === skuA);
-  const b = (skuMaster || []).find((s) => s.sku === skuB);
-  if (!a || !b) return false;
-  return FIELD_PEMBANDING.every((f) => (a[f] || "") === (b[f] || ""));
-}
-
-// =========================================================
-// GROSIR — helper umum
-// =========================================================
-// Bikin kode urut berikutnya dari sebuah daftar, mis. "PLG-0001", "PLG-0002".
-// list: array of object, field: nama kolom kode, prefix: mis. "PLG-".
-export function nextKode(list, field, prefix) {
-  let max = 0;
-  (list || []).forEach((item) => {
-    const kode = item[field];
-    if (typeof kode === "string" && kode.startsWith(prefix)) {
-      const num = parseInt(kode.slice(prefix.length), 10);
-      if (!isNaN(num) && num > max) max = num;
-    }
-  });
-  return prefix + String(max + 1).padStart(4, "0");
-}
-
-// Tanggal hari ini format ddMMyyyy (dipakai untuk prefix nomor pesanan grosir harian).
-export function todayDDMMYYYY() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}${pad(d.getMonth() + 1)}${d.getFullYear()}`;
-}
-
-// Samakan format no. WA supaya "0812...", "62812...", "+62812...", atau yang
-// pakai spasi/strip/kurung semuanya dianggap nomor yang sama saat dibandingkan.
-// Contoh: "0812-3456-7890" dan "+62 812 3456 7890" -> sama-sama "8123456789...".
-export function normalisasiWa(wa) {
-  const digit = (wa || "").replace(/\D/g, "");
-  if (digit.startsWith("62")) return digit.slice(2);
-  if (digit.startsWith("0")) return digit.slice(1);
-  return digit;
-}
-
-// Cari pelanggan grosir lain yang sudah pakai no. WA yang sama (dibandingkan
-// dalam bentuk yang sudah dinormalisasi). exceptId dipakai saat edit supaya
-// pelanggan itu sendiri tidak dianggap "bentrok" dengan WA-nya sendiri.
-export function pelangganDenganWa(wa, pelangganList, exceptId) {
-  const target = normalisasiWa(wa);
-  if (!target) return null;
-  return (pelangganList || []).find(
-    (p) => p.id !== exceptId && p.wa && normalisasiWa(p.wa) === target
-  ) || null;
-}
-
-// =========================================================
-// GROSIR — CICILAN HUTANG & DEPOSIT PELANGGAN
-// (helper hitung dinamis, sama pola dengan sistem grosir lama:
-//  sisa hutang & saldo deposit TIDAK disimpan sebagai angka statis,
-//  selalu dihitung ulang dari riwayat grosir_pembayaran / grosir_deposit
-//  supaya tidak pernah "basi" / tidak sinkron.)
-// =========================================================
-
-// Total yang sudah dibayar untuk satu pesanan (dari grosir_pembayaran).
-export function totalDibayarPesanan(pesananId, pembayaranList) {
-  return (pembayaranList || [])
-    .filter((b) => b.pesanan_id === pesananId)
-    .reduce((a, b) => a + (Number(b.jumlah) || 0), 0);
-}
-
-// Sisa hutang satu pesanan = Total - TotalDibayar (minimal 0).
-export function sisaHutangPesanan(pesanan, pembayaranList) {
-  const dibayar = totalDibayarPesanan(pesanan.id, pembayaranList);
-  return Math.max(0, (Number(pesanan.total) || 0) - dibayar);
-}
-
-// Status bayar otomatis (dipakai lagi setelah tiap pembayaran dicatat):
-//  Belum Bayar -> belum ada pembayaran sama sekali
-//  Sebagian    -> sudah dibayar sebagian, masih ada sisa
-//  Lunas       -> sisa <= 0
-// Status "Pesanan Masuk" (Barang Datang) diturunkan dari jumlah_diterima vs
-// jumlah_pesan — bukan disimpan manual oleh user, supaya selalu konsisten.
-// dibatalkan (kolom terpisah) menang atas hitungan angka. "draft" (kolom
-// terpisah juga) menang atas SEMUANYA kecuali dibatalkan — dipakai untuk
-// baris "Input Barang Datang" yang disimpan sementara lewat tombol "Simpan
-// sebagai Draf" dan belum dikirim ke Alur Barang/stok.
-// versi_struktur = 2 (satu baris per pesanan, banyak invoice di
-// rincian_invoice) punya hitungan sendiri — lihat statusPesananMasukV2 di
-// bawah — supaya baris lama (versi_struktur = 1, default) tidak kena
-// pengaruh apa-apa dari perubahan ini.
-export function statusPesananMasuk(p) {
-  if (p.versi_struktur === 2) return statusPesananMasukV2(p);
-  if (p.dibatalkan) return "batal";
-  if (p.draft) return "draft";
-  if ((p.jumlah_diterima || 0) <= 0) return "menunggu";
-  if (p.jumlah_diterima < p.jumlah_pesan) return "sebagian";
-  return "selesai";
-}
-
-// Status untuk pesanan versi_struktur = 2 — dihitung dari rincian_invoice
-// (array invoice, tiap elemen punya status sendiri "draft"|"final") DAN
-// jumlah_box (total box fisik pesanan ini, diisi waktu "Tandai Status
-// Kedatangan", sama seperti versi lama):
-//  - dibatalkan menang atas semuanya (sama seperti v1).
-//  - selesai_manual (tombol "Tandai Pesanan Selesai") memaksa "selesai"
-//    biar bisa dipakai walau box-nya belum genap semua, sama kegunaannya
-//    dengan "Tandai Pesanan Selesai" versi lama.
-//  - kalau jumlah_box belum diisi (pesanan lama/pendek, cuma 1 box tidak
-//    pernah diisi jumlah_box-nya secara eksplisit): "selesai" begitu ADA
-//    minimal satu invoice final, "draft" kalau ada invoice tapi belum ada
-//    yang final, "menunggu" kalau rincian_invoice masih kosong sama sekali.
-//  - kalau jumlah_box > 0: dihitung dari BANYAKNYA no_box unik yang punya
-//    invoice final dibanding jumlah_box (sama logika dengan
-//    rincianBongkarBox versi lama) — menunggu/sebagian/selesai.
-function statusPesananMasukV2(p) {
-  if (p.dibatalkan) return "batal";
-  if (p.selesai_manual) return "selesai";
-  const rincian = Array.isArray(p.rincian_invoice) ? p.rincian_invoice : [];
-  if (rincian.length === 0) return "menunggu";
-  const boxFinal = new Set(
-    rincian.filter((inv) => inv.status === "final" && Number(inv.no_box) > 0).map((inv) => Number(inv.no_box))
-  );
-  const totalBox = Number(p.jumlah_box) || 0;
-  if (totalBox <= 0) {
-    return boxFinal.size > 0 || rincian.some((inv) => inv.status === "final") ? "selesai" : "draft";
-  }
-  if (boxFinal.size === 0) return "draft";
-  if (boxFinal.size < totalBox) return "sebagian";
-  return "selesai";
-}
-
-// Status "konfirmasi datang" — toggle CEPAT satu klik ("Ya"/"Tidak") yang
-// menjawab pertanyaan sederhana "barang yang dipesan sudah sampai secara
-// fisik atau belum?", TERPISAH dari form "Konfirmasi Datang" (KonfirmasiDatangForm)
-// yang detail (isi rincian model/qty/harga per pcs & set jumlah_diterima).
-// Sengaja dipisah supaya gudang bisa langsung menandai "sudah datang" begitu
-// barang tiba di depan mata, tanpa harus buka-buka & mengisi form detail
-// dulu — detailnya boleh menyusul kapan saja lewat "Konfirmasi Datang".
-// Kolom `konfirmasi_datang` disimpan sebagai boolean di tabel pesanan_masuk;
-// default belum ada (undefined/null) dianggap "belum". Baris "batal" balikin
-// null (tidak akan ditagih lagi, jadi toggle-nya tidak relevan).
-// Baris "draft" JUGA balikin null — TAPI dikecualikan untuk pesanan yang
-// dibuat lewat "Pesan Barang" (kode_pesanan berprefix "PSN-"): untuk PSN-,
-// `draft` cuma dipakai KonfirmasiDatangForm buat menyimpan progres rincian
-// model (tombol "Simpan sebagai Draf") — pesanannya sendiri sudah pasti ada
-// sejak dibuat, jadi toggle "sudah datang secara fisik" tetap harus bisa
-// dipakai kapan saja, lepas dari progres pengisian rinciannya. Baris "draft"
-// murni (dari "Input Barang Datang"/BON-, yang memang belum tentu jadi
-// transaksi nyata) tetap disembunyikan seperti semula.
-export function statusKonfirmasiDatang(p) {
-  const status = statusPesananMasuk(p);
-  if (status === "batal") return null;
-  if (status === "draft" && !p.kode_pesanan?.startsWith("PSN-")) return null;
-  return p.konfirmasi_datang ? "sudah" : "belum";
-}
-
-// Status "bongkar" satu pesanan masuk — digembok di belakang toggle cepat
-// "Konfirmasi Datang" di atas (BUKAN lagi di belakang jumlah_diterima/
-// statusPesananMasuk saja), supaya urutannya jelas: pesan -> (barang tiba
-// fisik) -> tandai "Sudah Datang" (cepat, tanpa rincian) -> baru boleh
-// dianggap bongkar. Balikin null kalau belum ditandai "Sudah Datang" (atau
-// baris batal) supaya UI bisa sembunyikan badge bongkar.
-// SEKARANG OTOMATIS — bukan toggle manual lagi. Begitu barangnya ditandai
-// "Sudah Datang", status bongkar langsung mengikuti progres rincian model di
-// "Konfirmasi Datang":
-// - status pesanan "draft" (rincian masih disimpan sebagai Draf, belum
-//   difinalkan) -> "sebagian" dibongkar.
-// - status pesanan "selesai" (rincian sudah difinalkan lewat "Konfirmasi &
-//   Lanjut ke Alur Barang") -> "sudah" dibongkar.
-// - selain itu (menunggu/sebagian qty, belum ada rincian sama sekali) ->
-//   "belum" dibongkar.
-// Kolom `dibongkar` (manual, lama) sudah tidak dipakai lagi di sini.
-export function statusBongkar(p) {
-  if (statusKonfirmasiDatang(p) !== "sudah") return null;
-  const status = statusPesananMasuk(p);
-  if (status === "draft") return "sebagian";
-  if (status === "selesai") return "sudah";
-  return "belum";
-}
-
-// Rincian jumlah box yang sudah dibongkar (dicek/dikonfirmasi) dari total box
-// fisik pesanan ini — dipakai kalau pesanannya sudah punya `jumlah_box`
-// (diisi waktu "Tandai Status Kedatangan"), supaya progres bongkarnya
-// kelihatan konkret per box (mis. "2/5"), bukan cuma label belum/sebagian/
-// sudah dari statusBongkar di atas. Balikin null kalau jumlah_box belum
-// pernah diisi — UI fallback ke badge statusBongkar biasa.
-//
-// Satu box dihitung "sudah dibongkar" begitu ADA bon (bon utama pesanan ini
-// SENDIRI, atau bon tambahan "BON-xxxx" yang `induk_id`-nya nunjuk balik ke
-// pesanan ini — lihat KonfirmasiDatangForm/ModalRouter "konfirmasi-datang")
-// yang no_box-nya cocok DAN sudah final (bukan draft, jumlah_diterima > 0).
-// Box yang sama dihitung sekali walau ada >1 bon final dengan no_box yang
-// sama (mis. box itu sengaja dipecah beberapa bon tapi tetap 1 box fisik).
-export function rincianBongkarBox(p, semuaPesanan) {
-  const total = Number(p?.jumlah_box) || 0;
-  if (total <= 0) return null;
-  if (p?.versi_struktur === 2) {
-    const rincian = Array.isArray(p.rincian_invoice) ? p.rincian_invoice : [];
-    const boxSelesai = new Set(
-      rincian.filter((inv) => inv.status === "final" && Number(inv.no_box) > 0).map((inv) => Number(inv.no_box))
-    );
-    return { selesai: boxSelesai.size, total };
-  }
-  const finalDenganBox = (row) =>
-    !row.dibatalkan && !row.draft && (Number(row.jumlah_diterima) || 0) > 0 && Number(row.no_box) > 0;
-  const boxSelesai = new Set();
-  if (finalDenganBox(p)) boxSelesai.add(Number(p.no_box));
-  for (const row of semuaPesanan || []) {
-    if (row.induk_id === p.id && finalDenganBox(row)) boxSelesai.add(Number(row.no_box));
-  }
-  return { selesai: boxSelesai.size, total };
-}
-
-// Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, harga, datang }].
-// Satu model cuma punya SATU angka qty (bukan qty-dipesan & qty-diterima
-// terpisah) — statusnya cukup boolean "datang" (sudah/belum), karena tiap
-// model dikonfirmasi datang sekaligus penuh sesuai qty pesanannya, satu-satu
-// per model (lihat KonfirmasiDatangForm), bukan dicicil per angka.
-// Pesanan lama (sebelum fitur rincian per-model, atau dari format lama yang
-// masih pakai angka "diterima") tetap didukung — "datang" diturunkan dari
-// diterima >= jumlah kalau field "datang"-nya sendiri belum ada.
-// versi_struktur = 2: gabungan (flatten) model dari SEMUA invoice di
-// rincian_invoice — dipakai tempat-tempat yang cuma butuh total qty/nilai
-// pesanan ini tanpa peduli invoice mana asalnya (mis. baris ringkas di
-// tabel). Tempat yang perlu tampilan PER-invoice (SemuaInvoicePanel) baca
-// rincian_invoice langsung, bukan lewat fungsi ini.
-export function detailModelPesanan(p) {
-  if (p?.versi_struktur === 2) {
-    const rincian = Array.isArray(p.rincian_invoice) ? p.rincian_invoice : [];
-    return rincian.flatMap((inv) =>
-      (Array.isArray(inv.models) ? inv.models : []).map((m) => ({
-        ...m,
-        datang: inv.status === "final",
-      }))
-    );
-  }
-  const raw =
-    Array.isArray(p.detail_model) && p.detail_model.length > 0
-      ? p.detail_model
-      : [{ nama: null, jumlah: p.jumlah_pesan || 0, harga: 0, diterima: p.jumlah_diterima || 0 }];
-  return raw.map((m) => ({
-    ...m,
-    datang:
-      typeof m.datang === "boolean"
-        ? m.datang
-        : (Number(m.jumlah) || 0) > 0 && (Number(m.diterima) || 0) >= (Number(m.jumlah) || 0),
-  }));
-}
-
-export function hitungStatusBayar(total, totalDibayar) {
-  if (totalDibayar <= 0.0001) return "Belum Bayar";
-  if (totalDibayar >= total - 0.0001) return "Lunas";
-  return "Sebagian";
-}
-
-// Saldo deposit satu pelanggan = akumulasi seluruh baris grosir_deposit miliknya.
-export function saldoDepositPelanggan(pelangganId, depositList) {
-  return (depositList || [])
-    .filter((d) => d.pelanggan_id === pelangganId)
-    .reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
-}
-
-// Peta {pelangganId: totalSisaHutang} lintas semua pesanan aktif (bukan Batal) milik tiap pelanggan.
-export function totalHutangPerPelanggan(pesananList, pembayaranList) {
-  const map = {};
-  (pesananList || []).forEach((p) => {
-    if (p.status === "Batal") return;
-    const sisa = sisaHutangPesanan(p, pembayaranList);
-    if (sisa <= 0.0001) return;
-    map[p.pelanggan_id] = (map[p.pelanggan_id] || 0) + sisa;
-  });
-  return map;
-}
-
-// Peta {pelangganId: saldoDeposit} untuk semua pelanggan yang punya saldo deposit
-// positif — artinya TOKO yang berhutang ke pelanggan itu (kelebihan bayar/titipan
-// yang belum dipakai), kebalikan dari totalHutangPerPelanggan di atas.
-export function totalDepositPerPelanggan(depositList) {
-  const map = {};
-  (depositList || []).forEach((d) => {
-    map[d.pelanggan_id] = (map[d.pelanggan_id] || 0) + (Number(d.jumlah) || 0);
-  });
-  Object.keys(map).forEach((id) => {
-    if (map[id] <= 0.0001) delete map[id];
-  });
-  return map;
-}
-
-// =========================================================
-// GROSIR — LAPORAN HARIAN / BULANAN / TAHUNAN
-// Pola sama seperti helper Laporan Keuangan di bawah: dihitung dinamis dari
-// grosir_pesanan (bukan disimpan sbg angka statis) supaya selalu akurat.
-// Pesanan berstatus "Batal" TIDAK pernah dihitung ke omset manapun.
-// =========================================================
-
-// Ringkasan omset & jumlah pesanan grosir, opsional difilter ke rentang
-// tanggal [dari, sampai] (format "YYYY-MM-DD", inklusif di kedua ujung).
-// dari/sampai kosong ("" atau null/undefined) = tidak dibatasi ke arah itu.
-export function ringkasanGrosir(pesananGrosir, dari, sampai) {
-  const list = (pesananGrosir || []).filter((p) => {
-    if (p.status === "Batal") return false;
-    if (dari && p.tanggal < dari) return false;
-    if (sampai && p.tanggal > sampai) return false;
-    return true;
-  });
-  const omset = list.reduce((a, p) => a + (Number(p.total) || 0), 0);
-  const jumlahPesanan = list.length;
-  return { omset, jumlahPesanan, rataRata: jumlahPesanan > 0 ? omset / jumlahPesanan : 0, list };
-}
-
-// Kelompokkan omset & jumlah pesanan grosir per hari, atau per minggu kalau
-// rentang datanya cukup panjang (>31 hari) — pola & fungsi bantu (awalMingguIso
-// dkk) sama persis dengan arusKasPerPeriode() di bawah supaya grafiknya konsisten.
-export function omsetGrosirPerPeriode(pesananList) {
-  const list = (pesananList || []).filter((p) => p.status !== "Batal" && p.tanggal);
-  if (list.length === 0) return { mode: "harian", data: [] };
-
-  const tanggalUrut = list.map((p) => p.tanggal).sort();
-  const rentangHari =
-    Math.round(
-      (new Date(`${tanggalUrut[tanggalUrut.length - 1]}T00:00:00`) - new Date(`${tanggalUrut[0]}T00:00:00`)) /
-        86400000
-    ) + 1;
-  const mode = rentangHari > 31 ? "mingguan" : "harian";
-
-  const map = new Map();
-  list.forEach((p) => {
-    const key = mode === "harian" ? p.tanggal : awalMingguIso(p.tanggal);
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        label: mode === "harian" ? labelHarianIso(key) : labelMingguanIso(key),
-        omset: 0,
-        jumlahPesanan: 0,
-      });
-    }
-    const g = map.get(key);
-    g.omset += Number(p.total) || 0;
-    g.jumlahPesanan += 1;
-  });
-
-  const data = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
-  return { mode, data };
-}
-
-// Rekap omset & jumlah pesanan per bulan untuk satu tahun (analog dengan
-// laporanBulananData di Keuangan, tapi grosir tidak dikelompokkan per
-// kategori — cuma dua baris: Omset & Jumlah Pesanan per bulan + Total).
-export function laporanBulananGrosir(pesananGrosir, tahun) {
-  const tahunStr = String(tahun);
-  const list = (pesananGrosir || []).filter(
-    (p) => p.status !== "Batal" && (p.tanggal || "").slice(0, 4) === tahunStr
-  );
-  const omsetBulan = Array(12).fill(0);
-  const jumlahBulan = Array(12).fill(0);
-  list.forEach((p) => {
-    const idx = Number((p.tanggal || "").slice(5, 7)) - 1;
-    if (idx >= 0 && idx < 12) {
-      omsetBulan[idx] += Number(p.total) || 0;
-      jumlahBulan[idx] += 1;
-    }
-  });
-  return {
-    tahun: Number(tahun),
-    omset: { bulan: omsetBulan, total: omsetBulan.reduce((a, v) => a + v, 0) },
-    jumlahPesanan: { bulan: jumlahBulan, total: jumlahBulan.reduce((a, v) => a + v, 0) },
-  };
-}
-
-// Rekap omset & jumlah pesanan per tahun, untuk `jumlahTahun` tahun berurutan
-// mulai dari tahunMulai (analog rekapTahunanData di Keuangan).
-export function rekapTahunanGrosir(pesananGrosir, tahunMulai, jumlahTahun = 6) {
-  const tahunList = Array.from({ length: jumlahTahun }, (_, i) => Number(tahunMulai) + i);
-  const perTahun = tahunList.map((tahun) => {
-    const { omset, jumlahPesanan } = ringkasanGrosir(pesananGrosir, `${tahun}-01-01`, `${tahun}-12-31`);
-    return { tahun, omset, jumlahPesanan, rataRata: jumlahPesanan > 0 ? omset / jumlahPesanan : 0 };
-  });
-  return { tahunList, perTahun };
-}
-
-// =========================================================
-// KEUANGAN — pencatatan kas masuk/keluar/transfer antar rekening
-// =========================================================
-// Kategori pemasukan & pengeluaran TIDAK lagi hardcode di sini — sekarang
-// didaftarkan sendiri oleh user lewat halaman Keuangan > Rekening & Kategori,
-// disimpan di tabel master_data dengan tipe "kategori_masuk" / "kategori_keluar"
-// (pola yang sama seperti master_data tipe "bahan"/"warna"/dst untuk SKU).
-// Begitu juga daftar rekening, disimpan dengan tipe "rekening".
-// Lihat src/pages/Keuangan.jsx (RekeningKategori) untuk halaman kelolanya.
-
-// Ringkasan total masuk/keluar/saldo dari daftar transaksi keuangan, opsional
-// difilter ke rentang tanggal [dari, sampai] (format "YYYY-MM-DD", inklusif
-// di kedua ujung). dari/sampai kosong ("" atau null/undefined) = tidak
-// dibatasi ke arah itu. Dipakai bareng oleh halaman Keuangan & Laporan supaya
-// angkanya selalu konsisten.
-//
-// Transaksi tipe "transfer" (pindah dana antar rekening milik sendiri)
-// SENGAJA tidak dihitung ke masuk/keluar/saldo di sini — itu bukan
-// pemasukan/pengeluaran riil, cuma mutasi antar rekening. Dampaknya ke saldo
-// per rekening dihitung terpisah lewat saldoPerRekening() di bawah.
-export function ringkasanKeuangan(transaksi, dari, sampai) {
-  const list = (transaksi || []).filter((t) => {
-    if (dari && t.tanggal < dari) return false;
-    if (sampai && t.tanggal > sampai) return false;
-    return true;
-  });
-  const masuk = list
-    .filter((t) => t.tipe === "masuk")
-    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-  const keluar = list
-    .filter((t) => t.tipe === "keluar")
-    .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-  return { masuk, keluar, saldo: masuk - keluar, list };
-}
-
-// =========================================================
-// SALDO MARKETPLACE (Shopee/TikTok/Lazada) — lihat pages/Penjualanmarketplace.jsx
-// & constants.js NAV "penjualan-marketplace". Data disimpan TERPISAH dari
-// keuangan_transaksi, di tabel sendiri "marketplace_transaksi" (kolom:
-// platform, tanggal, tipe ["pemasukan"|"iklan"|"pencairan"], jumlah,
-// keterangan, rekening, toko, keuangan_transaksi_id) — SENGAJA begitu supaya
-// saldo marketplace TIDAK ikut nongol sebagai "rekening" di Keuangan
-// (beda pola dari Toko Offline yang catat langsung ke keuangan_transaksi).
-// Cuma saat PENCAIRAN yang bikin baris baru di keuangan_transaksi (tipe
-// "masuk", ke rekening bank yang dipilih) — itulah satu-satunya titik
-// sambung ke Keuangan, dicatat linknya lewat keuangan_transaksi_id supaya
-// waktu baris pencairan dihapus, baris keuangan_transaksi yang nyambung
-// bisa ikut dihapus juga (lihat ModalRouter "hapus-marketplace-transaksi").
-// Saldo = akumulasi pemasukan - iklan - pencairan, DARI AWAL (bukan per
-// bulan) — pola sama seperti saldoPerRekening() di bawah.
-//
-// Per-toko: satu platform (mis. Shopee) bisa punya beberapa toko sendiri
-// (kode disimpan di kolom "toko", master datanya di master_data tipe
-// "toko_<platform>" — lihat daftarTokoMarketplace() di bawah & ModalRouter
-// "marketplace-toko-form"). Saldo TIDAK lagi digabung satu platform, tapi
-// dihitung terpisah per toko — param `toko` di bawah opsional: kalau
-// diisi (termasuk `null` eksplisit untuk kelompok "tanpa toko"/transaksi
-// lama), saldo cuma dihitung dari baris yang toko-nya cocok; kalau
-// argumennya sama sekali tidak dikirim (undefined), tetap menghitung
-// SEMUA toko digabung (dipakai untuk total keseluruhan platform, bukan
-// tampilan utama lagi).
-export function saldoMarketplace(marketplaceTransaksi, platform, toko) {
-  return (marketplaceTransaksi || [])
-    .filter((t) => t.platform === platform && (toko === undefined || (t.toko || null) === (toko || null)))
-    .reduce((saldo, t) => {
-      const jumlah = Number(t.jumlah) || 0;
-      if (t.tipe === "pemasukan") return saldo + jumlah;
-      if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
-      return saldo;
-    }, 0);
-}
-
-// Entri Iklan yang belum "diselesaikan" ke Keuangan (kolom keuangan_transaksi_id
-// masih kosong) untuk satu toko/platform — dipakai saat Pencairan (lihat modal
-// "marketplace-pencairan" di ModalRouter.jsx): tiap Pencairan otomatis menyelesaikan
-// SEMUA Iklan yang masih menumpuk, dicatat sebagai Biaya Iklan Marketplace terpisah
-// di Keuangan, lalu Iklan itu ditandai (keuangan_transaksi_id diisi) supaya
-// Pencairan berikutnya tidak menghitungnya lagi.
-export function iklanBelumTercatat(marketplaceTransaksi, platform, toko) {
-  return (marketplaceTransaksi || []).filter(
-    (t) => t.platform === platform && (t.toko || null) === (toko || null) && t.tipe === "iklan" && !t.keuangan_transaksi_id
-  );
-}
-
-// Toko Shopee "Gudang" — toko marketplace khusus yang dipakai sebagai
-// penampung sementara uang Reseller Cekout (baik nominal yang cair waktu
-// pesanan dibuat, maupun pelunasan piutang belakangan lewat "Catat
-// Pembayaran") SEBELUM benar-benar dicairkan ke rekening Keuangan. Dicatat
-// sebagai baris "pemasukan" biasa di marketplace_transaksi (platform
-// "shopee", toko = kode toko ini) — persis pola pemasukan/pencairan toko
-// marketplace lain (lihat Penjualanmarketplace.jsx), jadi otomatis kelihatan
-// saldonya di menu Marketplace > Shopee > Gudang, dan baru masuk Keuangan
-// saat admin klik "Cairkan" di toko itu. Dicari dari master_data tipe
-// "toko_shopee" (lihat daftarTokoMarketplace di atas) berdasarkan nama
-// PERSIS "Gudang" (tidak case-sensitive) — kalau belum ada, harus dibuat
-// dulu manual lewat menu Marketplace > Shopee > "Tambah Toko".
-export function tokoShopeeGudang(master) {
-  const daftar = master?.toko_shopee || [];
-  return daftar.find((t) => (t.label || "").trim().toLowerCase() === "gudang") || null;
-}
-
-// Daftar toko untuk satu platform (dari master_data tipe "toko_<platform>"),
-// masing-masing dilengkapi saldonya sendiri (lihat saldoMarketplace di
-// atas). Toko yang belum pernah punya transaksi tetap muncul dengan saldo
-// 0. Kalau ada transaksi lama yang belum diberi toko (kolom "toko" kosong
-// — dari sebelum fitur per-toko ada), dikelompokkan jadi satu entri
-// terpisah "Tanpa Nama Toko (transaksi lama)" (kode: null) supaya saldonya
-// tetap kelihatan, bukan hilang begitu saja.
-export function daftarTokoMarketplace(marketplaceTransaksi, tokoMasterList, platform) {
-  const daftar = (tokoMasterList || []).map((tk) => ({
-    kode: tk.kode,
-    label: tk.label,
-    saldo: saldoMarketplace(marketplaceTransaksi, platform, tk.kode),
-  }));
-  const adaTanpaToko = (marketplaceTransaksi || []).some((t) => t.platform === platform && !t.toko);
-  if (adaTanpaToko) {
-    daftar.push({
-      kode: null,
-      label: "Tanpa Nama Toko (transaksi lama)",
-      saldo: saldoMarketplace(marketplaceTransaksi, platform, null),
-    });
-  }
-  return daftar;
-}
-
-// Saldo per rekening, dihitung dari SELURUH transaksi (tidak dibatasi rentang
-// tanggal — saldo itu akumulasi dari awal, bukan angka per periode):
-//   - masuk   -> saldo rekening (sumber dana) bertambah
-//   - keluar  -> saldo rekening (sumber dana) berkurang
-//   - transfer -> saldo rekening asal berkurang, saldo rekening tujuan bertambah
-// rekeningList = daftar master_data tipe "rekening" ({ kode, label }[]), dipakai
-// supaya rekening yang belum pernah ada transaksinya tetap muncul dengan saldo 0.
-export function saldoPerRekening(transaksi, rekeningList) {
-  const map = {};
-  (rekeningList || []).forEach((r) => {
-    map[r.kode] = { kode: r.kode, label: r.label, saldo: 0 };
-  });
-  const ensure = (kode) => {
-    if (!kode) return null;
-    if (!map[kode]) map[kode] = { kode, label: kode, saldo: 0 };
-    return map[kode];
-  };
-  (transaksi || []).forEach((t) => {
-    const jumlah = Number(t.jumlah) || 0;
-    if (t.tipe === "masuk") {
-      const r = ensure(t.rekening);
-      if (r) r.saldo += jumlah;
-    } else if (t.tipe === "keluar") {
-      const r = ensure(t.rekening);
-      if (r) r.saldo -= jumlah;
-    } else if (t.tipe === "transfer") {
-      const asal = ensure(t.rekening);
-      const tujuan = ensure(t.rekening_tujuan);
-      if (asal) asal.saldo -= jumlah;
-      if (tujuan) tujuan.saldo += jumlah;
-    }
-  });
-  return Object.values(map);
-}
-
-// =========================================================
-// SALDO AWAL PER BULAN — override manual per rekening per bulan.
-// Disimpan di master_data dengan tipe "saldo_awal" (pola sama seperti
-// rekening/kategori_masuk/kategori_keluar): kode = "YYYY-MM-<KODE_REKENING>",
-// label = jumlah (disimpan sebagai teks angka polos, bukan format rupiah).
-// Kalau tidak ada baris override untuk kombinasi bulan+rekening itu, saldo
-// awal dihitung OTOMATIS = akumulasi seluruh transaksi SEBELUM tanggal 1
-// bulan tsb, jadi otomatis nyambung dari saldo akhir bulan sebelumnya tanpa
-// perlu disalin manual tiap ganti bulan.
-// =========================================================
-
-export function kodeSaldoAwal(tahun, bulan, rekeningKode) {
-  return `${tahun}-${String(bulan).padStart(2, "0")}-${rekeningKode}`;
-}
-
-// Saldo awal SATU rekening di bulan tertentu.
-// -> { jumlah, manual, id }
-//    manual=true  : nilainya override tersimpan (id = id baris master_data,
-//                    dipakai buat PATCH waktu edit / DELETE waktu reset).
-//    manual=false : otomatis, dihitung dari akumulasi transaksi.
-export function saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, rekeningKode) {
-  const kode = kodeSaldoAwal(tahun, bulan, rekeningKode);
-  const override = (saldoAwalList || []).find((m) => m.kode === kode);
-  if (override) return { jumlah: Number(override.label) || 0, manual: true, id: override.id };
-  const batasAwal = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
-  const sebelum = (transaksi || []).filter((t) => t.tanggal < batasAwal);
-  const [hasil] = saldoPerRekening(sebelum, [{ kode: rekeningKode, label: rekeningKode }]);
-  return { jumlah: hasil?.saldo || 0, manual: false, id: null };
-}
-
-// Saldo awal SEMUA rekening buat satu bulan sekaligus — dipakai halaman
-// Laporan Keuangan. rekeningList = master.rekening (daftar { kode, label }).
-export function saldoAwalBulan(transaksi, rekeningList, saldoAwalList, tahun, bulan) {
-  return (rekeningList || []).map((r) => ({
-    kode: r.kode,
-    label: r.label,
-    ...saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, r.kode),
-  }));
-}
-
-// Saldo akhir SATU rekening di bulan tertentu = saldo awal bulan itu +
-// mutasi bersih (masuk - keluar +/- transfer) SELAMA bulan itu saja. Berguna
-// buat preview "kalau saldo awal diubah jadi segini, saldo akhirnya jadi
-// segini" — saldo bulan berikutnya otomatis ikut nyambung lewat hitungan
-// akumulasi di saldoAwalRekening() di atas, tidak perlu disimpan terpisah.
-export function saldoAkhirRekening(transaksi, saldoAwalList, tahun, bulan, rekeningKode) {
-  const { jumlah: awal } = saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, rekeningKode);
-  const bulanStr = String(bulan).padStart(2, "0");
-  const awalIso = `${tahun}-${bulanStr}-01`;
-  const hariTerakhir = new Date(tahun, bulan, 0).getDate();
-  const akhirIso = `${tahun}-${bulanStr}-${String(hariTerakhir).padStart(2, "0")}`;
-  const bulanIni = (transaksi || []).filter((t) => t.tanggal >= awalIso && t.tanggal <= akhirIso);
-  const [hasil] = saldoPerRekening(bulanIni, [{ kode: rekeningKode, label: rekeningKode }]);
-  return awal + (hasil?.saldo || 0);
-}
-
-const BULAN_PENDEK = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-
-// Awal minggu (Senin) dari sebuah tanggal ISO "YYYY-MM-DD", dikembalikan sebagai
-// string ISO juga — dipakai sebagai kunci pengelompokan mode mingguan.
-function awalMingguIso(tanggalIso) {
-  const d = new Date(`${tanggalIso}T00:00:00`);
-  const offsetKeSenin = (d.getDay() + 6) % 7; // Minggu(0) -> 6, Senin(1) -> 0, dst.
-  d.setDate(d.getDate() - offsetKeSenin);
-  return d.toISOString().slice(0, 10);
-}
-
-function labelHarianIso(tanggalIso) {
-  const d = new Date(`${tanggalIso}T00:00:00`);
-  return `${d.getDate()} ${BULAN_PENDEK[d.getMonth()]}`;
-}
-
-function labelMingguanIso(seninIso) {
-  const senin = new Date(`${seninIso}T00:00:00`);
-  const minggu = new Date(senin);
-  minggu.setDate(senin.getDate() + 6);
-  const fmt = (x) => `${x.getDate()} ${BULAN_PENDEK[x.getMonth()]}`;
-  return `${fmt(senin)}–${fmt(minggu)}`;
-}
-
-// Kelompokkan transaksi (kas masuk vs kas keluar) per hari, atau per minggu kalau
-// rentang tanggalnya cukup panjang (>31 hari) supaya grafiknya tidak terlalu padat.
-// Transfer antar rekening tidak dihitung (sama seperti ringkasanKeuangan()).
-// Mengembalikan { mode: "harian"|"mingguan", data: [{ key, label, masuk, keluar }] }
-// terurut dari tanggal paling lama ke paling baru.
-export function arusKasPerPeriode(transaksi) {
-  const list = (transaksi || []).filter((t) => t.tipe === "masuk" || t.tipe === "keluar");
-  if (list.length === 0) return { mode: "harian", data: [] };
-
-  const tanggalUrut = list.map((t) => t.tanggal).sort();
-  const rentangHari =
-    Math.round(
-      (new Date(`${tanggalUrut[tanggalUrut.length - 1]}T00:00:00`) - new Date(`${tanggalUrut[0]}T00:00:00`)) /
-        86400000
-    ) + 1;
-  const mode = rentangHari > 31 ? "mingguan" : "harian";
-
-  const map = new Map();
-  list.forEach((t) => {
-    const key = mode === "harian" ? t.tanggal : awalMingguIso(t.tanggal);
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        label: mode === "harian" ? labelHarianIso(key) : labelMingguanIso(key),
-        masuk: 0,
-        keluar: 0,
-      });
-    }
-    const g = map.get(key);
-    const jumlah = Number(t.jumlah) || 0;
-    if (t.tipe === "masuk") g.masuk += jumlah;
-    else g.keluar += jumlah;
-  });
-
-  const data = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
-  return { mode, data };
-}
-
-// Breakdown pengeluaran per kategori dari daftar transaksi (biasanya hasil
-// ringkasanKeuangan(), sudah difilter rentang tanggal): total tiap kategori
-// beserta persentasenya terhadap total pengeluaran, terurut dari yang terbesar.
-// kategoriList = master_data tipe "kategori_keluar" ({ kode, label }[]), dipakai
-// untuk menerjemahkan kode kategori ke nama yang enak dibaca.
-export function breakdownPengeluaranKategori(transaksi, kategoriList) {
-  const pengeluaran = (transaksi || []).filter((t) => t.tipe === "keluar");
-  const total = pengeluaran.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-
-  const map = new Map();
-  pengeluaran.forEach((t) => {
-    const kode = t.kategori || "";
-    const found = (kategoriList || []).find((k) => k.kode === kode);
-    const label = found ? found.label : kode || "Tanpa Kategori";
-    if (!map.has(kode || "__tanpa__")) {
-      map.set(kode || "__tanpa__", { kode, label, jumlah: 0 });
-    }
-    map.get(kode || "__tanpa__").jumlah += Number(t.jumlah) || 0;
-  });
-
-  const data = Array.from(map.values())
-    .map((d) => ({ ...d, persen: total > 0 ? (d.jumlah / total) * 100 : 0 }))
-    .sort((a, b) => b.jumlah - a.jumlah);
-
-  return { total, data };
-}
-
-// Breakdown pemasukan per kategori — pasangan dari breakdownPengeluaranKategori
-// di atas, tapi untuk transaksi tipe "masuk". kategoriList = master_data tipe
-// "kategori_masuk". Dipakai oleh Laporan Laba Rugi di bawah.
-export function breakdownPemasukanKategori(transaksi, kategoriList) {
-  const pemasukan = (transaksi || []).filter((t) => t.tipe === "masuk");
-  const total = pemasukan.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-
-  const map = new Map();
-  pemasukan.forEach((t) => {
-    const kode = t.kategori || "";
-    const found = (kategoriList || []).find((k) => k.kode === kode);
-    const label = found ? found.label : kode || "Tanpa Kategori";
-    if (!map.has(kode || "__tanpa__")) {
-      map.set(kode || "__tanpa__", { kode, label, jumlah: 0 });
-    }
-    map.get(kode || "__tanpa__").jumlah += Number(t.jumlah) || 0;
-  });
-
-  const data = Array.from(map.values())
-    .map((d) => ({ ...d, persen: total > 0 ? (d.jumlah / total) * 100 : 0 }))
-    .sort((a, b) => b.jumlah - a.jumlah);
-
-  return { total, data };
-}
-
-// Laporan Laba Rugi (Income Statement) untuk satu rentang tanggal: rincian
-// tiap kategori Pendapatan & Beban (pakai breakdown di atas) + total masing-
-// masing, Laba (Rugi) Bersih, dan margin laba bersih (%). dari/sampai kosong
-// = tidak dibatasi ke arah itu (sama pola dengan ringkasanKeuangan()).
-// Dipakai bareng oleh Laporan Keuangan & Dashboard Keuangan.
-export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai) {
-  const { list } = ringkasanKeuangan(transaksi, dari, sampai);
-  const pendapatan = breakdownPemasukanKategori(list, kategoriMasukList);
-  const beban = breakdownPengeluaranKategori(list, kategoriKeluarList);
-  const labaRugi = pendapatan.total - beban.total;
-  const marginPersen = pendapatan.total > 0 ? (labaRugi / pendapatan.total) * 100 : 0;
-  return { pendapatan, beban, labaRugi, marginPersen };
-}
-
-// Susun data "Laporan Bulanan" untuk satu tahun: tiap kategori pemasukan &
-// pengeluaran jadi satu baris dengan 12 kolom bulan + Total, mirip format
-// Laporan Bulanan di Excel (SELMA_FINANCE.xlsx). Kategori yang tidak pernah
-// dipakai tahun itu tetap muncul (nilai 0) supaya strukturnya konsisten;
-// kategori yang dipakai tapi belum terdaftar di master ikut ditambahkan di
-// akhir daftar (fallback label = kode transaksinya).
-// Dipakai bareng oleh preview di halaman Laporan Keuangan & PDF-nya.
-export function laporanBulananData(transaksi, kategoriMasukList, kategoriKeluarList, tahun) {
-  const tahunStr = String(tahun);
-  const list = (transaksi || []).filter((t) => (t.tanggal || "").slice(0, 4) === tahunStr);
-
-  const susunBaris = (tipe, kategoriList) => {
-    const map = new Map();
-    (kategoriList || []).forEach((k) => map.set(k.kode, { kode: k.kode, label: k.label, bulan: Array(12).fill(0) }));
-    list
-      .filter((t) => t.tipe === tipe)
-      .forEach((t) => {
-        const kode = t.kategori || "";
-        if (!map.has(kode)) {
-          const found = (kategoriList || []).find((k) => k.kode === kode);
-          map.set(kode, { kode, label: found ? found.label : kode || "Tanpa Kategori", bulan: Array(12).fill(0) });
-        }
-        const bulanIdx = Number((t.tanggal || "").slice(5, 7)) - 1;
-        if (bulanIdx >= 0 && bulanIdx < 12) {
-          map.get(kode).bulan[bulanIdx] += Number(t.jumlah) || 0;
-        }
-      });
-    return Array.from(map.values()).map((r) => ({ ...r, total: r.bulan.reduce((a, v) => a + v, 0) }));
-  };
-
-  const jumlahPerBulan = (baris) => {
-    const bulan = Array(12).fill(0);
-    baris.forEach((r) => r.bulan.forEach((v, i) => (bulan[i] += v)));
-    return { bulan, total: bulan.reduce((a, v) => a + v, 0) };
-  };
-
-  const pendapatan = susunBaris("masuk", kategoriMasukList);
-  const pengeluaran = susunBaris("keluar", kategoriKeluarList);
-  const totalPendapatan = jumlahPerBulan(pendapatan);
-  const totalPengeluaran = jumlahPerBulan(pengeluaran);
-  const labaRugi = {
-    bulan: totalPendapatan.bulan.map((v, i) => v - totalPengeluaran.bulan[i]),
-    total: totalPendapatan.total - totalPengeluaran.total,
-  };
-
-  return { tahun: Number(tahun), pendapatan, pengeluaran, totalPendapatan, totalPengeluaran, labaRugi };
-}
-
-// Susun data "Rekap Tahunan": total pendapatan/pengeluaran/laba-rugi per
-// tahun, untuk `jumlahTahun` tahun berurutan mulai dari tahunMulai. Mirip
-// sheet REKAP TAHUNAN di Excel (SELMA_FINANCE.xlsx).
-export function rekapTahunanData(transaksi, tahunMulai, jumlahTahun = 6) {
-  const tahunList = Array.from({ length: jumlahTahun }, (_, i) => Number(tahunMulai) + i);
-  const perTahun = tahunList.map((tahun) => {
-    const { masuk, keluar } = ringkasanKeuangan(transaksi, `${tahun}-01-01`, `${tahun}-12-31`);
-    const laba = masuk - keluar;
-    return { tahun, pendapatan: masuk, pengeluaran: keluar, laba, marginPersen: masuk > 0 ? (laba / masuk) * 100 : 0 };
-  });
-  return { tahunList, perTahun };
-}
-
-// =========================================================
-// columns: [{ key, label }] — key dipakai untuk ambil nilai dari tiap baris (row[key]),
-// label dipakai sebagai judul kolom. rows: array of object (mis. items, sku_master, dll).
-export function downloadCsv(filename, columns, rows) {
-  const escape = (val) => {
-    const s = val === null || val === undefined ? "" : String(val);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const header = columns.map((c) => escape(c.label)).join(",");
-  const lines = (rows || []).map((row) => columns.map((c) => escape(row[c.key])).join(","));
-  // Tambah BOM (\uFEFF) supaya Excel langsung baca sebagai UTF-8, bukan cuma teks polos.
-  const csv = "\uFEFF" + [header, ...lines].join("\r\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// =========================================================
-// PENGELOMPOKAN PER KATEGORI -> SUBKATEGORI
-// Dipakai di Master Barang dan PDF Katalog supaya
-// urutan & label grup selalu konsisten di ketiga tempat.
-// Struktur hasil: [{ kategori, groups: [{ subkategori, items }] }]
-// - Item tanpa kategori/subkategori masuk grup "Tanpa Kategori" /
-//   "Tanpa Subkategori", selalu ditaruh paling akhir.
-// =========================================================
-export const TANPA_KATEGORI = "Tanpa Kategori";
-export const TANPA_SUBKATEGORI = "Tanpa Subkategori";
-
-export function groupByKategori(list) {
-  const byKategori = new Map();
-  for (const item of list) {
-    const kategori = item.kategori?.trim() || TANPA_KATEGORI;
-    const subkategori = item.subkategori?.trim() || TANPA_SUBKATEGORI;
-    if (!byKategori.has(kategori)) byKategori.set(kategori, new Map());
-    const bySub = byKategori.get(kategori);
-    if (!bySub.has(subkategori)) bySub.set(subkategori, []);
-    bySub.get(subkategori).push(item);
-  }
-
-  const sortKeys = (keys) =>
-    keys.sort((a, b) => {
-      if (a === TANPA_KATEGORI || a === TANPA_SUBKATEGORI) return 1;
-      if (b === TANPA_KATEGORI || b === TANPA_SUBKATEGORI) return -1;
-      return a.localeCompare(b, "id");
-    });
-
-  return sortKeys(Array.from(byKategori.keys())).map((kategori) => {
-    const bySub = byKategori.get(kategori);
-    const groups = sortKeys(Array.from(bySub.keys())).map((subkategori) => ({
-      subkategori,
-      items: bySub.get(subkategori),
-    }));
-    return { kategori, groups };
-  });
-}
-
-// =========================================================
-// DOWNLOAD FOTO PRODUK
-// Nama file = kode SKU. Kalau cuma 1 foto -> download langsung.
-// Kalau lebih dari 1 -> semuanya dibungkus jadi satu file ZIP
-// (pakai JSZip, dimuat lazy lewat dynamic import).
-// =========================================================
-function extFromUrl(url) {
-  const match = /\.([a-zA-Z0-9]+)(?:\?.*)?$/.exec(url || "");
-  return match ? match[1].toLowerCase() : "jpg";
-}
-
-function safeFileName(name) {
-  return (name || "foto").replace(/[^a-zA-Z0-9-_]/g, "-");
-}
-
-function triggerBlobDownload(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// fotos: [{ sku, url }] — url yang kosong/null otomatis dilewati.
-// opts.onProgress(done, total): dipanggil selagi tiap foto diunduh.
-export async function downloadFotos(fotos, opts = {}) {
-  const { onProgress } = opts;
-  const list = (fotos || []).filter((f) => f.url);
-  if (list.length === 0) return;
-
-  if (list.length === 1) {
-    const { sku, url } = list[0];
-    const res = await fetch(url);
-    const blob = await res.blob();
-    onProgress?.(1, 1);
-    triggerBlobDownload(blob, `${safeFileName(sku)}.${extFromUrl(url)}`);
-    return;
-  }
-
-  const JSZip = (await import("jszip")).default;
-  const zip = new JSZip();
-  const namaDipakai = new Map(); // hindari nama file bentrok kalau ada SKU yang sama
-
-  let done = 0;
-  for (const { sku, url } of list) {
+    };
+    const messages = {
+      marketplace: "Ditandai sudah upload — selesai!",
+    };
     try {
-      const res = await fetch(url);
-      const blob = await res.blob();
-      const base = safeFileName(sku);
-      const ext = extFromUrl(url);
-      const n = (namaDipakai.get(base) || 0) + 1;
-      namaDipakai.set(base, n);
-      zip.file(n === 1 ? `${base}.${ext}` : `${base}-${n}.${ext}`, blob);
+      await sb(`items?id=eq.${item.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patches[stage]),
+      });
+      await loadCore(true); // cuma tabel items yang berubah — bagian dari core
+      showToast(messages[stage]);
     } catch (e) {
-      console.error("Gagal ambil foto untuk", sku, e);
+      showToast(e.message || "Gagal menyimpan", "err");
     }
-    done += 1;
-    onProgress?.(done, list.length);
-  }
+  };
 
-  const zipBlob = await zip.generateAsync({ type: "blob" });
-  triggerBlobDownload(zipBlob, `foto-produk-${new Date().toISOString().slice(0, 10)}.zip`);
+  // Konfirmasi notifikasi "Cek Marketplace" (stok tipis / stok bertambah /
+  // rak berubah) — simpan key-nya sebagai "sudah dikonfirmasi". Kalau kena
+  // duplikat (mis. sudah diklik dari sesi lain persis di saat yang sama),
+  // anggap sukses, cukup refresh datanya. Terima satu key (string) atau
+  // banyak key sekaligus (array) — dipakai fitur "bulk aksi" khusus
+  // superadmin di halaman Cek Marketplace, dikirim jadi satu kali POST saja.
+  const ackNotif = async (keyOrKeys) => {
+    const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+    if (keys.length === 0) return;
+    try {
+      await sb("marketplace_notif_ack?on_conflict=notif_key", {
+        method: "POST",
+        prefer: "return=representation,resolution=merge-duplicates",
+        body: JSON.stringify(keys.map((k) => ({ notif_key: k }))),
+      });
+      await loadCore(true); // cuma tabel marketplace_notif_ack yang berubah — bagian dari core
+    } catch (e) {
+      if (e.pgCode === "23505") {
+        await loadCore(true);
+        return;
+      }
+      showToast(e.message || "Gagal menyimpan konfirmasi", "err");
+    }
+  };
+
+  // ---- Loader per "kelompok data" -----------------------------------------
+  // loadAll() (dulu) selalu menarik SEMUA 22 tabel tiap kali pindah menu —
+  // termasuk data Grosir/Keuangan/Absensi yang sebenarnya cuma dipakai di
+  // halaman masing-masing. Efeknya app kerasa berat terus-menerus (tiap
+  // klik menu = 22 request + render ulang semua data), apalagi di WebView
+  // Android yang lebih berat dibanding browser desktop.
+  // Sekarang dipecah jadi 4 kelompok:
+  //  - loadCore()    : dipakai badge sidebar & hampir semua halaman gudang
+  //                    (persetujuan restok, barang datang/masuk, data
+  //                    barang, sku & harga, stok, rak, cetak label, foto,
+  //                    marketplace, pengaturan) — SELALU ditarik tiap
+  //                    pindah menu karena badge sidebar butuh ini.
+  //  - loadGrosir()  : data modul Grosir saja — cuma ditarik kalau lagi
+  //                    buka menu Grosir (atau Dashboard).
+  //  - loadKeuangan(): data modul Keuangan saja — cuma ditarik kalau lagi
+  //                    buka menu Keuangan (atau Dashboard).
+  //  - loadAbsensi() : dipakai HANYA oleh tab "Dashboard Absensi" (halaman
+  //                    Absensi sendiri sudah narik datanya sendiri-sendiri,
+  //                    lihat pages/Absensi.jsx) — cuma ditarik kalau lagi
+  //                    buka Dashboard.
+  // loadAll() (gabungan kelimanya) dipakai untuk: load pertama kali app
+  // dibuka & tombol "Muat ulang" manual di header — dua tempat yang memang
+  // butuh SEMUA grup data sekaligus. Setelah form/modal disimpan/dihapus,
+  // dulu juga pakai loadAll (reload={loadAll} di banyak tempat) sehingga
+  // tiap Simpan/Hapus menarik ulang ~25 tabel walau cuma satu menu kecil
+  // yang lagi dibuka — bikin app kerasa lambat tiap kali submit. Sekarang
+  // dipakai reloadCurrentMenu() (bungkus loadForMenu dengan force=true) di
+  // situ, supaya cuma grup yang relevan buat menu yang lagi aktif yang
+  // ditarik ulang.
+  // Cache singkat per grup data — supaya pindah-pindah menu dalam waktu
+  // dekat (mis. Dashboard -> Stok -> Dashboard lagi dalam <1 menit) tidak
+  // narik ulang tabel yang sama dari nol tiap kali, padahal datanya baru
+  // saja diambil. TTL sengaja pendek (bukan cache permanen) supaya sistem
+  // tetap terasa "segar" untuk pemakaian barengan banyak staf — cuma
+  // menghapus pemborosan pindah-menu yang terjadi dalam hitungan detik,
+  // BUKAN mengubah freshness untuk penggunaan normal sehari-hari.
+  // Aksi yang menulis data (quickAdvance, ackNotif, & semua form lewat
+  // reload={reloadCurrentMenu}) selalu lewat parameter force=true di bawah,
+  // jadi TIDAK PERNAH kena skip cache ini — user yang baru saja menyimpan
+  // selalu langsung lihat data terbaru miliknya sendiri (untuk grup data
+  // yang relevan di menu yang lagi dibuka; grup lain tetap fresh nanti
+  // begitu menu itu dibuka, lihat catatan di reloadCurrentMenu).
+  // Dinaikkan dari 45 detik -> 90 detik (Sept 2026, lanjutan penekanan
+  // egress PostgREST) — trade-off nya: perubahan yang dibuat staf LAIN baru
+  // kelihatan maksimal 90 detik kemudian saat pindah menu (bukan 45 detik),
+  // TAPI perubahan yang kamu buat SENDIRI tetap langsung kelihatan (lihat
+  // reloadCurrentMenu, selalu force=true, tidak kena cache ini). Kalau nanti
+  // kerasa data dari staf lain terlalu lama update, turunkan lagi angka ini.
+  const CACHE_TTL_MS = 90_000;
+  const lastLoadedRef = useRef({});
+  const masihSegar = (kunci) => Date.now() - (lastLoadedRef.current[kunci] || 0) < CACHE_TTL_MS;
+  const tandaiSudahDimuat = (kunci) => {
+    lastLoadedRef.current[kunci] = Date.now();
+  };
+
+  // Cache 90 detik di atas cuma hidup di memori (lastLoadedRef) — jadi tiap
+  // kali browser di-refresh atau menu dibuka di tab/device baru, cache itu
+  // "amnesia" (lastLoadedRef.current kosong lagi) dan loadCore() SELALU
+  // narik ulang ~13 tabel dari nol walau datanya baru saja diambil beberapa
+  // detik sebelumnya. localStorage TIDAK amnesia lintas refresh/tab, jadi
+  // dipakai di sini sebagai lapisan cache tambahan KHUSUS untuk grup "core"
+  // (loadCore) — grup yang paling sering ditarik karena hampir semua menu
+  // butuh dia (lihat loadForMenu). Bukan pengganti cache di atas, cuma
+  // nyambungin freshness-nya lintas reload. TTL & semantik force=true tetap
+  // sama persis (lihat catatan CACHE_TTL_MS di atas) — cuma sumber "kapan
+  // terakhir dimuat & datanya apa" yang ditambah localStorage.
+  const CORE_CACHE_KEY = "selma-cache-core-v1";
+  const bacaCacheCoreLokal = () => {
+    try {
+      const raw = localStorage.getItem(CORE_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.disimpanPada !== "number") return null;
+      if (Date.now() - parsed.disimpanPada >= CACHE_TTL_MS) return null;
+      return parsed;
+    } catch {
+      // localStorage penuh/diblokir browser/corrupt JSON — anggap saja tidak
+      // ada cache, jatuh balik ke fetch normal (tidak pernah bikin error).
+      return null;
+    }
+  };
+  const simpanCacheCoreLokal = (data) => {
+    try {
+      localStorage.setItem(CORE_CACHE_KEY, JSON.stringify({ disimpanPada: Date.now(), data }));
+    } catch {
+      // Kalau gagal simpan (mis. quota localStorage penuh), tidak masalah —
+      // ini cuma optimisasi, app tetap jalan seperti sebelum ada cache ini,
+      // cuma tidak dapat manfaat "skip fetch pas refresh" kali ini saja.
+    }
+  };
+
+  // Batas bawah default (awal bulan sebelumnya, jadi bulan berjalan + 1
+  // bulan ke belakang) buat tabel log yang terus nambah tanpa henti
+  // (keuangan_transaksi, marketplace_transaksi, & histori pengajuan_restock
+  // yang sudah direspon) — pola sama seperti awalRentangAbsensiDefault di
+  // lib/absensi.js. Filter "Bulan & Tahun" di Dashboard ikut dibatasi ke
+  // rentang ini juga (dikonfirmasi user, Okt 2026) — kalau nanti perlu
+  // lihat lebih jauh ke belakang lagi, naikkan jumlah bulannya di sini.
+  const awalRentangEgressDefault = () => {
+    const now = new Date();
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  // Taruh hasil loadCore (baik dari fetch PostgREST maupun dari cache
+  // localStorage, lihat bacaCacheCoreLokal/simpanCacheCoreLokal di atas) ke
+  // state — dipisah dari loadCore supaya kedua sumber itu (fetch & cache)
+  // pakai jalur setState yang SAMA PERSIS, tidak ada logic yang kegandaan
+  // atau ketinggalan salah satu.
+  const terapkanDataCore = useCallback((data) => {
+    setItems(data.items || []);
+    setPesananMasuk(data.pesananMasuk || []);
+    setSuppliers(data.suppliers || []);
+    setSkuMaster(data.skuMaster || []);
+    setRak(data.rak || []);
+    setMaster(data.masterGrouped || {});
+    setSettings(data.settings || null);
+    setPenempatan(data.penempatan || []);
+    setStockHistory(data.stockHistory || []);
+    setRakEvents(data.rakEvents || []);
+    setMarketplaceNotifAck(data.marketplaceNotifAck || []);
+    setPengajuanRestock(data.pengajuanRestock || []);
+  }, []);
+
+  const loadCore = useCallback(async (force = false) => {
+    if (!force && masihSegar("core")) return;
+    // Belum fresh di memori (mis. baru saja refresh browser) — cek dulu
+    // localStorage sebelum menembak PostgREST. Kalau force=true (tombol
+    // "Muat ulang" atau habis Simpan/Hapus), lewati ini seperti biasa.
+    if (!force) {
+      const cacheLokal = bacaCacheCoreLokal();
+      if (cacheLokal) {
+        terapkanDataCore(cacheLokal.data);
+        tandaiSudahDimuat("core");
+        return;
+      }
+    }
+    // stock_history & rak_events SENGAJA TIDAK ditarik dari tabel aslinya di
+    // sini (keduanya log yang terus bertambah, bisa jadi jauh lebih besar
+    // dari tabel lain) — dipakai lewat view *_latest yang cuma balikin 1
+    // baris per SKU/rak (lihat hemat_egress_views.sql). Riwayat stok LENGKAP
+    // ditarik terpisah oleh loadRiwayatStokFull(), cuma saat halaman Stok >
+    // Riwayat Stok dibuka. Ini perubahan Sept 2026 buat menekan PostgREST
+    // egress yang sebelumnya ~500MB/hari — dua tabel log inilah biang utamanya.
+    const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsSkuRes, rakEventsRakDariRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
+      sbAll(`items?select=${KOLOM_ITEMS}&order=created_at.desc`),
+      sbAll("pesanan_masuk?select=*&order=created_at.desc"),
+      sbAll("suppliers?select=*&order=nama"),
+      sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
+      sbAll("rak?select=*&order=code"),
+      sbAll("master_data?select=*&order=label"),
+      sb("settings?select=*"),
+      sbAll(`penempatan?select=${KOLOM_PENEMPATAN}&order=created_at.desc`),
+      sbAll("stock_history_latest?select=*"),
+      sbAll("rak_events_latest_sku?select=*"),
+      sbAll("rak_events_latest_rak_dari?select=*"),
+      sbAll("marketplace_notif_ack?select=*"),
+      // Status "menunggu" TETAP ditarik berapa pun umurnya (masih perlu
+      // ditindaklanjuti) — cuma histori yang SUDAH direspon (disetujui/
+      // ditolak) yang dibatasi ke bulan berjalan + 1 bulan sebelumnya, sesuai
+      // kebutuhan riil (badge sidebar cuma butuh yang menunggu; PersetujuanRestock
+      // & Dashboard cuma tampilkan histori 10 terakhir / bulan berjalan).
+      sbAll(
+        `pengajuan_restock?select=*&order=created_at.desc&or=(status.eq.menunggu,created_at.gte.${awalRentangEgressDefault()})`
+      ),
+    ]);
+    const grouped = {};
+    (masterRes || []).forEach((m) => {
+      grouped[m.tipe] = grouped[m.tipe] || [];
+      grouped[m.tipe].push(m);
+    });
+    const dataCore = {
+      items: itemsRes || [],
+      pesananMasuk: pesananMasukRes || [],
+      suppliers: supplierRes || [],
+      skuMaster: skuRes || [],
+      rak: rakRes || [],
+      masterGrouped: grouped,
+      settings: (settingsRes || [])[0] || null,
+      penempatan: penempatanRes || [],
+      stockHistory: historyRes || [],
+      // Gabungan dua view "terbaru" — latestRakEventBySku/latestRakEventByRakDari
+      // di lib/marketplaceNotif.js membandingkan created_at sendiri per key,
+      // jadi aman digabung begini walau urutannya tidak dijamin selang-seling.
+      rakEvents: [...(rakEventsSkuRes || []), ...(rakEventsRakDariRes || [])],
+      marketplaceNotifAck: notifAckRes || [],
+      pengajuanRestock: pengajuanRestockRes || [],
+    };
+    simpanCacheCoreLokal(dataCore);
+    terapkanDataCore(dataCore);
+    tandaiSudahDimuat("core");
+  }, []);
+
+  const loadGrosir = useCallback(async (force = false) => {
+    if (!force && masihSegar("grosir")) return;
+    const [pelangganRes, tokoRes, produkManualRes, pesananRes, pembayaranRes, depositRes] = await Promise.all([
+      sbAll("grosir_pelanggan?select=*&order=nama"),
+      sbAll("grosir_toko?select=*&order=nama_toko"),
+      sbAll("grosir_produk_manual?select=*&order=nama_produk"),
+      sbAll("grosir_pesanan?select=*&order=created_at.desc"),
+      sbAll("grosir_pembayaran?select=*&order=created_at.desc"),
+      sbAll("grosir_deposit?select=*&order=created_at.desc"),
+    ]);
+    setPelangganGrosir(pelangganRes || []);
+    setTokoGrosir(tokoRes || []);
+    setProdukManualGrosir(produkManualRes || []);
+    setPesananGrosir(pesananRes || []);
+    setPembayaranGrosir(pembayaranRes || []);
+    setDepositGrosir(depositRes || []);
+    tandaiSudahDimuat("grosir");
+  }, []);
+
+  // Riwayat stok LENGKAP (seluruh baris, bukan cuma yang terbaru per SKU) —
+  // dulu ikut ditarik di loadCore() SETIAP pindah menu walau cuma dipakai di
+  // satu halaman (Stok > Riwayat Stok). Sekarang dipisah jadi loader sendiri,
+  // cuma dipanggil saat halaman itu benar-benar dibuka (lihat useEffect di
+  // bawah navigate()) — supaya tabel log yang terus bertambah ini tidak ikut
+  // membebani egress di menu-menu lain yang sama sekali tidak menampilkannya.
+  const loadRiwayatStokFull = useCallback(async (force = false) => {
+    if (!force && masihSegar("riwayat-stok")) return;
+    const res = await sbAll("stock_history?select=*&order=created_at.desc");
+    setStockHistoryFull(res || []);
+    tandaiSudahDimuat("riwayat-stok");
+  }, []);
+
+  // Riwayat Barang Rusak — dulu ikut ditarik di loadCore() SETIAP pindah
+  // menu (termasuk menu yang sama sekali tidak menampilkannya), padahal
+  // cuma dipakai di satu halaman (Data Barang > Reject, lihat pages/Rusak.jsx
+  // — dicek: TIDAK dipakai di badge/ringkasan Dashboard manapun). Tabel ini
+  // terus bertambah seiring waktu (log kerusakan barang, tidak pernah
+  // berkurang), jadi dipisah jadi loader sendiri seperti loadRiwayatStokFull,
+  // cuma dipanggil saat sub-halaman itu benar-benar dibuka — supaya tidak
+  // ikut membebani egress di menu-menu lain.
+  const loadBarangRusak = useCallback(async (force = false) => {
+    if (!force && masihSegar("barang-rusak")) return;
+    const res = await sbAll("barang_rusak?select=*&order=created_at.desc");
+    setBarangRusak(res || []);
+    tandaiSudahDimuat("barang-rusak");
+  }, []);
+
+  const loadKeuangan = useCallback(async (force = false) => {
+    if (!force && masihSegar("keuangan")) return;
+    // Dibatasi ke bulan berjalan + 1 bulan sebelumnya (bukan seluruh histori)
+    // — tabel ini terus nambah tanpa henti; lihat catatan di
+    // awalRentangEgressDefault di atas.
+    const keuanganRes = await sbAll(
+      `keuangan_transaksi?select=*&tanggal=gte.${awalRentangEgressDefault()}&order=tanggal.desc`
+    );
+    setKeuanganTransaksi(keuanganRes || []);
+    tandaiSudahDimuat("keuangan");
+  }, []);
+
+  // Data modul Marketplace (Shopee/TikTok/Lazada) — lihat catatan lengkap di
+  // saldoMarketplace() (lib/api.js). Tabel sendiri, terpisah dari
+  // keuangan_transaksi, cuma ditarik kalau lagi buka menu ini (atau dashboard).
+  const loadMarketplace = useCallback(async (force = false) => {
+    if (!force && masihSegar("marketplace")) return;
+    // Dibatasi ke bulan berjalan + 1 bulan sebelumnya juga — sama alasannya
+    // seperti keuangan_transaksi di atas.
+    const res = await sbAll(
+      `marketplace_transaksi?select=*&tanggal=gte.${awalRentangEgressDefault()}&order=tanggal.desc`
+    );
+    setMarketplaceTransaksi(res || []);
+    tandaiSudahDimuat("marketplace");
+  }, []);
+
+  const loadAbsensi = useCallback(async (force = false) => {
+    if (!force && masihSegar("absensi")) return;
+    // Teruskan `force` ke listAbsensi/listKaryawan juga (lib/absensi.js
+    // sekarang punya cache singkat sendiri) — supaya "Muat ulang" manual
+    // benar-benar narik data baru, bukan ikut kena cache 45 detik di sana.
+    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(force), listKaryawan(force)]);
+    setAbsensiRows(absensiRes || []);
+    setKaryawanList(karyawanRes || []);
+    tandaiSudahDimuat("absensi");
+  }, []);
+
+  // Bungkus 1+ loader di atas jadi satu pemanggilan dengan indikator
+  // loading & error yang seragam — persis perilaku loadAll() yang lama.
+  // `force` diteruskan ke tiap loader supaya bisa lewati cache di atas
+  // kalau memang perlu data yang benar-benar baru (lihat loadAll).
+  const runLoaders = useCallback(async (loaders, force = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await Promise.all(loaders.map((fn) => fn(force)));
+    } catch (e) {
+      setError(e.message || "Gagal memuat data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // loadAll SELALU force (bypass cache) — sekarang cuma dipakai load pertama
+  // app dibuka & tombol "Muat ulang" manual. Refresh setelah form/modal
+  // disimpan pakai reloadCurrentMenu() (di bawah loadForMenu), bukan ini lagi.
+  const loadAll = useCallback(
+    () => runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi, loadBarangRusak], true),
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi, loadBarangRusak]
+  );
+
+  // Data apa saja yang perlu ditarik tergantung menu yang dituju — dashboard
+  // butuh semuanya (dia nampilin ringkasan tiap modul dalam beberapa tab),
+  // Grosir & Keuangan cuma butuh datanya sendiri (+ core buat badge &
+  // data gabungan seperti skuMasterGrosir), sisanya cukup loadCore saja.
+  // TIDAK pakai force — kalau grup datanya baru saja dimuat (<45 detik
+  // lalu) lewat pindah menu sebelumnya, loader di atas otomatis skip.
+  // `force` diteruskan ke runLoaders/tiap loader — dipakai reloadCurrentMenu()
+  // di bawah supaya refresh setelah SIMPAN/HAPUS tetap bypass cache 45 detik
+  // (sama seperti loadAll dulu), tapi cuma buat grup data yang relevan untuk
+  // menu yang lagi dibuka, bukan lagi SEMUA 25 tabel tiap kali.
+  const loadForMenu = useCallback(
+    (menu, force = false) => {
+      if (menu === "dashboard") return runLoaders([loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi], force);
+      if (menu === "grosir") return runLoaders([loadCore, loadGrosir], force);
+      // Pelanggan dulunya sub-menu "grosir" (jadi datanya otomatis ikut ke-load
+      // lewat baris di atas) — sekarang menu sendiri, jadi didaftarkan terpisah
+      // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
+      if (menu === "pelanggan") return runLoaders([loadCore, loadGrosir], force);
+      // Sama seperti "pelanggan" di atas — "toko" (Toko Pengirim) juga dulu
+      // sub-menu "grosir", sekarang menu sendiri, jadi didaftarkan terpisah
+      // di sini supaya loadGrosir tetap jalan saat menu ini dibuka langsung.
+      if (menu === "toko") return runLoaders([loadCore, loadGrosir], force);
+      // Reseller pakai data Grosir (pelanggan/produk manual/pesanan/pembayaran/
+      // deposit) SEKALIGUS Keuangan (riwayat transaksi ditampilkan di sana) —
+      // sebelum ini menu "reseller" tidak terdaftar sama sekali di sini
+      // (jatuh ke fallback loadCore saja), makanya dulu masih dipaksa pakai
+      // loadAll penuh supaya kedua grup itu ikut ke-refresh setelah simpan.
+      if (menu === "reseller") return runLoaders([loadCore, loadGrosir, loadKeuangan], force);
+      // loadMarketplace juga ditarik di sini supaya Laporan Keuangan bisa
+      // menampilkan info tambahan "Iklan Marketplace" periode berjalan
+      // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
+      if (menu === "keuangan") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
+      // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
+      // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
+      if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan], force);
+      // Marketplace butuh master (rekening, buat form Pencairan) + data
+      // marketplace_transaksi sendiri. loadKeuangan TIDAK perlu ditarik di
+      // sini — pencairan cuma nulis satu baris baru ke keuangan_transaksi,
+      // tidak perlu baca isinya dulu.
+      if (menu === "penjualan-marketplace") return runLoaders([loadCore, loadMarketplace], force);
+      return runLoaders([loadCore], force);
+    },
+    [runLoaders, loadCore, loadGrosir, loadKeuangan, loadMarketplace, loadAbsensi]
+  );
+
+  // Dipakai sebagai `reload` di ModalRouter & tiap halaman (dulu semuanya
+  // pakai loadAll langsung) — sekarang setelah SIMPAN/HAPUS cuma menarik
+  // ulang grup data yang relevan untuk menu yang SEDANG dibuka (persis
+  // logika loadForMenu di atas), bukan lagi SEMUA 25 tabel tiap kali. Tetap
+  // force=true supaya cache 45 detik tidak bikin hasil simpanan sendiri
+  // ketahan/telat kelihatan. Data grup lain (mis. Keuangan waktu lagi buka
+  // Barang Datang) tetap otomatis ke-refresh nanti begitu user pindah ke
+  // menu itu (lihat navigate() -> loadForMenu), jadi tidak ada yang jadi
+  // basi permanen — cuma tidak lagi ditarik sia-sia di menu yang tidak
+  // menampilkannya.
+  const reloadCurrentMenu = useCallback(() => {
+    const p = [loadForMenu(nav.menu, true)];
+    // Reject (Data Barang > Reject) punya aksi hapus/tambah catatan rusak
+    // langsung di halamannya sendiri — loadForMenu("sku-harga") TIDAK ikut
+    // menarik loadBarangRusak lagi (lihat catatan di loadBarangRusak),
+    // jadi ditambahkan manual di sini supaya catatan yang baru
+    // disimpan/dihapus langsung kelihatan tanpa pindah menu dulu.
+    if (nav.menu === "sku-harga" && nav.sub === "reject") p.push(loadBarangRusak(true));
+    return Promise.all(p);
+  }, [loadForMenu, nav.menu, nav.sub, loadBarangRusak]);
+
+  useEffect(() => {
+    // Sengaja cuma sekali saat app pertama dibuka, pakai menu awal (nav.menu)
+    // saat itu — pindah menu berikutnya sudah ditangani fungsi navigate().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadForMenu(nav.menu);
+    // Kalau nav awal (dipulihkan dari sessionStorage) memang sudah di Riwayat
+    // Stok — mis. user reload browser di halaman itu — riwayat lengkapnya
+    // perlu ditarik juga di sini, karena navigate() (yang biasanya menangani
+    // ini) tidak ikut kepanggil saat mount pertama.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (nav.menu === "stok" && nav.sub === "riwayat") loadRiwayatStokFull();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (nav.menu === "sku-harga" && nav.sub === "reject") loadBarangRusak();
+  }, []);
+
+  // Seluruh badge/ringkasan/notifikasi di bawah ini dihitung ulang dari
+  // tabel-tabel inti (items, skuMaster, rak, penempatan, dst) — beberapa di
+  // antaranya (rakTerpakai, cariPerluDitempatkanUlang, dst) melakukan
+  // pencarian bolak-balik antar array (bukan cuma satu kali lewat), jadi
+  // biayanya naik seiring jumlah SKU/rak/barang. SEBELUMNYA blok ini dihitung
+  // ulang setiap kali MainApp render — termasuk untuk hal yang sama sekali
+  // tidak menyentuh tabel-tabel ini (buka/tutup modal, pindah tab, dsb),
+  // jadi kerasa lag tiap klik begitu jumlah data sudah banyak. Sekarang
+  // dibungkus useMemo supaya cuma dihitung ulang kalau salah satu tabel
+  // sumbernya (items/skuMaster/rak/penempatan/marketplaceNotifAck/
+  // stockHistory/rakEvents/pengajuanRestock) benar-benar berubah — isi &
+  // urutan perhitungannya PERSIS SAMA seperti sebelumnya, cuma waktu
+  // eksekusinya yang berubah (di-cache, bukan diulang tiap render).
+  const derived = useMemo(() => {
+    const stageCounts = STAGE_ORDER.reduce((acc, s) => {
+      acc[s] = items.filter((i) => i.stage === s).length;
+      return acc;
+    }, {});
+    const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
+
+    // SKU yang sudah tuntas alur barangnya (stage "selesai" — sama dengan sudah
+    // diupload ke marketplace, lihat quickAdvance) — inilah barang yang boleh
+    // dipilih untuk transaksi Grosir. Ditandai lewat flag "siapGrosir" di
+    // skuMaster (bukan filter array) supaya skuMaster tetap utuh dipakai
+    // halaman lain (SKU & Harga, Stok, Rak, Marketplace, Laporan, dll).
+    const skuSelesaiSet = new Set(
+      items.filter((i) => i.stage === "selesai" && i.sku).map((i) => i.sku)
+    );
+    const skuMasterGrosir = skuMaster.map((s) => ({ ...s, siapGrosir: skuSelesaiSet.has(s.sku) }));
+    const belumSelesaiCount = items.filter((i) => i.stage !== "selesai").length;
+
+    // SKU tanpa rak = barang yang belum pernah ditempatkan + SKU yang rak lamanya
+    // sudah ditimpa SKU lain (butuh ditempatkan ulang).
+    const perluRakUlang = cariPerluDitempatkanUlang(skuMaster, penempatan);
+    const tanpaRakCount = stageCounts.rak + perluRakUlang.length;
+    // Rak Terpakai (Dashboard) = rak yang benar-benar masih diisi SKU berstok > 0,
+    // pakai logika yang SAMA dengan Peta Rak supaya angkanya selalu sinkron.
+    const rakTerpakaiList = rakTerpakai(rak, penempatan, skuMaster);
+    const rakTerpakaiCount = rakTerpakaiList.length;
+    // Rak Kosong (Dashboard) = rak yang terdaftar tapi tidak ada di daftar rak terpakai.
+    const rakKosong = rak.filter((r) => !rakTerpakaiList.some((t) => t.id === r.id));
+    // Sisa di Gudang = SKU berstok yang belum sepenuhnya masuk rak (belum pernah
+    // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
+    const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
+    // Cek Marketplace — notifikasi stok tipis/habis, stok bertambah, dan rak
+    // berubah, dikurangi yang sudah dikonfirmasi (marketplace_notif_ack).
+    const ackedKeys = new Set((marketplaceNotifAck || []).map((a) => a.notif_key));
+    const historyMap = latestHistoryBySku(stockHistory);
+    const notifTipis = computeStokTipisNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+    const notifTambah = computeStokTambahNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+    const notifRak = computeRakBerubahNotifs(skuMaster, rak, penempatan).filter((n) => !ackedKeys.has(n.key));
+    const notifRakPindah = computeRakPindahNotifs(rakEvents).filter((n) => !ackedKeys.has(n.key));
+    const notifRakKosong = computeRakKosongNotifs(rak, penempatan, rakEvents).filter((n) => !ackedKeys.has(n.key));
+    const cekMarketplaceCount =
+      notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
+
+    const stokMenipisCount = skuMaster.filter(
+      (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
+    ).length;
+
+    // Badge di menu "Persetujuan Restok" (sidebar) = jumlah pengajuan restock
+    // yang masih "menunggu" — supaya owner/superadmin langsung lihat ada yang
+    // perlu ditinjau tanpa harus buka halamannya dulu (reminder pasif, bukan
+    // notifikasi push — cukup untuk kasus ini karena menu ini memang sudah
+    // dibatasi hanya untuk role owner/superadmin di ROLE_MENUS).
+    const pengajuanMenungguCount = (pengajuanRestock || []).filter((p) => p.status === "menunggu").length;
+
+    const sidebarBadges = withParentBadges(NAV, {
+      "persetujuan-restock": pengajuanMenungguCount,
+      "sku-harga.buat": stageCounts.sku,
+      "rak.tempatkan": tanpaRakCount,
+      "rak.gudang": sisaGudangList.length,
+      "stok.menipis": stokMenipisCount,
+      foto: stageCounts.verifikasi,
+      "marketplace.belum": stageCounts.marketplace,
+      "marketplace.cek": cekMarketplaceCount,
+    });
+    const belumSelesaiBreakdown = STAGE_ORDER.filter((s) => s !== "selesai")
+      .map((s) => ({ label: STAGE_META[s]?.label || s, count: stageCounts[s] }))
+      .filter((s) => s.count > 0);
+
+    return {
+      stageCounts,
+      totalStok,
+      skuMasterGrosir,
+      belumSelesaiCount,
+      perluRakUlang,
+      tanpaRakCount,
+      rakTerpakaiList,
+      rakTerpakaiCount,
+      rakKosong,
+      sisaGudangList,
+      notifTipis,
+      notifTambah,
+      notifRak,
+      notifRakPindah,
+      notifRakKosong,
+      cekMarketplaceCount,
+      stokMenipisCount,
+      pengajuanMenungguCount,
+      sidebarBadges,
+      belumSelesaiBreakdown,
+    };
+  }, [items, skuMaster, rak, penempatan, marketplaceNotifAck, stockHistory, rakEvents, pengajuanRestock]);
+
+  const {
+    stageCounts,
+    totalStok,
+    skuMasterGrosir,
+    belumSelesaiCount,
+    perluRakUlang,
+    tanpaRakCount,
+    rakTerpakaiList,
+    rakTerpakaiCount,
+    rakKosong,
+    sisaGudangList,
+    notifTipis,
+    notifTambah,
+    notifRak,
+    notifRakPindah,
+    notifRakKosong,
+    cekMarketplaceCount,
+    stokMenipisCount,
+    pengajuanMenungguCount,
+    sidebarBadges,
+    belumSelesaiBreakdown,
+  } = derived;
+
+  // Notif sekali saat data pertama kali selesai dimuat (bukan tiap reload manual).
+  useEffect(() => {
+    if (!loading && !hasNotifiedRef.current && items.length > 0) {
+      hasNotifiedRef.current = true;
+      if (belumSelesaiCount > 0) {
+        const rincian = belumSelesaiBreakdown
+          .map((s) => `${s.count} di ${s.label}`)
+          .join(", ");
+        showToast(`${belumSelesaiCount} barang belum selesai: ${rincian}`, "warn", 6000);
+      }
+    }
+  }, [loading, items, belumSelesaiCount]);
+
+  // Notif terpisah khusus SKU tanpa rak — digeser sedikit biar tidak tabrakan
+  // dengan toast "belum selesai" di atas (toast cuma bisa tampil satu per waktu).
+  useEffect(() => {
+    if (!loading && !hasNotifiedRakRef.current && items.length > 0) {
+      hasNotifiedRakRef.current = true;
+      if (tanpaRakCount > 0) {
+        const delay = belumSelesaiCount > 0 ? 6300 : 0;
+        setTimeout(() => {
+          showToast(`${tanpaRakCount} SKU belum punya rak — cek Tempatkan Barang`, "warn", 5000);
+        }, delay);
+      }
+    }
+  }, [loading, items, tanpaRakCount, belumSelesaiCount]);
+
+  const { menuLabel, subLabel } = findNavLabel(nav.menu, nav.sub);
+  const canSee = (menuKey) => allowed.includes(menuKey);
+  const canSeeSub = (menuKey, subKey) => {
+    if (!subKey) return true;
+    const subs = allowedSubMenus(session.role, menuKey);
+    return !subs || subs.includes(subKey);
+  };
+
+  return (
+    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex overflow-x-hidden">
+      <AppShell
+        active={nav}
+        onNavigate={navigate}
+        badges={sidebarBadges}
+        allowedMenuKeys={allowed}
+        user={session}
+        onLogout={onLogout}
+        setModal={setModal}
+        menuLabel={menuLabel}
+        subLabel={subLabel}
+        canSee={canSee}
+        belumSelesaiCount={belumSelesaiCount}
+        tanpaRakCount={tanpaRakCount}
+        navigate={navigate}
+        loadAll={loadAll}
+        loading={loading}
+      >
+        <main className="px-5 py-6 w-full">
+          {error && (
+            <div className="mb-4 flex items-center gap-2 bg-md-error-container text-md-on-error-container text-sm px-4 py-3 rounded-md-md">
+              <AlertCircle size={16} /> {error}
+            </div>
+          )}
+
+          {loading && items.length === 0 ? (
+            <div className="flex items-center justify-center py-24 text-md-on-surface-variant gap-2 text-sm">
+              <Loader2 size={18} className="animate-spin" /> Memuat data…
+            </div>
+          ) : !canSee(nav.menu) || !canSeeSub(nav.menu, nav.sub) ? (
+            <div className="flex items-center justify-center py-24 text-md-on-surface-variant text-sm">
+              Anda tidak punya akses ke halaman ini.
+            </div>
+          ) : (
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-24 text-md-on-surface-variant gap-2 text-sm">
+                  <Loader2 size={18} className="animate-spin" /> Memuat halaman…
+                </div>
+              }
+            >
+              {nav.menu === "dashboard" && (
+                <Dashboard
+                  stageCounts={stageCounts}
+                  skuCount={skuMaster.length}
+                  totalStok={totalStok}
+                  rakCount={rakTerpakaiCount}
+                  rakKosong={rakKosong}
+                  items={items}
+                  skuMaster={skuMaster}
+                  onNavigate={navigate}
+                  setModal={setModal}
+                  pesananMasuk={pesananMasuk}
+                  penempatan={penempatan}
+                  pesananGrosir={pesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  pelangganGrosir={pelangganGrosir}
+                  keuanganTransaksi={keuanganTransaksi}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  master={master}
+                  absensiRows={absensiRows}
+                  karyawanList={karyawanList}
+                  pengajuanRestock={pengajuanRestock}
+                />
+              )}
+              {nav.menu === "persetujuan-restock" && (
+                <PersetujuanRestock
+                  pengajuanRestock={pengajuanRestock}
+                  session={session}
+                  setModal={setModal}
+                  filterJenis={nav.sub}
+                  onNavigate={navigate}
+                  skuMaster={skuMaster}
+                  items={items}
+                  suppliers={suppliers}
+                  pesananMasuk={pesananMasuk}
+                  master={master}
+                />
+              )}
+              {nav.menu === "barang-datang" && (
+                <BarangDatang
+                  sub={nav.sub || "datang"}
+                  pesananMasuk={pesananMasuk}
+                  suppliers={suppliers}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "barang-masuk" && (
+                <BarangMasuk items={items} setModal={setModal} />
+              )}
+              {nav.menu === "data-barang" && (
+                <DataBarang items={items} penempatan={penempatan} skuMaster={skuMaster} setModal={setModal} />
+              )}
+              {nav.menu === "sku-harga" && (
+                <SkuHarga
+                  sub={nav.sub || "buat"}
+                  items={items}
+                  skuMaster={skuMaster}
+                  master={master}
+                  penempatan={penempatan}
+                  setModal={setModal}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  session={session}
+                  barangRusak={barangRusak}
+                  pesananMasuk={pesananMasuk}
+                />
+              )}
+              {nav.menu === "stok" && (
+                <Stok
+                  sub={nav.sub || "barang"}
+                  skuMaster={skuMaster}
+                  penempatan={penempatan}
+                  stockHistory={stockHistoryFull}
+                  pengajuanRestock={pengajuanRestock}
+                  session={session}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "rak" && (
+                <Rak
+                  sub={nav.sub || "tempatkan"}
+                  items={items}
+                  rak={rak}
+                  penempatan={penempatan}
+                  skuMaster={skuMaster}
+                  master={master}
+                  pengajuanRestock={pengajuanRestock}
+                  session={session}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "cetak-label" && (
+                <CetakLabel items={items} skuMaster={skuMaster} penempatan={penempatan} rak={rak} master={master} />
+              )}
+              {nav.menu === "foto" && (
+                <FotoProduk items={items} setModal={setModal} skuMaster={skuMaster} settings={settings} />
+              )}
+              {nav.menu === "marketplace" && (
+                <Marketplace
+                  sub={nav.sub || "belum"}
+                  items={items}
+                  quickAdvance={quickAdvance}
+                  setModal={setModal}
+                  skuMaster={skuMaster}
+                  rak={rak}
+                  penempatan={penempatan}
+                  stockHistory={stockHistory}
+                  navigate={navigate}
+                  notifTipis={notifTipis}
+                  notifTambah={notifTambah}
+                  notifRak={notifRak}
+                  notifRakPindah={notifRakPindah}
+                  notifRakKosong={notifRakKosong}
+                  ackNotif={ackNotif}
+                  session={session}
+                />
+              )}
+              {nav.menu === "grosir" && (
+                <Grosir
+                  sub={nav.sub || "semua-pesanan"}
+                  pelangganGrosir={pelangganGrosir}
+                  tokoGrosir={tokoGrosir}
+                  produkManualGrosir={produkManualGrosir}
+                  skuMaster={skuMasterGrosir}
+                  pesananGrosir={pesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "pelanggan" && (
+                <PelangganList
+                  pelangganGrosir={pelangganGrosir}
+                  pesananGrosir={pesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "toko" && (
+                <TokoList tokoGrosir={tokoGrosir} setModal={setModal} />
+              )}
+              {nav.menu === "toko-offline" && (
+                <TokoOffline
+                  sub={nav.sub || "input-harian"}
+                  master={master}
+                  keuanganTransaksi={keuanganTransaksi}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                />
+              )}
+              {nav.menu === "penjualan-marketplace" && (
+                <Penjualanmarketplace
+                  sub={nav.sub || "shopee"}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  master={master}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "reseller" && (
+                <Reseller
+                  sub={nav.sub || "toko"}
+                  pelangganGrosir={pelangganGrosir}
+                  produkManualGrosir={produkManualGrosir}
+                  skuMaster={skuMasterGrosir}
+                  penempatan={penempatan}
+                  pesananGrosir={pesananGrosir}
+                  pembayaranGrosir={pembayaranGrosir}
+                  depositGrosir={depositGrosir}
+                  keuanganTransaksi={keuanganTransaksi}
+                  session={session}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "keuangan" && (
+                <Keuangan
+                  sub={nav.sub || "transaksi"}
+                  keuanganTransaksi={keuanganTransaksi}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  master={master}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "absensi" && (
+                <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} />
+              )}
+              {nav.menu === "pengaturan" && (
+                <Pengaturan settings={settings} reload={reloadCurrentMenu} showToast={showToast} session={session} />
+              )}
+              {nav.menu === "panduan" && <Panduan session={session} />}
+            </Suspense>
+          )}
+        </main>
+      </AppShell>
+
+      {modal && (
+        <ModalRouter
+          modal={modal}
+          setModal={setModal}
+          master={master}
+          settings={settings}
+          rakList={rak}
+          skuMaster={skuMasterGrosir}
+          penempatan={penempatan}
+          items={items}
+          pesananMasuk={pesananMasuk}
+          suppliers={suppliers}
+          keuanganTransaksi={keuanganTransaksi}
+          marketplaceTransaksi={marketplaceTransaksi}
+          saving={saving}
+          setSaving={setSaving}
+          reload={reloadCurrentMenu}
+          showToast={showToast}
+          session={session}
+          quickAdvance={quickAdvance}
+          pelangganGrosir={pelangganGrosir}
+          tokoGrosir={tokoGrosir}
+          produkManualGrosir={produkManualGrosir}
+          pesananGrosir={pesananGrosir}
+          pembayaranGrosir={pembayaranGrosir}
+          depositGrosir={depositGrosir}
+        />
+      )}
+
+      {/* Snackbar Material 3 — sudut kecil (4px, khas snackbar, beda dari
+          dialog/kartu yang membulat besar), permukaan inverse + elevation 3. */}
+      {toast && (
+        <div
+          className={`fixed bottom-5 right-5 max-w-xs px-4 py-3.5 rounded-md-xs text-sm font-medium shadow-elevation-3 z-50 ${
+            toast.kind === "ok"
+              ? "bg-emerald-200 text-emerald-950"
+              : toast.kind === "warn"
+              ? "bg-md-primary text-md-on-primary"
+              : "bg-md-error-container text-md-on-error-container"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
 }
