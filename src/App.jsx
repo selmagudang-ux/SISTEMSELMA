@@ -102,6 +102,14 @@ const KOLOM_SKU_MASTER = [
   "stok", "barcode_supplier", "nonaktif",
 ].join(",");
 const KOLOM_PENEMPATAN = ["id", "created_at", "sku", "rak_code", "qty"].join(",");
+// Audit pemakaian tabel "suppliers" di seluruh src/ (Sept 2026, lanjutan dari
+// audit items/sku_master/penempatan di atas) — cuma 7 kolom ini yang benar-
+// benar dibaca/ditulis (SupplierForm, SupplierDatalist, ModelNamaDatalist,
+// syncSupplierMaster, SupplierList, filter di PersetujuanRestock). Beda
+// dengan pesanan_masuk/rak/master_data yang dioper ke banyak form kompleks
+// dengan puluhan kolom & penamaan variabel yang tumpang tindih antar tabel —
+// tabel ini kecil & pemakaiannya sempit, jadi lebih aman diaudit sekarang.
+const KOLOM_SUPPLIERS = ["id", "kode", "nama", "alamat", "telepon", "catatan", "models"].join(",");
 
 export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
@@ -556,6 +564,42 @@ function MainApp({ session, onLogout }) {
     lastLoadedRef.current[kunci] = Date.now();
   };
 
+  // Cache 90 detik di atas cuma hidup di memori (lastLoadedRef) — jadi tiap
+  // kali browser di-refresh atau menu dibuka di tab/device baru, cache itu
+  // "amnesia" (lastLoadedRef.current kosong lagi) dan loadCore() SELALU
+  // narik ulang ~13 tabel dari nol walau datanya baru saja diambil beberapa
+  // detik sebelumnya. localStorage TIDAK amnesia lintas refresh/tab, jadi
+  // dipakai di sini sebagai lapisan cache tambahan KHUSUS untuk grup "core"
+  // (loadCore) — grup yang paling sering ditarik karena hampir semua menu
+  // butuh dia (lihat loadForMenu). Bukan pengganti cache di atas, cuma
+  // nyambungin freshness-nya lintas reload. TTL & semantik force=true tetap
+  // sama persis (lihat catatan CACHE_TTL_MS di atas) — cuma sumber "kapan
+  // terakhir dimuat & datanya apa" yang ditambah localStorage.
+  const CORE_CACHE_KEY = "selma-cache-core-v1";
+  const bacaCacheCoreLokal = () => {
+    try {
+      const raw = localStorage.getItem(CORE_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.disimpanPada !== "number") return null;
+      if (Date.now() - parsed.disimpanPada >= CACHE_TTL_MS) return null;
+      return parsed;
+    } catch {
+      // localStorage penuh/diblokir browser/corrupt JSON — anggap saja tidak
+      // ada cache, jatuh balik ke fetch normal (tidak pernah bikin error).
+      return null;
+    }
+  };
+  const simpanCacheCoreLokal = (data) => {
+    try {
+      localStorage.setItem(CORE_CACHE_KEY, JSON.stringify({ disimpanPada: Date.now(), data }));
+    } catch {
+      // Kalau gagal simpan (mis. quota localStorage penuh), tidak masalah —
+      // ini cuma optimisasi, app tetap jalan seperti sebelum ada cache ini,
+      // cuma tidak dapat manfaat "skip fetch pas refresh" kali ini saja.
+    }
+  };
+
   // Batas bawah default (awal bulan sebelumnya, jadi bulan berjalan + 1
   // bulan ke belakang) buat tabel log yang terus nambah tanpa henti
   // (keuangan_transaksi, marketplace_transaksi, & histori pengajuan_restock
@@ -570,8 +614,39 @@ function MainApp({ session, onLogout }) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
 
+  // Taruh hasil loadCore (baik dari fetch PostgREST maupun dari cache
+  // localStorage, lihat bacaCacheCoreLokal/simpanCacheCoreLokal di atas) ke
+  // state — dipisah dari loadCore supaya kedua sumber itu (fetch & cache)
+  // pakai jalur setState yang SAMA PERSIS, tidak ada logic yang kegandaan
+  // atau ketinggalan salah satu.
+  const terapkanDataCore = useCallback((data) => {
+    setItems(data.items || []);
+    setPesananMasuk(data.pesananMasuk || []);
+    setSuppliers(data.suppliers || []);
+    setSkuMaster(data.skuMaster || []);
+    setRak(data.rak || []);
+    setMaster(data.masterGrouped || {});
+    setSettings(data.settings || null);
+    setPenempatan(data.penempatan || []);
+    setStockHistory(data.stockHistory || []);
+    setRakEvents(data.rakEvents || []);
+    setMarketplaceNotifAck(data.marketplaceNotifAck || []);
+    setPengajuanRestock(data.pengajuanRestock || []);
+  }, []);
+
   const loadCore = useCallback(async (force = false) => {
     if (!force && masihSegar("core")) return;
+    // Belum fresh di memori (mis. baru saja refresh browser) — cek dulu
+    // localStorage sebelum menembak PostgREST. Kalau force=true (tombol
+    // "Muat ulang" atau habis Simpan/Hapus), lewati ini seperti biasa.
+    if (!force) {
+      const cacheLokal = bacaCacheCoreLokal();
+      if (cacheLokal) {
+        terapkanDataCore(cacheLokal.data);
+        tandaiSudahDimuat("core");
+        return;
+      }
+    }
     // stock_history & rak_events SENGAJA TIDAK ditarik dari tabel aslinya di
     // sini (keduanya log yang terus bertambah, bisa jadi jauh lebih besar
     // dari tabel lain) — dipakai lewat view *_latest yang cuma balikin 1
@@ -582,7 +657,7 @@ function MainApp({ session, onLogout }) {
     const [itemsRes, pesananMasukRes, supplierRes, skuRes, rakRes, masterRes, settingsRes, penempatanRes, historyRes, rakEventsSkuRes, rakEventsRakDariRes, notifAckRes, pengajuanRestockRes] = await Promise.all([
       sbAll(`items?select=${KOLOM_ITEMS}&order=created_at.desc`),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
-      sbAll("suppliers?select=*&order=nama"),
+      sbAll(`suppliers?select=${KOLOM_SUPPLIERS}&order=nama`),
       sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
       sbAll("rak?select=*&order=code"),
       sbAll("master_data?select=*&order=label"),
@@ -601,26 +676,30 @@ function MainApp({ session, onLogout }) {
         `pengajuan_restock?select=*&order=created_at.desc&or=(status.eq.menunggu,created_at.gte.${awalRentangEgressDefault()})`
       ),
     ]);
-    setItems(itemsRes || []);
-    setPesananMasuk(pesananMasukRes || []);
-    setSuppliers(supplierRes || []);
-    setSkuMaster(skuRes || []);
-    setRak(rakRes || []);
     const grouped = {};
     (masterRes || []).forEach((m) => {
       grouped[m.tipe] = grouped[m.tipe] || [];
       grouped[m.tipe].push(m);
     });
-    setMaster(grouped);
-    setSettings((settingsRes || [])[0] || null);
-    setPenempatan(penempatanRes || []);
-    setStockHistory(historyRes || []);
-    // Gabungan dua view "terbaru" — latestRakEventBySku/latestRakEventByRakDari
-    // di lib/marketplaceNotif.js membandingkan created_at sendiri per key,
-    // jadi aman digabung begini walau urutannya tidak dijamin selang-seling.
-    setRakEvents([...(rakEventsSkuRes || []), ...(rakEventsRakDariRes || [])]);
-    setMarketplaceNotifAck(notifAckRes || []);
-    setPengajuanRestock(pengajuanRestockRes || []);
+    const dataCore = {
+      items: itemsRes || [],
+      pesananMasuk: pesananMasukRes || [],
+      suppliers: supplierRes || [],
+      skuMaster: skuRes || [],
+      rak: rakRes || [],
+      masterGrouped: grouped,
+      settings: (settingsRes || [])[0] || null,
+      penempatan: penempatanRes || [],
+      stockHistory: historyRes || [],
+      // Gabungan dua view "terbaru" — latestRakEventBySku/latestRakEventByRakDari
+      // di lib/marketplaceNotif.js membandingkan created_at sendiri per key,
+      // jadi aman digabung begini walau urutannya tidak dijamin selang-seling.
+      rakEvents: [...(rakEventsSkuRes || []), ...(rakEventsRakDariRes || [])],
+      marketplaceNotifAck: notifAckRes || [],
+      pengajuanRestock: pengajuanRestockRes || [],
+    };
+    simpanCacheCoreLokal(dataCore);
+    terapkanDataCore(dataCore);
     tandaiSudahDimuat("core");
   }, []);
 
