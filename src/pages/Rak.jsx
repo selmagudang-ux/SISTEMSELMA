@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search, LayoutGrid, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
-import { sameProdukKecualiUkuran, labelFor, sb, nextKode } from "../lib/api";
+import { sameProdukKecualiUkuran, labelFor, sb, sbAll, nextKode } from "../lib/api";
 
 // Cari kode rak terbaru untuk sebuah SKU (penempatan sudah diurutkan created_at desc).
 // Diekspor supaya halaman lain (Data Barang, Cetak Label) bisa pakai sumber yang sama
@@ -157,7 +157,12 @@ export async function simpanItemPesananGrosir({ pesananId, rows, skuMaster, pene
   for (const r of rows || []) {
     let produkManualId = r.produk_manual_id || null;
     if (r.sumber_produk === "manual" && !produkManualId) {
-      if (!produkManualList) produkManualList = await sb("grosir_produk_manual?select=id,kode");
+      // sbAll (bukan sb) — grosir_produk_manual sudah lewat 1000 baris, dan
+      // sb() cuma balikin 1000 baris pertama dari PostgREST (default page
+      // size), jadi kode PRM- terbesar bisa nggak kebaca -> nextKode()
+      // ngasih kode yang KELIHATANNYA baru padahal sudah dipakai baris lain
+      // yang kebetulan nggak kebaca, dan tabrakan unique constraint kode.
+      if (!produkManualList) produkManualList = await sbAll("grosir_produk_manual?select=id,kode");
       const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
       const [produkBaru] = await sb("grosir_produk_manual", {
         method: "POST",

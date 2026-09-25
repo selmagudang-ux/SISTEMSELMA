@@ -3,7 +3,7 @@ import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG, KATEGORI_PEMBAYARAN_SUPPLIER, REKENING_PEMBAYARAN_SUPPLIER, REKENING_ONGKIR_BARANG_DATANG } from "../lib/constants";
 import {
-  sb, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
+  sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
   detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang,
 } from "../lib/api";
@@ -2185,7 +2185,13 @@ export default function ModalRouter({
             for (const it of data.items) {
               let produkManualId = it.produk_manual_id || null;
               if (it.sumber_produk === "manual" && !produkManualId) {
-                if (!produkManualList) produkManualList = await sb("grosir_produk_manual?select=id,kode");
+                // sbAll (bukan sb) — grosir_produk_manual sudah lewat 1000
+                // baris, dan sb() cuma balikin 1000 baris pertama dari
+                // PostgREST (default page size), jadi kode PRM- terbesar
+                // bisa nggak kebaca -> nextKode() ngasih kode yang
+                // KELIHATANNYA baru padahal sudah dipakai baris lain yang
+                // kebetulan nggak kebaca, dan tabrakan unique constraint kode.
+                if (!produkManualList) produkManualList = await sbAll("grosir_produk_manual?select=id,kode");
                 const kodeBaru = nextKode(produkManualList, "kode", "PRM-");
                 const [produkBaru] = await sb("grosir_produk_manual", {
                   method: "POST",

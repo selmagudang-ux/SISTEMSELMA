@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, InputTanggal, InputRupiah } from "../components/ui";
 import {
-  sb, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
+  sb, sbAll, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
   tokoShopeeGudang,
 } from "../lib/api";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
@@ -854,7 +854,7 @@ export function BuatPesananReseller({
       //    sama).
       let pelangganIdFinal = pelangganId;
       if (!pelangganIdFinal && pelangganNamaBaru.trim()) {
-        const pelangganTerbaru = await sb("grosir_pelanggan?select=kode");
+        const pelangganTerbaru = await sbAll("grosir_pelanggan?select=kode");
         const kodeBaru = nextKode(pelangganTerbaru, "kode", "PLG-");
         const [pelangganBaru] = await sb("grosir_pelanggan", {
           method: "POST",
@@ -1307,7 +1307,7 @@ export function BuatPesananResellerCekout({
       // 0. Pelanggan baru (kalau ada) — pola sama persis dengan BuatPesananReseller.
       let pelangganIdFinal = pelangganId;
       if (!pelangganIdFinal && pelangganNamaBaru.trim()) {
-        const pelangganTerbaru = await sb("grosir_pelanggan?select=kode");
+        const pelangganTerbaru = await sbAll("grosir_pelanggan?select=kode");
         const kodeBaru = nextKode(pelangganTerbaru, "kode", "PLG-");
         const [pelangganBaru] = await sb("grosir_pelanggan", {
           method: "POST",

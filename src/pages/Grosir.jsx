@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal, InputRupiah } from "../components/ui";
 import {
-  sb, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
+  sb, sbAll, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
 } from "../lib/api";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
@@ -1052,7 +1052,11 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
         // dari state lokal yang bisa basi kalau ada pesanan lain baru saja
         // dibuat tapi halaman belum sempat reload) — supaya kode PLG-xxxx
         // yang dihasilkan tidak pernah tabrakan dengan yang baru saja dibuat.
-        const pelangganTerbaru = await sb("grosir_pelanggan?select=kode");
+        // sbAll (bukan sb) — sb() cuma balikin 1000 baris pertama dari
+        // PostgREST, jadi kalau pelanggan sudah lewat 1000, kode PLG-
+        // terbesar bisa nggak kebaca -> nextKode() bisa ngasih kode yang
+        // sudah dipakai (sama seperti bug kode PRM- di grosir_produk_manual).
+        const pelangganTerbaru = await sbAll("grosir_pelanggan?select=kode");
         const kodeBaru = nextKode(pelangganTerbaru, "kode", "PLG-");
         const [pelangganBaru] = await sb("grosir_pelanggan", {
           method: "POST",
