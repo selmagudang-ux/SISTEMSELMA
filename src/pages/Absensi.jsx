@@ -86,6 +86,9 @@ function RekapAbsensi({ showToast, role }) {
   const [rows, setRows] = useState(null);
   const [karyawanList, setKaryawanList] = useState(null);
   const [q, setQ] = useState("");
+  // Default: harian = hari ini saja, bulanan = bulan ini saja. Riwayat baru
+  // ditampilkan kalau diminta lewat checkbox (per mode).
+  const [riwayat, setRiwayat] = useState({ harian: false, bulanan: false });
   const [tglAcuan, setTglAcuan] = useState(tanggalLokal()); // dipakai mode mingguan
   const [manualFor, setManualFor] = useState(null); // {idKaryawan, karyawanId, nama, tanggal, tipe, keterangan}
   const [savingManual, setSavingManual] = useState(false);
@@ -135,7 +138,12 @@ function RekapAbsensi({ showToast, role }) {
     [rekapBulanan, bulanIniStr]
   );
 
-  const data = mode === "harian" ? harianIni : mode === "bulanan" ? bulananIni : rekapMingguan.data;
+  const data =
+    mode === "harian"
+      ? riwayat.harian ? rekapHarian : harianIni
+      : mode === "bulanan"
+      ? riwayat.bulanan ? rekapBulanan : bulananIni
+      : rekapMingguan.data;
   const filtered = q
     ? data.filter((r) => r.nama.toLowerCase().includes(q.toLowerCase()))
     : data;
@@ -288,7 +296,7 @@ function RekapAbsensi({ showToast, role }) {
   const unduh = () => {
     if (mode === "harian") {
       downloadCsv(
-        `rekap-absensi-harian-${hariIniStr}.csv`,
+        `rekap-absensi-harian${riwayat.harian ? "-riwayat" : ""}-${hariIniStr}.csv`,
         [
           { key: "tanggal", label: "Tanggal" },
           { key: "nama", label: "Nama" },
@@ -303,7 +311,7 @@ function RekapAbsensi({ showToast, role }) {
       );
     } else if (mode === "bulanan") {
       downloadCsv(
-        `rekap-absensi-bulanan-${hariIniStr}.csv`,
+        `rekap-absensi-bulanan${riwayat.bulanan ? "-riwayat" : ""}-${hariIniStr}.csv`,
         [
           { key: "bulan", label: "Bulan" },
           { key: "nama", label: "Nama" },
@@ -365,7 +373,7 @@ function RekapAbsensi({ showToast, role }) {
             onClick={() => setMode("harian")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md ${mode === "harian" ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
           >
-            Hari Ini
+            Rekap Harian
           </button>
           <button
             onClick={() => setMode("mingguan")}
@@ -377,7 +385,7 @@ function RekapAbsensi({ showToast, role }) {
             onClick={() => setMode("bulanan")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md ${mode === "bulanan" ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
           >
-            Bulan Ini
+            Rekap Bulanan
           </button>
         </div>
         <input
@@ -401,6 +409,23 @@ function RekapAbsensi({ showToast, role }) {
           <Download size={14} /> Unduh CSV
         </button>
       </div>
+
+      {mode !== "mingguan" && (
+        <label className="flex items-center gap-2 mb-4 text-xs text-slate-400 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            className="accent-amber-500"
+            checked={mode === "harian" ? riwayat.harian : riwayat.bulanan}
+            onChange={(e) => setRiwayat((r) => ({ ...r, [mode]: e.target.checked }))}
+          />
+          {mode === "harian" ? "Tampilkan riwayat harian" : "Tampilkan riwayat bulanan"}
+          <span className="text-slate-500">
+            {(mode === "harian" ? riwayat.harian : riwayat.bulanan)
+              ? "(semua data yang dimuat)"
+              : mode === "harian" ? "(sekarang: hari ini saja)" : "(sekarang: bulan ini saja)"}
+          </span>
+        </label>
+      )}
 
       {mode === "mingguan" && (
         <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -433,8 +458,8 @@ function RekapAbsensi({ showToast, role }) {
             mode === "mingguan"
               ? "Belum ada karyawan aktif."
               : mode === "harian"
-              ? "Belum ada data absensi hari ini."
-              : "Belum ada data absensi bulan ini."
+              ? riwayat.harian ? "Belum ada data absensi." : "Belum ada data absensi hari ini."
+              : riwayat.bulanan ? "Belum ada data absensi." : "Belum ada data absensi bulan ini."
           }
         />
       ) : mode === "mingguan" ? (
