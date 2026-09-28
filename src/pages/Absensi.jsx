@@ -36,6 +36,14 @@ const ROLE_BOLEH_EDIT = ["superadmin", "superappa", "owner"];
 // tidak punya (lihat catatan di lib/constants.js pada definisi ROLES).
 const ROLE_BOLEH_EDIT_JAM = ["superappa"];
 
+// Tanggal hari ini menurut jam perangkat (lokal/WIB), format YYYY-MM-DD.
+// Sengaja tidak pakai toISOString() karena itu UTC — jam 00:00–07:00 WIB
+// hasilnya masih tanggal kemarin.
+function tanggalLokal(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Warna badge untuk tiap status absensi manual.
 function warnaManual(tipe) {
   if (tipe === "Sakit") return "pink";
@@ -78,7 +86,7 @@ function RekapAbsensi({ showToast, role }) {
   const [rows, setRows] = useState(null);
   const [karyawanList, setKaryawanList] = useState(null);
   const [q, setQ] = useState("");
-  const [tglAcuan, setTglAcuan] = useState(new Date().toISOString().slice(0, 10)); // dipakai mode mingguan
+  const [tglAcuan, setTglAcuan] = useState(tanggalLokal()); // dipakai mode mingguan
   const [manualFor, setManualFor] = useState(null); // {idKaryawan, karyawanId, nama, tanggal, tipe, keterangan}
   const [savingManual, setSavingManual] = useState(false);
   const [editJamFor, setEditJamFor] = useState(null); // {idKaryawan, nama, tanggal, jamSekarang, jamBaru}
@@ -115,14 +123,25 @@ function RekapAbsensi({ showToast, role }) {
     [rekapHarian, tglAcuan, karyawanList]
   );
 
-  const data = mode === "harian" ? rekapHarian : mode === "bulanan" ? rekapBulanan : rekapMingguan.data;
+  // Laporan harian hanya menampilkan HARI INI, laporan bulanan hanya BULAN INI.
+  const hariIniStr = tanggalLokal();
+  const bulanIniStr = hariIniStr.slice(0, 7);
+  const harianIni = useMemo(
+    () => rekapHarian.filter((r) => r.tanggal === hariIniStr),
+    [rekapHarian, hariIniStr]
+  );
+  const bulananIni = useMemo(
+    () => rekapBulanan.filter((r) => r.bulan === bulanIniStr),
+    [rekapBulanan, bulanIniStr]
+  );
+
+  const data = mode === "harian" ? harianIni : mode === "bulanan" ? bulananIni : rekapMingguan.data;
   const filtered = q
     ? data.filter((r) => r.nama.toLowerCase().includes(q.toLowerCase()))
     : data;
 
-  const hariIniStr = new Date().toISOString().slice(0, 10);
-  const hadirHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.masuk).length;
-  const telatHariIni = rekapHarian.filter((r) => r.tanggal === hariIniStr && r.telatMenit > 0).length;
+  const hadirHariIni = harianIni.filter((r) => r.masuk).length;
+  const telatHariIni = harianIni.filter((r) => r.telatMenit > 0).length;
 
   const geserMinggu = (arah) => setTglAcuan((t) => geserTanggal(t, arah * 7));
 
@@ -151,7 +170,7 @@ function RekapAbsensi({ showToast, role }) {
       idKaryawan,
       karyawanId: k?.id || null,
       nama,
-      tanggal: tanggal || new Date().toISOString().slice(0, 10),
+      tanggal: tanggal || tanggalLokal(),
       tipe: tipeAwal || "Sakit",
       keterangan: keteranganAwal || "",
       jamMasuk: "",
@@ -346,7 +365,7 @@ function RekapAbsensi({ showToast, role }) {
             onClick={() => setMode("harian")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md ${mode === "harian" ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
           >
-            Rekap Harian
+            Hari Ini
           </button>
           <button
             onClick={() => setMode("mingguan")}
@@ -358,7 +377,7 @@ function RekapAbsensi({ showToast, role }) {
             onClick={() => setMode("bulanan")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-md ${mode === "bulanan" ? "bg-amber-500 text-slate-950" : "text-slate-400"}`}
           >
-            Rekap Bulanan
+            Bulan Ini
           </button>
         </div>
         <input
@@ -369,7 +388,7 @@ function RekapAbsensi({ showToast, role }) {
         />
         {bolehEdit && (
           <button
-            onClick={() => bukaManual({ idKaryawan: "", nama: "", tanggal: new Date().toISOString().slice(0, 10) })}
+            onClick={() => bukaManual({ idKaryawan: "", nama: "", tanggal: tanggalLokal() })}
             className="flex items-center gap-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg"
           >
             <Stethoscope size={14} /> Tandai Sakit/Izin/Libur/TK
@@ -409,7 +428,15 @@ function RekapAbsensi({ showToast, role }) {
       )}
 
       {filtered.length === 0 ? (
-        <EmptyState label={mode === "mingguan" ? "Belum ada karyawan aktif." : "Belum ada data absensi."} />
+        <EmptyState
+          label={
+            mode === "mingguan"
+              ? "Belum ada karyawan aktif."
+              : mode === "harian"
+              ? "Belum ada data absensi hari ini."
+              : "Belum ada data absensi bulan ini."
+          }
+        />
       ) : mode === "mingguan" ? (
         <div className="border border-slate-800 rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
