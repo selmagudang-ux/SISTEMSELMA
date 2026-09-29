@@ -1450,81 +1450,107 @@ function pecahJalur(label) {
   return { kat: bagian[0] || "", sub: bagian.slice(1).join(" > ") };
 }
 
-function BarisPengelompokan({ m, awal, simpan, saranKategori, saranSub }) {
-  const [kat, setKat] = useState(awal.kat);
-  const [sub, setSub] = useState(awal.sub);
-  const kirim = () => simpan(m, kat, sub);
-  const kelas =
-    "w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500";
+function BarisPengelompokan({ m, kat, sub, berubah, onKat, onSub, saranKategori, saranSub }) {
+  const kelas = `w-full bg-slate-950 border rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500 ${
+    berubah ? "border-amber-500/60" : "border-slate-800"
+  }`;
   return (
     <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-2 items-center px-4 py-2">
       <div className="min-w-0">
         <div className="text-sm text-slate-200 truncate">{m.label}</div>
         <div className="font-mono text-[10px] text-amber-400/80">{m.kode}</div>
       </div>
-      <input
-        list={saranKategori}
-        value={kat}
-        onChange={(e) => setKat(e.target.value)}
-        onBlur={kirim}
-        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        placeholder="Kategori…"
-        className={kelas}
-      />
-      <input
-        list={saranSub}
-        value={sub}
-        onChange={(e) => setSub(e.target.value)}
-        onBlur={kirim}
-        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        placeholder="Sub kategori…"
-        className={kelas}
-      />
+      <input list={saranKategori} value={kat} onChange={(e) => onKat(e.target.value)} placeholder="Kategori…" className={kelas} />
+      <input list={saranSub} value={sub} onChange={(e) => onSub(e.target.value)} placeholder="Sub kategori…" className={kelas} />
     </div>
   );
 }
 
-function PengelompokanKategori({ master, reload, showToast }) {
+// draft = { masuk: { [kodeKategori]: { kat, sub } }, keluar: {...} } — isian yang
+// BELUM disimpan. Disimpan di induk (RekeningKategori) supaya tidak hilang saat
+// pindah tab Rekening/Kategori. Semua perubahan disimpan sekaligus lewat tombol
+// "Simpan Perubahan" (satu kali muat ulang data, bukan tiap kali ketik).
+function PengelompokanKategori({ master, reload, showToast, draft, setDraft }) {
   const [tipe, setTipe] = useState("keluar");
-  const kategoriList = master[tipe === "masuk" ? "kategori_masuk" : "kategori_keluar"] || [];
-  const kelompokKey = tipe === "masuk" ? "kelompok_masuk" : "kelompok_keluar";
-  const pemetaan = master[kelompokKey] || [];
+  const [menyimpan, setMenyimpan] = useState(false);
 
-  const jalurDari = (kode) => pecahJalur(pemetaan.find((x) => x.kode === kode)?.label);
-  const semuaJalur = pemetaan.map((x) => pecahJalur(x.label));
-  const saranKategori = [...new Set(semuaJalur.map((j) => j.kat).filter(Boolean))];
-  const saranSub = [...new Set(semuaJalur.map((j) => j.sub).filter(Boolean))];
+  const infoTipe = {
+    masuk: { kategori: "kategori_masuk", kelompok: "kelompok_masuk" },
+    keluar: { kategori: "kategori_keluar", kelompok: "kelompok_keluar" },
+  };
+  const kategoriList = master[infoTipe[tipe].kategori] || [];
+  const pemetaan = master[infoTipe[tipe].kelompok] || [];
 
+  const jalurTersimpan = (t, kode) =>
+    pecahJalur((master[infoTipe[t].kelompok] || []).find((x) => x.kode === kode)?.label);
+  const nilaiSekarang = (t, kode) => draft[t]?.[kode] || jalurTersimpan(t, kode);
+  const susunLabel = (v) => (v.kat.trim() ? (v.sub.trim() ? `${v.kat.trim()} > ${v.sub.trim()}` : v.kat.trim()) : "");
+
+  const ubah = (t, kode, bagian, nilai) =>
+    setDraft((d) => {
+      const cur = d[t]?.[kode] || jalurTersimpan(t, kode);
+      return { ...d, [t]: { ...(d[t] || {}), [kode]: { ...cur, [bagian]: nilai } } };
+    });
+
+  // Daftar perubahan nyata (draft yang beda dari yang tersimpan).
+  const perubahan = [];
+  ["masuk", "keluar"].forEach((t) => {
+    Object.entries(draft[t] || {}).forEach(([kode, v]) => {
+      const ada = (master[infoTipe[t].kelompok] || []).find((x) => x.kode === kode);
+      const labelBaru = susunLabel(v);
+      if ((ada?.label || "") !== labelBaru) perubahan.push({ t, kode, ada, labelBaru, v });
+    });
+  });
+  const perubahanTipeIni = new Set(perubahan.filter((x) => x.t === tipe).map((x) => x.kode));
+
+  const saranSemua = [...pemetaan.map((x) => pecahJalur(x.label)), ...Object.values(draft[tipe] || {})];
+  const saranKategori = [...new Set(saranSemua.map((j) => j.kat.trim()).filter(Boolean))];
+  const saranSub = [...new Set(saranSemua.map((j) => j.sub.trim()).filter(Boolean))];
+
+  // Urutan berdasarkan data TERSIMPAN saja, supaya baris tidak loncat saat mengetik.
   const urut = [...kategoriList].sort((a, b) => {
-    const ja = jalurDari(a.kode);
-    const jb = jalurDari(b.kode);
+    const ja = jalurTersimpan(tipe, a.kode);
+    const jb = jalurTersimpan(tipe, b.kode);
     const ka = ja.kat ? `0|${ja.kat}|${ja.sub}|${a.label}` : `1|${a.label}`;
     const kb = jb.kat ? `0|${jb.kat}|${jb.sub}|${b.label}` : `1|${b.label}`;
     return ka.localeCompare(kb);
   });
 
-  const simpan = async (m, katRaw, subRaw) => {
-    const kat = katRaw.trim();
-    const sub = subRaw.trim();
-    const ada = pemetaan.find((x) => x.kode === m.kode);
-    if (!kat && sub) {
-      showToast("Isi Kategori dulu sebelum Sub Kategori", "err");
+  const simpanSemua = async () => {
+    const salah = perubahan.find((x) => !x.v.kat.trim() && x.v.sub.trim());
+    if (salah) {
+      showToast("Ada baris yang Sub Kategori-nya terisi tapi Kategori-nya kosong", "err");
       return;
     }
-    const label = kat ? (sub ? `${kat} > ${sub}` : kat) : "";
-    if ((ada?.label || "") === label) return;
-    try {
-      if (!label) {
-        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
-      } else if (ada) {
-        await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label }) });
-      } else {
-        await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: kelompokKey, kode: m.kode, label }) });
+    setMenyimpan(true);
+    let gagal = 0;
+    for (const x of perubahan) {
+      try {
+        if (!x.labelBaru) {
+          await sb(`master_data?id=eq.${x.ada.id}`, { method: "DELETE" });
+        } else if (x.ada) {
+          await sb(`master_data?id=eq.${x.ada.id}`, { method: "PATCH", body: JSON.stringify({ label: x.labelBaru }) });
+        } else {
+          await sb("master_data", {
+            method: "POST",
+            body: JSON.stringify({ tipe: infoTipe[x.t].kelompok, kode: x.kode, label: x.labelBaru }),
+          });
+        }
+      } catch (e) {
+        gagal += 1;
       }
+    }
+    try {
       await reload();
-      showToast(label ? "Pengelompokan disimpan" : "Dikeluarkan dari kelompok");
     } catch (e) {
-      showToast(e.message || "Gagal menyimpan pengelompokan", "err");
+      /* abaikan — data akan ikut termuat saat refresh berikutnya */
+    }
+    setMenyimpan(false);
+    if (gagal > 0) {
+      showToast(`${gagal} perubahan gagal disimpan — coba simpan lagi`, "err");
+    } else {
+      setDraft({});
+      showToast(`${perubahan.length} perubahan disimpan`);
     }
   };
 
@@ -1551,7 +1577,8 @@ function PengelompokanKategori({ master, reload, showToast }) {
         Tiap baris di bawah adalah kategori yang sudah ada (jadi <span className="text-slate-300">Rincian</span>).
         Isi <span className="text-slate-300">Kategori</span> dan (opsional) <span className="text-slate-300">Sub Kategori</span>{" "}
         supaya di Laporan Keuangan tampil bertingkat, mis. Biaya Operasional → Biaya Tetap → Gaji Karyawan. Nama yang sama
-        otomatis digabung. Kosongkan kalau tidak ingin dikelompokkan.
+        otomatis digabung. Kosongkan kalau tidak ingin dikelompokkan. Ubah sebanyak yang Anda mau, lalu klik{" "}
+        <span className="text-slate-300">Simpan Perubahan</span> sekali saja.
       </div>
 
       <datalist id="saran-kategori-kelompok">
@@ -1575,13 +1602,16 @@ function PengelompokanKategori({ master, reload, showToast }) {
           <div className="px-4 py-8 text-center text-slate-500 text-sm">Belum ada kategori.</div>
         ) : (
           urut.map((m, i) => {
-            const j = jalurDari(m.kode);
+            const v = nilaiSekarang(tipe, m.kode);
             return (
-              <div key={`${tipe}-${m.id}-${j.kat}|${j.sub}`} className={i % 2 ? "bg-slate-950" : "bg-slate-900"}>
+              <div key={`${tipe}-${m.id}`} className={i % 2 ? "bg-slate-950" : "bg-slate-900"}>
                 <BarisPengelompokan
                   m={m}
-                  awal={j}
-                  simpan={simpan}
+                  kat={v.kat}
+                  sub={v.sub}
+                  berubah={perubahanTipeIni.has(m.kode)}
+                  onKat={(n) => ubah(tipe, m.kode, "kat", n)}
+                  onSub={(n) => ubah(tipe, m.kode, "sub", n)}
                   saranKategori="saran-kategori-kelompok"
                   saranSub="saran-sub-kelompok"
                 />
@@ -1590,6 +1620,28 @@ function PengelompokanKategori({ master, reload, showToast }) {
           })
         )}
       </div>
+
+      {perubahan.length > 0 && (
+        <div className="sticky bottom-3 mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-slate-900/95 backdrop-blur px-4 py-3 shadow-lg">
+          <span className="text-xs text-amber-300">{perubahan.length} perubahan belum disimpan</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setDraft({})}
+              disabled={menyimpan}
+              className="text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg disabled:opacity-40"
+            >
+              Batalkan
+            </button>
+            <button
+              onClick={simpanSemua}
+              disabled={menyimpan}
+              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-4 py-2 rounded-lg"
+            >
+              {menyimpan ? "Menyimpan…" : "Simpan Perubahan"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1610,6 +1662,8 @@ const TAB_KEUANGAN = [
 
 function RekeningKategori({ master, reload, showToast }) {
   const [activeTab, setActiveTab] = useState("rekening");
+  // Isian tab "Kategori & Sub Kategori" yang belum disimpan (lihat PengelompokanKategori).
+  const [draftKelompok, setDraftKelompok] = useState({});
   const [kode, setKode] = useState("");
   const [label, setLabel] = useState("");
   const [kodeTouched, setKodeTouched] = useState(false);
@@ -1725,7 +1779,7 @@ function RekeningKategori({ master, reload, showToast }) {
           description="Susun kategori bertingkat untuk laporan: Kategori → Sub Kategori → Rincian."
         />
         {tabBar}
-        <PengelompokanKategori master={master} reload={reload} showToast={showToast} />
+        <PengelompokanKategori master={master} reload={reload} showToast={showToast} draft={draftKelompok} setDraft={setDraftKelompok} />
       </div>
     );
   }
