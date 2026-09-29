@@ -586,7 +586,19 @@ export default function ModalRouter({
       // (buat kasus pesan yang beda-beda tergantung apa yang sebenarnya
       // terjadi, mis. dihapus vs dinonaktifkan). Kalau tidak, pakai successMsg.
       const result = await fn();
-      await reload();
+      // Data SUDAH tersimpan begitu fn() selesai. Refresh data hanya boleh
+      // menunggu sebentar (maks 12 detik) — kalau koneksi lambat, modal tetap
+      // ditutup dan refresh lanjut jalan di belakang layar, bukan bikin
+      // tombol Simpan muter terus. Gagal refresh juga tidak boleh dianggap
+      // "Gagal menyimpan" karena simpanannya sendiri sudah berhasil.
+      try {
+        await Promise.race([
+          Promise.resolve(reload()),
+          new Promise((resolve) => setTimeout(resolve, 12000)),
+        ]);
+      } catch {
+        /* abaikan: data sudah tersimpan, user bisa klik Muat ulang */
+      }
       showToast(typeof result === "string" ? result : successMsg);
       if (!opts.keepOpen) close();
       return true;

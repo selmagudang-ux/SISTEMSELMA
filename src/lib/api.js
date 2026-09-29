@@ -66,12 +66,39 @@ function bolehWalauReadOnly(path, method) {
   return method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path);
 }
 
+// Semua request ke Supabase dibatasi waktu. Tanpa batas ini, koneksi yang
+// "menggantung" (sinyal HP naik-turun, server lambat bangun) bikin fetch()
+// tidak pernah selesai atau gagal -> tombol Simpan / indikator loading
+// muter terus walau datanya sebenarnya sudah masuk ke database.
+const TIMEOUT_BACA_MS = 25000;
+const TIMEOUT_TULIS_MS = 40000;
+const TIMEOUT_UPLOAD_MS = 90000;
+
+async function fetchBatas(url, opts = {}, ms = TIMEOUT_BACA_MS, method = "GET") {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } catch (e) {
+    if (e?.name === "AbortError") {
+      throw new Error(
+        method === "GET"
+          ? "Koneksi terlalu lambat saat memuat data. Coba klik Muat ulang."
+          : "Koneksi terlalu lambat, respons dari server tidak diterima. Datanya kemungkinan SUDAH tersimpan — klik Muat ulang untuk mengecek sebelum menyimpan ulang."
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function sb(path, opts = {}) {
   const method = (opts.method || "GET").toUpperCase();
   if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method)) {
     throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menambah, mengubah, atau menghapus data.");
   }
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const res = await fetchBatas(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...opts,
     cache: "no-store",
     headers: {
@@ -81,7 +108,7 @@ export async function sb(path, opts = {}) {
       Prefer: opts.prefer || "return=representation",
       ...(opts.headers || {}),
     },
-  });
+  }, method === "GET" ? TIMEOUT_BACA_MS : TIMEOUT_TULIS_MS, method);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let parsed = null;
@@ -116,7 +143,7 @@ async function sbPage(path, opts, from, to, withCount) {
   const prefer = [opts.prefer || "return=representation", withCount ? "count=exact" : null]
     .filter(Boolean)
     .join(",");
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const res = await fetchBatas(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...opts,
     cache: "no-store",
     headers: {
@@ -127,7 +154,7 @@ async function sbPage(path, opts, from, to, withCount) {
       Range: `${from}-${to}`,
       ...(opts.headers || {}),
     },
-  });
+  }, TIMEOUT_BACA_MS, "GET");
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let parsed = null;
@@ -192,7 +219,7 @@ export async function sbAll(path, opts = {}) {
 export const STORAGE_BUCKET = "verifikasi-foto";
 
 export async function sbUploadFoto(file, path) {
-  const res = await fetch(
+  const res = await fetchBatas(
     `${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${path}`,
     {
       method: "POST",
@@ -203,7 +230,9 @@ export async function sbUploadFoto(file, path) {
         "x-upsert": "true",
       },
       body: file,
-    }
+    },
+    TIMEOUT_UPLOAD_MS,
+    "POST"
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
