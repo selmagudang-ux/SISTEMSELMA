@@ -6,7 +6,7 @@ import {
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
   ChevronDown,
 } from "lucide-react";
-import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META } from "../lib/constants";
+import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 import {
   fmtRp,
   sisaHutangPesanan,
@@ -17,6 +17,9 @@ import {
   laporanLabaRugi,
   ringkasanGrosir,
   statusPesananMasuk,
+  statusKonfirmasiDatang,
+  statusBongkar,
+  rincianBongkarBox,
   detailModelPesanan,
   labelFor,
   daftarTokoMarketplace,
@@ -742,7 +745,7 @@ function DashboardGudang({
       perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0 });
     }
     const grup = perSupplierBarangDatangMap.get(key);
-    grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox });
+    grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox, _pembayaran: Number(p.harga_kesepakatan) || 0 });
     grup.totalModel += 1;
     grup.totalNilai += nilai;
   });
@@ -1228,11 +1231,14 @@ function DashboardGudang({
                                 {isOpen && (
                                   <tr className="bg-slate-900/40">
                                     <td colSpan={3} className="px-4 pb-3 pt-0">
+                                      <div className="overflow-x-auto">
                                       <table className="w-full text-sm">
                                         <thead className="text-slate-500 text-[11px]">
                                           <tr>
                                             <th className="text-left py-1.5 pr-3 font-medium">Tanggal</th>
                                             <th className="text-left py-1.5 pr-3 font-medium">Kode Pesanan</th>
+                                            <th className="text-left py-1.5 pr-3 font-medium">Kedatangan Barang</th>
+                                            <th className="text-left py-1.5 pr-3 font-medium">Bongkar</th>
                                             <th className="text-left py-1.5 pr-3 font-medium">Status</th>
                                             <th className="text-right py-1.5 font-medium">Nilai</th>
                                           </tr>
@@ -1243,8 +1249,16 @@ function DashboardGudang({
                                             .map((p) => {
                                               const st = statusPesananMasuk(p);
                                               const meta = PO_STATUS_META[st];
+                                              const kedatangan = statusKonfirmasiDatang(p);
+                                              const bongkar = statusBongkar(p);
+                                              const rincianBox = rincianBongkarBox(p, pesananMasuk);
+                                              const pembayaran = p._pembayaran || 0;
+                                              const hargaBarang = p._nilai || 0;
+                                              const adaSelisih = pembayaran > 0 && hargaBarang > 0;
+                                              const selisih = adaSelisih ? hargaBarang - pembayaran : 0;
+                                              const persen = adaSelisih ? (Math.abs(selisih) / pembayaran) * 100 : 0;
                                               return (
-                                                <tr key={p.id} className="border-b border-slate-800/40 last:border-0">
+                                                <tr key={p.id} className="border-b border-slate-800/40 last:border-0 align-top">
                                                   <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{p.tanggal_pesan}</td>
                                                   <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">
                                                     {p.kode_pesanan || "—"}
@@ -1257,15 +1271,68 @@ function DashboardGudang({
                                                       </span>
                                                     )}
                                                   </td>
+                                                  <td className="py-2 pr-3 whitespace-nowrap">
+                                                    {kedatangan ? (
+                                                      <Badge color={KONFIRMASI_DATANG_META[kedatangan].color}>
+                                                        {KONFIRMASI_DATANG_META[kedatangan].label}
+                                                      </Badge>
+                                                    ) : (
+                                                      <span className="text-slate-700">—</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="py-2 pr-3 whitespace-nowrap">
+                                                    {rincianBox ? (
+                                                      <span
+                                                        title="Jumlah box yang sudah dibongkar dari total box fisik pesanan ini"
+                                                        className={
+                                                          rincianBox.selesai >= rincianBox.total
+                                                            ? "text-emerald-400 font-semibold text-xs"
+                                                            : rincianBox.selesai > 0
+                                                            ? "text-amber-400 font-semibold text-xs"
+                                                            : "text-slate-500 font-semibold text-xs"
+                                                        }
+                                                      >
+                                                        {rincianBox.selesai}/{rincianBox.total} box
+                                                      </span>
+                                                    ) : bongkar ? (
+                                                      <Badge color={BONGKAR_META[bongkar].color}>{BONGKAR_META[bongkar].label}</Badge>
+                                                    ) : (
+                                                      <span className="text-slate-700">—</span>
+                                                    )}
+                                                  </td>
                                                   <td className="py-2 pr-3">
                                                     <Badge color={meta?.color || "slate"}>{meta?.label || st}</Badge>
                                                   </td>
-                                                  <td className="py-2 text-right font-medium text-slate-200">{fmtRp(p._nilai)}</td>
+                                                  <td className="py-2 text-right text-xs whitespace-nowrap">
+                                                    <div className="flex justify-between gap-4 text-slate-500">
+                                                      <span>Pembayaran</span>
+                                                      <span className="text-slate-300 font-medium">{pembayaran > 0 ? fmtRp(pembayaran) : "—"}</span>
+                                                    </div>
+                                                    <div className="flex justify-between gap-4 text-slate-500">
+                                                      <span>Harga barang</span>
+                                                      <span className="text-slate-200 font-medium">{hargaBarang > 0 ? fmtRp(hargaBarang) : "—"}</span>
+                                                    </div>
+                                                    {adaSelisih && (
+                                                      <div
+                                                        className={`flex justify-between gap-4 font-semibold pt-0.5 mt-0.5 border-t border-slate-800/60 ${
+                                                          selisih === 0 ? "text-emerald-400" : selisih < 0 ? "text-amber-400" : "text-sky-400"
+                                                        }`}
+                                                      >
+                                                        <span>{selisih === 0 ? "Sesuai" : selisih < 0 ? "Selisih kurang" : "Selisih lebih"}</span>
+                                                        <span>
+                                                          {selisih === 0
+                                                            ? fmtRp(0)
+                                                            : `${fmtRp(Math.abs(selisih))} (${persen.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)`}
+                                                        </span>
+                                                      </div>
+                                                    )}
+                                                  </td>
                                                 </tr>
                                               );
                                             })}
                                         </tbody>
                                       </table>
+                                      </div>
                                     </td>
                                   </tr>
                                 )}
