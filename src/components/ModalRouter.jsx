@@ -3928,6 +3928,66 @@ export default function ModalRouter({
                 detail_model: models,
               }),
             });
+
+            // SINKRON NAMA MODEL ke Alur Barang. Nama model di riwayat
+            // (detail_model) disalin ke items.barcode_supplier SEKALI saat
+            // Konfirmasi Datang disimpan — jadi kalau nama diedit di sini,
+            // baris items-nya harus ikut di-PATCH. items tidak menyimpan
+            // "model ke-berapa", jadi dicocokkan lewat pesanan_penerimaan
+            // (pesanan -> item_id) + nama LAMA + qty (datang+rusak). Aturan
+            // aman: HANYA update kalau cocoknya tepat 1 baris DAN barangnya
+            // masih di tahap "sku" (belum jadi SKU). Selain itu dilewati
+            // (mis. sudah dipecah ukuran / sudah jadi SKU) — sku_master
+            // TIDAK disentuh.
+            const norm = (s) => String(s ?? "").trim().toLowerCase();
+            const detailLama = Array.isArray(p.detail_model) ? p.detail_model : [];
+            const namaBerubah = models
+              .map((baru, idx) => ({ lama: detailLama[idx], baru }))
+              .filter(({ lama, baru }) => lama && norm(lama.nama) !== norm(baru.nama));
+            let itemDisinkron = 0;
+            let itemDilewati = 0;
+            const itemTerpakai = new Set();
+            if (namaBerubah.length > 0) {
+              try {
+                const penerimaan = (await sb(`pesanan_penerimaan?select=item_id&pesanan_id=eq.${p.id}`)) || [];
+                const itemIds = [...new Set(penerimaan.map((r) => r.item_id).filter(Boolean))];
+                const itemRows = itemIds.length > 0
+                  ? (await sb(`items?select=id,jumlah,barcode_supplier,stage&id=in.(${itemIds.join(",")})`)) || []
+                  : [];
+                for (const { lama, baru } of namaBerubah) {
+                  const qtyModel = (Number(lama.jumlah) || 0) + (Number(lama.rusak) || 0);
+                  if (qtyModel <= 0) continue; // model ini tidak pernah jadi item
+                  const kandidat = itemRows.filter(
+                    (i) =>
+                      !itemTerpakai.has(i.id) &&
+                      norm(i.barcode_supplier) === norm(lama.nama) &&
+                      Number(i.jumlah) === qtyModel
+                  );
+                  if (kandidat.length !== 1 || kandidat[0].stage !== "sku") {
+                    itemDilewati++;
+                    continue;
+                  }
+                  await sb(`items?id=eq.${kandidat[0].id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ barcode_supplier: String(baru.nama ?? "").trim() || null }),
+                  });
+                  itemTerpakai.add(kandidat[0].id); // jangan dicocokkan lagi oleh model lain
+                  itemDisinkron++;
+                }
+              } catch (e) {
+                console.error("Gagal sinkron nama model ke Alur Barang:", e);
+                itemDilewati = namaBerubah.length - itemDisinkron;
+              }
+            }
+            if (itemDisinkron > 0 || itemDilewati > 0) {
+              return (
+                "Riwayat barang datang diperbarui" +
+                (itemDisinkron > 0 ? ` — ${itemDisinkron} nama model di Alur Barang ikut diperbarui` : "") +
+                (itemDilewati > 0
+                  ? `; ${itemDilewati} model tidak diubah di Alur Barang (sudah jadi SKU/dipecah, ubah manual)`
+                  : "")
+              );
+            }
           }, "Riwayat barang datang diperbarui")
         }
       />
