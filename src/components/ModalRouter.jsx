@@ -3922,8 +3922,9 @@ export default function ModalRouter({
                 supplier,
                 jenis,
                 catatan,
-                resi,
-                jumlah_box: jumlahBox,
+                // Invoice tambahan (BON-) tidak menyimpan resi/jumlah_box —
+                // itu milik pesanan induk. Jangan ditimpa/diisi dari sini.
+                ...(p.induk_id ? {} : { resi, jumlah_box: jumlahBox }),
                 foto_bon_url: fotoBonUrl,
                 detail_model: models,
               }),

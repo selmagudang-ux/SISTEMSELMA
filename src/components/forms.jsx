@@ -1668,11 +1668,14 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   // No. Resi & Jumlah Box WAJIB diisi (sama seperti di "Tandai Status
   // Kedatangan") — kalau riwayat lama ini kebetulan belum punya salah
   // satunya, wajib dilengkapi dulu di sini sebelum bisa disimpan.
+  // Invoice tambahan (BON-, baris anak dengan induk_id) TIDAK punya resi &
+  // jumlah box sendiri — dua-duanya disimpan di pesanan induk (PSN-) dan
+  // dipakai bersama untuk semua invoice di box/pesanan yang sama. Jadi untuk
+  // invoice tambahan, dua field itu disembunyikan & tidak wajib.
+  const bonTambahan = !!pesanan?.induk_id;
   const valid =
     (jenis !== "Lainnya" || jenisLainnya.trim()) &&
-    resi.trim() !== "" &&
-    jumlahBox !== "" &&
-    Number(jumlahBox) > 0;
+    (bonTambahan || (resi.trim() !== "" && jumlahBox !== "" && Number(jumlahBox) > 0));
 
   return (
     <ModalShell title={`Edit Riwayat — ${pesanan?.resi || pesanan?.kode_pesanan || ""}`} onClose={onClose}>
@@ -1772,26 +1775,34 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         </>
       )}
 
-      <Field label="No. Resi">
-        <input
-          className={inputClass}
-          value={resi}
-          onChange={(e) => setResi(e.target.value)}
-          placeholder="Nomor resi pengiriman dari kurir/ekspedisi"
-        />
-      </Field>
+      {bonTambahan ? (
+        <p className="text-[11px] text-slate-500 mb-3">
+          No. Resi &amp; Jumlah Box invoice tambahan ini ikut pesanan induknya — tidak perlu diisi di sini.
+        </p>
+      ) : (
+        <>
+          <Field label="No. Resi">
+            <input
+              className={inputClass}
+              value={resi}
+              onChange={(e) => setResi(e.target.value)}
+              placeholder="Nomor resi pengiriman dari kurir/ekspedisi"
+            />
+          </Field>
 
-      <Field label="Jumlah Box">
-        <input
-          type="number"
-          min="1"
-          inputMode="numeric"
-          className={inputClass}
-          value={jumlahBox}
-          onChange={(e) => setJumlahBox(e.target.value)}
-          placeholder="Jumlah box/koli yang datang"
-        />
-      </Field>
+          <Field label="Jumlah Box">
+            <input
+              type="number"
+              min="1"
+              inputMode="numeric"
+              className={inputClass}
+              value={jumlahBox}
+              onChange={(e) => setJumlahBox(e.target.value)}
+              placeholder="Jumlah box/koli yang datang"
+            />
+          </Field>
+        </>
+      )}
 
       <Field label="Catatan (opsional)">
         <input
@@ -1817,8 +1828,8 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
               alasan_rusak: Number(m.rusak) > 0 ? (m.alasan_rusak || "").trim() || null : null,
             })),
             catatan: catatan.trim() || null,
-            resi: resi.trim() || null,
-            jumlahBox: jumlahBox === "" ? null : Number(jumlahBox) || 0,
+            resi: bonTambahan ? undefined : resi.trim() || null,
+            jumlahBox: bonTambahan ? undefined : jumlahBox === "" ? null : Number(jumlahBox) || 0,
           })
         }
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
