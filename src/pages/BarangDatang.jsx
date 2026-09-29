@@ -67,33 +67,31 @@ function ModelInvoiceRow({ m, idx }) {
       </div>
     );
   }
+  const adaHarga = Number(m.harga) > 0;
   return (
-    <div className="px-3.5 py-2.5 border-t border-slate-800/60 first:border-t-0">
-      <div className="text-sm text-slate-200 font-medium mb-1.5 truncate">{m.nama || `Model ${idx + 1}`}</div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
-        <span>
-          Qty Datang <span className="text-emerald-400 font-semibold">{qtyDatangModel(m)}x</span>
-        </span>
-        <span>
-          Qty Rusak{" "}
-          {Number(m.rusak) > 0 ? (
-            <span className="text-red-400 font-semibold" title={m.alasan_rusak || ""}>
-              {m.rusak}x{m.alasan_rusak ? ` — ${m.alasan_rusak}` : ""}
-            </span>
-          ) : (
-            <span className="text-slate-600 font-semibold">0</span>
-          )}
-        </span>
-        {Number(m.harga) > 0 && (
-          <span>
-            Harga/pcs <span className="text-slate-300 font-semibold">{fmtRp(m.harga)}</span>
+    <div className="px-3.5 py-2.5 border-t border-slate-800/60 first:border-t-0 hover:bg-slate-800/20 grid grid-cols-2 gap-x-4 gap-y-1 items-center sm:grid-cols-12">
+      <div className="col-span-2 sm:col-span-3 text-sm text-slate-200 font-medium truncate">{m.nama || `Model ${idx + 1}`}</div>
+      <div className="sm:col-span-2 sm:text-right text-[11px] text-slate-500">
+        <span className="sm:hidden">Qty Datang </span>
+        <span className="text-emerald-400 font-semibold text-xs">{qtyDatangModel(m)}x</span>
+      </div>
+      <div className="sm:col-span-3 sm:text-right text-[11px] text-slate-500">
+        <span className="sm:hidden">Qty Rusak </span>
+        {Number(m.rusak) > 0 ? (
+          <span className="text-red-400 font-semibold text-xs" title={m.alasan_rusak || ""}>
+            {m.rusak}x{m.alasan_rusak ? ` — ${m.alasan_rusak}` : ""}
           </span>
+        ) : (
+          <span className="text-slate-600 font-semibold text-xs">0</span>
         )}
-        {Number(m.harga) > 0 && (
-          <span>
-            Subtotal <span className="text-slate-200 font-semibold">{fmtRp(nilaiModel(m))}</span>
-          </span>
-        )}
+      </div>
+      <div className="sm:col-span-2 sm:text-right text-[11px] text-slate-500">
+        <span className="sm:hidden">Harga/pcs </span>
+        <span className="text-slate-300 font-semibold text-xs">{adaHarga ? fmtRp(m.harga) : "—"}</span>
+      </div>
+      <div className="sm:col-span-2 sm:text-right text-[11px] text-slate-500">
+        <span className="sm:hidden">Subtotal </span>
+        <span className="text-slate-200 font-semibold text-xs">{adaHarga ? fmtRp(nilaiModel(m)) : "—"}</span>
       </div>
     </div>
   );
@@ -107,6 +105,15 @@ function TabelModelInvoice({ detail }) {
   }
   return (
     <div>
+      {detail.some((m) => m.datang !== false) && (
+        <div className="hidden sm:grid grid-cols-12 gap-x-4 px-3.5 py-1.5 text-[10px] uppercase tracking-wide text-slate-500 font-semibold bg-slate-900/60 border-b border-slate-800/60">
+          <div className="col-span-3">Model</div>
+          <div className="col-span-2 text-right">Qty Datang</div>
+          <div className="col-span-3 text-right">Qty Rusak</div>
+          <div className="col-span-2 text-right">Harga/pcs</div>
+          <div className="col-span-2 text-right">Subtotal</div>
+        </div>
+      )}
       {detail.map((m, idx) => (
         <ModelInvoiceRow key={idx} m={m} idx={idx} />
       ))}
@@ -205,7 +212,7 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
 
           {adaKesepakatan && (
             <div
-              className={`rounded-xl border px-3.5 py-3 text-[11px] space-y-1.5 ${
+              className={`rounded-xl border px-3.5 py-3 text-[11px] space-y-1.5 w-full sm:max-w-md sm:ml-auto ${
                 adaSelisih ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/30 bg-emerald-500/5"
               }`}
             >
