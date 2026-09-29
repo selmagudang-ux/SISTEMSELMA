@@ -3930,62 +3930,91 @@ export default function ModalRouter({
               }),
             });
 
-            // SINKRON NAMA MODEL ke Alur Barang. Nama model di riwayat
-            // (detail_model) disalin ke items.barcode_supplier SEKALI saat
-            // Konfirmasi Datang disimpan — jadi kalau nama diedit di sini,
-            // baris items-nya harus ikut di-PATCH. items tidak menyimpan
-            // "model ke-berapa", jadi dicocokkan lewat pesanan_penerimaan
-            // (pesanan -> item_id) + nama LAMA + qty (datang+rusak). Aturan
-            // aman: HANYA update kalau cocoknya tepat 1 baris DAN barangnya
-            // masih di tahap "sku" (belum jadi SKU). Selain itu dilewati
-            // (mis. sudah dipecah ukuran / sudah jadi SKU) — sku_master
-            // TIDAK disentuh.
+            // SINKRON PERUBAHAN MODEL ke Alur Barang. Nama, harga/pcs, dan
+            // alasan rusak di riwayat (detail_model) disalin ke baris
+            // items SEKALI saat Konfirmasi Datang disimpan (barcode_supplier,
+            // harga, alasan_rusak) — jadi kalau diedit di sini, baris items-nya
+            // harus ikut di-PATCH. items tidak menyimpan "model ke-berapa",
+            // jadi dicocokkan lewat pesanan_penerimaan (pesanan -> item_id)
+            // + nama LAMA + qty (datang+rusak).
+            // Urutan pencocokan: (1) nama lama + qty persis; (2) kalau belum
+            // ketemu tepat 1, nama lama saja (qty bisa sudah berubah karena
+            // sebagian dipecah/dikurangi). HANYA update kalau cocoknya tepat
+            // 1 baris DAN barangnya masih di tahap "sku" (belum jadi SKU).
+            // Selain itu dilewati — sku_master TIDAK disentuh.
             const norm = (s) => String(s ?? "").trim().toLowerCase();
             const detailLama = Array.isArray(p.detail_model) ? p.detail_model : [];
-            const namaBerubah = models
+            const angkaHarga = (v) => Number(v) || 0;
+            const perubahan = models
               .map((baru, idx) => ({ lama: detailLama[idx], baru }))
-              .filter(({ lama, baru }) => lama && norm(lama.nama) !== norm(baru.nama));
+              .filter(({ lama, baru }) => lama && lama.datang !== false)
+              .map(({ lama, baru }) => {
+                const patchItem = {};
+                if (norm(lama.nama) !== norm(baru.nama)) {
+                  patchItem.barcode_supplier = String(baru.nama ?? "").trim() || null;
+                }
+                if (angkaHarga(lama.harga) !== angkaHarga(baru.harga)) {
+                  patchItem.harga = angkaHarga(baru.harga) || null;
+                }
+                if (norm(lama.alasan_rusak) !== norm(baru.alasan_rusak)) {
+                  patchItem.alasan_rusak = String(baru.alasan_rusak ?? "").trim() || null;
+                }
+                return { lama, patchItem };
+              })
+              .filter(({ patchItem }) => Object.keys(patchItem).length > 0);
             let itemDisinkron = 0;
-            let itemDilewati = 0;
+            const alasanDilewati = [];
             const itemTerpakai = new Set();
-            if (namaBerubah.length > 0) {
+            if (perubahan.length > 0) {
               try {
                 const penerimaan = (await sb(`pesanan_penerimaan?select=item_id&pesanan_id=eq.${p.id}`)) || [];
                 const itemIds = [...new Set(penerimaan.map((r) => r.item_id).filter(Boolean))];
                 const itemRows = itemIds.length > 0
                   ? (await sb(`items?select=id,jumlah,barcode_supplier,stage&id=in.(${itemIds.join(",")})`)) || []
                   : [];
-                for (const { lama, baru } of namaBerubah) {
+                for (const { lama, patchItem } of perubahan) {
                   const qtyModel = (Number(lama.jumlah) || 0) + (Number(lama.rusak) || 0);
                   if (qtyModel <= 0) continue; // model ini tidak pernah jadi item
-                  const kandidat = itemRows.filter(
-                    (i) =>
-                      !itemTerpakai.has(i.id) &&
-                      norm(i.barcode_supplier) === norm(lama.nama) &&
-                      Number(i.jumlah) === qtyModel
+                  const bebas = itemRows.filter(
+                    (i) => !itemTerpakai.has(i.id) && norm(i.barcode_supplier) === norm(lama.nama)
                   );
-                  if (kandidat.length !== 1 || kandidat[0].stage !== "sku") {
-                    itemDilewati++;
+                  let kandidat = bebas.filter((i) => Number(i.jumlah) === qtyModel);
+                  if (kandidat.length !== 1) kandidat = bebas.length === 1 ? bebas : kandidat;
+                  if (kandidat.length === 0) {
+                    alasanDilewati.push(`"${lama.nama || "tanpa nama"}": barang tidak ditemukan di Alur Barang`);
                     continue;
                   }
-                  await sb(`items?id=eq.${kandidat[0].id}`, {
+                  if (kandidat.length > 1) {
+                    alasanDilewati.push(`"${lama.nama || "tanpa nama"}": ada lebih dari 1 barang yang mirip`);
+                    continue;
+                  }
+                  if (kandidat[0].stage !== "sku") {
+                    alasanDilewati.push(`"${lama.nama || "tanpa nama"}": sudah lewat tahap SKU`);
+                    continue;
+                  }
+                  const hasil = await sb(`items?id=eq.${kandidat[0].id}`, {
                     method: "PATCH",
-                    body: JSON.stringify({ barcode_supplier: String(baru.nama ?? "").trim() || null }),
+                    body: JSON.stringify(patchItem),
                   });
+                  if (Array.isArray(hasil) && hasil.length === 0) {
+                    // PATCH "berhasil" tapi 0 baris berubah (biasanya diblokir RLS/izin)
+                    alasanDilewati.push(`"${lama.nama || "tanpa nama"}": ditolak database (cek izin/RLS tabel items)`);
+                    continue;
+                  }
                   itemTerpakai.add(kandidat[0].id); // jangan dicocokkan lagi oleh model lain
                   itemDisinkron++;
                 }
               } catch (e) {
-                console.error("Gagal sinkron nama model ke Alur Barang:", e);
-                itemDilewati = namaBerubah.length - itemDisinkron;
+                console.error("Gagal sinkron model ke Alur Barang:", e);
+                alasanDilewati.push(`error: ${e.message || e}`);
               }
             }
-            if (itemDisinkron > 0 || itemDilewati > 0) {
+            if (itemDisinkron > 0 || alasanDilewati.length > 0) {
               return (
                 "Riwayat barang datang diperbarui" +
-                (itemDisinkron > 0 ? ` — ${itemDisinkron} nama model di Alur Barang ikut diperbarui` : "") +
-                (itemDilewati > 0
-                  ? `; ${itemDilewati} model tidak diubah di Alur Barang (sudah jadi SKU/dipecah, ubah manual)`
+                (itemDisinkron > 0 ? ` — ${itemDisinkron} model di Alur Barang ikut diperbarui` : "") +
+                (alasanDilewati.length > 0
+                  ? `; tidak diubah di Alur Barang → ${alasanDilewati.join("; ")}`
                   : "")
               );
             }
