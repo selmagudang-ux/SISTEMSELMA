@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
@@ -602,6 +603,23 @@ function MainApp({ session, onLogout }) {
       return null;
     }
   };
+  // Cache LAMA (lewat TTL, maks 6 jam) dipakai hanya untuk menampilkan
+  // sesuatu SEKETIKA setelah refresh browser, sambil data terbaru tetap
+  // ditarik di belakang layar (loadCore di bawah TIDAK berhenti di sini).
+  // Jadi setelah refresh tidak lagi menatap layar "Memuat data…" sampai
+  // semua tabel selesai diunduh.
+  const bacaCacheCoreBasi = () => {
+    try {
+      const raw = localStorage.getItem(CORE_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.disimpanPada !== "number" || !parsed.data) return null;
+      if (Date.now() - parsed.disimpanPada >= 6 * 60 * 60 * 1000) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
   const simpanCacheCoreLokal = (data) => {
     try {
       localStorage.setItem(CORE_CACHE_KEY, JSON.stringify({ disimpanPada: Date.now(), data }));
@@ -658,6 +676,10 @@ function MainApp({ session, onLogout }) {
         tandaiSudahDimuat("core");
         return;
       }
+      // Tidak ada cache segar — kalau ada cache lama, tampilkan dulu
+      // (sementara), lalu lanjut tarik data terbaru di bawah.
+      const cacheBasi = bacaCacheCoreBasi();
+      if (cacheBasi) terapkanDataCore(cacheBasi.data);
     }
     // stock_history & rak_events SENGAJA TIDAK ditarik dari tabel aslinya di
     // sini (keduanya log yang terus bertambah, bisa jadi jauh lebih besar
@@ -944,7 +966,8 @@ function MainApp({ session, onLogout }) {
     const rakTerpakaiList = rakTerpakai(rak, penempatan, skuMaster);
     const rakTerpakaiCount = rakTerpakaiList.length;
     // Rak Kosong (Dashboard) = rak yang terdaftar tapi tidak ada di daftar rak terpakai.
-    const rakKosong = rak.filter((r) => !rakTerpakaiList.some((t) => t.id === r.id));
+    const idRakTerpakai = new Set(rakTerpakaiList.map((t) => t.id));
+    const rakKosong = rak.filter((r) => !idRakTerpakai.has(r.id));
     // Sisa di Gudang = SKU berstok yang belum sepenuhnya masuk rak (belum pernah
     // ditempatkan, atau rak yang biasa dipakai sudah penuh sehingga sisanya nyangkut).
     const sisaGudangList = barangSisaDiGudang(skuMaster, rak, penempatan);
@@ -1102,6 +1125,7 @@ function MainApp({ session, onLogout }) {
               Anda tidak punya akses ke halaman ini.
             </div>
           ) : (
+            <ErrorBoundary key={`${nav.menu}/${nav.sub || ""}`}>
             <Suspense
               fallback={
                 <div className="flex items-center justify-center py-24 text-md-on-surface-variant gap-2 text-sm">
@@ -1310,6 +1334,7 @@ function MainApp({ session, onLogout }) {
               )}
               {nav.menu === "panduan" && <Panduan session={session} />}
             </Suspense>
+            </ErrorBoundary>
           )}
         </main>
       </AppShell>

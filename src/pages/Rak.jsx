@@ -17,13 +17,58 @@ export function skuForRak(rakCode, penempatan) {
   return found ? found.sku : "";
 }
 
+// ---------------------------------------------------------------------
+// PERFORMA: fungsi-fungsi di bawah dipanggil untuk SEMUA SKU x SEMUA rak tiap
+// kali data dimuat (badge sidebar, Dashboard, notifikasi Marketplace). Versi
+// lama memanggil .find() ke array penempatan/skuMaster di dalam loop
+// bersarang, jadi kerja totalnya kira-kira SKU x rak x (penempatan + SKU) —
+// dengan ribuan baris itu bisa jutaan sampai miliaran operasi dan bikin
+// layar "membeku" / putih beberapa detik setiap habis refresh. Sekarang
+// penempatan & skuMaster diindeks SEKALI (Map) lalu dicari O(1). HASILNYA
+// SAMA PERSIS: tiap Map hanya menyimpan kemunculan PERTAMA (persis perilaku
+// .find()), jadi aturan "penempatan terbaru menang" tidak berubah.
+// ---------------------------------------------------------------------
+function indeksPenempatan(penempatan) {
+  const rakBySku = new Map(); // sku -> rak_code dari penempatan PERTAMA sku itu
+  const skuByRak = new Map(); // rak_code -> sku dari penempatan PERTAMA rak itu
+  const barisBySkuRak = new Map(); // "sku\0rak" -> baris penempatan pertama
+  const barisByRak = new Map(); // rak_code -> baris penempatan PERTAMA rak itu ("pemenang")
+  (penempatan || []).forEach((p) => {
+    if (!rakBySku.has(p.sku)) rakBySku.set(p.sku, p.rak_code);
+    if (!skuByRak.has(p.rak_code)) {
+      skuByRak.set(p.rak_code, p.sku);
+      barisByRak.set(p.rak_code, p);
+    }
+    const k = `${p.sku}\u0000${p.rak_code}`;
+    if (!barisBySkuRak.has(k)) barisBySkuRak.set(k, p);
+  });
+  return {
+    rakBySku,
+    skuByRak,
+    barisBySkuRak,
+    rakDariSku: (sku) => (rakBySku.has(sku) ? rakBySku.get(sku) : ""),
+    skuDariRak: (kode) => (skuByRak.has(kode) ? skuByRak.get(kode) : ""),
+    barisByRak,
+  };
+}
+
+function indeksSku(skuMaster) {
+  const m = new Map();
+  (skuMaster || []).forEach((x) => {
+    if (!m.has(x.sku)) m.set(x.sku, x);
+  });
+  return m;
+}
+
 // Daftar kode rak yang BENAR-BENAR sedang terisi (masih ada SKU dengan stok > 0),
 // dipakai bareng Peta Rak supaya angka "Rak Terpakai" di Dashboard selalu sinkron.
 export function rakTerpakai(rak, penempatan, skuMaster) {
+  const idx = indeksPenempatan(penempatan);
+  const skuMap = indeksSku(skuMaster);
   return (rak || []).filter((r) => {
-    const pemenang = skuForRak(r.code, penempatan);
+    const pemenang = idx.skuDariRak(r.code);
     if (!pemenang) return false;
-    const s = (skuMaster || []).find((x) => x.sku === pemenang);
+    const s = skuMap.get(pemenang);
     return !!s && s.stok > 0;
   });
 }
@@ -31,12 +76,13 @@ export function rakTerpakai(rak, penempatan, skuMaster) {
 // SKU dengan stok > 0 tapi rak yang seharusnya ditempatinya sudah ditimpa SKU lain
 // (aturan: 1 rak = 1 SKU, penempatan terbaru di rak yang sama menang) — perlu ditempatkan ulang.
 export function cariPerluDitempatkanUlang(skuMaster, penempatan) {
+  const idx = indeksPenempatan(penempatan);
   const out = [];
   (skuMaster || []).forEach((s) => {
     if (!s.stok || s.stok <= 0) return;
-    const rakSeharusnya = rakForSku(s.sku, penempatan);
+    const rakSeharusnya = idx.rakDariSku(s.sku);
     if (!rakSeharusnya) return; // belum pernah ditempatkan di rak sama sekali
-    const skuSekarang = skuForRak(rakSeharusnya, penempatan);
+    const skuSekarang = idx.skuDariRak(rakSeharusnya);
     if (!skuSekarang || skuSekarang === s.sku) return;
     if (sameProdukKecualiUkuran(skuSekarang, s.sku, skuMaster)) return; // cuma beda ukuran, boleh gabung
     out.push({ sku: s.sku, stok: s.stok, rakLama: rakSeharusnya, ditimpaOleh: skuSekarang });
@@ -51,10 +97,12 @@ export function cariPerluDitempatkanUlang(skuMaster, penempatan) {
 // untuk kasih warning + tombol "Pindahkan" supaya bisa langsung dibereskan.
 export function skuDenganRakGanda(rak, penempatan, skuMaster) {
   const byOwner = new Map(); // sku -> [{ rak_code, penempatanId }]
+  const idx = indeksPenempatan(penempatan);
+  const skuMap = indeksSku(skuMaster);
   (rak || []).forEach((r) => {
-    const winner = (penempatan || []).find((p) => p.rak_code === r.code);
+    const winner = idx.barisByRak.get(r.code);
     if (!winner) return;
-    const s = (skuMaster || []).find((x) => x.sku === winner.sku);
+    const s = skuMap.get(winner.sku);
     if (!s || !(s.stok > 0)) return;
     if (!byOwner.has(winner.sku)) byOwner.set(winner.sku, []);
     byOwner.get(winner.sku).push({ rak_code: r.code, penempatanId: winner.id });
@@ -66,23 +114,30 @@ export function skuDenganRakGanda(rak, penempatan, skuMaster) {
   return out;
 }
 
+// Versi cepat totalTertempatkan yang memakai indeks siap-pakai (dibuat
+// sekali oleh pemanggil), lihat catatan PERFORMA di atas.
+function totalTertempatkanIdx(sku, rak, idx, skuMaster) {
+  let total = 0;
+  const rakSku = idx.rakDariSku(sku);
+  (rak || []).forEach((r) => {
+    const pemenang = idx.skuDariRak(r.code);
+    if (!pemenang) return;
+    const cocok =
+      pemenang === sku ||
+      (rakSku === r.code && sameProdukKecualiUkuran(pemenang, sku, skuMaster));
+    if (!cocok) return;
+    const baris = idx.barisBySkuRak.get(`${sku}\u0000${r.code}`);
+    if (baris) total += Number(baris.qty) || 0;
+  });
+  return total;
+}
+
 // Total qty SKU tertentu yang BENAR-BENAR aktif tertempatkan di rak (dijumlah
 // dari semua rak, bukan cuma satu). Pakai aturan yang sama dengan skuDiRak di
 // Peta Rak (winner per rak + varian ukuran yang boleh nebeng), supaya angka
 // "sudah di rak" selalu sinkron dengan apa yang ditampilkan di Peta Rak.
 export function totalTertempatkan(sku, rak, penempatan, skuMaster) {
-  let total = 0;
-  (rak || []).forEach((r) => {
-    const pemenang = skuForRak(r.code, penempatan);
-    if (!pemenang) return;
-    const cocok =
-      pemenang === sku ||
-      (rakForSku(sku, penempatan) === r.code && sameProdukKecualiUkuran(pemenang, sku, skuMaster));
-    if (!cocok) return;
-    const baris = (penempatan || []).find((p) => p.sku === sku && p.rak_code === r.code);
-    if (baris) total += Number(baris.qty) || 0;
-  });
-  return total;
+  return totalTertempatkanIdx(sku, rak, indeksPenempatan(penempatan), skuMaster);
 }
 
 // SKU dengan stok > 0 tapi qty yang tertempatkan di rak (across semua rak)
@@ -90,10 +145,11 @@ export function totalTertempatkan(sku, rak, penempatan, skuMaster) {
 // karena belum sempat ditempatkan sama sekali (ditempatkan = 0) atau karena
 // rak yang dipakai sudah penuh sehingga cuma sebagian qty yang muat ditempatkan.
 export function barangSisaDiGudang(skuMaster, rak, penempatan) {
+  const idx = indeksPenempatan(penempatan);
   const out = [];
   (skuMaster || []).forEach((s) => {
     if (!s.stok || s.stok <= 0) return;
-    const ditempatkan = totalTertempatkan(s.sku, rak, penempatan, skuMaster);
+    const ditempatkan = totalTertempatkanIdx(s.sku, rak, idx, skuMaster);
     const sisa = s.stok - ditempatkan;
     if (sisa > 0) out.push({ sku: s.sku, stok: s.stok, ditempatkan, sisa });
   });

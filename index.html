@@ -4,9 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SISTEM SELMA ACC BANDUNG</title>
+    <style>
+      html, body { margin: 0; background: #020617; }
+      #boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-family: system-ui, sans-serif; color: #94a3b8; font-size: 14px; }
+      #boot .spin { width: 22px; height: 22px; border: 3px solid #334155; border-top-color: #f59e0b; border-radius: 50%; animation: bootspin 0.8s linear infinite; }
+      #boot button { display: none; background: #f59e0b; color: #0f172a; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; }
+      @keyframes bootspin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Tampil sampai React siap; otomatis diganti begitu aplikasi dirender. -->
+      <div id="boot">
+        <div class="spin"></div>
+        <div id="boot-teks">Memuat aplikasi…</div>
+        <button id="boot-reload" onclick="location.reload()">Muat ulang</button>
+      </div>
+    </div>
+    <script>
+      // Kalau setelah 20 detik aplikasi belum tampil (koneksi sangat lambat /
+      // file gagal diunduh), tampilkan tombol muat ulang, bukan layar kosong.
+      setTimeout(function () {
+        var b = document.getElementById("boot");
+        if (!b) return;
+        document.getElementById("boot-teks").textContent = "Memuat terlalu lama. Cek koneksi internet, lalu muat ulang.";
+        document.getElementById("boot-reload").style.display = "inline-block";
+      }, 20000);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
