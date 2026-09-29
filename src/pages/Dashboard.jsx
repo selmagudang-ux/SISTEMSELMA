@@ -6,7 +6,7 @@ import {
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
   ChevronDown,
 } from "lucide-react";
-import { STAGE_ORDER, STAGE_META, COLOR, PO_STATUS_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
+import { STAGE_ORDER, STAGE_META, COLOR, TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 import {
   fmtRp,
   sisaHutangPesanan,
@@ -17,6 +17,7 @@ import {
   laporanLabaRugi,
   ringkasanGrosir,
   statusPesananMasuk,
+  tahapPesanan,
   statusKonfirmasiDatang,
   statusBongkar,
   rincianBongkarBox,
@@ -1247,8 +1248,11 @@ function DashboardGudang({
                                           {[...grup.items]
                                             .sort((a, b) => (b.tanggal_pesan || "").localeCompare(a.tanggal_pesan || ""))
                                             .map((p) => {
-                                              const st = statusPesananMasuk(p);
-                                              const meta = PO_STATUS_META[st];
+                                              // Status = tahap yang SAMA dengan kolom Status di
+                                              // halaman Pesanan Barang (tahapPesanan), bukan
+                                              // statusPesananMasuk, supaya labelnya selalu sinkron.
+                                              const tahap = tahapPesanan(p);
+                                              const meta = TAHAP_PESANAN_META[tahap] || TAHAP_PESANAN_META.menunggu;
                                               const kedatangan = statusKonfirmasiDatang(p);
                                               const bongkar = statusBongkar(p);
                                               const rincianBox = rincianBongkarBox(p, pesananMasuk);
@@ -1301,7 +1305,7 @@ function DashboardGudang({
                                                     )}
                                                   </td>
                                                   <td className="py-2 pr-3">
-                                                    <Badge color={meta?.color || "slate"}>{meta?.label || st}</Badge>
+                                                    <Badge color={meta.color}>{meta.label}</Badge>
                                                   </td>
                                                   <td className="py-2 text-right text-xs whitespace-nowrap">
                                                     <div className="flex justify-between gap-4 text-slate-500">
