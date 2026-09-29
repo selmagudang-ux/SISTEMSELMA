@@ -55,7 +55,7 @@ function BarisModel({ m, idx }) {
       <div className="px-3.5 py-2.5 border-t border-slate-800/60 first:border-t-0">
         <p className="text-[12px] text-amber-400/80 italic">Belum datang — model dan qty diisi lewat Konfirmasi Datang</p>
         {m.harga_total_pesan ? (
-          <p className="text-[11px] text-slate-500 mt-0.5">Total kesepakatan {fmtRp(m.harga_total_pesan)}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Total pembayaran {fmtRp(m.harga_total_pesan)}</p>
         ) : null}
       </div>
     );
@@ -150,7 +150,7 @@ export function DetailPesananKeuanganModal({ transaksi, pesanan, pesananMasuk, o
         }`}
       >
         <BarisRingkasan label="Dibayar (tercatat di Keuangan)" nilai={fmtRp(dibayar)} tebal />
-        {kesepakatan > 0 && <BarisRingkasan label="Harga kesepakatan" nilai={fmtRp(kesepakatan)} />}
+        {kesepakatan > 0 && <BarisRingkasan label="Pembayaran pesanan" nilai={fmtRp(kesepakatan)} />}
         {adaBarangDatang && (
           <BarisRingkasan
             label={`Total harga barang datang${daftarInvoice.length > 1 ? " (semua invoice)" : ""}`}
@@ -160,17 +160,17 @@ export function DetailPesananKeuanganModal({ transaksi, pesanan, pesananMasuk, o
         {selisihBayar !== 0 && (
           <div className="text-amber-400 font-semibold pt-1 border-t border-slate-800/60">
             Nominal di Keuangan {selisihBayar > 0 ? "lebih besar" : "lebih kecil"} {fmtRp(Math.abs(selisihBayar))} dari
-            harga kesepakatan
+            pembayaran pesanan
           </div>
         )}
         {selisihDatang !== 0 && (
           <div className="text-amber-400 font-semibold">
-            Barang datang {selisihDatang > 0 ? "lebih" : "kurang"} {fmtRp(Math.abs(selisihDatang))} dari harga
-            kesepakatan{pesanan.keterangan_selisih ? ` — ${pesanan.keterangan_selisih}` : ""}
+            Barang datang {selisihDatang > 0 ? "lebih" : "kurang"} {fmtRp(Math.abs(selisihDatang))} dari
+            pembayaran pesanan{pesanan.keterangan_selisih ? ` — ${pesanan.keterangan_selisih}` : ""}
           </div>
         )}
         {selisihBayar === 0 && selisihDatang === 0 && kesepakatan > 0 && (
-          <div className="text-emerald-400 font-semibold pt-1 border-t border-slate-800/60">Sesuai kesepakatan</div>
+          <div className="text-emerald-400 font-semibold pt-1 border-t border-slate-800/60">Sesuai pembayaran</div>
         )}
       </div>
 

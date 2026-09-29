@@ -62,7 +62,7 @@ function ModelInvoiceRow({ m, idx }) {
           Belum datang — model &amp; qty diisi lewat "Konfirmasi Datang"
         </p>
         {m.harga_total_pesan ? (
-          <p className="text-[11px] text-slate-500 mt-0.5">Total kesepakatan {fmtRp(m.harga_total_pesan)}</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">Total pembayaran {fmtRp(m.harga_total_pesan)}</p>
         ) : null}
       </div>
     );
@@ -211,7 +211,7 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
             >
               <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Ringkasan Harga</div>
               <div className="flex justify-between text-slate-400">
-                <span>Total harga kesepakatan</span>
+                <span>Total pembayaran</span>
                 <span className="text-slate-300 font-medium">{fmtRp(hargaKesepakatan)}</span>
               </div>
               <div className="flex justify-between text-slate-400">
@@ -221,7 +221,7 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
               {adaSelisih ? (
                 <>
                   <div className={`flex justify-between font-semibold pt-1 border-t border-slate-800/60 ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
-                    <span>{selisih < 0 ? "Kurang dari kesepakatan" : "Lebih dari kesepakatan"}</span>
+                    <span>{selisih < 0 ? "Kurang dari pembayaran" : "Lebih dari pembayaran"}</span>
                     <span>{fmtRp(Math.abs(selisih))}</span>
                   </div>
                   {keteranganSelisih && (
@@ -231,7 +231,7 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
                   )}
                 </>
               ) : (
-                <div className="text-emerald-400 font-semibold pt-1 border-t border-slate-800/60">Sesuai kesepakatan</div>
+                <div className="text-emerald-400 font-semibold pt-1 border-t border-slate-800/60">Sesuai pembayaran</div>
               )}
             </div>
           )}
@@ -659,7 +659,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
     <div>
       <PageHeader
         title="Pesanan Barang"
-        description={`Pesan dulu lewat "Pesan Barang" begitu tahu toko & harga kesepakatan, lalu buka baris itu lagi dan pakai "Konfirmasi Datang" begitu barangnya benar-benar sampai untuk isi rincian model & qty. Riwayatnya tetap satu, nyambung dari pesan sampai datang.`}
+        description={`Pesan dulu lewat "Pesan Barang" begitu tahu toko & nominal pembayaran, lalu buka baris itu lagi dan pakai "Konfirmasi Datang" begitu barangnya benar-benar sampai untuk isi rincian model & qty. Riwayatnya tetap satu, nyambung dari pesan sampai datang.`}
         action={
           <div className="flex items-center gap-2">
             <button

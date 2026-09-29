@@ -339,10 +339,10 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
       )}
 
       <Field label="Total Harga (opsional)">
-        <InputRupiah value={harga} onChange={setHarga} placeholder="Total harga kesepakatan (opsional)" />
+        <InputRupiah value={harga} onChange={setHarga} placeholder="Total pembayaran (opsional)" />
       </Field>
       <p className="text-[11px] text-slate-500 -mt-2 mb-3">
-        TOTAL nilai kesepakatan (bukan harga per pcs) — rincian model &amp; harga per pcs diisi
+        TOTAL nilai pembayaran (bukan harga per pcs) — rincian model &amp; harga per pcs diisi
         belakangan lewat "Konfirmasi Datang".
       </p>
       <Field label="Catatan (opsional)">
@@ -909,7 +909,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         <div>Tanggal pesan: <span className="text-slate-300">{pesanan?.tanggal_pesan || "—"}</span></div>
         {totalHargaAwal > 0 && (
           <div>
-            Total harga kesepakatan: <span className="text-slate-300">{fmtRp(totalHargaAwal)}</span>
+            Total pembayaran: <span className="text-slate-300">{fmtRp(totalHargaAwal)}</span>
             <span className="text-slate-600"> (total, bukan per pcs — isi harga per pcs tiap model di bawah)</span>
           </div>
         )}
@@ -923,7 +923,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           }`}
         >
           <div className="flex justify-between text-slate-400">
-            <span>Total harga kesepakatan</span>
+            <span>Total pembayaran</span>
             <span className="text-slate-300 font-medium">{fmtRp(totalHargaAwal)}</span>
           </div>
           <div className="flex justify-between text-slate-400">
@@ -932,11 +932,11 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           </div>
           {adaSelisih ? (
             <div className={`flex justify-between font-semibold ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
-              <span>{selisih < 0 ? "Kurang dari kesepakatan" : "Lebih dari kesepakatan"}</span>
+              <span>{selisih < 0 ? "Kurang dari pembayaran" : "Lebih dari pembayaran"}</span>
               <span>{fmtRp(Math.abs(selisih))}</span>
             </div>
           ) : (
-            <div className="text-emerald-400 font-semibold">Sesuai kesepakatan</div>
+            <div className="text-emerald-400 font-semibold">Sesuai pembayaran</div>
           )}
           {adaSelisih && !semuaBoxTerisi && (
             <div className="text-slate-500">
@@ -1366,7 +1366,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           />
           <p className="text-[11px] text-amber-400/80 mt-1">
             {wajibKeteranganSelisih
-              ? "Total harga barang datang (semua box) tidak sama dengan harga kesepakatan — jelaskan alasannya sebelum bisa disimpan."
+              ? "Total harga barang datang (semua box) tidak sama dengan total pembayaran — jelaskan alasannya sebelum bisa disimpan."
               : "Ada selisih sementara, tapi masih boleh disimpan dulu — box lain belum semua final. Keterangan wajib diisi begitu box terakhir dibongkar."}
           </p>
         </Field>
