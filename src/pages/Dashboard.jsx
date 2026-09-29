@@ -15,6 +15,8 @@ import {
   breakdownPengeluaranKategori,
   breakdownPemasukanKategori,
   laporanLabaRugi,
+  arusKasPerPeriode,
+  kelompokkanBreakdown,
   ringkasanGrosir,
   statusPesananMasuk,
   tahapPesanan,
@@ -27,7 +29,7 @@ import {
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
-import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, LaporanLabaRugi } from "./Keuangan";
+import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, DetailKelompokModal, GrafikArusKas, LaporanLabaRugi } from "./Keuangan";
 import { isEntriTokoOffline } from "./TokoOffline";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 
@@ -287,10 +289,14 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
   // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
   // kartu ringkasan "Kas Masuk/Keluar (bulan terpilih)" di bawahnya.
-
+  const arusKas = arusKasPerPeriode(ringkasanBulanIni.list);
 
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
   const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
+  // Sama seperti di Laporan Keuangan: kategori yang dipetakan ke kelompok yang
+  // sama (Keuangan > Rekening & Kategori) digabung jadi satu baris di grafik.
+  const dataMasukGrup = kelompokkanBreakdown(breakdownMasuk.data, master.kelompok_masuk, breakdownMasuk.total);
+  const dataKeluarGrup = kelompokkanBreakdown(breakdown.data, master.kelompok_keluar, breakdown.total);
 
   const labaRugiBulanIni = laporanLabaRugi(
     keuanganTransaksi,
@@ -317,20 +323,34 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
         />
       </div>
 
+      <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <BreakdownPemasukan
           total={breakdownMasuk.total}
-          data={breakdownMasuk.data}
-          onKategoriClick={(d) => setDetailKategori({ tipe: "masuk", kode: d.kode, label: d.label })}
+          data={dataMasukGrup}
+          onKategoriClick={(d) => setDetailKategori({ tipe: "masuk", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
         />
         <BreakdownPengeluaran
           total={breakdown.total}
-          data={breakdown.data}
-          onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label })}
+          data={dataKeluarGrup}
+          onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
         />
       </div>
 
-      {detailKategori && (
+      {detailKategori && detailKategori.isGrup && (
+        <DetailKelompokModal
+          kelompok={detailKategori}
+          tipe={detailKategori.tipe}
+          list={ringkasanBulanIni.list}
+          pesananMasuk={pesananMasuk}
+          rekeningList={master.rekening || []}
+          subtitle={periodeLabel}
+          onClose={() => setDetailKategori(null)}
+        />
+      )}
+
+      {detailKategori && !detailKategori.isGrup && (
         <DetailTransaksiKategoriModal
           kategori={detailKategori}
           tipe={detailKategori.tipe}
