@@ -11,11 +11,19 @@
        Kalau ada elemen lebar (misal tabel Pesanan Barang) yang
        melebihi layar, yang boleh di-scroll cuma elemen itu sendiri
        (lewat .overflow-x-auto di tabelnya), bukan seluruh halaman. */
-    overflow-x: hidden;
     width: 100%;
   }
+  html {
+    overflow-x: hidden;
+  }
+  /* PENTING: di body & wrapper root pakai "clip", BUKAN "hidden".
+     overflow-x: hidden bikin elemen itu jadi scroll container sendiri,
+     akibatnya position: sticky (Sidebar & header atas) berhenti nempel
+     dan ikut ter-scroll bareng halaman. "clip" tetap memotong konten yang
+     melebar tapi tidak membuat scroll container. */
   body {
     @apply font-sans;
+    overflow-x: clip;
   }
   /* Fokus keyboard ala Material (state layer, bukan outline browser default). */
   :focus-visible {

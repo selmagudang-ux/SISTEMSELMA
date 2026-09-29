@@ -1091,7 +1091,7 @@ function MainApp({ session, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex overflow-x-hidden">
+    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex overflow-x-clip">
       <AppShell
         active={nav}
         onNavigate={navigate}
