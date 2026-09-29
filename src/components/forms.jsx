@@ -933,7 +933,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           {adaSelisih ? (
             <div className={`flex justify-between font-semibold ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
               <span>{selisih < 0 ? "Kurang dari pembayaran" : "Lebih dari pembayaran"}</span>
-              <span>{fmtRp(Math.abs(selisih))}</span>
+              <span>{fmtRp(Math.abs(selisih))} ({(Math.abs(selisih) / totalHargaAwal * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)</span>
             </div>
           ) : (
             <div className="text-emerald-400 font-semibold">Sesuai pembayaran</div>

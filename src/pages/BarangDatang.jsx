@@ -222,7 +222,7 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
                 <>
                   <div className={`flex justify-between font-semibold pt-1 border-t border-slate-800/60 ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
                     <span>{selisih < 0 ? "Kurang dari pembayaran" : "Lebih dari pembayaran"}</span>
-                    <span>{fmtRp(Math.abs(selisih))}</span>
+                    <span>{fmtRp(Math.abs(selisih))} ({(Math.abs(selisih) / Number(hargaKesepakatan) * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)</span>
                   </div>
                   {keteranganSelisih && (
                     <div className="text-slate-400 pt-0.5">

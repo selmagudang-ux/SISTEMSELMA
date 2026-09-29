@@ -117,6 +117,7 @@ export function DetailPesananKeuanganModal({ transaksi, pesanan, pesananMasuk, o
 
   const selisihBayar = kesepakatan > 0 ? dibayar - kesepakatan : 0;
   const selisihDatang = kesepakatan > 0 && adaBarangDatang ? nilaiDatang - kesepakatan : 0;
+  const persenDari = (n) => (kesepakatan > 0 ? (Math.abs(n) / kesepakatan * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 }) : "0") + "%";
 
   return (
     <ModalShell title={`Pesanan ${pesanan.kode_pesanan || ""}`.trim()} onClose={onClose} maxWidth="max-w-2xl">
@@ -159,13 +160,13 @@ export function DetailPesananKeuanganModal({ transaksi, pesanan, pesananMasuk, o
         )}
         {selisihBayar !== 0 && (
           <div className="text-amber-400 font-semibold pt-1 border-t border-slate-800/60">
-            Nominal di Keuangan {selisihBayar > 0 ? "lebih besar" : "lebih kecil"} {fmtRp(Math.abs(selisihBayar))} dari
+            Nominal di Keuangan {selisihBayar > 0 ? "lebih besar" : "lebih kecil"} {fmtRp(Math.abs(selisihBayar))} ({persenDari(selisihBayar)}) dari
             pembayaran pesanan
           </div>
         )}
         {selisihDatang !== 0 && (
           <div className="text-amber-400 font-semibold">
-            Barang datang {selisihDatang > 0 ? "lebih" : "kurang"} {fmtRp(Math.abs(selisihDatang))} dari
+            Barang datang {selisihDatang > 0 ? "lebih" : "kurang"} {fmtRp(Math.abs(selisihDatang))} ({persenDari(selisihDatang)}) dari
             pembayaran pesanan{pesanan.keterangan_selisih ? ` — ${pesanan.keterangan_selisih}` : ""}
           </div>
         )}
