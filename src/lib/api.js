@@ -1187,6 +1187,42 @@ export function breakdownPengeluaranKategori(transaksi, kategoriList) {
   return { total, data };
 }
 
+// Kelompokkan hasil breakdown kategori (breakdownPengeluaranKategori /
+// breakdownPemasukanKategori) ke dalam "kelompok" buatan user — mis. kategori
+// "Grosir TF" dan "Grosir Cash" digabung jadi satu kelompok "Grosir".
+// pemetaan = master_data tipe "kelompok_masuk" / "kelompok_keluar", tiap baris
+// { kode: <kode kategori>, label: <nama kelompok> }. Kategori yang belum
+// dipetakan tetap tampil sendiri seperti biasa. Hasil: array yang bentuknya
+// sama dengan `data` breakdown — bedanya elemen kelompok punya isGrup = true
+// dan `anak` (daftar kategori di dalamnya), kode-nya "__grup__:<nama>".
+export function kelompokkanBreakdown(data, pemetaan, total) {
+  const peta = new Map();
+  (pemetaan || []).forEach((m) => {
+    if (m?.kode && m?.label) peta.set(m.kode, String(m.label).trim());
+  });
+  if (peta.size === 0) return data;
+
+  const grup = new Map();
+  const lepas = [];
+  (data || []).forEach((d) => {
+    const nama = peta.get(d.kode);
+    if (!nama) {
+      lepas.push(d);
+      return;
+    }
+    if (!grup.has(nama)) {
+      grup.set(nama, { kode: `__grup__:${nama}`, label: nama, jumlah: 0, isGrup: true, anak: [] });
+    }
+    const g = grup.get(nama);
+    g.jumlah += d.jumlah;
+    g.anak.push(d);
+  });
+
+  return [...grup.values(), ...lepas]
+    .map((d) => ({ ...d, persen: total > 0 ? (d.jumlah / total) * 100 : 0 }))
+    .sort((a, b) => b.jumlah - a.jumlah);
+}
+
 // Breakdown pemasukan per kategori — pasangan dari breakdownPengeluaranKategori
 // di atas, tapi untuk transaksi tipe "masuk". kategoriList = master_data tipe
 // "kategori_masuk". Dipakai oleh Laporan Laba Rugi di bawah.
