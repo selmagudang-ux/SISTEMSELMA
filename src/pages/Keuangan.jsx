@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -538,8 +538,52 @@ export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, subtit
 // margin-nya. Dipakai bareng oleh halaman Laporan Keuangan (rentang bebas)
 // dan Dashboard Keuangan (rentang bulan berjalan, menggantikan tabel
 // Transaksi Terbaru supaya dashboard langsung menunjukkan untung/rugi).
+// Satu baris (dan turunannya) di Laporan Laba Rugi. Kelompok (isGrup) bisa
+// dibuka/ditutup — Kategori -> Sub Kategori -> Rincian; kategori biasa (daun)
+// tampil sebagai baris polos.
+function BarisLabaRugi({ d, depth, seksi, terbuka, toggle }) {
+  const kunci = `${seksi}:${d.kode}`;
+  const open = d.isGrup && terbuka.has(kunci);
+  return (
+    <>
+      <tr className="border-b border-slate-800/40 last:border-0">
+        <td className="pr-4 py-1.5 text-slate-300" style={{ paddingLeft: 32 + depth * 20 }}>
+          {d.isGrup ? (
+            <button onClick={() => toggle(kunci)} className="flex items-center gap-1.5 text-left font-medium hover:text-slate-100">
+              {open ? <ChevronDown size={13} className="text-slate-500" /> : <ChevronRight size={13} className="text-slate-500" />}
+              {d.label}
+              <span className="text-[10px] text-slate-500 font-normal">({d.anak.length})</span>
+            </button>
+          ) : (
+            <span className="inline-block pl-[19px]">{d.label}</span>
+          )}
+        </td>
+        <td className={`px-4 py-1.5 text-right ${d.isGrup ? "text-slate-200 font-medium" : "text-slate-300"}`}>{fmtRp(d.jumlah)}</td>
+      </tr>
+      {open &&
+        d.anak.map((c) => (
+          <BarisLabaRugi key={c.kode || c.label} d={c} depth={depth + 1} seksi={seksi} terbuka={terbuka} toggle={toggle} />
+        ))}
+    </>
+  );
+}
+
+function kunciSemuaKelompok(data, seksi) {
+  return (data || []).flatMap((d) => (d.isGrup ? [`${seksi}:${d.kode}`, ...kunciSemuaKelompok(d.anak, seksi)] : []));
+}
+
 export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action }) {
   const untung = labaRugi >= 0;
+  const [terbuka, setTerbuka] = useState(() => new Set());
+  const toggle = (k) =>
+    setTerbuka((s) => {
+      const next = new Set(s);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
+  const semuaKunci = [...kunciSemuaKelompok(pendapatan.data, "masuk"), ...kunciSemuaKelompok(beban.data, "keluar")];
+  const adaKelompok = semuaKunci.length > 0;
+  const semuaTerbuka = adaKelompok && semuaKunci.every((k) => terbuka.has(k));
   return (
     <div className="rounded-xl border border-slate-800 overflow-hidden mb-5">
       <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2 flex-wrap justify-between">
@@ -548,7 +592,17 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
           <div className="text-sm font-semibold">Laporan Laba Rugi</div>
           {subtitle && <div className="text-[11px] text-slate-500">{subtitle}</div>}
         </div>
-        {action}
+        <div className="flex items-center gap-3">
+          {adaKelompok && (
+            <button
+              onClick={() => setTerbuka(semuaTerbuka ? new Set() : new Set(semuaKunci))}
+              className="text-[11px] font-medium text-slate-400 hover:text-slate-200"
+            >
+              {semuaTerbuka ? "Tutup semua" : "Buka semua"}
+            </button>
+          )}
+          {action}
+        </div>
       </div>
       <table className="w-full text-sm">
         <tbody>
@@ -561,10 +615,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
             </tr>
           ) : (
             pendapatan.data.map((d) => (
-              <tr key={d.kode || d.label} className="border-b border-slate-800/40 last:border-0">
-                <td className="pl-8 pr-4 py-1.5 text-slate-300">{d.label}</td>
-                <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(d.jumlah)}</td>
-              </tr>
+              <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="masuk" terbuka={terbuka} toggle={toggle} />
             ))
           )}
           <tr className="bg-slate-900/60">
@@ -581,10 +632,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
             </tr>
           ) : (
             beban.data.map((d) => (
-              <tr key={d.kode || d.label} className="border-b border-slate-800/40 last:border-0">
-                <td className="pl-8 pr-4 py-1.5 text-slate-300">{d.label}</td>
-                <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(d.jumlah)}</td>
-              </tr>
+              <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="keluar" terbuka={terbuka} toggle={toggle} />
             ))
           )}
           <tr className="bg-slate-900/60">
@@ -1077,7 +1125,15 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master,
   // yang dipetakan ke kelompok yang sama digabung jadi satu baris di grafik.
   const dataMasukGrup = kelompokkanBreakdown(breakdownMasuk.data, master.kelompok_masuk, breakdownMasuk.total);
   const dataKeluarGrup = kelompokkanBreakdown(breakdownKeluar.data, master.kelompok_keluar, breakdownKeluar.total);
-  const labaRugi = laporanLabaRugi(keuanganTransaksi, kategoriMasukList, kategoriKeluarList, dari || null, sampai || null);
+  const labaRugi = laporanLabaRugi(
+    keuanganTransaksi,
+    kategoriMasukList,
+    kategoriKeluarList,
+    dari || null,
+    sampai || null,
+    master.kelompok_masuk,
+    master.kelompok_keluar
+  );
 
   const sorted = [...list].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
 

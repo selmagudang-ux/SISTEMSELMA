@@ -1273,10 +1273,15 @@ export function breakdownPemasukanKategori(transaksi, kategoriList) {
 // masing, Laba (Rugi) Bersih, dan margin laba bersih (%). dari/sampai kosong
 // = tidak dibatasi ke arah itu (sama pola dengan ringkasanKeuangan()).
 // Dipakai bareng oleh Laporan Keuangan & Dashboard Keuangan.
-export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai) {
+// pemetaanMasuk / pemetaanKeluar (opsional) = master.kelompok_masuk /
+// master.kelompok_keluar — kalau diisi, `data` pendapatan/beban dikelompokkan
+// bertingkat (Kategori > Sub Kategori > Rincian), lihat kelompokkanBreakdown.
+export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai, pemetaanMasuk, pemetaanKeluar) {
   const { list } = ringkasanKeuangan(transaksi, dari, sampai);
   const pendapatan = breakdownPemasukanKategori(list, kategoriMasukList);
   const beban = breakdownPengeluaranKategori(list, kategoriKeluarList);
+  pendapatan.data = kelompokkanBreakdown(pendapatan.data, pemetaanMasuk, pendapatan.total);
+  beban.data = kelompokkanBreakdown(beban.data, pemetaanKeluar, beban.total);
   const labaRugi = pendapatan.total - beban.total;
   const marginPersen = pendapatan.total > 0 ? (labaRugi / pendapatan.total) * 100 : 0;
   return { pendapatan, beban, labaRugi, marginPersen };

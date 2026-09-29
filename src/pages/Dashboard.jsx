@@ -287,7 +287,15 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
   const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
 
-  const labaRugiBulanIni = laporanLabaRugi(keuanganTransaksi, master.kategori_masuk || [], master.kategori_keluar || [], dari, sampai);
+  const labaRugiBulanIni = laporanLabaRugi(
+    keuanganTransaksi,
+    master.kategori_masuk || [],
+    master.kategori_keluar || [],
+    dari,
+    sampai,
+    master.kelompok_masuk,
+    master.kelompok_keluar
+  );
 
   return (
     <div>
