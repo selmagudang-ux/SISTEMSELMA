@@ -1188,39 +1188,59 @@ export function breakdownPengeluaranKategori(transaksi, kategoriList) {
 }
 
 // Kelompokkan hasil breakdown kategori (breakdownPengeluaranKategori /
-// breakdownPemasukanKategori) ke dalam "kelompok" buatan user — mis. kategori
-// "Grosir TF" dan "Grosir Cash" digabung jadi satu kelompok "Grosir".
+// breakdownPemasukanKategori) jadi POHON BERTINGKAT buatan user, mis.
+//   Biaya Operasional (Kategori)
+//     └ Biaya Tetap (Sub Kategori)
+//         └ Gaji Karyawan, Biaya Gedung, Listrik (Rincian = kategori master)
 // pemetaan = master_data tipe "kelompok_masuk" / "kelompok_keluar", tiap baris
-// { kode: <kode kategori>, label: <nama kelompok> }. Kategori yang belum
-// dipetakan tetap tampil sendiri seperti biasa. Hasil: array yang bentuknya
-// sama dengan `data` breakdown — bedanya elemen kelompok punya isGrup = true
-// dan `anak` (daftar kategori di dalamnya), kode-nya "__grup__:<nama>".
+// { kode: <kode kategori master>, label: <jalur> } dengan jalur ditulis
+// "Kategori > Sub Kategori" (boleh lebih dalam lagi; cuma satu nama = langsung
+// di bawah Kategori). Kategori master yang belum dipetakan tetap tampil sendiri
+// di level paling atas. Hasil: array setipe `data` breakdown — elemen kelompok
+// punya isGrup = true + `anak` (kelompok lain atau kategori master), kode-nya
+// "__grup__:<jalur>". Elemen non-kelompok = kategori master (daun) apa adanya.
 export function kelompokkanBreakdown(data, pemetaan, total) {
   const peta = new Map();
   (pemetaan || []).forEach((m) => {
-    if (m?.kode && m?.label) peta.set(m.kode, String(m.label).trim());
+    if (!m?.kode || !m?.label) return;
+    const jalur = String(m.label).split(">").map((x) => x.trim()).filter(Boolean);
+    if (jalur.length) peta.set(m.kode, jalur);
   });
   if (peta.size === 0) return data;
 
-  const grup = new Map();
+  const akar = [];
   const lepas = [];
   (data || []).forEach((d) => {
-    const nama = peta.get(d.kode);
-    if (!nama) {
+    const jalur = peta.get(d.kode);
+    if (!jalur) {
       lepas.push(d);
       return;
     }
-    if (!grup.has(nama)) {
-      grup.set(nama, { kode: `__grup__:${nama}`, label: nama, jumlah: 0, isGrup: true, anak: [] });
-    }
-    const g = grup.get(nama);
-    g.jumlah += d.jumlah;
-    g.anak.push(d);
+    let daftar = akar;
+    let kodeJalur = "";
+    jalur.forEach((nama) => {
+      kodeJalur = kodeJalur ? `${kodeJalur}>${nama}` : nama;
+      let g = daftar.find((x) => x.isGrup && x.label.toLowerCase() === nama.toLowerCase());
+      if (!g) {
+        g = { kode: `__grup__:${kodeJalur}`, label: nama, jumlah: 0, isGrup: true, anak: [] };
+        daftar.push(g);
+      }
+      g.jumlah += d.jumlah;
+      daftar = g.anak;
+    });
+    daftar.push(d);
   });
 
-  return [...grup.values(), ...lepas]
-    .map((d) => ({ ...d, persen: total > 0 ? (d.jumlah / total) * 100 : 0 }))
-    .sort((a, b) => b.jumlah - a.jumlah);
+  const rapikan = (arr, tot) =>
+    arr
+      .map((n) => ({
+        ...n,
+        persen: tot > 0 ? (n.jumlah / tot) * 100 : 0,
+        ...(n.isGrup ? { anak: rapikan(n.anak, n.jumlah) } : {}),
+      }))
+      .sort((a, b) => b.jumlah - a.jumlah);
+
+  return rapikan([...akar, ...lepas], total);
 }
 
 // Breakdown pemasukan per kategori — pasangan dari breakdownPengeluaranKategori

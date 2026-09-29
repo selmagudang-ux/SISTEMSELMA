@@ -463,39 +463,51 @@ export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningLis
   );
 }
 
-// Modal untuk satu KELOMPOK kategori (mis. "Grosir" yang isinya kategori
-// "Grosir TF" & "Grosir Cash") — tingkat 1: daftar kategori di dalam kelompok
-// beserta totalnya; klik salah satu -> tingkat 2: rincian tiap transaksi
-// (per pesanan) kategori itu, dengan tombol kembali ke daftar kelompok.
+// Modal untuk satu KELOMPOK kategori — bisa ditelusuri bertingkat:
+//   Kategori (mis. "Biaya Operasional") -> Sub Kategori ("Biaya Tetap")
+//   -> Rincian (kategori master: "Gaji Karyawan", "Listrik", ...)
+//   -> daftar transaksi kategori itu (per pesanan/catatan).
+// Tiap level menampilkan isi kelompok + total, klik salah satu untuk masuk
+// lebih dalam; tombol "Kembali" naik satu level.
 export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, subtitle, onClose }) {
-  const [pilih, setPilih] = useState(null);
+  const [jejak, setJejak] = useState([]); // kelompok yang sudah dimasuki (di bawah akar)
+  const [daun, setDaun] = useState(null); // kategori master yang sedang dilihat transaksinya
 
-  if (pilih) {
+  const jalur = [kelompok, ...jejak];
+  const sekarang = jalur[jalur.length - 1];
+  const induk = jalur.length > 1 ? jalur[jalur.length - 2] : null;
+
+  if (daun) {
     return (
       <DetailTransaksiKategoriModal
-        kategori={pilih}
+        kategori={daun}
         tipe={tipe}
         list={list}
         rekeningList={rekeningList}
         subtitle={subtitle}
         onClose={onClose}
-        onBack={() => setPilih(null)}
-        labelKembali={kelompok.label}
+        onBack={() => setDaun(null)}
+        labelKembali={sekarang.label}
       />
     );
   }
 
-  const anak = [...(kelompok.anak || [])].sort((a, b) => b.jumlah - a.jumlah);
+  const anak = [...(sekarang.anak || [])].sort((a, b) => b.jumlah - a.jumlah);
   const total = anak.reduce((a, d) => a + d.jumlah, 0);
 
   return (
-    <ModalShell title={kelompok.label} onClose={onClose}>
+    <ModalShell title={jalur.map((n) => n.label).join(" › ")} onClose={onClose}>
+      {induk || jejak.length > 0 ? (
+        <button onClick={() => setJejak((j) => j.slice(0, -1))} className="text-xs text-amber-400 hover:text-amber-300 mb-2">
+          ← Kembali ke {induk.label}
+        </button>
+      ) : null}
       {subtitle && <div className="text-[11px] text-slate-500 -mt-2 mb-3">{subtitle}</div>}
       <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
         {anak.map((d, i) => (
           <button
             key={d.kode || d.label}
-            onClick={() => setPilih({ kode: d.kode, label: d.label })}
+            onClick={() => (d.isGrup ? setJejak((j) => [...j, d]) : setDaun({ kode: d.kode, label: d.label }))}
             className={`w-full text-left px-3.5 py-3 flex items-center justify-between gap-2 hover:bg-slate-800/60 ${
               i % 2 ? "bg-slate-950" : "bg-slate-900"
             }`}
@@ -503,7 +515,8 @@ export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, subtit
             <div className="min-w-0">
               <div className="text-sm text-slate-200 truncate">{d.label}</div>
               <div className="text-[11px] text-slate-500">
-                {total > 0 ? Math.round((d.jumlah / total) * 100) : 0}% dari {kelompok.label} · lihat rincian ›
+                {d.isGrup ? "Sub Kategori" : "Rincian"} · {total > 0 ? Math.round((d.jumlah / total) * 100) : 0}% dari{" "}
+                {sekarang.label} · {d.isGrup ? "buka isinya" : "lihat transaksi"} ›
               </div>
             </div>
             <div className={`text-sm font-semibold shrink-0 ${tipe === "masuk" ? "text-emerald-400" : "text-red-400"}`}>
@@ -513,7 +526,7 @@ export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, subtit
         ))}
       </div>
       <div className="flex items-center justify-between px-1">
-        <span className="text-xs text-slate-400">Total ({anak.length} kategori)</span>
+        <span className="text-xs text-slate-400">Total ({anak.length} item)</span>
         <span className="text-sm font-semibold text-slate-100">{fmtRp(total)}</span>
       </div>
     </ModalShell>
@@ -1423,6 +1436,164 @@ function LaporanBulananTahunan({ keuanganTransaksi, master }) {
 
 const BULAN_LABEL_ID = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 
+// Tab "Kategori & Sub Kategori": menyusun pohon laporan. Tiap baris = satu
+// kategori master yang sudah ada (jadi "Rincian"); isi Kategori (level atas)
+// dan Sub Kategori (opsional) untuknya. Contoh:
+//   Gaji Karyawan | Biaya Operasional | Biaya Tetap
+//   Listrik       | Biaya Operasional | Biaya Tetap
+//   Grosir TF     | Grosir            | (kosong)
+// Disimpan di master_data tipe "kelompok_masuk" / "kelompok_keluar"
+// (kode = kode kategori master, label = "Kategori > Sub Kategori").
+// Dipakai grafik per kategori di Laporan Keuangan (lihat kelompokkanBreakdown).
+function pecahJalur(label) {
+  const bagian = String(label || "").split(">").map((x) => x.trim()).filter(Boolean);
+  return { kat: bagian[0] || "", sub: bagian.slice(1).join(" > ") };
+}
+
+function BarisPengelompokan({ m, awal, simpan, saranKategori, saranSub }) {
+  const [kat, setKat] = useState(awal.kat);
+  const [sub, setSub] = useState(awal.sub);
+  const kirim = () => simpan(m, kat, sub);
+  const kelas =
+    "w-full bg-slate-950 border border-slate-800 rounded-md px-2 py-1.5 text-xs outline-none focus:border-amber-500";
+  return (
+    <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-2 items-center px-4 py-2">
+      <div className="min-w-0">
+        <div className="text-sm text-slate-200 truncate">{m.label}</div>
+        <div className="font-mono text-[10px] text-amber-400/80">{m.kode}</div>
+      </div>
+      <input
+        list={saranKategori}
+        value={kat}
+        onChange={(e) => setKat(e.target.value)}
+        onBlur={kirim}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        placeholder="Kategori…"
+        className={kelas}
+      />
+      <input
+        list={saranSub}
+        value={sub}
+        onChange={(e) => setSub(e.target.value)}
+        onBlur={kirim}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        placeholder="Sub kategori…"
+        className={kelas}
+      />
+    </div>
+  );
+}
+
+function PengelompokanKategori({ master, reload, showToast }) {
+  const [tipe, setTipe] = useState("keluar");
+  const kategoriList = master[tipe === "masuk" ? "kategori_masuk" : "kategori_keluar"] || [];
+  const kelompokKey = tipe === "masuk" ? "kelompok_masuk" : "kelompok_keluar";
+  const pemetaan = master[kelompokKey] || [];
+
+  const jalurDari = (kode) => pecahJalur(pemetaan.find((x) => x.kode === kode)?.label);
+  const semuaJalur = pemetaan.map((x) => pecahJalur(x.label));
+  const saranKategori = [...new Set(semuaJalur.map((j) => j.kat).filter(Boolean))];
+  const saranSub = [...new Set(semuaJalur.map((j) => j.sub).filter(Boolean))];
+
+  const urut = [...kategoriList].sort((a, b) => {
+    const ja = jalurDari(a.kode);
+    const jb = jalurDari(b.kode);
+    const ka = ja.kat ? `0|${ja.kat}|${ja.sub}|${a.label}` : `1|${a.label}`;
+    const kb = jb.kat ? `0|${jb.kat}|${jb.sub}|${b.label}` : `1|${b.label}`;
+    return ka.localeCompare(kb);
+  });
+
+  const simpan = async (m, katRaw, subRaw) => {
+    const kat = katRaw.trim();
+    const sub = subRaw.trim();
+    const ada = pemetaan.find((x) => x.kode === m.kode);
+    if (!kat && sub) {
+      showToast("Isi Kategori dulu sebelum Sub Kategori", "err");
+      return;
+    }
+    const label = kat ? (sub ? `${kat} > ${sub}` : kat) : "";
+    if ((ada?.label || "") === label) return;
+    try {
+      if (!label) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      } else if (ada) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label }) });
+      } else {
+        await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: kelompokKey, kode: m.kode, label }) });
+      }
+      await reload();
+      showToast(label ? "Pengelompokan disimpan" : "Dikeluarkan dari kelompok");
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan pengelompokan", "err");
+    }
+  };
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex flex-wrap gap-1.5 mb-3 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {[
+          { key: "keluar", label: "Pengeluaran" },
+          { key: "masuk", label: "Pemasukan" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTipe(t.key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              tipe === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="text-[11px] text-slate-500 mb-3">
+        Tiap baris di bawah adalah kategori yang sudah ada (jadi <span className="text-slate-300">Rincian</span>).
+        Isi <span className="text-slate-300">Kategori</span> dan (opsional) <span className="text-slate-300">Sub Kategori</span>{" "}
+        supaya di Laporan Keuangan tampil bertingkat, mis. Biaya Operasional → Biaya Tetap → Gaji Karyawan. Nama yang sama
+        otomatis digabung. Kosongkan kalau tidak ingin dikelompokkan.
+      </div>
+
+      <datalist id="saran-kategori-kelompok">
+        {saranKategori.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
+      <datalist id="saran-sub-kelompok">
+        {saranSub.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden">
+        <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-2 px-4 py-2 text-[11px] uppercase text-slate-500 border-b border-slate-800">
+          <div>Rincian</div>
+          <div>Kategori</div>
+          <div>Sub Kategori</div>
+        </div>
+        {urut.length === 0 ? (
+          <div className="px-4 py-8 text-center text-slate-500 text-sm">Belum ada kategori.</div>
+        ) : (
+          urut.map((m, i) => {
+            const j = jalurDari(m.kode);
+            return (
+              <div key={`${tipe}-${m.id}-${j.kat}|${j.sub}`} className={i % 2 ? "bg-slate-950" : "bg-slate-900"}>
+                <BarisPengelompokan
+                  m={m}
+                  awal={j}
+                  simpan={simpan}
+                  saranKategori="saran-kategori-kelompok"
+                  saranSub="saran-sub-kelompok"
+                />
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Halaman kelola daftar Rekening & Kategori yang didaftarkan user sendiri.
 // Disimpan di tabel master_data yang sama dipakai untuk kode SKU (bahan,
 // warna, dst), tapi dengan tipe berbeda supaya tidak tercampur:
@@ -1433,6 +1604,8 @@ const TAB_KEUANGAN = [
   { key: "rekening", label: "Rekening", placeholderKode: "BCA", placeholderLabel: "Bank BCA - 12345" },
   { key: "kategori_masuk", label: "Kategori Pemasukan", placeholderKode: "JUAL", placeholderLabel: "Penjualan Produk" },
   { key: "kategori_keluar", label: "Kategori Pengeluaran", placeholderKode: "GAJI", placeholderLabel: "Gaji Karyawan" },
+  // Tab khusus (bukan daftar kode/nama biasa) — lihat PengelompokanKategori.
+  { key: "pengelompokan", label: "Kategori & Sub Kategori" },
 ];
 
 function RekeningKategori({ master, reload, showToast }) {
@@ -1449,36 +1622,8 @@ function RekeningKategori({ master, reload, showToast }) {
   const [editLabel, setEditLabel] = useState("");
   const [editSaving, setEditSaving] = useState(false);
 
-  const tabInfo = TAB_KEUANGAN.find((t) => t.key === activeTab);
+  const tabInfo = TAB_KEUANGAN.find((t) => t.key === activeTab) || TAB_KEUANGAN[0];
   const list = master[activeTab] || [];
-
-  // Pengelompokan kategori (hanya tab kategori) — disimpan di master_data
-  // dengan tipe "kelompok_masuk" / "kelompok_keluar": kode = kode kategori,
-  // label = nama kelompok. Dipakai grafik Pemasukan/Pengeluaran per Kategori
-  // di Laporan Keuangan.
-  const kelompokKey =
-    activeTab === "kategori_masuk" ? "kelompok_masuk" : activeTab === "kategori_keluar" ? "kelompok_keluar" : null;
-  const pemetaanKelompok = kelompokKey ? master[kelompokKey] || [] : [];
-  const namaKelompokAda = [...new Set(pemetaanKelompok.map((x) => x.label))];
-
-  const simpanKelompok = async (m, nilai) => {
-    const nama = (nilai || "").trim();
-    const ada = pemetaanKelompok.find((x) => x.kode === m.kode);
-    if ((ada?.label || "") === nama) return;
-    try {
-      if (!nama) {
-        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
-      } else if (ada) {
-        await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: nama }) });
-      } else {
-        await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: kelompokKey, kode: m.kode, label: nama }) });
-      }
-      await reload();
-      showToast(nama ? `Masuk kelompok "${nama}"` : "Dikeluarkan dari kelompok");
-    } catch (e) {
-      showToast(e.message || "Gagal menyimpan kelompok", "err");
-    }
-  };
 
   const startEdit = (m) => {
     setEditingId(m.id);
@@ -1550,14 +1695,8 @@ function RekeningKategori({ master, reload, showToast }) {
     }
   };
 
-  return (
-    <div>
-      <PageHeader
-        title="Rekening & Kategori"
-        description="Daftar rekening (sumber dana) dan kategori pemasukan/pengeluaran yang muncul di form Transaksi Keuangan. Kelola sendiri sesuai kebutuhan bisnis Anda."
-      />
-
-      <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+  const tabBar = (
+    <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
         {TAB_KEUANGAN.map((t) => (
           <button
             key={t.key}
@@ -1576,6 +1715,29 @@ function RekeningKategori({ master, reload, showToast }) {
           </button>
         ))}
       </div>
+  );
+
+  if (activeTab === "pengelompokan") {
+    return (
+      <div>
+        <PageHeader
+          title="Rekening & Kategori"
+          description="Susun kategori bertingkat untuk laporan: Kategori → Sub Kategori → Rincian."
+        />
+        {tabBar}
+        <PengelompokanKategori master={master} reload={reload} showToast={showToast} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader
+        title="Rekening & Kategori"
+        description="Daftar rekening (sumber dana) dan kategori pemasukan/pengeluaran yang muncul di form Transaksi Keuangan. Kelola sendiri sesuai kebutuhan bisnis Anda."
+      />
+
+      {tabBar}
 
       <div className="flex items-end gap-2 mb-4 max-w-lg">
         <div className="flex-1">
@@ -1612,21 +1774,7 @@ function RekeningKategori({ master, reload, showToast }) {
         </button>
       </div>
 
-      {kelompokKey && (
-        <div className="text-[11px] text-slate-500 mb-2 max-w-2xl">
-          Isi kolom <span className="text-slate-300">Kelompok</span> untuk menggabungkan beberapa kategori jadi satu di
-          grafik Laporan (mis. "Grosir TF" &amp; "Grosir Cash" → kelompok "Grosir"). Kosongkan kalau tidak ingin dikelompokkan.
-        </div>
-      )}
-      {kelompokKey && (
-        <datalist id="daftar-kelompok-kategori">
-          {namaKelompokAda.map((n) => (
-            <option key={n} value={n} />
-          ))}
-        </datalist>
-      )}
-
-      <div className={`rounded-xl border border-slate-800 overflow-hidden ${kelompokKey ? "max-w-2xl" : "max-w-lg"}`}>
+      <div className="rounded-xl border border-slate-800 overflow-hidden max-w-lg">
         {list.length === 0 ? (
           <div className="px-4 py-8 text-center text-slate-500 text-sm">
             Belum ada data untuk {tabInfo.label}.
@@ -1684,18 +1832,6 @@ function RekeningKategori({ master, reload, showToast }) {
                       <span className="text-sm text-slate-200">{m.label}</span>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
-                      {kelompokKey && (
-                        <input
-                          key={`${m.id}-${pemetaanKelompok.find((x) => x.kode === m.kode)?.label || ""}`}
-                          list="daftar-kelompok-kategori"
-                          defaultValue={pemetaanKelompok.find((x) => x.kode === m.kode)?.label || ""}
-                          placeholder="Kelompok…"
-                          title="Nama kelompok — kategori dengan nama kelompok yang sama digabung di grafik Laporan"
-                          onBlur={(e) => simpanKelompok(m, e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-                          className="w-32 bg-slate-950 border border-slate-800 rounded-md px-2 py-1 text-xs outline-none focus:border-amber-500 mr-1"
-                        />
-                      )}
                       <button
                         onClick={() => startEdit(m)}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800"
