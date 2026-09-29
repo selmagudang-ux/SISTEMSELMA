@@ -1294,8 +1294,8 @@ function MainApp({ session, onLogout }) {
                 <Keuangan
                   sub={nav.sub || "transaksi"}
                   keuanganTransaksi={keuanganTransaksi}
-                  marketplaceTransaksi={marketplaceTransaksi}
                   pesananMasuk={pesananMasuk}
+                  marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
                   reload={reloadCurrentMenu}
                   showToast={showToast}

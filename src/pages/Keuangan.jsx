@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Package } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -14,10 +14,9 @@ import {
   laporanBulananData,
   rekapTahunanData,
   laporanLabaRugi,
-  detailModelPesanan,
-  statusPesananMasuk,
   sb,
 } from "../lib/api";
+import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -89,117 +88,7 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
-// Cari baris Pesan Barang (pesanan_masuk) yang tercatat ke transaksi Keuangan
-// ini lewat kolom keuangan_transaksi_id (diisi waktu "Pesan Barang" disimpan,
-// lihat modal "pesan-barang" di ModalRouter). null kalau transaksi ini bukan
-// hasil Pesan Barang.
-export function pesananDariTransaksi(t, pesananMasuk) {
-  if (!t?.id) return null;
-  return (pesananMasuk || []).find((p) => p.keuangan_transaksi_id === t.id) || null;
-}
-
-const LABEL_STATUS_PESANAN = {
-  menunggu: "Menunggu",
-  draft: "Draf",
-  sebagian: "Sebagian Datang",
-  selesai: "Selesai",
-  batal: "Dibatalkan",
-};
-const WARNA_STATUS_PESANAN = {
-  menunggu: "amber",
-  draft: "slate",
-  sebagian: "sky",
-  selesai: "emerald",
-  batal: "red",
-};
-
-// Modal rincian Pesan Barang untuk satu transaksi Keuangan — detail dibaca
-// dari data Pesanan Barang (pesanan_masuk) yang tertaut, jadi Keuangan &
-// Laporan Keuangan tidak menyimpan salinan sendiri: kalau resi/model/harga
-// di Pesanan Barang berubah, tampilan di sini ikut berubah. Invoice
-// tambahan (baris anak, induk_id = pesanan ini) ikut digabung ke daftar model.
-export function RincianPesananBarangModal({ pesanan, pesananMasuk, transaksi, onClose, onBack, labelKembali }) {
-  const anak = (pesananMasuk || []).filter((x) => x.induk_id === pesanan.id);
-  const semuaBaris = [pesanan, ...anak];
-  const status = statusPesananMasuk(pesanan);
-
-  const models = semuaBaris
-    .flatMap((x) => detailModelPesanan(x))
-    .map((m) => ({
-      nama: m.nama || "",
-      qty: Number(m.jumlah) || Number(m.diterima) || 0,
-      harga: Number(m.harga) || 0,
-    }))
-    .filter((m) => m.nama || m.qty > 0);
-  const totalModel = models.reduce((a, m) => a + m.qty * m.harga, 0);
-
-  const Baris = ({ label, children }) => (
-    <div className="flex items-start justify-between gap-3 px-3.5 py-2 text-xs">
-      <span className="text-slate-500 shrink-0">{label}</span>
-      <span className="text-slate-200 text-right min-w-0 break-words">{children || "—"}</span>
-    </div>
-  );
-
-  return (
-    <ModalShell title="Rincian Pesan Barang" onClose={onClose}>
-      {onBack && (
-        <button onClick={onBack} className="text-xs text-amber-400 hover:text-amber-300 mb-2">
-          ← Kembali{labelKembali ? ` ke ${labelKembali}` : ""}
-        </button>
-      )}
-      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3 divide-y divide-slate-800/70 bg-slate-900">
-        <Baris label="Kode / No. Resi">{pesanan.kode_pesanan}</Baris>
-        <Baris label="Supplier">{pesanan.supplier}</Baris>
-        <Baris label="Jenis">{pesanan.jenis}</Baris>
-        <Baris label="Tanggal Pesan">{pesanan.tanggal_pesan ? formatTanggalID(pesanan.tanggal_pesan) : ""}</Baris>
-        <Baris label="No. Resi">{pesanan.resi}</Baris>
-        <Baris label="Jumlah Box">{pesanan.jumlah_box ? String(pesanan.jumlah_box) : ""}</Baris>
-        <Baris label="Status">
-          <Badge color={WARNA_STATUS_PESANAN[status] || "slate"}>{LABEL_STATUS_PESANAN[status] || status}</Badge>
-        </Baris>
-        <Baris label="Harga Kesepakatan">{pesanan.harga_kesepakatan ? fmtRp(pesanan.harga_kesepakatan) : ""}</Baris>
-        {transaksi && <Baris label="Dibayar di Keuangan">{fmtRp(transaksi.jumlah)}</Baris>}
-        {pesanan.catatan && <Baris label="Catatan">{pesanan.catatan}</Baris>}
-      </div>
-
-      <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 px-1">Barang Datang per Model</div>
-      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
-        {models.length === 0 ? (
-          <div className="px-4 py-5 text-center text-slate-500 text-xs">
-            Rincian model belum diisi — baru terisi setelah "Konfirmasi Datang" disimpan di Pesan Barang.
-          </div>
-        ) : (
-          <div className="max-h-[30vh] overflow-y-auto">
-            {models.map((m, i) => (
-              <div
-                key={i}
-                className={`px-3.5 py-2 flex items-center justify-between gap-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-              >
-                <div className="min-w-0">
-                  <div className="text-xs text-slate-200 truncate">{m.nama || "Model tanpa nama"}</div>
-                  <div className="text-[11px] text-slate-500">
-                    {m.qty} pcs{m.harga > 0 ? ` × ${fmtRp(m.harga)}` : ""}
-                  </div>
-                </div>
-                {m.harga > 0 && (
-                  <div className="text-xs font-semibold text-slate-300 shrink-0">{fmtRp(m.qty * m.harga)}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      {models.length > 0 && totalModel > 0 && (
-        <div className="flex items-center justify-between px-1">
-          <span className="text-xs text-slate-400">Total nilai barang datang</span>
-          <span className="text-sm font-semibold text-slate-100">{fmtRp(totalModel)}</span>
-        </div>
-      )}
-    </ModalShell>
-  );
-}
-
-export default function Keuangan({ sub, keuanganTransaksi = [], marketplaceTransaksi = [], pesananMasuk = [], master = {}, reload, showToast, setModal }) {
+export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal }) {
   if (sub === "rekening") {
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
   }
@@ -528,25 +417,25 @@ export function BreakdownPemasukan({ total, data, onKategoriClick }) {
 // Modal rincian transaksi untuk satu kategori (dipicu klik pada donat/daftar
 // BreakdownKategori) — daftar tiap transaksi kategori itu pada rentang yang
 // sama dengan grafiknya, diurutkan terbaru dulu, ditutup total keseluruhan.
-export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningList, pesananMasuk = [], subtitle, onClose, onBack, labelKembali }) {
-  const [rincianPesanan, setRincianPesanan] = useState(null); // { pesanan, transaksi }
-  const rows = (list || [])
-    .filter((t) => t.tipe === tipe && (t.kategori || "") === (kategori.kode || ""))
-    .sort((a, b) => (b.tanggal + (b.created_at || "")).localeCompare(a.tanggal + (a.created_at || "")));
-  const total = rows.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-
-  if (rincianPesanan) {
+export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningList, subtitle, onClose, onBack, labelKembali, pesananMasuk = [] }) {
+  const [lihatPesanan, setLihatPesanan] = useState(null); // { transaksi, pesanan }
+  const petaPesanan = useMemo(() => petaPesananKeuangan(pesananMasuk), [pesananMasuk]);
+  if (lihatPesanan) {
     return (
-      <RincianPesananBarangModal
-        pesanan={rincianPesanan.pesanan}
+      <DetailPesananKeuanganModal
+        transaksi={lihatPesanan.transaksi}
+        pesanan={lihatPesanan.pesanan}
         pesananMasuk={pesananMasuk}
-        transaksi={rincianPesanan.transaksi}
         onClose={onClose}
-        onBack={() => setRincianPesanan(null)}
+        onBack={() => setLihatPesanan(null)}
         labelKembali={kategori.label}
       />
     );
   }
+  const rows = (list || [])
+    .filter((t) => t.tipe === tipe && (t.kategori || "") === (kategori.kode || ""))
+    .sort((a, b) => (b.tanggal + (b.created_at || "")).localeCompare(a.tanggal + (a.created_at || "")));
+  const total = rows.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
   return (
     <ModalShell title={kategori.label} onClose={onClose}>
@@ -563,36 +452,33 @@ export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningLis
               Tidak ada transaksi kategori ini pada rentang tersebut.
             </div>
           ) : (
-            rows.map((t, i) => {
-              const pesananTerkait = pesananDariTransaksi(t, pesananMasuk);
-              return (
-                <div
-                  key={t.id || i}
-                  className={`px-3.5 py-2.5 flex items-center justify-between gap-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs text-slate-200 truncate">{t.keterangan || "—"}</div>
-                    <div className="text-[11px] text-slate-500">
-                      {formatTanggalID(t.tanggal)} · {labelDari(rekeningList, t.rekening)}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {pesananTerkait && (
-                      <button
-                        onClick={() => setRincianPesanan({ pesanan: pesananTerkait, transaksi: t })}
-                        className="flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 px-2 py-1 rounded-md hover:bg-slate-800"
-                        title="Lihat rincian Pesan Barang"
-                      >
-                        <Package size={12} /> Rincian
-                      </button>
-                    )}
-                    <div className={`text-sm font-semibold ${tipe === "masuk" ? "text-emerald-400" : "text-red-400"}`}>
-                      {fmtRp(t.jumlah)}
-                    </div>
+            rows.map((t, i) => (
+              <div
+                key={t.id || i}
+                className={`px-3.5 py-2.5 flex items-center justify-between gap-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-200 truncate">{t.keterangan || "—"}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {formatTanggalID(t.tanggal)} · {labelDari(rekeningList, t.rekening)}
                   </div>
                 </div>
-              );
-            })
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {petaPesanan.get(t.id) && (
+                    <button
+                      onClick={() => setLihatPesanan({ transaksi: t, pesanan: petaPesanan.get(t.id) })}
+                      className="p-1.5 rounded-lg text-amber-400/80 hover:text-amber-300 hover:bg-slate-800"
+                      title="Lihat detail pesanan barang"
+                    >
+                      <Receipt size={13} />
+                    </button>
+                  )}
+                  <div className={`text-sm font-semibold ${tipe === "masuk" ? "text-emerald-400" : "text-red-400"}`}>
+                    {fmtRp(t.jumlah)}
+                  </div>
+                </div>
+              </div>
+            ))
           )}
         </div>
       </div>
@@ -610,7 +496,7 @@ export function DetailTransaksiKategoriModal({ kategori, tipe, list, rekeningLis
 //   -> daftar transaksi kategori itu (per pesanan/catatan).
 // Tiap level menampilkan isi kelompok + total, klik salah satu untuk masuk
 // lebih dalam; tombol "Kembali" naik satu level.
-export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, pesananMasuk = [], subtitle, onClose }) {
+export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, subtitle, onClose, pesananMasuk = [] }) {
   const [jejak, setJejak] = useState([]); // kelompok yang sudah dimasuki (di bawah akar)
   const [daun, setDaun] = useState(null); // kategori master yang sedang dilihat transaksinya
 
@@ -625,11 +511,11 @@ export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, pesana
         tipe={tipe}
         list={list}
         rekeningList={rekeningList}
-        pesananMasuk={pesananMasuk}
         subtitle={subtitle}
         onClose={onClose}
         onBack={() => setDaun(null)}
         labelKembali={sekarang.label}
+        pesananMasuk={pesananMasuk}
       />
     );
   }
@@ -803,7 +689,8 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
 }
 
 function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, showToast }) {
-  const [rincianPesanan, setRincianPesanan] = useState(null); // { pesanan, transaksi }
+  const [detailPesanan, setDetailPesanan] = useState(null); // { transaksi, pesanan }
+  const petaPesanan = useMemo(() => petaPesananKeuangan(pesananMasuk), [pesananMasuk]);
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [tipeFilter, setTipeFilter] = useState("");
@@ -878,7 +765,6 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
             const kategoriLabel = labelDari(t.tipe === "masuk" ? kategoriMasukList : kategoriKeluarList, t.kategori);
             const rekeningLabel = labelDari(rekeningList, t.rekening);
             const rekeningTujuanLabel = labelDari(rekeningList, t.rekening_tujuan);
-            const pesananTerkait = pesananDariTransaksi(t, pesananMasuk);
             return (
               <div
                 key={t.id}
@@ -909,15 +795,6 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                   </div>
                 </button>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  {pesananTerkait && (
-                    <button
-                      onClick={() => setRincianPesanan({ pesanan: pesananTerkait, transaksi: t })}
-                      className="p-1.5 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-slate-800"
-                      title="Lihat rincian Pesan Barang"
-                    >
-                      <Package size={13} />
-                    </button>
-                  )}
                   <div
                     className={`text-sm font-semibold ${
                       isTransfer ? "text-sky-400" : t.tipe === "masuk" ? "text-emerald-400" : "text-red-400"
@@ -925,6 +802,15 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                   >
                     {isTransfer ? "" : t.tipe === "masuk" ? "+" : "-"}{fmtRp(t.jumlah)}
                   </div>
+                  {petaPesanan.get(t.id) && (
+                    <button
+                      onClick={() => setDetailPesanan({ transaksi: t, pesanan: petaPesanan.get(t.id) })}
+                      className="p-1.5 rounded-lg text-amber-400/80 hover:text-amber-300 hover:bg-slate-800"
+                      title="Lihat detail pesanan barang"
+                    >
+                      <Receipt size={13} />
+                    </button>
+                  )}
                   <button
                     onClick={() => setModal({ type: "keuangan-transaksi-form", item: t })}
                     className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800"
@@ -946,12 +832,12 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
         </div>
       )}
 
-      {rincianPesanan && (
-        <RincianPesananBarangModal
-          pesanan={rincianPesanan.pesanan}
+      {detailPesanan && (
+        <DetailPesananKeuanganModal
+          transaksi={detailPesanan.transaksi}
+          pesanan={detailPesanan.pesanan}
           pesananMasuk={pesananMasuk}
-          transaksi={rincianPesanan.transaksi}
-          onClose={() => setRincianPesanan(null)}
+          onClose={() => setDetailPesanan(null)}
         />
       )}
     </div>
@@ -1267,7 +1153,7 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
 // pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
 // narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
 // ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
-function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], pesananMasuk = [], master, reload, showToast }) {
+function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
@@ -1427,8 +1313,8 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], pesanan
           kelompok={detailKategori}
           tipe={detailKategori.tipe}
           list={list}
-          rekeningList={rekeningList}
           pesananMasuk={pesananMasuk}
+          rekeningList={rekeningList}
           subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
           onClose={() => setDetailKategori(null)}
         />
@@ -1439,8 +1325,8 @@ function LaporanKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], pesanan
           kategori={detailKategori}
           tipe={detailKategori.tipe}
           list={list}
-          rekeningList={rekeningList}
           pesananMasuk={pesananMasuk}
+          rekeningList={rekeningList}
           subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
           onClose={() => setDetailKategori(null)}
         />
