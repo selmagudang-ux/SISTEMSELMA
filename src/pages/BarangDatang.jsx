@@ -177,6 +177,11 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
                     {nilaiInvoice > 0 && (
                       <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">{fmtRp(nilaiInvoice)}</span>
                     )}
+                    {Number(inv.harga_pembayaran) > 0 && (
+                      <span className="text-[11px] text-emerald-400 font-medium hidden sm:inline" title="Harga pembayaran invoice ini (catatan, tidak masuk Keuangan)">
+                        Bayar {fmtRp(inv.harga_pembayaran)}
+                      </span>
+                    )}
                     {fotoUrls.length > 0 && (
                       <button
                         onClick={() => onLihatFoto(fotoUrls, 0)}

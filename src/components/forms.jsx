@@ -398,6 +398,8 @@ function bonTambahanBaru(noBox, existing) {
     id: `bont-${++_bonTambahanSeq}`,
     noBox: noBox ?? "",
     noInvoice: existing?.no_invoice || "",
+    // Harga pembayaran KHUSUS invoice ini — murni catatan, TIDAK masuk Keuangan.
+    hargaPembayaran: existing?.harga_pembayaran ? Number(existing.harga_pembayaran) : "",
     fotoBonList: [],
     existingFotoBon,
     models: existing ? modelsDariDraf(existing) : [barisBarangDatang()],
@@ -592,6 +594,11 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   // PSN- internal, dan bukan No. Resi pengiriman) — murni catatan referensi,
   // tidak dipakai buat penomoran otomatis apapun.
   const [noInvoiceUtama, setNoInvoiceUtama] = useState(pesanan?.no_invoice || "");
+  // Harga pembayaran per invoice (bon utama) — catatan saja, TIDAK dicatat ke
+  // Keuangan (pembayaran ke supplier sudah dicatat sekali di "Pesan Barang").
+  const [hargaPembayaranUtama, setHargaPembayaranUtama] = useState(
+    pesanan?.harga_pembayaran ? Number(pesanan.harga_pembayaran) : ""
+  );
   // Foto bon bisa lebih dari satu, sama seperti Input Barang Datang. Foto
   // yang sudah ada dari draf sebelumnya (sudah terupload, tinggal URL)
   // disimpan terpisah di `existingFotoBon` supaya tidak ikut diupload ulang.
@@ -801,6 +808,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   const bonTambahanPayload = (bon) => ({
     noBox: bon.noBox === "" ? null : Number(bon.noBox) || null,
     noInvoice: bon.noInvoice.trim() || null,
+    hargaPembayaran: Number(bon.hargaPembayaran) || null,
     fotoBonFiles: bon.fotoBonList.map((f) => f.file),
     existingFotoBonUrls: bon.existingFotoBon || [],
     models: bon.models.map(modelPayload),
@@ -836,6 +844,7 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         (!draft && utamaMasihSebagian && extras.length >= extraBelum.length && semuaBoxTerisi),
       noBox: noBoxUtama === "" ? null : Number(noBoxUtama) || null,
       noInvoice: noInvoiceUtama.trim() || null,
+      hargaPembayaran: Number(hargaPembayaranUtama) || null,
       fotoBonFiles: fotoBonList.map((f) => f.file),
       existingFotoBonUrls: existingFotoBon,
       models: models.map(modelPayload),
@@ -1030,6 +1039,16 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
           placeholder="Nomor invoice/nota dari supplier"
         />
       </Field>
+      <Field label="Harga Pembayaran Invoice (opsional)">
+        <InputRupiah
+          value={hargaPembayaranUtama}
+          onChange={setHargaPembayaranUtama}
+          placeholder="Nominal pembayaran untuk invoice ini"
+        />
+      </Field>
+      <p className="text-[11px] text-slate-500 -mt-2 mb-3">
+        Catatan saja per invoice — TIDAK dicatat ke Keuangan (pembayaran ke supplier sudah tercatat di Pesan Barang).
+      </p>
 
       <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang yang Datang</p>
       <div className="space-y-2.5 max-h-[42vh] overflow-y-auto pr-1 mb-1">
@@ -1251,6 +1270,16 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
               placeholder="Nomor invoice/nota dari supplier"
             />
           </Field>
+          <Field label="Harga Pembayaran Invoice (opsional)">
+            <InputRupiah
+              value={bon.hargaPembayaran}
+              onChange={(v) => ubahBon(bon.id, { hargaPembayaran: v })}
+              placeholder="Nominal pembayaran untuk invoice ini"
+            />
+          </Field>
+          <p className="text-[11px] text-slate-500 -mt-2 mb-3">
+            Catatan saja per invoice — TIDAK dicatat ke Keuangan.
+          </p>
 
           <p className="text-[11px] uppercase text-slate-500 font-semibold mb-2">Model Barang</p>
           <div className="space-y-2.5 max-h-[42vh] overflow-y-auto pr-1 mb-1">

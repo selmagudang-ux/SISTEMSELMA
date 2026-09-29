@@ -198,6 +198,7 @@ export function DetailPesananKeuanganModal({ transaksi, pesanan, pesananMasuk, o
                   )}
                 </div>
                 {nilai > 0 && <span className="text-[11px] text-slate-400 font-medium flex-shrink-0">{fmtRp(nilai)}</span>}
+                {Number(inv.harga_pembayaran) > 0 && <span className="text-[11px] text-emerald-400 font-medium flex-shrink-0">Bayar {fmtRp(inv.harga_pembayaran)}</span>}
               </div>
               {detail.length === 0 ? (
                 <div className="px-3.5 py-3 text-xs text-slate-600 italic">Belum ada rincian model.</div>

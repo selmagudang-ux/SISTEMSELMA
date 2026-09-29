@@ -3602,7 +3602,7 @@ export default function ModalRouter({
         saving={saving}
         suppliers={suppliers}
         master={master}
-        onSubmit={async ({ draft, tanggal, noBox, noInvoice, fotoBonFiles, existingFotoBonUrls, models, catatan, hargaKesepakatan, keteranganSelisih, bonTambahan, skipUtama, simpanSatu, tandaiSebagian, sisaQty, selesaikanUtama }) => {
+        onSubmit={async ({ draft, tanggal, noBox, noInvoice, hargaPembayaran, fotoBonFiles, existingFotoBonUrls, models, catatan, hargaKesepakatan, keteranganSelisih, bonTambahan, skipUtama, simpanSatu, tandaiSebagian, sisaQty, selesaikanUtama }) => {
           // skipUtama = bon utama (baris pesanan ini) sudah disimpan sendiri
           // sebelumnya, jadi tidak di-PATCH/dibuatkan item lagi — cuma bon
           // tambahan yang diproses. simpanSatu = tombol "Simpan Bon #N &
@@ -3641,6 +3641,9 @@ export default function ModalRouter({
                 catatan,
                 no_box: noBox,
                 no_invoice: noInvoice,
+                // Catatan per invoice saja — sengaja TIDAK bikin baris
+                // keuangan_transaksi (Keuangan cuma dicatat di "Pesan Barang").
+                harga_pembayaran: hargaPembayaran,
                 foto_bon_url: fotoBonUrl,
                 foto_bon_urls: fotoBonUrls,
                 // harga_kesepakatan dibawa apa adanya dari form (sudah dibaca
@@ -3752,7 +3755,7 @@ export default function ModalRouter({
                 console.error("Gagal cek nomor BON terakhir dari database:", e);
               }
               for (let i = 0; i < bonTambahan.length; i++) {
-                const { noBox: noBoxBon, noInvoice: noInvoiceBon, fotoBonFiles: fotoFilesBon, existingFotoBonUrls: fotoUrlsLamaBon, models: modelsBon, catatan: catatanBon, existingId: existingIdBon } = bonTambahan[i];
+                const { noBox: noBoxBon, noInvoice: noInvoiceBon, hargaPembayaran: hargaPembayaranBon, fotoBonFiles: fotoFilesBon, existingFotoBonUrls: fotoUrlsLamaBon, models: modelsBon, catatan: catatanBon, existingId: existingIdBon } = bonTambahan[i];
 
                 const fotoBonUrlsBaruBon = [];
                 for (const f of fotoFilesBon || []) {
@@ -3791,6 +3794,7 @@ export default function ModalRouter({
                       catatan: catatanBon,
                       no_box: noBoxBon,
                       no_invoice: noInvoiceBon,
+                      harga_pembayaran: hargaPembayaranBon,
                       foto_bon_url: fotoBonUrlBon,
                       foto_bon_urls: fotoBonUrlsBon,
                       detail_model: detailModelBon,
@@ -3811,6 +3815,7 @@ export default function ModalRouter({
                       catatan: catatanBon,
                       no_box: noBoxBon,
                       no_invoice: noInvoiceBon,
+                      harga_pembayaran: hargaPembayaranBon,
                       // induk_id nunjuk balik ke pesanan PSN-xxxx yang bon
                       // tambahan ini dibuat dari — dipakai rincianBongkarBox
                       // (lib/api.js) buat menjumlah box mana saja yang sudah
