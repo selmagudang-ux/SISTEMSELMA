@@ -251,6 +251,7 @@ export default function Dashboard({
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
           marketplaceTransaksi={marketplaceTransaksi}
+          pesananMasuk={pesananMasuk}
           master={master}
           onNavigate={onNavigate}
           periodeDari={periodeDari}
@@ -271,7 +272,7 @@ export default function Dashboard({
   );
 }
 
-function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], pesananMasuk = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
   const [detailKategori, setDetailKategori] = useState(null);
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
@@ -331,6 +332,7 @@ function DashboardKeuangan({ keuanganTransaksi, marketplaceTransaksi = [], maste
           tipe={detailKategori.tipe}
           list={ringkasanBulanIni.list}
           rekeningList={master.rekening || []}
+          pesananMasuk={pesananMasuk}
           subtitle={periodeLabel}
           onClose={() => setDetailKategori(null)}
         />
