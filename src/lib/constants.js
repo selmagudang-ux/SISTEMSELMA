@@ -67,6 +67,18 @@ export const BONGKAR_META = {
   sudah: { label: "Sudah Dibongkar", color: "emerald" },
 };
 
+// Tahapan pesanan barang (kolom "Status" tabel Pesanan Barang) — lihat
+// tahapPesanan di lib/api.js. Satu alur: Menunggu -> Datang -> Sebagian
+// Dibongkar -> Selesai.
+export const TAHAP_PESANAN_META = {
+  draft: { label: "Draf", color: "violet" },
+  menunggu: { label: "Menunggu", color: "amber" },
+  datang: { label: "Datang, Belum Dibongkar", color: "sky" },
+  sebagian: { label: "Sebagian Dibongkar", color: "orange" },
+  selesai: { label: "Selesai", color: "emerald" },
+  batal: { label: "Dibatalkan", color: "slate" },
+};
+
 // Status toggle cepat "Konfirmasi Datang" (lihat statusKonfirmasiDatang di
 // lib/api.js) — jawaban singkat "barang sudah sampai fisik atau belum",
 // dicek SEBELUM baris pesanan boleh ditandai dibongkar. Terpisah dari

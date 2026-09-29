@@ -654,9 +654,32 @@ export function statusKonfirmasiDatang(p) {
 export function statusBongkar(p) {
   if (statusKonfirmasiDatang(p) !== "sudah") return null;
   const status = statusPesananMasuk(p);
-  if (status === "draft") return "sebagian";
+  if (status === "draft" || status === "sebagian") return "sebagian";
   if (status === "selesai") return "sudah";
   return "belum";
+}
+
+// Tahapan pesanan barang untuk kolom "Status" di tabel Pesanan Barang —
+// GABUNGAN dari kolom "Datang?" dan "Bongkar" jadi satu alur linear:
+//  - "menunggu" : barang dipesan, belum datang.
+//  - "datang"   : barang sudah datang, belum dibongkar sama sekali.
+//  - "sebagian" : barang sudah datang, baru sebagian yang dibongkar.
+//  - "selesai"  : barang sudah datang dan semuanya sudah dibongkar.
+// Tambahan (di luar 4 tahap): "draft" (baris Input Barang Datang yang
+// belum dikirim) dan "batal". Pesanan yang rinciannya sudah final
+// ("selesai" di statusPesananMasuk) selalu dianggap "selesai", walau
+// toggle Datang?-nya belum pernah diklik (data lama).
+export function tahapPesanan(p) {
+  const status = statusPesananMasuk(p);
+  if (status === "batal") return "batal";
+  if (status === "selesai") return "selesai";
+  const datang = statusKonfirmasiDatang(p);
+  if (datang === null) return "draft";
+  if (datang === "belum") return status === "sebagian" ? "sebagian" : "menunggu";
+  const bongkar = statusBongkar(p);
+  if (bongkar === "sudah") return "selesai";
+  if (bongkar === "sebagian") return "sebagian";
+  return "datang";
 }
 
 // Rincian jumlah box yang sudah dibongkar (dicek/dikonfirmasi) dari total box

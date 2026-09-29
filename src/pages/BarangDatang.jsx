@@ -1,8 +1,8 @@
 import { useState, Fragment } from "react";
 import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, PackageOpen, Clock, Pencil, Search, Truck } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID, InputTanggal } from "../components/ui";
-import { detailModelPesanan, fmtRp, statusPesananMasuk, statusBongkar, statusKonfirmasiDatang, rincianBongkarBox } from "../lib/api";
-import { PO_STATUS_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
+import { detailModelPesanan, fmtRp, statusPesananMasuk, tahapPesanan, statusBongkar, statusKonfirmasiDatang, rincianBongkarBox } from "../lib/api";
+import { TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 
 // "Qty Datang" = TOTAL fisik yang datang dari supplier (barang bagus +
 // barang rusak dijumlah jadi satu angka) — bukan cuma yang baik saja.
@@ -326,7 +326,8 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
   const rusak = totalRusakTransaksi(detail);
   const isOpen = expanded.has(p.id);
   const status = statusPesananMasuk(p);
-  const statusMeta = PO_STATUS_META[status] || PO_STATUS_META.menunggu;
+  const tahap = tahapPesanan(p);
+  const statusMeta = TAHAP_PESANAN_META[tahap] || TAHAP_PESANAN_META.menunggu;
   const belumSelesai = status === "menunggu" || status === "sebagian";
   const isDraft = status === "draft";
   const konfirmasiDatang = statusKonfirmasiDatang(p);
@@ -389,9 +390,6 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
           <Badge color={jenisColor(p.jenis)}>{p.jenis || "—"}</Badge>
         </td>
         <td className="px-3 py-2.5">
-          <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
-        </td>
-        <td className="px-3 py-2.5">
           {konfirmasiDatang ? (
             <button
               onClick={() => setModal({ type: "toggle-konfirmasi-datang", item: p })}
@@ -430,6 +428,9 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
           ) : (
             <span className="text-slate-700">—</span>
           )}
+        </td>
+        <td className="px-3 py-2.5">
+          <Badge color={statusMeta.color}>{statusMeta.label}</Badge>
         </td>
         <td className="px-3 py-2.5">
           {(() => {
@@ -746,9 +747,9 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                 <th className="px-3 py-2.5">Tanggal</th>
                 <th className="px-3 py-2.5">Supplier</th>
                 <th className="px-3 py-2.5">Jenis</th>
-                <th className="px-3 py-2.5">Status</th>
                 <th className="px-3 py-2.5">Datang?</th>
                 <th className="px-3 py-2.5">Bongkar</th>
+                <th className="px-3 py-2.5">Status</th>
                 <th className="px-3 py-2.5">Invoice</th>
                 <th className="px-3 py-2.5">Model</th>
                 <th className="px-3 py-2.5">Qty Datang/Rusak</th>
