@@ -2767,6 +2767,10 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
 
 function DashboardAbsensi({ absensiRows, karyawanList, onNavigate, bulan, tahun, periodeLabel }) {
   const hariIniStr = hariIniIso();
+  // Kartu toggle Harian / Mingguan / Bulanan — pola sama seperti kartu channel
+  // di Dashboard Penjualan: klik untuk buka panelnya di bawah, klik lagi untuk
+  // menutup. Cuma satu panel terbuka dalam satu waktu; awalnya "harian".
+  const [panelAktif, setPanelAktif] = useState("harian");
 
   const rekapHarian = rekapHarianAbsensi(absensiRows);
   const rekapBulanan = rekapBulananAbsensi(rekapHarian);
@@ -2783,12 +2787,56 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate, bulan, tahun,
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-        <StatCard label="Hadir Hari Ini" value={hadirHariIni.length} accent="text-emerald-400" icon={UserCheck} iconColor="text-emerald-500" />
-        <StatCard label="Telat Hari Ini" value={telatHariIni} accent="text-amber-400" icon={Clock} iconColor="text-amber-500" />
+      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "harian" ? null : "harian"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            panelAktif === "harian" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <UserCheck size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Harian</div>
+          <div className="text-[11px] text-slate-500 mt-1">{`Hadir ${hadirHariIni.length} · Telat ${telatHariIni} — hari ini`}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "mingguan" ? null : "mingguan"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            panelAktif === "mingguan" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <CalendarRange size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Mingguan</div>
+          <div className="text-[11px] text-slate-500 mt-1">{`${rekapMingguan.tanggalMinggu[0]} – ${rekapMingguan.tanggalMinggu[6]}`}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "bulanan" ? null : "bulanan"))}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            panelAktif === "bulanan" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <BarChart3 size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Bulanan</div>
+          <div className="text-[11px] text-slate-500 mt-1">{periodeLabel}</div>
+        </button>
       </div>
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+      {panelAktif === "harian" && (
+        <div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+            <StatCard label="Hadir Hari Ini" value={hadirHariIni.length} accent="text-emerald-400" icon={UserCheck} iconColor="text-emerald-500" />
+            <StatCard label="Telat Hari Ini" value={telatHariIni} accent="text-amber-400" icon={Clock} iconColor="text-amber-500" />
+          </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
           <div className="text-sm font-semibold">Hadir Hari Ini ({hariIniStr})</div>
           <button
@@ -2820,8 +2868,12 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate, bulan, tahun,
           </table>
         )}
       </div>
+        </div>
+      )}
 
-      <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
+      {panelAktif === "mingguan" && (
+        <div>
+      <div className="rounded-xl border border-slate-800 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">
           Rekap Mingguan ({rekapMingguan.tanggalMinggu[0]} – {rekapMingguan.tanggalMinggu[6]})
         </div>
@@ -2870,7 +2922,11 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate, bulan, tahun,
           </div>
         )}
       </div>
+        </div>
+      )}
 
+      {panelAktif === "bulanan" && (
+        <div>
       <div className="rounded-xl border border-slate-800 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Rekap Bulanan ({periodeLabel})</div>
         {rekapBulanIni.length === 0 ? (
@@ -2902,6 +2958,8 @@ function DashboardAbsensi({ absensiRows, karyawanList, onNavigate, bulan, tahun,
           </table>
         )}
       </div>
+        </div>
+      )}
     </div>
   );
 }
