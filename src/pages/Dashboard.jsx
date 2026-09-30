@@ -504,6 +504,7 @@ function DashboardGudang({
   const [subTabDatang, setSubTabDatang] = useState(null); // null | "restok" | "model-baru" — null = semua panel tertutup by default, cuma satu yang boleh terbuka sekaligus
   const [showTotalBarangDatang, setShowTotalBarangDatang] = useState(false);
   const [expandedSupplierBarangDatang, setExpandedSupplierBarangDatang] = useState(() => new Set()); // panel "Total Pesanan" (tab Barang yang Sudah Datang) — dikelompokkan per supplier, polanya sama seperti LaporanGrosirPerPelanggan di Grosir.jsx
+  const [expandedPesananBarangDatang, setExpandedPesananBarangDatang] = useState(() => new Set()); // baris pesanan yang rincian modelnya (nama, qty, harga) sedang dibuka di panel "Total Pesanan"
   const [halamanModelLama, setHalamanModelLama] = useState(1);
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
@@ -849,7 +850,44 @@ function DashboardGudang({
       perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0 });
     }
     const grup = perSupplierBarangDatangMap.get(key);
-    grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox, _pembayaran: Number(p.harga_kesepakatan) || 0 });
+    // Rincian model per pesanan (nama, qty, harga, sudah datang atau belum) —
+    // dikelompokkan per invoice/box supaya pesanan yang datang lewat beberapa
+    // invoice tetap jelas mana modelnya. Pesanan versi_struktur 2 ambil dari
+    // rincian_invoice, versi lama dari detail_model (lewat detailModelPesanan).
+    const grupModel = [];
+    [p, ...anakBox].forEach((row, idxRow) => {
+      if (row?.versi_struktur === 2) {
+        const rincian = Array.isArray(row.rincian_invoice) ? row.rincian_invoice : [];
+        rincian.forEach((inv, idxInv) => {
+          const models = (Array.isArray(inv.models) ? inv.models : []).map((m) => ({
+            nama: m.nama || "—",
+            jumlah: Number(m.jumlah) || 0,
+            harga: Number(m.harga) || 0,
+            datang: inv.status === "final",
+          }));
+          if (models.length === 0) return;
+          grupModel.push({
+            key: `${row.id}-inv-${idxInv}`,
+            label: inv.no_invoice || inv.kode_pesanan || `Invoice ${grupModel.length + 1}`,
+            models,
+          });
+        });
+      } else {
+        const models = detailModelPesanan(row).map((m) => ({
+          nama: m.nama || "—",
+          jumlah: Number(m.jumlah) || 0,
+          harga: Number(m.harga) || 0,
+          datang: !!m.datang,
+        }));
+        if (models.length === 0) return;
+        grupModel.push({
+          key: `${row.id}-row-${idxRow}`,
+          label: row.no_invoice || row.kode_pesanan || `Box ${idxRow + 1}`,
+          models,
+        });
+      }
+    });
+    grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox, _pembayaran: Number(p.harga_kesepakatan) || 0, _grupModel: grupModel });
     grup.totalModel += 1;
     grup.totalNilai += nilai;
   });
@@ -864,6 +902,14 @@ function DashboardGudang({
       const next = new Set(prev);
       if (next.has(supplier)) next.delete(supplier);
       else next.add(supplier);
+      return next;
+    });
+
+  const togglePesananBarangDatang = (id) =>
+    setExpandedPesananBarangDatang((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
 
@@ -1351,6 +1397,16 @@ function DashboardGudang({
                                           {[...grup.items]
                                             .sort((a, b) => (b.tanggal_pesan || "").localeCompare(a.tanggal_pesan || ""))
                                             .map((p) => {
+                                              const pesananTerbuka = expandedPesananBarangDatang.has(p.id);
+                                              const grupModelPesanan = p._grupModel || [];
+                                              const totalQtyPesanan = grupModelPesanan.reduce(
+                                                (sum, g) => sum + g.models.reduce((s, m) => s + m.jumlah, 0),
+                                                0
+                                              );
+                                              const totalNilaiPesanan = grupModelPesanan.reduce(
+                                                (sum, g) => sum + g.models.reduce((s, m) => s + m.jumlah * m.harga, 0),
+                                                0
+                                              );
                                               // Status = tahap yang SAMA dengan kolom Status di
                                               // halaman Pesanan Barang (tahapPesanan), bukan
                                               // statusPesananMasuk, supaya labelnya selalu sinkron.
@@ -1365,8 +1421,18 @@ function DashboardGudang({
                                               const selisih = adaSelisih ? hargaBarang - pembayaran : 0;
                                               const persen = adaSelisih ? (Math.abs(selisih) / pembayaran) * 100 : 0;
                                               return (
-                                                <tr key={p.id} className="border-b border-slate-800/40 last:border-0 align-top">
-                                                  <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{p.tanggal_pesan}</td>
+                                                <Fragment key={p.id}>
+                                                <tr
+                                                  onClick={() => togglePesananBarangDatang(p.id)}
+                                                  className="border-b border-slate-800/40 last:border-0 align-top cursor-pointer hover:bg-slate-800/30"
+                                                >
+                                                  <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">
+                                                    <ChevronDown
+                                                      size={12}
+                                                      className={`inline-block mr-1 -mt-0.5 text-slate-500 transition-transform ${pesananTerbuka ? "rotate-180" : ""}`}
+                                                    />
+                                                    {p.tanggal_pesan}
+                                                  </td>
                                                   <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">
                                                     {p.kode_pesanan || "—"}
                                                     {p._jumlahBox > 1 && (
@@ -1435,6 +1501,69 @@ function DashboardGudang({
                                                     )}
                                                   </td>
                                                 </tr>
+                                                {pesananTerbuka && (
+                                                  <tr className="bg-slate-950/40">
+                                                    <td colSpan={6} className="px-3 pb-3 pt-1">
+                                                      {grupModelPesanan.length === 0 ? (
+                                                        <div className="text-[11px] text-slate-500 py-2">Belum ada rincian model pada pesanan ini.</div>
+                                                      ) : (
+                                                        <div className="overflow-x-auto">
+                                                          <table className="w-full text-xs">
+                                                            <thead className="text-slate-500 text-[11px]">
+                                                              <tr>
+                                                                <th className="text-left py-1 pr-3 font-medium">Model</th>
+                                                                <th className="text-right py-1 pr-3 font-medium">Qty</th>
+                                                                <th className="text-right py-1 pr-3 font-medium">Harga</th>
+                                                                <th className="text-right py-1 pr-3 font-medium">Subtotal</th>
+                                                                <th className="text-left py-1 font-medium">Datang</th>
+                                                              </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                              {grupModelPesanan.map((g) => (
+                                                                <Fragment key={g.key}>
+                                                                  {grupModelPesanan.length > 1 && (
+                                                                    <tr>
+                                                                      <td colSpan={5} className="pt-2 pb-1 text-[11px] font-semibold text-sky-400">
+                                                                        {g.label}
+                                                                      </td>
+                                                                    </tr>
+                                                                  )}
+                                                                  {g.models.map((m, idx) => (
+                                                                    <tr key={`${g.key}-${idx}`} className="border-b border-slate-800/40 last:border-0">
+                                                                      <td className="py-1.5 pr-3 text-slate-200 font-mono">{m.nama}</td>
+                                                                      <td className="py-1.5 pr-3 text-right text-slate-300">{m.jumlah.toLocaleString("id-ID")}</td>
+                                                                      <td className="py-1.5 pr-3 text-right text-slate-400">{m.harga > 0 ? fmtRp(m.harga) : "—"}</td>
+                                                                      <td className="py-1.5 pr-3 text-right text-slate-200">
+                                                                        {m.harga > 0 ? fmtRp(m.jumlah * m.harga) : "—"}
+                                                                      </td>
+                                                                      <td className="py-1.5">
+                                                                        {m.datang ? (
+                                                                          <Badge color="emerald">Sudah</Badge>
+                                                                        ) : (
+                                                                          <Badge color="amber">Belum</Badge>
+                                                                        )}
+                                                                      </td>
+                                                                    </tr>
+                                                                  ))}
+                                                                </Fragment>
+                                                              ))}
+                                                              <tr className="border-t border-slate-700 font-semibold">
+                                                                <td className="py-1.5 pr-3 text-slate-400">Total</td>
+                                                                <td className="py-1.5 pr-3 text-right text-slate-200">{totalQtyPesanan.toLocaleString("id-ID")}</td>
+                                                                <td />
+                                                                <td className="py-1.5 pr-3 text-right text-slate-100">
+                                                                  {totalNilaiPesanan > 0 ? fmtRp(totalNilaiPesanan) : "—"}
+                                                                </td>
+                                                                <td />
+                                                              </tr>
+                                                            </tbody>
+                                                          </table>
+                                                        </div>
+                                                      )}
+                                                    </td>
+                                                  </tr>
+                                                )}
+                                                </Fragment>
                                               );
                                             })}
                                         </tbody>
