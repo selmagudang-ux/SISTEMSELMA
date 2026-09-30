@@ -1804,37 +1804,6 @@ function RincianMarketplaceToko({ platformAktif, rincianAktif, marketplaceTransa
 const TIPE_LABEL_MARKETPLACE = { pemasukan: "Pemasukan", iklan: "Iklan", pencairan: "Pencairan" };
 const TIPE_BADGE_MARKETPLACE = { pemasukan: "emerald", iklan: "amber", pencairan: "sky" };
 
-// Kontrol "Halaman X dari Y — Sebelumnya / Berikutnya" untuk tabel di panel
-// Laporan Grosir (tampilan & perilakunya sama dengan paginasi di panel
-// Reseller Toko, 5 baris per halaman).
-function PaginasiDashboard({ halaman, setHalaman, total }) {
-  const jumlahHalaman = Math.ceil(total / BARIS_PER_HALAMAN_RESELLER);
-  if (total <= BARIS_PER_HALAMAN_RESELLER) return null;
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
-      <span>Halaman {halaman} dari {jumlahHalaman}</span>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setHalaman((h) => Math.max(1, h - 1))}
-          disabled={halaman <= 1}
-          className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          Sebelumnya
-        </button>
-        <button
-          type="button"
-          onClick={() => setHalaman((h) => Math.min(jumlahHalaman, h + 1))}
-          disabled={halaman >= jumlahHalaman}
-          className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-        >
-          Berikutnya
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, setModal, tahun, periodeDari, periodeSampai, periodeLabel }) {
   // Cuma pesanan Grosir asli — Reseller Toko/Cekout belum ditampilkan di
   // kartu Dashboard Penjualan ini (kartu "Reseller" masih "Segera Hadir"),
@@ -1852,10 +1821,8 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   // Halaman aktif untuk tabel "Belum Bayar / Hutang" & "Riwayat Pesanan" di
   // panel Reseller Toko — pola sama seperti halamanBarangDatang dkk di
   // DashboardGudang, 5 baris per halaman.
-  const [halamanBelumLunasGrosir, setHalamanBelumLunasGrosir] = useState(1);
   // Pelanggan yang barisnya lagi dibuka (rincian pesanan) di tabel Data Pelanggan Grosir.
   const [pelangganTerbukaGrosir, setPelangganTerbukaGrosir] = useState(() => new Set());
-  const [halamanRiwayatGrosir, setHalamanRiwayatGrosir] = useState(1);
   const [halamanBelumLunasReseller, setHalamanBelumLunasReseller] = useState(1);
   const [halamanRiwayatReseller, setHalamanRiwayatReseller] = useState(1);
   const [halamanBelumLunasCekout, setHalamanBelumLunasCekout] = useState(1);
@@ -1891,17 +1858,10 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   const totalPiutang = pesananAktif.reduce((a, p) => a + sisaHutangPesanan(p, pembayaranGrosir), 0);
   const totalDeposit = depositGrosir.reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
 
-  const belumLunas = pesananAktif
-    .filter((p) => p.status_bayar !== "Lunas")
-    .sort((a, b) => sisaHutangPesanan(b, pembayaranGrosir) - sisaHutangPesanan(a, pembayaranGrosir));
-
   const namaPelanggan = (id) => pelangganGrosir.find((c) => c.id === id)?.nama || "—";
 
   // Riwayat Pesanan & Data Pelanggan Grosir — pola sama persis dengan panel
   // Reseller Toko (riwayatReseller / dataPelangganReseller) di bawah.
-  const riwayatGrosir = [...pesananAktif].sort(
-    (a, b) => new Date(b.created_at) - new Date(a.created_at)
-  );
   const dataPelangganGrosir = (() => {
     const map = new Map();
     for (const p of pesananAktif) {
@@ -2775,7 +2735,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
               />
             </div>
 
-            <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Users size={14} className="text-sky-400" /> <div className="text-sm font-semibold">Data Pelanggan</div>
@@ -2859,87 +2819,6 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
-              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold">Belum Bayar / Hutang</div>
-                <button
-                  onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
-                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
-                >
-                  Lihat Semua <ArrowRight size={11} />
-                </button>
-              </div>
-              {belumLunas.length === 0 ? (
-                <div className="p-6">
-                  <EmptyState label="Semua pesanan Grosir sudah lunas." />
-                </div>
-              ) : (
-                <>
-                  <table className="w-full text-sm">
-                    <tbody>
-                      {belumLunas
-                        .slice(
-                          (halamanBelumLunasGrosir - 1) * BARIS_PER_HALAMAN_RESELLER,
-                          halamanBelumLunasGrosir * BARIS_PER_HALAMAN_RESELLER
-                        )
-                        .map((p) => (
-                          <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                            <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                            <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                            <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
-                            <td className="px-4 py-2.5">
-                              <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                  <PaginasiDashboard halaman={halamanBelumLunasGrosir} setHalaman={setHalamanBelumLunasGrosir} total={belumLunas.length} />
-                </>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-slate-800 overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold">Riwayat Pesanan</div>
-                <button
-                  onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
-                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
-                >
-                  Lihat Semua <ArrowRight size={11} />
-                </button>
-              </div>
-              {riwayatGrosir.length === 0 ? (
-                <div className="p-6">
-                  <EmptyState label="Belum ada pesanan Grosir." />
-                </div>
-              ) : (
-                <>
-                  <table className="w-full text-sm">
-                    <tbody>
-                      {riwayatGrosir
-                        .slice(
-                          (halamanRiwayatGrosir - 1) * BARIS_PER_HALAMAN_RESELLER,
-                          halamanRiwayatGrosir * BARIS_PER_HALAMAN_RESELLER
-                        )
-                        .map((p) => (
-                          <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                            <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                            <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                            <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(p.total)}</td>
-                            <td className="px-4 py-2.5">
-                              <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
-                                {p.status_bayar}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                  <PaginasiDashboard halaman={halamanRiwayatGrosir} setHalaman={setHalamanRiwayatGrosir} total={riwayatGrosir.length} />
-                </>
-              )}
-            </div>
           </div>
         </div>
       )}
