@@ -225,6 +225,8 @@ export function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir
 function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setModal }) {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [bulanFilter, setBulanFilter] = useState(""); // "YYYY-MM" atau "" = semua bulan
+  const [pelangganFilter, setPelangganFilter] = useState(""); // pelanggan_id atau "" = semua
 
   const namaPelanggan = (id) => pelangganGrosir.find((p) => p.id === id)?.nama || "—";
 
@@ -245,8 +247,28 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setMod
       p.nomor_pesanan?.toLowerCase().includes(s) ||
       namaPelanggan(p.pelanggan_id).toLowerCase().includes(s);
     const matchStatus = !statusFilter || p.status_bayar === statusFilter;
-    return matchQ && matchStatus;
+    const matchBulan = !bulanFilter || (p.tanggal || "").slice(0, 7) === bulanFilter;
+    const matchPelanggan = !pelangganFilter || p.pelanggan_id === pelangganFilter;
+    return matchQ && matchStatus && matchBulan && matchPelanggan;
   });
+
+  // Opsi filter dibangun dari data pesanan grosir yang ada, jadi cuma bulan &
+  // pelanggan yang benar-benar punya pesanan yang muncul.
+  const bulanOptions = Array.from(
+    new Set(pesananGrosirSaja.map((p) => (p.tanggal || "").slice(0, 7)).filter((b) => /^\d{4}-\d{2}$/.test(b)))
+  )
+    .sort((a, b) => b.localeCompare(a))
+    .map((b) => ({ value: b, label: `${BULAN_PANJANG_ID_GROSIR[Number(b.slice(5, 7)) - 1]} ${b.slice(0, 4)}` }));
+
+  const pelangganOptions = [
+    { value: "", label: "Semua Pelanggan" },
+    ...Array.from(new Set(pesananGrosirSaja.map((p) => p.pelanggan_id).filter(Boolean)))
+      .map((id) => ({ value: id, label: namaPelanggan(id) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  ];
+
+  const adaFilter = q || statusFilter || bulanFilter || pelangganFilter;
+  const totalFiltered = filtered.reduce((a, p) => (p.status === "Batal" ? a : a + (Number(p.total) || 0)), 0);
 
   return (
     <div>
@@ -283,10 +305,43 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setMod
           <option value="Sebagian">Sebagian</option>
           <option value="Lunas">Lunas</option>
         </select>
+        <select
+          value={bulanFilter}
+          onChange={(e) => setBulanFilter(e.target.value)}
+          className={`${inputClass} w-auto`}
+        >
+          <option value="">Semua Bulan</option>
+          {bulanOptions.map((b) => (
+            <option key={b.value} value={b.value}>{b.label}</option>
+          ))}
+        </select>
+        <div className="w-56">
+          <SearchableSelect
+            value={pelangganFilter}
+            onChange={setPelangganFilter}
+            options={pelangganOptions}
+            placeholder="Semua Pelanggan"
+          />
+        </div>
+        {(bulanFilter || pelangganFilter || statusFilter || q) && (
+          <button
+            onClick={() => { setQ(""); setStatusFilter(""); setBulanFilter(""); setPelangganFilter(""); }}
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 px-2 py-2"
+          >
+            <X size={13} /> Reset
+          </button>
+        )}
       </div>
 
+      {adaFilter && filtered.length > 0 && (
+        <div className="text-[11px] text-slate-500 mb-3">
+          {filtered.length} pesanan · total <span className="text-amber-400 font-medium">{fmtRp(totalFiltered)}</span>
+          <span className="text-slate-600"> (pesanan Batal tidak dihitung)</span>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
-        <EmptyState label={q || statusFilter ? "Tidak ada pesanan yang cocok." : "Belum ada pesanan grosir."} />
+        <EmptyState label={adaFilter ? "Tidak ada pesanan yang cocok." : "Belum ada pesanan grosir."} />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {filtered.map((p, i) => (
@@ -475,6 +530,7 @@ function BarisAngkaGrosir({ label, nilai, bold, tinted, tint = "text-slate-100",
   );
 }
 
+const BULAN_PANJANG_ID_GROSIR = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 const BULAN_LABEL_ID_GROSIR = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 
 function LaporanBulananTahunanGrosir({ pesananGrosir }) {
