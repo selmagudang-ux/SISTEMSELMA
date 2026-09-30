@@ -4288,7 +4288,10 @@ export default function ModalRouter({
               await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
-                  tanggal: new Date().toISOString().slice(0, 10),
+                  // Ongkir dicatat pada TANGGAL DATANG barang (isian di form), bukan hari
+                  // saat tombol ditekan. Fallback ke hari ini (jam lokal) hanya
+                  // jaga-jaga kalau tanggalnya kosong.
+                  tanggal: tanggalDatang || (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
                   tipe: "keluar",
                   rekening: rekeningOngkir,
                   kategori: kategoriOngkir,
