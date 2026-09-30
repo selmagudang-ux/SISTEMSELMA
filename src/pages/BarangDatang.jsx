@@ -606,20 +606,25 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       return next;
     });
 
-  // Urutkan berdasarkan waktu SIMPAN sebenarnya (created_at) — bukan cuma
-  // tanggal_pesan, karena tanggal_pesan bisa diisi manual mundur (mis. catat
-  // belakangan untuk pesanan minggu lalu) sehingga entri yang baru saja
-  // disimpan bisa "tenggelam" kalau cuma diurutkan dari tanggal itu. Dengan
-  // created_at, pesanan yang paling baru DIINPUT selalu tampil paling atas.
-  // Fallback ke tanggal_pesan untuk data lama yang mungkin belum punya
-  // created_at.
+  // Urutkan OTOMATIS per tanggal pesan (tanggal_pesan): tanggal paling baru
+  // tampil paling atas, tanggal yang lebih lama menyusul ke bawah. Kalau ada
+  // beberapa pesanan di tanggal yang sama, yang paling baru DIINPUT
+  // (created_at) tampil lebih atas. Pesanan tanpa tanggal ditaruh paling bawah.
+  // Untuk urutan terlama -> terbaru, ubah `b` dan `a` di dua pembanding
+  // di bawah (tukar posisi).
   const semua = [...(pesananMasuk || [])]
     .filter((p) => !p.dibatalkan)
     .sort((a, b) => {
+      const tglA = a.tanggal_pesan || "";
+      const tglB = b.tanggal_pesan || "";
+      if (tglA !== tglB) {
+        if (!tglA) return 1;
+        if (!tglB) return -1;
+        return tglA < tglB ? 1 : -1;
+      }
       const waktuA = a.created_at ? new Date(a.created_at).getTime() : 0;
       const waktuB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      if (waktuA !== waktuB) return waktuB - waktuA;
-      return a.tanggal_pesan < b.tanggal_pesan ? 1 : -1;
+      return waktuB - waktuA;
     });
 
   // Bon tambahan (invoice ke-2/3/dst di box yang sama, lihat "Tambah
