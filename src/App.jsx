@@ -1091,7 +1091,7 @@ function MainApp({ session, onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-md-surface text-md-on-surface font-sans flex overflow-x-clip">
+    <div className="min-h-screen print:min-h-0 bg-md-surface text-md-on-surface font-sans flex print:block overflow-x-clip">
       <AppShell
         active={nav}
         onNavigate={navigate}
@@ -1109,7 +1109,7 @@ function MainApp({ session, onLogout }) {
         loadAll={loadAll}
         loading={loading}
       >
-        <main className="px-5 py-6 w-full">
+        <main className="px-5 py-6 w-full print:p-0">
           {error && (
             <div className="mb-4 flex items-center gap-2 bg-md-error-container text-md-on-error-container text-sm px-4 py-3 rounded-md-md">
               <AlertCircle size={16} /> {error}

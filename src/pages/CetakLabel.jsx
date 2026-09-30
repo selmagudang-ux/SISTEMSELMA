@@ -575,6 +575,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
       <div className="hidden print:block">
         <style>{`
           @page { size: ${pageSizeCss(layout.ukuranKertas)}${layout.ukuranKertas === "110x15" ? "" : " " + layout.orientasi}; margin: 0; }
+          @media print { html, body { margin: 0 !important; padding: 0 !important; } }
           .ss-print-page {
             padding-top: ${layout.marginAtas}mm;
             display: flex;
