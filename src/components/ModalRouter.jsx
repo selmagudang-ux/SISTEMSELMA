@@ -3930,6 +3930,34 @@ export default function ModalRouter({
               }),
             });
 
+            // SINKRON TANGGAL ke KEUANGAN. Baris Pengeluaran "Pesan Barang ·
+            // ..." di keuangan_transaksi dibuat SEKALI waktu pesan dicatat
+            // (tanggalnya disalin dari tanggal pesan saat itu) dan ditautkan
+            // lewat pesanan_masuk.keuangan_transaksi_id. Tanpa sinkron ini,
+            // tanggal pesanan yang diedit di sini tidak ikut berubah di
+            // Keuangan. Tanggal pesanan = sumber kebenaran, jadi selalu
+            // disamakan (cukup simpan ulang untuk membetulkan data lama yang
+            // sudah telanjur beda). Invoice tambahan (BON-) tidak punya baris
+            // Keuangan sendiri (keuangan_transaksi_id kosong), jadi dilewati.
+            // Ongkir sengaja TIDAK disentuh: dicatat di tanggal DATANG.
+            let keuanganDisinkron = false;
+            let keuanganDitolak = false;
+            if (p.keuangan_transaksi_id) {
+              const rowKeuangan = (keuanganTransaksi || []).find((k) => k.id === p.keuangan_transaksi_id);
+              if (!rowKeuangan || String(rowKeuangan.tanggal || "").slice(0, 10) !== tanggal) {
+                const hasilKeuangan = await sb(`keuangan_transaksi?id=eq.${p.keuangan_transaksi_id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ tanggal }),
+                });
+                if (Array.isArray(hasilKeuangan) && hasilKeuangan.length === 0) {
+                  // PATCH "berhasil" tapi 0 baris berubah (biasanya diblokir RLS/izin)
+                  keuanganDitolak = true;
+                } else {
+                  keuanganDisinkron = true;
+                }
+              }
+            }
+
             // SINKRON PERUBAHAN MODEL ke Alur Barang. Nama, harga/pcs, dan
             // alasan rusak di riwayat (detail_model) disalin ke baris
             // items SEKALI saat Konfirmasi Datang disimpan (barcode_supplier,
@@ -4009,9 +4037,11 @@ export default function ModalRouter({
                 alasanDilewati.push(`error: ${e.message || e}`);
               }
             }
-            if (itemDisinkron > 0 || alasanDilewati.length > 0) {
+            if (itemDisinkron > 0 || alasanDilewati.length > 0 || keuanganDisinkron || keuanganDitolak) {
               return (
                 "Riwayat barang datang diperbarui" +
+                (keuanganDisinkron ? " — tanggal di Keuangan ikut diperbarui" : "") +
+                (keuanganDitolak ? " — TAPI tanggal di Keuangan gagal diubah (ditolak database, cek izin tabel keuangan_transaksi)" : "") +
                 (itemDisinkron > 0 ? ` — ${itemDisinkron} model di Alur Barang ikut diperbarui` : "") +
                 (alasanDilewati.length > 0
                   ? `; tidak diubah di Alur Barang → ${alasanDilewati.join("; ")}`
