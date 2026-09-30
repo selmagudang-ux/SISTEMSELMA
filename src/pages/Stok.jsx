@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download, Package, PackageX, PackageSearch, ArrowDownUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState, Badge, StatCard } from "../components/ui";
 import { fmtTgl, downloadCsv } from "../lib/api";
 import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
+import { cariSkuDariBarcode } from "../lib/code128";
+import { TombolScanKamera } from "../components/ScanKamera";
 
 // Ambang batas "Stok Menipis" khusus tampilan badge per-baris di Stok Barang —
 // beda dari AMBANG_MENIPIS_RESTOCK (yang dipakai buat halaman "Stok Menipis" /
@@ -271,10 +273,18 @@ function StokBarang({ skuMaster, setModal }) {
             <input
               value={q}
               onChange={(e) => ubahCari(e.target.value)}
-              placeholder="Cari SKU…"
+              placeholder="Cari SKU atau scan barcode…"
               className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
             />
           </div>
+          <TombolScanKamera
+            label="Scan Kamera"
+            judul="Scan Barcode — Cek Stok"
+            onDetect={(kode) => {
+              const cocok = cariSkuDariBarcode(semua, kode);
+              ubahCari(cocok ? cocok.sku : kode);
+            }}
+          />
           <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:w-56">
             <ArrowDownUp size={14} className="text-slate-500 flex-shrink-0" />
             <select
@@ -480,15 +490,56 @@ function StokOpname({ skuMaster, setModal }) {
     setFisik((prev) => ({ ...prev, [id]: val }));
   };
 
-  const rows = skuMaster
-    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
-    .map((s) => {
-      const raw = fisik[s.id];
-      const ada = raw !== undefined && raw !== "";
-      const qtyFisik = ada ? Number(raw) : null;
-      const selisih = ada ? qtyFisik - (s.stok || 0) : null;
-      return { ...s, raw: raw ?? "", ada, qtyFisik, selisih };
-    });
+  const hitungBaris = (s) => {
+    const raw = fisik[s.id];
+    const ada = raw !== undefined && raw !== "";
+    const qtyFisik = ada ? Number(raw) : null;
+    const selisih = ada ? qtyFisik - (s.stok || 0) : null;
+    return { ...s, raw: raw ?? "", ada, qtyFisik, selisih };
+  };
+
+  const rows = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase())).map(hitungBaris);
+
+  // ---- Scan barcode (scanner USB/Bluetooth = ketik + Enter di kotak cari; kamera = tombol Scan Kamera) ----
+  // Mode default: scan -> SKU muncul di panel "Terakhir di-scan" & kursor pindah
+  // ke Qty Fisik untuk diketik. Mode "Tambah 1 tiap scan": tiap scan menambah
+  // Qty Fisik SKU itu sebanyak 1 (hitung per pcs).
+  const [tambahSatu, setTambahSatu] = useState(false);
+  const [terakhirId, setTerakhirId] = useState(null);
+  const [pesanScan, setPesanScan] = useState("");
+  const [scanTick, setScanTick] = useState(0);
+  const cariRef = useRef(null);
+  const qtyPanelRef = useRef(null);
+
+  const prosesScan = (kode) => {
+    const sku = cariSkuDariBarcode(skuMaster, kode);
+    if (!sku) {
+      setPesanScan(`Barcode "${kode}" tidak ditemukan di Master Barang.`);
+      return;
+    }
+    setPesanScan("");
+    setTerakhirId(sku.id);
+    setScanTick((n) => n + 1);
+    if (tambahSatu) {
+      setFisik((prev) => {
+        const cur = prev[sku.id];
+        const n = cur === undefined || cur === "" ? 0 : Number(cur) || 0;
+        return { ...prev, [sku.id]: String(n + 1) };
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!scanTick || tambahSatu) return;
+    const t = setTimeout(() => {
+      qtyPanelRef.current?.focus();
+      qtyPanelRef.current?.select();
+    }, 80);
+    return () => clearTimeout(t);
+  }, [scanTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const terakhirBaris = terakhirId ? skuMaster.find((x) => x.id === terakhirId) : null;
+  const terakhir = terakhirBaris ? hitungBaris(terakhirBaris) : null;
 
   return (
     <div>
@@ -496,15 +547,96 @@ function StokOpname({ skuMaster, setModal }) {
         title="Stok Opname"
         description="Hitung fisik stok di gudang, lalu bandingkan dengan Stok Sistem untuk mengecek selisih."
       />
-      <div className="flex items-center gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
-        <Search size={14} className="text-slate-500" />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cari SKU…"
-          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1">
+          <Search size={14} className="text-slate-500" />
+          <input
+            ref={cariRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              // Scanner USB/Bluetooth mengetik isi barcode lalu menekan Enter.
+              if (e.key !== "Enter") return;
+              const kode = q.trim();
+              if (!kode) return;
+              e.preventDefault();
+              if (cariSkuDariBarcode(skuMaster, kode)) {
+                prosesScan(kode);
+                setQ("");
+              } else {
+                setPesanScan(`Barcode "${kode}" tidak ditemukan di Master Barang.`);
+              }
+            }}
+            placeholder="Cari SKU atau scan barcode…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <TombolScanKamera
+          label="Scan Kamera"
+          judul="Scan Barcode — Stok Opname"
+          continuous={tambahSatu}
+          onDetect={prosesScan}
         />
+        <label className="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={tambahSatu}
+            onChange={(e) => setTambahSatu(e.target.checked)}
+            className="accent-amber-500"
+          />
+          Tambah 1 tiap scan
+        </label>
       </div>
+      {pesanScan && <div className="mb-3 text-xs text-red-400">{pesanScan}</div>}
+      {terakhir && (
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-slate-900/70 p-4">
+          <div className="text-[11px] text-slate-500 mb-1">Terakhir di-scan</div>
+          <div className="font-mono text-sm text-amber-300 mb-3 break-all">{terakhir.sku}</div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <div className="text-slate-400">
+              Stok sistem <span className="text-slate-100 font-semibold ml-1">{terakhir.stok}</span>
+            </div>
+            <label className="flex items-center gap-2 text-slate-400">
+              Qty fisik
+              <input
+                ref={qtyPanelRef}
+                type="number"
+                value={terakhir.raw}
+                onChange={(e) => setQtyFisik(terakhir.id, e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter = selesai isi qty, kursor balik ke kotak scan untuk barcode berikutnya.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    cariRef.current?.focus();
+                  }
+                }}
+                placeholder="Hasil hitung…"
+                className="w-28 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-amber-500"
+              />
+            </label>
+            <div>
+              {!terakhir.ada ? (
+                <span className="text-slate-600 text-xs">—</span>
+              ) : terakhir.selisih === 0 ? (
+                <span className="flex items-center gap-1 text-emerald-400 text-xs">
+                  <CheckCircle2 size={13} /> Cocok
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-amber-400 text-xs">
+                  <AlertTriangle size={13} /> {terakhir.selisih > 0 ? `+${terakhir.selisih}` : terakhir.selisih}
+                </span>
+              )}
+            </div>
+            <button
+              disabled={!terakhir.ada || terakhir.selisih === 0}
+              onClick={() => setModal({ type: "stok-opname", item: terakhir, qtyFisik: terakhir.qtyFisik })}
+              className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              Sesuaikan Stok
+            </button>
+          </div>
+        </div>
+      )}
       {rows.length === 0 ? (
         <EmptyState label="Belum ada data untuk dihitung." />
       ) : (

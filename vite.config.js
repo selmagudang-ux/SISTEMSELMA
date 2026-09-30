@@ -30,6 +30,11 @@ export default defineConfig({
           // dynamic di ocrSku.js. Dipisah sendiri supaya cuma diambil saat
           // fitur scan-foto SKU benar-benar dipakai.
           if (id.includes("tesseract")) return "vendor-tesseract";
+          // @zxing (pembaca barcode kamera, dipakai di Stok Barang & Stok Opname)
+          // ~500KB — sama seperti tesseract: dipisah sendiri supaya cuma diambil
+          // saat kamera scan benar-benar dibuka (import-nya dynamic di
+          // components/ScanKamera.jsx), bukan ikut ke-preload di "vendor".
+          if (id.includes("@zxing")) return "vendor-zxing";
           return "vendor";
         },
       },

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Printer, CheckSquare, Square } from "lucide-react";
 import { EmptyState, SearchableSelect } from "../components/ui";
-import { priceCode } from "../lib/api";
+import { priceCode, labelFor } from "../lib/api";
 import { skuForRak } from "./Rak";
+import Barcode128 from "../components/Barcode128";
 
 // SKU versi singkat untuk label cetak: Bahan+Peruntukan+Kategori - Subkategori - Model
 // (warna & ukuran tidak ikut ditampilkan di label).
@@ -27,7 +28,7 @@ const WARNA_OPTIONS = [
 ];
 const warnaCss = (key) => (WARNA_OPTIONS.find((w) => w.key === key) || WARNA_OPTIONS[0]).css;
 
-const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "", tampilkanWarnaProduk: false };
+const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "", tampilkanWarnaProduk: false, tandaiNew: false };
 
 // Pengaturan kertas stiker terakhir disimpan di HP/komputer supaya tidak perlu diatur ulang.
 const LAYOUT_STORAGE_KEY = "ss-cetak-label-layout";
@@ -50,6 +51,17 @@ const DEFAULT_LAYOUT = {
   fontSku: 13, // baris SKU, mis. "TDCC-SIM-1" (atau "TDCC-SIM-1-KUN" jika warna produk dicentang)
   fontKode: 17, // baris kode harga, mis. "334488"
   fontCatatan: 8, // baris catatan (bila diisi)
+  // Barcode Code 128 di bagian bawah label — isinya SKU LENGKAP (termasuk warna & ukuran),
+  // supaya tiap varian punya barcode sendiri dan bisa di-scan di Stok / Stok Opname.
+  barcode: false,
+  tinggiBarcode: 10, // mm
+  // Gaya label: "rak" = gaya lama (kode rak, SKU, kode harga); "harga" = stiker harga
+  // (nama produk + tanda NEW di atas, barcode besar di tengah, kode & harga di bawah).
+  gaya: "rak",
+  fontNama: 10, // pt — baris atas gaya "harga", mis. GELANG 24K
+  fontNew: 9, // pt — tanda NEW
+  fontBawah: 10, // pt — kode di kiri bawah, mis. 5101K
+  fontHarga: 13, // pt — harga di kanan bawah, mis. Rp.54000
 };
 // Preset khusus saat memilih kertas termal 100x150mm: satu label per lembar, tanpa margin/jarak.
 const TERMAL_PRESET = {
@@ -79,7 +91,7 @@ function pageSizeCss(ukuranKertas) {
   return ukuranKertas; // A4 | Letter
 }
 
-export default function CetakLabel({ penempatan, rak, skuMaster }) {
+export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState({}); // { rakCode: { qty, warna, catatan } }
 
@@ -145,6 +157,15 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
         out.push({
           key: `${r.code}-${n}`,
           sku: skuDenganWarna(s, row.tampilkanWarnaProduk),
+          skuLengkap: s.sku,
+          // ---- dipakai gaya "harga" ----
+          nama: [labelFor(master || {}, "kategori", s.kategori), labelFor(master || {}, "bahan", s.bahan)]
+            .filter((x) => x && x !== "—")
+            .join(" ")
+            .toUpperCase(),
+          kodeBawah: (s.barcode_supplier || "").trim() || shortSku(s),
+          harga: Number(s.ecer) > 0 ? `Rp.${Number(s.ecer)}` : "",
+          isNew: !!row.tandaiNew,
           rak: r.code,
           kode,
           warna: row.warna,
@@ -153,7 +174,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
       }
     });
     return out;
-  }, [filteredRak, selected, skuMap]);
+  }, [filteredRak, selected, skuMap, master]);
 
   const totalTerpilih = Object.keys(selected).length;
 
@@ -201,6 +222,16 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
             onChange={(e) => patchRow(key, { tampilkanWarnaProduk: e.target.checked })}
             className="accent-amber-500 disabled:opacity-40"
             title="Tampilkan warna produk (dari kategori Warna di SKU) di label SKU ini"
+          />
+        </td>
+        <td className="px-3 py-2 text-center">
+          <input
+            type="checkbox"
+            disabled={!checked}
+            checked={row?.tandaiNew ?? false}
+            onChange={(e) => patchRow(key, { tandaiNew: e.target.checked })}
+            className="accent-amber-500 disabled:opacity-40"
+            title="Tampilkan tanda NEW di label gaya Stiker Harga"
           />
         </td>
         <td className="px-3 py-2">
@@ -257,7 +288,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
           <EmptyState label="Tidak ada rak yang sedang berisi SKU." />
         ) : (
           <div className="rounded-xl border border-slate-800 overflow-x-auto mb-5">
-            <table className="w-full text-sm min-w-[860px]">
+            <table className="w-full text-sm min-w-[920px]">
               <thead>
                 <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                   <th className="px-3 py-2.5 w-8"></th>
@@ -267,6 +298,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
                   <th className="px-3 py-2.5">Jumlah</th>
                   <th className="px-3 py-2.5">Warna</th>
                   <th className="px-3 py-2.5 text-center">Warna Produk?</th>
+                  <th className="px-3 py-2.5 text-center">NEW?</th>
                   <th className="px-3 py-2.5">Catatan</th>
                 </tr>
               </thead>
@@ -284,6 +316,18 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
         {/* ---- Pengaturan ukuran kertas stiker ---- */}
         <div className="rounded-xl border border-slate-800 p-4 mb-5">
           <div className="text-xs font-semibold text-slate-300 mb-3">Pengaturan Kertas Stiker</div>
+
+          <label className="block mb-3 max-w-xs">
+            <div className="text-[11px] text-slate-500 mb-1">Gaya Label</div>
+            <select
+              value={layout.gaya}
+              onChange={(e) => setLayout((prev) => ({ ...prev, gaya: e.target.value }))}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+            >
+              <option value="rak">Label Rak (kode rak, SKU, kode harga)</option>
+              <option value="harga">Stiker Harga (nama, barcode besar, kode, harga)</option>
+            </select>
+          </label>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
             <label className="block">
@@ -381,6 +425,37 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
             ))}
           </div>
 
+          {layout.gaya === "harga" && (
+            <>
+              <div className="text-[11px] text-slate-500 mb-1.5">Ukuran Huruf Stiker Harga (pt)</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                {[
+                  ["fontNama", "Nama Produk", "cth: GELANG 24K"],
+                  ["fontNew", "Tanda NEW", "kanan atas"],
+                  ["fontBawah", "Kode Bawah", "cth: 5101K"],
+                  ["fontHarga", "Harga", "cth: Rp.54000"],
+                ].map(([key, label, contoh]) => (
+                  <label key={key} className="block">
+                    <div className="text-[11px] text-slate-500 mb-1">{label}</div>
+                    <input
+                      type="number"
+                      min="1"
+                      value={layout[key]}
+                      onChange={(e) =>
+                        setLayout((prev) => ({ ...prev, [key]: Math.max(1, Number(e.target.value) || 1) }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+                    />
+                    <div className="text-[10px] text-slate-600 mt-0.5">{contoh}</div>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 mb-3">
+                Tinggi barcode otomatis mengisi sisa ruang label. Harga diambil dari harga Ecer.
+              </p>
+            </>
+          )}
+
           <label className="flex items-center gap-2 text-xs text-slate-300">
             <input
               type="checkbox"
@@ -390,6 +465,31 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
             />
             Tampilkan garis kotak (border) di setiap label
           </label>
+          {layout.gaya !== "harga" && (
+          <label className="flex items-center gap-2 text-xs text-slate-300 mt-2">
+            <input
+              type="checkbox"
+              checked={layout.barcode}
+              onChange={(e) => setLayout((prev) => ({ ...prev, barcode: e.target.checked }))}
+              className="accent-amber-500"
+            />
+            Tampilkan barcode di label (isi barcode = SKU lengkap)
+          </label>
+          )}
+          {layout.gaya !== "harga" && layout.barcode && (
+            <label className="block mt-2 max-w-[180px]">
+              <div className="text-[11px] text-slate-500 mb-1">Tinggi Barcode (mm)</div>
+              <input
+                type="number"
+                min="4"
+                value={layout.tinggiBarcode}
+                onChange={(e) =>
+                  setLayout((prev) => ({ ...prev, tinggiBarcode: Math.max(4, Number(e.target.value) || 4) }))
+                }
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+              />
+            </label>
+          )}
           <p className="text-[11px] text-slate-500 mt-3">
             Sesuaikan ukuran ini dengan kertas stiker fisik yang dipakai agar posisi cetak pas. Maksimal{" "}
             {layout.kolom * layout.baris} label per lembar {layout.ukuranKertas}.
@@ -445,13 +545,39 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
           .ss-print-sku { font-size: ${layout.fontSku}pt; font-weight: 800; }
           .ss-print-catatan { font-size: ${layout.fontCatatan}pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
           .ss-print-kode { font-size: ${layout.fontKode}pt; font-weight: 800; letter-spacing: 0.5px; }
+          .ss-print-harga { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 1mm; text-align: left; }
+          .ss-print-harga-atas { display: flex; justify-content: space-between; align-items: baseline; line-height: 1.1; }
+          .ss-print-harga-nama { font-size: ${layout.fontNama}pt; font-weight: 700; }
+          .ss-print-harga-new { font-size: ${layout.fontNew}pt; font-weight: 800; }
+          .ss-print-harga-bar { flex: 1 1 auto; min-height: 0; }
+          .ss-print-harga-bawah { display: flex; justify-content: space-between; align-items: baseline; line-height: 1.1; }
+          .ss-print-harga-kode { font-size: ${layout.fontBawah}pt; font-weight: 700; }
+          .ss-print-harga-rp { font-size: ${layout.fontHarga}pt; font-weight: 800; }
+          .ss-print-barcode { width: 100%; }
+          .ss-print-barcode-teks { font-size: 6pt; line-height: 1.1; margin-top: 0.5mm; font-family: Arial, Helvetica, sans-serif; }
         `}</style>
         <div className="ss-print-page">
           <div
             className="ss-print-sheet"
             style={{ width: `${layout.kolom * (layout.lebarLabel + layout.gapX)}mm` }}
           >
-            {labels.map((l) => (
+            {labels.map((l) => layout.gaya === "harga" ? (
+              <div key={l.key} className="ss-print-label" style={{ padding: "2mm 2.5mm", justifyContent: "stretch", alignItems: "stretch" }}>
+                <div className="ss-print-harga">
+                  <div className="ss-print-harga-atas">
+                    <span className="ss-print-harga-nama">{l.nama}</span>
+                    {l.isNew && <span className="ss-print-harga-new">NEW</span>}
+                  </div>
+                  <div className="ss-print-harga-bar">
+                    <Barcode128 value={l.skuLengkap} tinggiMm={null} />
+                  </div>
+                  <div className="ss-print-harga-bawah">
+                    <span className="ss-print-harga-kode">{l.kodeBawah}</span>
+                    <span className="ss-print-harga-rp">{l.harga}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
               <div key={l.key} className="ss-print-label">
                 <div className="ss-print-rak">{l.rak}</div>
                 <div>
@@ -459,6 +585,12 @@ export default function CetakLabel({ penempatan, rak, skuMaster }) {
                   {l.catatan && <div className="ss-print-catatan">{l.catatan}</div>}
                 </div>
                 <div className="ss-print-kode">{l.kode}</div>
+                {layout.barcode && (
+                  <div className="ss-print-barcode">
+                    <Barcode128 value={l.skuLengkap} tinggiMm={layout.tinggiBarcode} />
+                    <div className="ss-print-barcode-teks">{l.skuLengkap}</div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
