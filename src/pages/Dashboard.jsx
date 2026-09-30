@@ -4,7 +4,7 @@ import {
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
-  ChevronDown,
+  ChevronDown, Scale,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 import {
@@ -281,6 +281,9 @@ export default function Dashboard({
 
 function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
   const [detailKategori, setDetailKategori] = useState(null);
+  // Kartu toggle (pola sama seperti Dashboard Penjualan/Absensi): klik untuk
+  // buka panelnya di bawah, klik lagi untuk menutup. Satu panel dalam satu waktu.
+  const [panelAktif, setPanelAktif] = useState("ringkasan");
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
@@ -311,6 +314,75 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
 
   return (
     <div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "ringkasan" ? null : "ringkasan"))}
+          className={`rounded-xl border p-5 text-left transition min-h-[150px] flex flex-col ${
+            panelAktif === "ringkasan" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Landmark size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Ringkasan</div>
+          <div className="text-[11px] mt-1 text-slate-500">{`Saldo kas ${fmtRp(totalSaldoKas)}`}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "labarugi" ? null : "labarugi"))}
+          className={`rounded-xl border p-5 text-left transition min-h-[150px] flex flex-col ${
+            panelAktif === "labarugi" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Scale size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Laba Rugi</div>
+          <div className="text-[11px] mt-1 text-slate-500">{`${labaRugiBulanIni.labaRugi >= 0 ? "Laba" : "Rugi"} ${fmtRp(Math.abs(labaRugiBulanIni.labaRugi))}`}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "aruskas" ? null : "aruskas"))}
+          className={`rounded-xl border p-5 text-left transition min-h-[150px] flex flex-col ${
+            panelAktif === "aruskas" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <BarChart3 size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Arus Kas</div>
+          <div className="text-[11px] mt-1 text-slate-500">{periodeLabel}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "breakdown" ? null : "breakdown"))}
+          className={`rounded-xl border p-5 text-left transition min-h-[150px] flex flex-col ${
+            panelAktif === "breakdown" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <LayoutGrid size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Pemasukan & Pengeluaran</div>
+          <div className="text-[11px] mt-1 text-slate-500">{`Masuk ${fmtRp(breakdownMasuk.total)} · Keluar ${fmtRp(breakdown.total)}`}</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanelAktif((v) => (v === "rekening" ? null : "rekening"))}
+          className={`rounded-xl border p-5 text-left transition min-h-[150px] flex flex-col ${
+            panelAktif === "rekening" ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <Wallet size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Saldo per Rekening</div>
+          <div className="text-[11px] mt-1 text-slate-500">{`${saldoRekening.length} rekening`}</div>
+        </button>
+      </div>
+
+      {panelAktif === "ringkasan" && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label="Saldo Kas Saat Ini" value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
         <StatCard label={`Kas Masuk (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
@@ -323,9 +395,31 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
           iconColor={ringkasanBulanIni.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
         />
       </div>
+      )}
 
+      {panelAktif === "labarugi" && (
+      <LaporanLabaRugi
+        pendapatan={labaRugiBulanIni.pendapatan}
+        beban={labaRugiBulanIni.beban}
+        labaRugi={labaRugiBulanIni.labaRugi}
+        marginPersen={labaRugiBulanIni.marginPersen}
+        subtitle={periodeLabel}
+        action={
+          <button
+            onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
+            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+          >
+            Lihat Laporan Lengkap <ArrowRight size={12} />
+          </button>
+        }
+      />
+      )}
+
+      {panelAktif === "aruskas" && (
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+      )}
 
+      {panelAktif === "breakdown" && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <BreakdownPemasukan
           total={breakdownMasuk.total}
@@ -338,6 +432,7 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
           onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
         />
       </div>
+      )}
 
       {detailKategori && detailKategori.isGrup && (
         <DetailKelompokModal
@@ -363,6 +458,7 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
         />
       )}
 
+      {panelAktif === "rekening" && (
       <div className="rounded-xl border border-slate-800 overflow-hidden mb-6">
         <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo per Rekening</div>
         {saldoRekening.length === 0 ? (
@@ -382,22 +478,7 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
           </table>
         )}
       </div>
-
-      <LaporanLabaRugi
-        pendapatan={labaRugiBulanIni.pendapatan}
-        beban={labaRugiBulanIni.beban}
-        labaRugi={labaRugiBulanIni.labaRugi}
-        marginPersen={labaRugiBulanIni.marginPersen}
-        subtitle={periodeLabel}
-        action={
-          <button
-            onClick={() => onNavigate && onNavigate("keuangan", "laporan")}
-            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-          >
-            Lihat Laporan Lengkap <ArrowRight size={12} />
-          </button>
-        }
-      />
+      )}
     </div>
   );
 }
