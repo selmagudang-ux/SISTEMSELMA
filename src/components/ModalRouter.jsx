@@ -4209,7 +4209,7 @@ export default function ModalRouter({
         master={master}
         onClose={close}
         saving={saving}
-        onSubmit={({ ongkir, resi, jumlahBox }) =>
+        onSubmit={({ ongkir, resi, jumlahBox, tanggalDatang }) =>
           run(async () => {
             // Field `dibongkar` (manual, lama) sudah tidak dipakai lagi —
             // status bongkar sekarang otomatis mengikuti progres rincian
@@ -4234,6 +4234,10 @@ export default function ModalRouter({
               method: "PATCH",
               body: JSON.stringify({
                 konfirmasi_datang: akanJadi === "sudah",
+                // Tanggal datang cuma dikirim waktu ditandai SUDAH datang;
+                // saat ditandai balik jadi belum, dibiarkan (tidak dihapus)
+                // dan tidak ditampilkan di tabel selama belum datang.
+                ...(tanggalDatang !== undefined ? { tanggal_datang: tanggalDatang } : {}),
                 ...(resi !== undefined ? { resi } : {}),
                 ...(jumlahBox !== undefined ? { jumlah_box: jumlahBox } : {}),
                 ...(kodePesananBaru ? { kode_pesanan: kodePesananBaru } : {}),

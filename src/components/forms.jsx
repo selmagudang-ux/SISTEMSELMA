@@ -1487,7 +1487,18 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
 // benar-benar sampai, jadi lebih pas dicatat bareng aksi "tandai sudah
 // datang" ini daripada dicampur ke rincian isi barang. Ongkir cuma muncul
 // kalau ditandai jadi "sudah" (balik ke "belum" tidak perlu ongkir).
+// Tanggal hari ini menurut jam lokal perangkat ("YYYY-MM-DD") — sengaja bukan
+// toISOString() karena itu UTC, sehingga lewat tengah malam WIB tanggalnya
+// bisa mundur sehari.
+function tanggalHariIniLokal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose, onSubmit, saving }) {
+  // Tanggal barang datang secara fisik — default hari ini, atau tanggal yang
+  // sudah pernah diisi kalau pesanan ini sebelumnya sudah ditandai datang.
+  const [tanggalDatang, setTanggalDatang] = useState(pesanan.tanggal_datang || tanggalHariIniLokal());
   const [resi, setResi] = useState(pesanan.resi || "");
   const [jumlahBox, setJumlahBox] = useState(pesanan.jumlah_box ?? "");
   const [bayarOngkir, setBayarOngkir] = useState(false);
@@ -1503,6 +1514,7 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
   // info ini dipakai terus di alur berikutnya (pengelompokan box di
   // Konfirmasi Datang/Barang Datang, rincianBongkarBox, dst), jadi tidak
   // boleh dikosongkan supaya box tidak "nyasar"/tidak konsisten belakangan.
+  const tanggalValid = !tandaiKeDatang || tanggalDatang !== "";
   const resiValid = !tandaiKeDatang || resi.trim() !== "";
   const jumlahBoxValid = !tandaiKeDatang || (jumlahBox !== "" && Number(jumlahBox) > 0);
   const ongkirValid = !bayarOngkir || Number(ongkirJumlah) > 0;
@@ -1531,6 +1543,9 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
 
       {tandaiKeDatang && (
         <>
+          <Field label="Tanggal Datang">
+            <InputTanggal value={tanggalDatang} onChange={setTanggalDatang} />
+          </Field>
           <Field label="No. Resi">
             <input
               className={inputClass}
@@ -1600,9 +1615,10 @@ export function TandaiStatusKedatanganForm({ pesanan, akanJadi, master, onClose,
           Batal
         </button>
         <button
-          disabled={saving || !ongkirValid || !resiValid || !jumlahBoxValid}
+          disabled={saving || !ongkirValid || !resiValid || !jumlahBoxValid || !tanggalValid}
           onClick={() =>
             onSubmit({
+              tanggalDatang: tandaiKeDatang ? tanggalDatang : undefined,
               resi: tandaiKeDatang ? resi.trim() || null : undefined,
               jumlahBox: tandaiKeDatang ? (jumlahBox === "" ? null : Number(jumlahBox) || 0) : undefined,
               ongkir:

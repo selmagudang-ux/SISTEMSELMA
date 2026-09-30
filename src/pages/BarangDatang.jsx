@@ -397,6 +397,21 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
             );
           })()}
         </td>
+        <td className="px-3 py-2.5 text-slate-300 text-[12px] leading-tight">
+          {(() => {
+            // Tanggal barang datang secara fisik — hanya tampil kalau pesanan
+            // ini sedang berstatus "Sudah Datang" dan tanggalnya sudah terisi.
+            const tglDatang = konfirmasiDatang === "sudah" ? formatTanggalID(p.tanggal_datang) : "";
+            if (!tglDatang) return "—";
+            const [hari, bulan, tahun] = tglDatang.split(" ");
+            return (
+              <>
+                <div className="whitespace-nowrap">{hari} {bulan}</div>
+                <div className="text-slate-500">{tahun}</div>
+              </>
+            );
+          })()}
+        </td>
         <td className="px-3 py-2.5 text-slate-300">{p.supplier || "—"}</td>
         <td className="px-3 py-2.5">
           <Badge color={jenisColor(p.jenis)}>{p.jenis || "—"}</Badge>
@@ -556,7 +571,7 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
         <SemuaInvoicePanel
           key={`${p.id}-detail`}
           daftarInvoice={daftarInvoice}
-          colSpan={13}
+          colSpan={14}
           onLihatFoto={lihatFoto}
           hargaKesepakatan={p.harga_kesepakatan}
           keteranganSelisih={p.keterangan_selisih}
@@ -756,7 +771,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-3 py-2.5"></th>
                 <th className="px-3 py-2.5">Kode Pesanan</th>
-                <th className="px-3 py-2.5">Tanggal</th>
+                <th className="px-3 py-2.5">Tgl Pesan</th>
+                <th className="px-3 py-2.5">Tgl Datang</th>
                 <th className="px-3 py-2.5">Supplier</th>
                 <th className="px-3 py-2.5">Jenis</th>
                 <th className="px-3 py-2.5">Datang?</th>
