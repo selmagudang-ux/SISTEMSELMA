@@ -248,6 +248,7 @@ export default function Dashboard({
           marketplaceTransaksi={marketplaceTransaksi}
           master={master}
           onNavigate={onNavigate}
+          setModal={setModal}
           tahun={tahun}
           periodeDari={periodeDari}
           periodeSampai={periodeSampai}
@@ -1834,7 +1835,7 @@ function PaginasiDashboard({ halaman, setHalaman, total }) {
   );
 }
 
-function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, setModal, tahun, periodeDari, periodeSampai, periodeLabel }) {
   // Cuma pesanan Grosir asli — Reseller Toko/Cekout belum ditampilkan di
   // kartu Dashboard Penjualan ini (kartu "Reseller" masih "Segera Hadir"),
   // riwayat & angkanya sendiri tetap ada di menu Reseller.
@@ -1852,6 +1853,8 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   // panel Reseller Toko — pola sama seperti halamanBarangDatang dkk di
   // DashboardGudang, 5 baris per halaman.
   const [halamanBelumLunasGrosir, setHalamanBelumLunasGrosir] = useState(1);
+  // Pelanggan yang barisnya lagi dibuka (rincian pesanan) di tabel Data Pelanggan Grosir.
+  const [pelangganTerbukaGrosir, setPelangganTerbukaGrosir] = useState(() => new Set());
   const [halamanRiwayatGrosir, setHalamanRiwayatGrosir] = useState(1);
   const [halamanBelumLunasReseller, setHalamanBelumLunasReseller] = useState(1);
   const [halamanRiwayatReseller, setHalamanRiwayatReseller] = useState(1);
@@ -1903,7 +1906,8 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
     const map = new Map();
     for (const p of pesananAktif) {
       const key = p.pelanggan_id || "-";
-      const entri = map.get(key) || { id: key, nama: namaPelanggan(p.pelanggan_id), jumlahPesanan: 0, omset: 0, sisaHutang: 0 };
+      const entri = map.get(key) || { id: key, nama: namaPelanggan(p.pelanggan_id), jumlahPesanan: 0, omset: 0, sisaHutang: 0, pesanan: [] };
+      entri.pesanan.push(p);
       entri.jumlahPesanan += 1;
       entri.omset += Number(p.total) || 0;
       entri.sisaHutang += sisaHutangPesanan(p, pembayaranGrosir);
@@ -2792,14 +2796,64 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                     </tr>
                   </thead>
                   <tbody>
-                    {dataPelangganGrosir.slice(0, 5).map((d) => (
-                      <tr key={d.id} className="border-b border-slate-800/60 last:border-0">
-                        <td className="px-4 py-2.5 text-slate-300">{d.nama}</td>
-                        <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
-                        <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
-                        <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
-                      </tr>
-                    ))}
+                    {dataPelangganGrosir.slice(0, 5).map((d) => {
+                      const terbuka = pelangganTerbukaGrosir.has(d.id);
+                      return (
+                        <Fragment key={d.id}>
+                          <tr
+                            onClick={() =>
+                              setPelangganTerbukaGrosir((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(d.id)) next.delete(d.id);
+                                else next.add(d.id);
+                                return next;
+                              })
+                            }
+                            className="border-b border-slate-800/60 last:border-0 cursor-pointer hover:bg-slate-800/40"
+                          >
+                            <td className="px-4 py-2.5 text-slate-300">
+                              <ChevronDown
+                                size={14}
+                                className={`inline-block mr-1.5 -mt-0.5 text-slate-500 transition-transform ${terbuka ? "rotate-180" : ""}`}
+                              />
+                              {d.nama}
+                            </td>
+                            <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
+                            <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
+                            <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
+                          </tr>
+                          {terbuka && (
+                            <tr className="bg-slate-900/40 border-b border-slate-800/60 last:border-0">
+                              <td colSpan={4} className="px-4 pb-3 pt-1">
+                                <table className="w-full text-sm">
+                                  <tbody>
+                                    {[...d.pesanan]
+                                      .sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || ""))
+                                      .map((p) => (
+                                        <tr
+                                          key={p.id}
+                                          onClick={() => setModal && setModal({ type: "grosir-detail-pesanan", item: p })}
+                                          className="border-b border-slate-800/40 last:border-0 cursor-pointer hover:bg-slate-800/50"
+                                          title="Klik untuk lihat rincian item"
+                                        >
+                                          <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{formatTanggalID(p.tanggal)}</td>
+                                          <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">{p.nomor_pesanan}</td>
+                                          <td className="py-2 pr-3">
+                                            <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                                              {p.status_bayar}
+                                            </Badge>
+                                          </td>
+                                          <td className="py-2 text-right font-medium text-slate-300">{fmtRp(p.total)}</td>
+                                        </tr>
+                                      ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
