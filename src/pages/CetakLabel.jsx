@@ -62,6 +62,10 @@ const DEFAULT_LAYOUT = {
   fontNew: 9, // pt — tanda NEW
   fontBawah: 10, // pt — kode di kiri bawah, mis. 5101K
   fontHarga: 13, // pt — harga di kanan bawah, mis. Rp.54000
+  // Ruang di dalam label gaya "harga" (mm). Makin kecil = barcode makin tinggi.
+  paddingV: 2, // padding atas & bawah
+  paddingH: 2.5, // padding kiri & kanan
+  gapHarga: 1, // jarak antara baris nama, barcode, dan baris harga
 };
 // Preset khusus saat memilih kertas termal 100x150mm: satu label per lembar, tanpa margin/jarak.
 const TERMAL_PRESET = {
@@ -84,15 +88,32 @@ const PRESET_110X15 = {
   marginKiri: 0,
   gapX: 0,
   gapY: 0,
+  paddingV: 0.5,
+  paddingH: 2,
+  gapHarga: 0.3,
 };
 function loadLayout() {
   try {
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
     if (!saved) return DEFAULT_LAYOUT;
-    return { ...DEFAULT_LAYOUT, ...JSON.parse(saved) };
+    const parsed = JSON.parse(saved);
+    // Pengaturan 110x15 yang tersimpan sebelum ada opsi padding: pakai padding ringkas dari preset.
+    const dasar = parsed.ukuranKertas === "110x15" && parsed.paddingV === undefined
+      ? { paddingV: PRESET_110X15.paddingV, paddingH: PRESET_110X15.paddingH, gapHarga: PRESET_110X15.gapHarga }
+      : {};
+    return { ...DEFAULT_LAYOUT, ...dasar, ...parsed };
   } catch {
     return DEFAULT_LAYOUT;
   }
+}
+
+// Perkiraan tinggi barcode (mm) pada stiker gaya "harga" = tinggi label dikurangi padding, border, dua baris teks, dan jarak.
+function estimasiTinggiBarcode(l) {
+  const PT = 0.3528; // 1pt = 0.3528mm; line-height baris teks = 1
+  const atas = Math.max(l.fontNama, l.fontNew) * PT;
+  const bawah = Math.max(l.fontBawah, l.fontHarga) * PT;
+  const border = l.border ? 0.53 : 0;
+  return l.tinggiLabel - 2 * l.paddingV - border - atas - bawah - 2 * l.gapHarga;
 }
 
 // Ukuran halaman CSS (@page) berdasarkan ukuran kertas yang dipilih.
@@ -511,8 +532,34 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                   </label>
                 ))}
               </div>
+              <div className="text-[11px] text-slate-500 mb-1.5">Ruang di Dalam Label (mm) — kecilkan supaya barcode lebih tinggi</div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                {[
+                  ["paddingV", "Padding Atas/Bawah"],
+                  ["paddingH", "Padding Kiri/Kanan"],
+                  ["gapHarga", "Jarak Antar Baris"],
+                ].map(([key, label]) => (
+                  <label key={key} className="block">
+                    <div className="text-[11px] text-slate-500 mb-1">{label}</div>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={layout[key]}
+                      onChange={(e) =>
+                        setLayout((prev) => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+                    />
+                  </label>
+                ))}
+              </div>
               <p className="text-[11px] text-slate-500 mb-3">
-                Tinggi barcode otomatis mengisi sisa ruang label. Harga diambil dari harga Ecer.
+                Tinggi barcode otomatis mengisi sisa ruang label (perkiraan sekarang:{" "}
+                <span className={estimasiTinggiBarcode(layout) < 4 ? "text-red-400 font-semibold" : "text-slate-300 font-semibold"}>
+                  {Math.max(0, estimasiTinggiBarcode(layout)).toFixed(1)} mm
+                </span>
+                ). Kalau masih pendek, kecilkan ukuran huruf Nama/Kode/Harga di atas. Harga diambil dari harga Ecer.
               </p>
             </>
           )}
@@ -609,12 +656,12 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
           .ss-print-sku { font-size: ${layout.fontSku}pt; font-weight: 800; }
           .ss-print-catatan { font-size: ${layout.fontCatatan}pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
           .ss-print-kode { font-size: ${layout.fontKode}pt; font-weight: 800; letter-spacing: 0.5px; }
-          .ss-print-harga { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 1mm; text-align: left; }
-          .ss-print-harga-atas { display: flex; justify-content: space-between; align-items: baseline; line-height: 1.1; }
+          .ss-print-harga { width: 100%; height: 100%; display: flex; flex-direction: column; gap: ${layout.gapHarga}mm; text-align: left; }
+          .ss-print-harga-atas { display: flex; justify-content: space-between; align-items: baseline; line-height: 1; }
           .ss-print-harga-nama { font-size: ${layout.fontNama}pt; font-weight: 700; }
           .ss-print-harga-new { font-size: ${layout.fontNew}pt; font-weight: 800; }
           .ss-print-harga-bar { flex: 1 1 auto; min-height: 0; }
-          .ss-print-harga-bawah { display: flex; justify-content: space-between; align-items: baseline; line-height: 1.1; }
+          .ss-print-harga-bawah { display: flex; justify-content: space-between; align-items: baseline; line-height: 1; }
           .ss-print-harga-kode { font-size: ${layout.fontBawah}pt; font-weight: 700; }
           .ss-print-harga-rp { font-size: ${layout.fontHarga}pt; font-weight: 800; }
           .ss-print-barcode { width: 100%; }
@@ -626,7 +673,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             style={{ width: `${layout.kolom * (layout.lebarLabel + layout.gapX)}mm` }}
           >
             {labels.map((l) => layout.gaya === "harga" ? (
-              <div key={l.key} className="ss-print-label" style={{ padding: "2mm 2.5mm", justifyContent: "stretch", alignItems: "stretch" }}>
+              <div key={l.key} className="ss-print-label" style={{ padding: `${layout.paddingV}mm ${layout.paddingH}mm`, justifyContent: "stretch", alignItems: "stretch" }}>
                 <div className="ss-print-harga">
                   <div className="ss-print-harga-atas">
                     <span className="ss-print-harga-nama">{l.nama}</span>
