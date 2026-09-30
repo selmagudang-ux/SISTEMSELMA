@@ -847,7 +847,7 @@ function DashboardGudang({
       0
     );
     if (!perSupplierBarangDatangMap.has(key)) {
-      perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0 });
+      perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0, totalPembayaran: 0 });
     }
     const grup = perSupplierBarangDatangMap.get(key);
     // Rincian model per pesanan (nama, qty, harga, sudah datang atau belum) —
@@ -890,6 +890,7 @@ function DashboardGudang({
     grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox, _pembayaran: Number(p.harga_kesepakatan) || 0, _grupModel: grupModel });
     grup.totalModel += 1;
     grup.totalNilai += nilai;
+    grup.totalPembayaran += Number(p.harga_kesepakatan) || 0;
   });
   // Urutkan dari total nilai terbesar supaya supplier paling kontributif
   // langsung kelihatan di atas.
@@ -1376,7 +1377,18 @@ function DashboardGudang({
                                   <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
                                     {grup.totalModel} pesanan
                                   </td>
-                                  <td className="px-4 py-2.5 text-right font-semibold text-slate-200">{fmtRp(grup.totalNilai)}</td>
+                                  <td className="px-4 py-2.5 text-right text-xs whitespace-nowrap">
+                                    <div className="flex justify-between gap-4 text-slate-500">
+                                      <span>Pembayaran</span>
+                                      <span className="text-slate-300 font-medium">
+                                        {grup.totalPembayaran > 0 ? fmtRp(grup.totalPembayaran) : "—"}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 text-slate-500">
+                                      <span>Harga barang</span>
+                                      <span className="text-sm text-slate-100 font-semibold">{fmtRp(grup.totalNilai)}</span>
+                                    </div>
+                                  </td>
                                 </tr>
                                 {isOpen && (
                                   <tr className="bg-slate-900/40">
