@@ -636,12 +636,33 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const top = semua.filter((p) => !p.induk_id || !semuaId.has(p.induk_id));
   const anakDari = (id) => semua.filter((p) => p.induk_id === id);
 
+  // Paginasi dihitung dari baris TOP-LEVEL saja (satu box = satu baris di
+  // tabel) — bon tambahan ikut baris induknya, jadi tidak dihitung sebagai
+  // baris sendiri di sini walau tetap kelihatan (sebagai sub-baris) di
+  // halaman yang sama dengan induknya.
+  // Filter periode diterapkan ke `list`, dan StatCard di atas (Total
+  // Pesanan/Sudah Datang/Belum Datang/box) SEKARANG IKUT menghitung dari
+  // `list` ini, jadi angkanya selalu sama dengan isi tabel yang tampil.
+  // Tanpa filter, `list` = `top`, sehingga angkanya sama seperti sebelumnya.
+  const list = top.filter((p) => {
+    const tgl = p.tanggal_pesan || "";
+    if (dariTanggal && tgl < dariTanggal) return false;
+    if (sampaiTanggal && tgl > sampaiTanggal) return false;
+    return true;
+  });
+  // Semua baris (induk + bon tambahan) yang ikut terfilter: bon tambahan ikut
+  // induknya, sama seperti di tabel.
+  const idListTerfilter = new Set(list.map((p) => p.id));
+  const semuaTerfilter = semua.filter(
+    (p) => idListTerfilter.has(p.id) || (p.induk_id && idListTerfilter.has(p.induk_id))
+  );
+
   // Rincian box (bukan jumlah pesanan) untuk pesanan yang statusnya SUDAH
   // ditandai datang — dipakai di panel "Barang Sudah Datang" di bawah:
   // Total Box / Sudah Dibongkar / Belum Dibongkar, semuanya dihitung per
   // box fisik lewat rincianBongkarBox. Pesanan yang belum pernah diisi
   // jumlah_box (rincianBox null) dianggap 1 box.
-  const pesananSudahDatang = top.filter((p) => statusKonfirmasiDatang(p) === "sudah");
+  const pesananSudahDatang = list.filter((p) => statusKonfirmasiDatang(p) === "sudah");
   const totalBoxKeseluruhan = pesananSudahDatang.reduce((sum, p) => {
     const rincian = rincianBongkarBox(p, semua);
     return sum + (rincian ? rincian.total : 1);
@@ -655,22 +676,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   // Laporan kedatangan — dihitung dari SEMUA pesanan aktif (bukan cuma yang
   // sudah datang, beda dari 2 angka bongkar di atas), supaya kelihatan juga
   // berapa yang masih menunggu ditandai datang.
-  const jumlahSudahDatang = semua.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
-  const jumlahBelumDatang = semua.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
-
-  // Paginasi dihitung dari baris TOP-LEVEL saja (satu box = satu baris di
-  // tabel) — bon tambahan ikut baris induknya, jadi tidak dihitung sebagai
-  // baris sendiri di sini walau tetap kelihatan (sebagai sub-baris) di
-  // halaman yang sama dengan induknya.
-  // Filter periode diterapkan DI SINI (bukan ke `top`) supaya StatCard di
-  // atas (Total Pesanan/Sudah Datang/Belum Datang/box) tetap menghitung dari
-  // SEMUA data, tidak ikut kepotong filter tanggal tabel.
-  const list = top.filter((p) => {
-    const tgl = p.tanggal_pesan || "";
-    if (dariTanggal && tgl < dariTanggal) return false;
-    if (sampaiTanggal && tgl > sampaiTanggal) return false;
-    return true;
-  });
+  const jumlahSudahDatang = semuaTerfilter.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
+  const jumlahBelumDatang = semuaTerfilter.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
 
   // Kalau halaman aktif jadi kelebihan (mis. sebelumnya di halaman 5 lalu
   // sebagian riwayat dihapus sehingga cuma tersisa 2 halaman), tarik balik
@@ -700,7 +707,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-        <StatCard label="Total Pesanan" value={top.length} icon={Clock} accent="text-slate-200" iconColor="text-slate-400" />
+        <StatCard label="Total Pesanan" value={list.length} icon={Clock} accent="text-slate-200" iconColor="text-slate-400" />
         <div
           role="button"
           tabIndex={0}
@@ -734,8 +741,8 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
       </div>
 
-      {/* Filter periode — cuma memotong tabel di bawah (berdasar tanggal
-          pesan), tidak memengaruhi angka StatCard di atas. */}
+      {/* Filter periode (berdasar tanggal pesan) — memotong tabel di bawah
+          DAN angka StatCard di atas ikut menyesuaikan. */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div className="w-40">
           <label className="block text-[11px] uppercase text-slate-500 font-semibold mb-1">Dari Tanggal</label>
