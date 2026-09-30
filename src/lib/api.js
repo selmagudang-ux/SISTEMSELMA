@@ -734,14 +734,26 @@ export function rincianBongkarBox(p, semuaPesanan) {
     );
     return { selesai: boxSelesai.size, total };
   }
-  const finalDenganBox = (row) =>
-    !row.dibatalkan && !row.draft && (Number(row.jumlah_diterima) || 0) > 0 && Number(row.no_box) > 0;
+  // Bon dianggap FINAL kalau tidak batal, bukan draf, dan sudah ada qty diterima.
+  const bonFinal = (row) =>
+    !row.dibatalkan && !row.draft && (Number(row.jumlah_diterima) || 0) > 0;
   const boxSelesai = new Set();
-  if (finalDenganBox(p)) boxSelesai.add(Number(p.no_box));
+  // Bon final yang no_box-nya KOSONG (mis. dikonfirmasi waktu jumlah_box belum
+  // diisi, atau kolom "Pilih box…" dibiarkan kosong). Dulu bon seperti ini tidak
+  // dihitung sama sekali, jadi barang yang sudah dibongkar & final tetap tampil
+  // 0/N. Sekarang tiap bon final tanpa nomor box dihitung sebagai 1 box
+  // (dibatasi total box supaya tidak melebihi).
+  let finalTanpaNomorBox = 0;
+  const proses = (row) => {
+    if (!bonFinal(row)) return;
+    if (Number(row.no_box) > 0) boxSelesai.add(Number(row.no_box));
+    else finalTanpaNomorBox += 1;
+  };
+  proses(p);
   for (const row of semuaPesanan || []) {
-    if (row.induk_id === p.id && finalDenganBox(row)) boxSelesai.add(Number(row.no_box));
+    if (row.induk_id === p.id) proses(row);
   }
-  return { selesai: boxSelesai.size, total };
+  return { selesai: Math.min(total, boxSelesai.size + finalTanpaNomorBox), total };
 }
 
 // Rincian per-model sebuah pesanan masuk — [{ nama, jumlah, harga, datang }].
