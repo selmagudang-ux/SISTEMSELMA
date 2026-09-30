@@ -107,6 +107,11 @@ function loadLayout() {
   }
 }
 
+// Format angka dengan titik pemisah ribuan, mis. 54000 -> "54.000".
+function formatRibuan(n) {
+  return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
 // Perkiraan tinggi barcode (mm) pada stiker gaya "harga" = tinggi label dikurangi padding, border, dua baris teks, dan jarak.
 function estimasiTinggiBarcode(l) {
   const PT = 0.3528; // 1pt = 0.3528mm; line-height baris teks = 1
@@ -203,7 +208,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             .join(" ")
             .toUpperCase(),
           kodeBawah: (s.barcode_supplier || "").trim() || shortSku(s),
-          harga: Number(s.ecer) > 0 ? `Rp.${Number(s.ecer)}` : "",
+          harga: Number(s.ecer) > 0 ? `Rp.${formatRibuan(s.ecer)}` : "",
           isNew: !!row.tandaiNew,
           rak: r.code,
           kode,
@@ -515,7 +520,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                   ["fontNama", "Nama Produk", "cth: GELANG 24K"],
                   ["fontNew", "Tanda NEW", "kanan atas"],
                   ["fontBawah", "Kode Bawah", "cth: 5101K"],
-                  ["fontHarga", "Harga", "cth: Rp.54000"],
+                  ["fontHarga", "Harga", "cth: Rp.54.000"],
                 ].map(([key, label, contoh]) => (
                   <label key={key} className="block">
                     <div className="text-[11px] text-slate-500 mb-1">{label}</div>
