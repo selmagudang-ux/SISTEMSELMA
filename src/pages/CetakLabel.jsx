@@ -74,6 +74,17 @@ const TERMAL_PRESET = {
   gapX: 0,
   gapY: 0,
 };
+// Preset kertas roll stiker 110 mm (lebar) x 15 mm (panjang): satu label per lembar, tanpa margin/jarak.
+const PRESET_110X15 = {
+  kolom: 1,
+  baris: 1,
+  lebarLabel: 110,
+  tinggiLabel: 15,
+  marginAtas: 0,
+  marginKiri: 0,
+  gapX: 0,
+  gapY: 0,
+};
 function loadLayout() {
   try {
     const saved = localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -88,6 +99,7 @@ function loadLayout() {
 function pageSizeCss(ukuranKertas) {
   if (ukuranKertas === "F4") return "215mm 330mm";
   if (ukuranKertas === "Termal") return "100mm 150mm";
+  if (ukuranKertas === "110x15") return "110mm 15mm";
   return ukuranKertas; // A4 | Letter
 }
 
@@ -388,7 +400,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                     ...prev,
                     ukuranKertas: val,
                     // Kertas termal 100x150mm: langsung terapkan preset 1 label per lembar, tanpa margin.
-                    ...(val === "Termal" ? TERMAL_PRESET : {}),
+                    ...(val === "Termal" ? TERMAL_PRESET : val === "110x15" ? PRESET_110X15 : {}),
                   }));
                 }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
@@ -397,6 +409,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                 <option value="Letter">Letter</option>
                 <option value="F4">F4 (Folio)</option>
                 <option value="Termal">Termal 100×150mm</option>
+                <option value="110x15">Stiker 110×15mm (lebar 110, panjang 15)</option>
               </select>
             </label>
             <label className="block">
@@ -561,7 +574,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
       {/* ====== Area cetak (hanya tampil saat print) ====== */}
       <div className="hidden print:block">
         <style>{`
-          @page { size: ${pageSizeCss(layout.ukuranKertas)} ${layout.orientasi}; margin: 0; }
+          @page { size: ${pageSizeCss(layout.ukuranKertas)}${layout.ukuranKertas === "110x15" ? "" : " " + layout.orientasi}; margin: 0; }
           .ss-print-page {
             padding-top: ${layout.marginAtas}mm;
             display: flex;
