@@ -1804,6 +1804,69 @@ function RincianMarketplaceToko({ platformAktif, rincianAktif, marketplaceTransa
 const TIPE_LABEL_MARKETPLACE = { pemasukan: "Pemasukan", iklan: "Iklan", pencairan: "Pencairan" };
 const TIPE_BADGE_MARKETPLACE = { pemasukan: "emerald", iklan: "amber", pencairan: "sky" };
 
+// Set baru dengan `id` dibuka/ditutup — dipakai state "pelanggan yang lagi
+// terbuka rincian pesanannya" di tabel Data Pelanggan.
+function toggleSet(prev, id) {
+  const next = new Set(prev);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+// Satu baris tabel "Data Pelanggan" yang bisa diklik: buka/tutup rincian
+// semua pesanan pelanggan itu; klik salah satu pesanan membuka modal detail
+// pesanan (sama dengan di Semua Pesanan). `d.pesanan` = daftar pesanannya.
+function BarisPelangganRinci({ d, terbuka, onToggle, setModal }) {
+  return (
+    <Fragment>
+      <tr
+        onClick={onToggle}
+        className="border-b border-slate-800/60 last:border-0 cursor-pointer hover:bg-slate-800/40"
+      >
+        <td className="px-4 py-2.5 text-slate-300">
+          <ChevronDown
+            size={14}
+            className={`inline-block mr-1.5 -mt-0.5 text-slate-500 transition-transform ${terbuka ? "rotate-180" : ""}`}
+          />
+          {d.nama}
+        </td>
+        <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
+        <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
+        <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
+      </tr>
+      {terbuka && (
+        <tr className="bg-slate-900/40 border-b border-slate-800/60 last:border-0">
+          <td colSpan={4} className="px-4 pb-3 pt-1">
+            <table className="w-full text-sm">
+              <tbody>
+                {[...d.pesanan]
+                  .sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || ""))
+                  .map((p) => (
+                    <tr
+                      key={p.id}
+                      onClick={() => setModal && setModal({ type: "grosir-detail-pesanan", item: p })}
+                      className="border-b border-slate-800/40 last:border-0 cursor-pointer hover:bg-slate-800/50"
+                      title="Klik untuk lihat rincian item"
+                    >
+                      <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{formatTanggalID(p.tanggal)}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">{p.nomor_pesanan}</td>
+                      <td className="py-2 pr-3">
+                        <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                          {p.status_bayar}
+                        </Badge>
+                      </td>
+                      <td className="py-2 text-right font-medium text-slate-300">{fmtRp(p.total)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  );
+}
+
 function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, setModal, tahun, periodeDari, periodeSampai, periodeLabel }) {
   // Cuma pesanan Grosir asli — Reseller Toko/Cekout belum ditampilkan di
   // kartu Dashboard Penjualan ini (kartu "Reseller" masih "Segera Hadir"),
@@ -1823,8 +1886,8 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   // DashboardGudang, 5 baris per halaman.
   // Pelanggan yang barisnya lagi dibuka (rincian pesanan) di tabel Data Pelanggan Grosir.
   const [pelangganTerbukaGrosir, setPelangganTerbukaGrosir] = useState(() => new Set());
-  const [halamanBelumLunasReseller, setHalamanBelumLunasReseller] = useState(1);
-  const [halamanRiwayatReseller, setHalamanRiwayatReseller] = useState(1);
+  // Pelanggan Reseller Toko yang barisnya lagi dibuka (rincian pesanan).
+  const [pelangganTerbukaReseller, setPelangganTerbukaReseller] = useState(() => new Set());
   const [halamanBelumLunasCekout, setHalamanBelumLunasCekout] = useState(1);
   const [halamanDicairkanCekout, setHalamanDicairkanCekout] = useState(1);
   const [halamanRiwayatCekout, setHalamanRiwayatCekout] = useState(1);
@@ -1861,7 +1924,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   const namaPelanggan = (id) => pelangganGrosir.find((c) => c.id === id)?.nama || "—";
 
   // Riwayat Pesanan & Data Pelanggan Grosir — pola sama persis dengan panel
-  // Reseller Toko (riwayatReseller / dataPelangganReseller) di bawah.
+  // Reseller Toko (dataPelangganReseller) di bawah.
   const dataPelangganGrosir = (() => {
     const map = new Map();
     for (const p of pesananAktif) {
@@ -1965,21 +2028,14 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
 
   const totalPiutangReseller = pesananResellerAktif.reduce((a, p) => a + sisaHutangPesanan(p, pembayaranGrosir), 0);
 
-  const belumLunasReseller = pesananResellerAktif
-    .filter((p) => p.status_bayar !== "Lunas")
-    .sort((a, b) => sisaHutangPesanan(b, pembayaranGrosir) - sisaHutangPesanan(a, pembayaranGrosir));
-
-  const riwayatReseller = [...pesananResellerAktif].sort(
-    (a, b) => new Date(b.created_at) - new Date(a.created_at)
-  );
-
   // Data Pelanggan Reseller Toko — direkap per pelanggan_id (nama, jumlah
   // pesanan, total omset, sisa hutang), diurutkan sisa hutang terbesar dulu.
   const dataPelangganReseller = (() => {
     const map = new Map();
     for (const p of pesananResellerAktif) {
       const key = p.pelanggan_id || "-";
-      const entri = map.get(key) || { id: key, nama: namaPelanggan(p.pelanggan_id), jumlahPesanan: 0, omset: 0, sisaHutang: 0 };
+      const entri = map.get(key) || { id: key, nama: namaPelanggan(p.pelanggan_id), jumlahPesanan: 0, omset: 0, sisaHutang: 0, pesanan: [] };
+      entri.pesanan.push(p);
       entri.jumlahPesanan += 1;
       entri.omset += Number(p.total) || 0;
       entri.sisaHutang += sisaHutangPesanan(p, pembayaranGrosir);
@@ -2287,7 +2343,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                 />
               </div>
 
-              <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+              <div className="rounded-xl border border-slate-800 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Users size={14} className="text-sky-400" /> <div className="text-sm font-semibold">Data Pelanggan</div>
@@ -2309,157 +2365,19 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                     </thead>
                     <tbody>
                       {dataPelangganReseller.slice(0, 5).map((d) => (
-                        <tr key={d.id} className="border-b border-slate-800/60 last:border-0">
-                          <td className="px-4 py-2.5 text-slate-300">{d.nama}</td>
-                          <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
-                          <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
-                          <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
-                        </tr>
+                        <BarisPelangganRinci
+                          key={d.id}
+                          d={d}
+                          terbuka={pelangganTerbukaReseller.has(d.id)}
+                          onToggle={() => setPelangganTerbukaReseller((prev) => toggleSet(prev, d.id))}
+                          setModal={setModal}
+                        />
                       ))}
                     </tbody>
                   </table>
                 )}
               </div>
 
-              <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
-                <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">Belum Bayar / Hutang</div>
-                  <button
-                    onClick={() => onNavigate && onNavigate("reseller", "toko")}
-                    className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
-                  >
-                    Lihat Semua <ArrowRight size={11} />
-                  </button>
-                </div>
-                {belumLunasReseller.length === 0 ? (
-                  <div className="p-6">
-                    <EmptyState label="Semua pesanan Reseller Toko sudah lunas." />
-                  </div>
-                ) : (
-                  <>
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {belumLunasReseller
-                          .slice(
-                            (halamanBelumLunasReseller - 1) * BARIS_PER_HALAMAN_RESELLER,
-                            halamanBelumLunasReseller * BARIS_PER_HALAMAN_RESELLER
-                          )
-                          .map((p) => (
-                            <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                              <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                              <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                              <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
-                              <td className="px-4 py-2.5">
-                                <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                    {belumLunasReseller.length > BARIS_PER_HALAMAN_RESELLER && (
-                      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
-                        <span>
-                          Halaman {halamanBelumLunasReseller} dari{" "}
-                          {Math.ceil(belumLunasReseller.length / BARIS_PER_HALAMAN_RESELLER)}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setHalamanBelumLunasReseller((h) => Math.max(1, h - 1))}
-                            disabled={halamanBelumLunasReseller <= 1}
-                            className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                          >
-                            Sebelumnya
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setHalamanBelumLunasReseller((h) =>
-                                Math.min(Math.ceil(belumLunasReseller.length / BARIS_PER_HALAMAN_RESELLER), h + 1)
-                              )
-                            }
-                            disabled={halamanBelumLunasReseller >= Math.ceil(belumLunasReseller.length / BARIS_PER_HALAMAN_RESELLER)}
-                            className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                          >
-                            Berikutnya
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-slate-800 overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">Riwayat Pesanan</div>
-                  <button
-                    onClick={() => onNavigate && onNavigate("reseller", "toko")}
-                    className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
-                  >
-                    Lihat Semua <ArrowRight size={11} />
-                  </button>
-                </div>
-                {riwayatReseller.length === 0 ? (
-                  <div className="p-6">
-                    <EmptyState label="Belum ada pesanan Reseller Toko." />
-                  </div>
-                ) : (
-                  <>
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {riwayatReseller
-                          .slice(
-                            (halamanRiwayatReseller - 1) * BARIS_PER_HALAMAN_RESELLER,
-                            halamanRiwayatReseller * BARIS_PER_HALAMAN_RESELLER
-                          )
-                          .map((p) => (
-                            <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                              <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                              <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                              <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(p.total)}</td>
-                              <td className="px-4 py-2.5">
-                                <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
-                                  {p.status_bayar}
-                                </Badge>
-                              </td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                    {riwayatReseller.length > BARIS_PER_HALAMAN_RESELLER && (
-                      <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
-                        <span>
-                          Halaman {halamanRiwayatReseller} dari{" "}
-                          {Math.ceil(riwayatReseller.length / BARIS_PER_HALAMAN_RESELLER)}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setHalamanRiwayatReseller((h) => Math.max(1, h - 1))}
-                            disabled={halamanRiwayatReseller <= 1}
-                            className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                          >
-                            Sebelumnya
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setHalamanRiwayatReseller((h) =>
-                                Math.min(Math.ceil(riwayatReseller.length / BARIS_PER_HALAMAN_RESELLER), h + 1)
-                              )
-                            }
-                            disabled={halamanRiwayatReseller >= Math.ceil(riwayatReseller.length / BARIS_PER_HALAMAN_RESELLER)}
-                            className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
-                          >
-                            Berikutnya
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
             </div>
           )}
 
@@ -2756,64 +2674,15 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
                     </tr>
                   </thead>
                   <tbody>
-                    {dataPelangganGrosir.slice(0, 5).map((d) => {
-                      const terbuka = pelangganTerbukaGrosir.has(d.id);
-                      return (
-                        <Fragment key={d.id}>
-                          <tr
-                            onClick={() =>
-                              setPelangganTerbukaGrosir((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(d.id)) next.delete(d.id);
-                                else next.add(d.id);
-                                return next;
-                              })
-                            }
-                            className="border-b border-slate-800/60 last:border-0 cursor-pointer hover:bg-slate-800/40"
-                          >
-                            <td className="px-4 py-2.5 text-slate-300">
-                              <ChevronDown
-                                size={14}
-                                className={`inline-block mr-1.5 -mt-0.5 text-slate-500 transition-transform ${terbuka ? "rotate-180" : ""}`}
-                              />
-                              {d.nama}
-                            </td>
-                            <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
-                            <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
-                            <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
-                          </tr>
-                          {terbuka && (
-                            <tr className="bg-slate-900/40 border-b border-slate-800/60 last:border-0">
-                              <td colSpan={4} className="px-4 pb-3 pt-1">
-                                <table className="w-full text-sm">
-                                  <tbody>
-                                    {[...d.pesanan]
-                                      .sort((a, b) => (b.tanggal || "").localeCompare(a.tanggal || ""))
-                                      .map((p) => (
-                                        <tr
-                                          key={p.id}
-                                          onClick={() => setModal && setModal({ type: "grosir-detail-pesanan", item: p })}
-                                          className="border-b border-slate-800/40 last:border-0 cursor-pointer hover:bg-slate-800/50"
-                                          title="Klik untuk lihat rincian item"
-                                        >
-                                          <td className="py-2 pr-3 text-slate-400 text-xs whitespace-nowrap">{formatTanggalID(p.tanggal)}</td>
-                                          <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">{p.nomor_pesanan}</td>
-                                          <td className="py-2 pr-3">
-                                            <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
-                                              {p.status_bayar}
-                                            </Badge>
-                                          </td>
-                                          <td className="py-2 text-right font-medium text-slate-300">{fmtRp(p.total)}</td>
-                                        </tr>
-                                      ))}
-                                  </tbody>
-                                </table>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
+                    {dataPelangganGrosir.slice(0, 5).map((d) => (
+                      <BarisPelangganRinci
+                        key={d.id}
+                        d={d}
+                        terbuka={pelangganTerbukaGrosir.has(d.id)}
+                        onToggle={() => setPelangganTerbukaGrosir((prev) => toggleSet(prev, d.id))}
+                        setModal={setModal}
+                      />
+                    ))}
                   </tbody>
                 </table>
               )}
