@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Printer, CheckSquare, Square } from "lucide-react";
+import { Search, Printer, CheckSquare, Square, ChevronDown, List } from "lucide-react";
 import { EmptyState, SearchableSelect } from "../components/ui";
 import { priceCode, labelFor } from "../lib/api";
 import { skuForRak } from "./Rak";
@@ -98,6 +98,12 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
   // Ukuran & posisi lembar stiker — bisa disesuaikan dengan kertas stiker yang dipakai.
   const [layout, setLayout] = useState(loadLayout);
 
+  // Tampilan sesuai permintaan: daftar rak & pengaturan kertas tidak langsung
+  // dibuka. Daftar baru muncul kalau user mengetik di kolom cari atau klik
+  // "Tampilkan Semua Rak"; pengaturan kertas baru terbuka kalau header-nya diklik.
+  const [showDaftar, setShowDaftar] = useState(false);
+  const [showPengaturan, setShowPengaturan] = useState(false);
+
   useEffect(() => {
     try {
       localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
@@ -148,7 +154,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
   // ---- Bangun daftar label final (flat, sesuai qty) untuk dicetak ----
   const labels = useMemo(() => {
     const out = [];
-    filteredRak.forEach((r) => {
+    rakList.forEach((r) => {
       const row = selected[r.code];
       if (!row || !row.qty) return;
       const s = skuMap[r.occupantSku];
@@ -174,9 +180,10 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
       }
     });
     return out;
-  }, [filteredRak, selected, skuMap, master]);
+  }, [rakList, selected, skuMap, master]);
 
   const totalTerpilih = Object.keys(selected).length;
+  const daftarTampil = showDaftar || q.trim() !== "";
 
   const cetak = () => {
     if (labels.length === 0) return;
@@ -270,21 +277,44 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             />
           </div>
           <button
-            onClick={pilihSemua}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-slate-700"
+            onClick={() => {
+              if (showDaftar) {
+                setShowDaftar(false);
+                setQ("");
+              } else {
+                setShowDaftar(true);
+              }
+            }}
+            className={`flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border ${
+              daftarTampil ? "border-amber-500/50 text-amber-300" : "border-slate-800 text-slate-300 hover:border-slate-700"
+            }`}
           >
-            <CheckSquare size={13} /> Pilih Semua
+            <List size={13} /> {showDaftar ? "Sembunyikan Daftar" : "Tampilkan Semua Rak"}
           </button>
-          <button
-            onClick={batalSemua}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-slate-700"
-          >
-            <Square size={13} /> Batal Pilih
-          </button>
+          {daftarTampil && (
+            <button
+              onClick={pilihSemua}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-slate-700"
+            >
+              <CheckSquare size={13} /> Pilih Semua
+            </button>
+          )}
+          {totalTerpilih > 0 && (
+            <button
+              onClick={batalSemua}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-800 text-slate-300 hover:border-slate-700"
+            >
+              <Square size={13} /> Batal Pilih ({totalTerpilih})
+            </button>
+          )}
         </div>
 
         {/* ---- Daftar pilihan ---- */}
-        {filteredRak.length === 0 ? (
+        {!daftarTampil ? (
+          <div className="rounded-xl border border-dashed border-slate-800 px-4 py-6 mb-5 text-center text-xs text-slate-500">
+            Ketik kode rak atau SKU di kolom cari, atau klik “Tampilkan Semua Rak”, untuk memilih label yang mau dicetak.
+          </div>
+        ) : filteredRak.length === 0 ? (
           <EmptyState label="Tidak ada rak yang sedang berisi SKU." />
         ) : (
           <div className="rounded-xl border border-slate-800 overflow-x-auto mb-5">
@@ -314,8 +344,26 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
         )}
 
         {/* ---- Pengaturan ukuran kertas stiker ---- */}
-        <div className="rounded-xl border border-slate-800 p-4 mb-5">
-          <div className="text-xs font-semibold text-slate-300 mb-3">Pengaturan Kertas Stiker</div>
+        <div className="rounded-xl border border-slate-800 mb-5">
+          <button
+            type="button"
+            onClick={() => setShowPengaturan((v) => !v)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
+          >
+            <div>
+              <div className="text-xs font-semibold text-slate-300">Pengaturan Kertas Stiker</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {layout.gaya === "harga" ? "Stiker Harga" : "Label Rak"} · {layout.ukuranKertas}{" "}
+                {layout.orientasi === "portrait" ? "Portrait" : "Landscape"} · {layout.kolom}×{layout.baris} label
+              </div>
+            </div>
+            <ChevronDown
+              size={16}
+              className={`text-slate-500 transition-transform flex-shrink-0 ${showPengaturan ? "rotate-180" : ""}`}
+            />
+          </button>
+          {showPengaturan && (
+          <div className="p-4 border-t border-slate-800">
 
           <label className="block mb-3 max-w-xs">
             <div className="text-[11px] text-slate-500 mb-1">Gaya Label</div>
@@ -494,6 +542,8 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             Sesuaikan ukuran ini dengan kertas stiker fisik yang dipakai agar posisi cetak pas. Maksimal{" "}
             {layout.kolom * layout.baris} label per lembar {layout.ukuranKertas}.
           </p>
+          </div>
+          )}
         </div>
 
         <button
