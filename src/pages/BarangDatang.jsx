@@ -20,6 +20,18 @@ const nilaiModel = (m) => qtyDatangModel(m) * (Number(m.harga) || 0);
 const totalNilaiTransaksi = (detail) => detail.reduce((sum, m) => sum + nilaiModel(m), 0);
 const totalRusakTransaksi = (detail) => detail.reduce((sum, m) => sum + (Number(m.rusak) || 0), 0);
 
+// Diskon = selisih dari HARGA BARANG (qty x harga/pcs) turun ke angka
+// PEMBAYARAN yang benar-benar dibayar. Persen dihitung dari harga barang:
+//   diskon % = (harga barang - pembayaran) / harga barang x 100
+// Return null kalau tidak ada diskon (pembayaran kosong / >= harga barang).
+const hitungDiskon = (hargaBarang, pembayaran) => {
+  const hb = Number(hargaBarang) || 0;
+  const bayar = Number(pembayaran) || 0;
+  if (hb <= 0 || bayar <= 0 || bayar >= hb) return null;
+  return { rp: hb - bayar, persen: ((hb - bayar) / hb) * 100 };
+};
+const fmtPersen = (n) => `${n.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%`;
+
 // Foto bon transaksi ini sebagai array — data baru punya `foto_bon_urls`
 // (bisa lebih dari satu), data lama cuma punya `foto_bon_url` tunggal jadi
 // dibungkus jadi array 1 elemen supaya kode tampilan bisa seragam.
@@ -141,6 +153,20 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
   const adaKesepakatan = Number(hargaKesepakatan) > 0;
   const selisih = adaKesepakatan ? nilaiGabungan - Number(hargaKesepakatan) : 0;
   const adaSelisih = adaKesepakatan && selisih !== 0;
+  // Harga barang LEBIH BESAR dari pembayaran = ada diskon (bayar lebih murah).
+  const diskonTotal = adaKesepakatan ? hitungDiskon(nilaiGabungan, hargaKesepakatan) : null;
+  // Rincian diskon per invoice (hanya yang pembayarannya diisi & lebih murah).
+  const diskonPerInvoice = daftarInvoice
+    .map((inv, idx) => {
+      const nilai = totalNilaiTransaksi(detailModelPesanan(inv));
+      return {
+        label: inv.no_invoice || inv.kode_pesanan || `Invoice ${idx + 1}`,
+        nilai,
+        bayar: Number(inv.harga_pembayaran) || 0,
+        diskon: hitungDiskon(nilai, inv.harga_pembayaran),
+      };
+    })
+    .filter((x) => x.diskon);
 
   return (
     <tr>
@@ -151,6 +177,7 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
             const fotoUrls = fotoBonUrlsOf(inv);
             const labelInvoice = inv.no_invoice || inv.kode_pesanan || `Invoice ${idx + 1}`;
             const nilaiInvoice = totalNilaiTransaksi(detail);
+            const diskonInvoice = hitungDiskon(nilaiInvoice, inv.harga_pembayaran);
             return (
               <div
                 key={inv.id}
@@ -180,6 +207,14 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
                     {Number(inv.harga_pembayaran) > 0 && (
                       <span className="text-[11px] text-emerald-400 font-medium hidden sm:inline" title="Harga pembayaran invoice ini (catatan, tidak masuk Keuangan)">
                         Bayar {fmtRp(inv.harga_pembayaran)}
+                      </span>
+                    )}
+                    {diskonInvoice && (
+                      <span
+                        className="text-[10px] text-emerald-300 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded-full hidden sm:inline"
+                        title={`Diskon ${fmtRp(diskonInvoice.rp)} dari harga barang ${fmtRp(nilaiInvoice)} ke pembayaran ${fmtRp(inv.harga_pembayaran)}`}
+                      >
+                        Diskon {fmtPersen(diskonInvoice.persen)}
                       </span>
                     )}
                     {fotoUrls.length > 0 && (
@@ -218,24 +253,44 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
           {adaKesepakatan && (
             <div
               className={`rounded-xl border px-3.5 py-3 text-[11px] space-y-1.5 w-full sm:max-w-md sm:ml-auto ${
-                adaSelisih ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/30 bg-emerald-500/5"
+                adaSelisih && selisih < 0 ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/30 bg-emerald-500/5"
               }`}
             >
               <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Ringkasan Harga</div>
               <div className="flex justify-between text-slate-400">
-                <span>Total pembayaran</span>
-                <span className="text-slate-300 font-medium">{fmtRp(hargaKesepakatan)}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
                 <span>Total harga barang datang{daftarInvoice.length > 1 ? " (semua invoice)" : ""}</span>
                 <span className="text-slate-300 font-medium">{fmtRp(nilaiGabungan)}</span>
               </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Total pembayaran</span>
+                <span className="text-slate-300 font-medium">{fmtRp(hargaKesepakatan)}</span>
+              </div>
+              {diskonPerInvoice.length > 0 && daftarInvoice.length > 1 && (
+                <div className="pt-1.5 mt-0.5 border-t border-slate-800/60 space-y-1">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Diskon per invoice</div>
+                  {diskonPerInvoice.map((x) => (
+                    <div key={x.label} className="flex justify-between gap-3 text-slate-400">
+                      <span className="truncate">{x.label}</span>
+                      <span className="text-emerald-400 whitespace-nowrap">
+                        {fmtRp(x.nilai)} → {fmtRp(x.bayar)} · {fmtPersen(x.diskon.persen)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {adaSelisih ? (
                 <>
-                  <div className={`flex justify-between font-semibold pt-1 border-t border-slate-800/60 ${selisih < 0 ? "text-amber-400" : "text-sky-400"}`}>
-                    <span>{selisih < 0 ? "Kurang dari pembayaran" : "Lebih dari pembayaran"}</span>
-                    <span>{fmtRp(Math.abs(selisih))} ({(Math.abs(selisih) / Number(hargaKesepakatan) * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)</span>
-                  </div>
+                  {diskonTotal ? (
+                    <div className="flex justify-between font-semibold pt-1 border-t border-slate-800/60 text-emerald-400">
+                      <span>Diskon dari harga barang</span>
+                      <span>{fmtRp(diskonTotal.rp)} ({fmtPersen(diskonTotal.persen)})</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between font-semibold pt-1 border-t border-slate-800/60 text-amber-400">
+                      <span>Kurang dari pembayaran</span>
+                      <span>{fmtRp(Math.abs(selisih))} ({(Math.abs(selisih) / Number(hargaKesepakatan) * 100).toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)</span>
+                    </div>
+                  )}
                   {keteranganSelisih && (
                     <div className="text-slate-400 pt-0.5">
                       Keterangan: <span className="text-slate-300">{keteranganSelisih}</span>
