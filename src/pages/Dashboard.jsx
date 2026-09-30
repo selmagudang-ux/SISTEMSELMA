@@ -1803,6 +1803,37 @@ function RincianMarketplaceToko({ platformAktif, rincianAktif, marketplaceTransa
 const TIPE_LABEL_MARKETPLACE = { pemasukan: "Pemasukan", iklan: "Iklan", pencairan: "Pencairan" };
 const TIPE_BADGE_MARKETPLACE = { pemasukan: "emerald", iklan: "amber", pencairan: "sky" };
 
+// Kontrol "Halaman X dari Y — Sebelumnya / Berikutnya" untuk tabel di panel
+// Laporan Grosir (tampilan & perilakunya sama dengan paginasi di panel
+// Reseller Toko, 5 baris per halaman).
+function PaginasiDashboard({ halaman, setHalaman, total }) {
+  const jumlahHalaman = Math.ceil(total / BARIS_PER_HALAMAN_RESELLER);
+  if (total <= BARIS_PER_HALAMAN_RESELLER) return null;
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-slate-800/70 text-xs text-slate-400">
+      <span>Halaman {halaman} dari {jumlahHalaman}</span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHalaman((h) => Math.max(1, h - 1))}
+          disabled={halaman <= 1}
+          className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          Sebelumnya
+        </button>
+        <button
+          type="button"
+          onClick={() => setHalaman((h) => Math.min(jumlahHalaman, h + 1))}
+          disabled={halaman >= jumlahHalaman}
+          className="px-2.5 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          Berikutnya
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, tahun, periodeDari, periodeSampai, periodeLabel }) {
   // Cuma pesanan Grosir asli — Reseller Toko/Cekout belum ditampilkan di
   // kartu Dashboard Penjualan ini (kartu "Reseller" masih "Segera Hadir"),
@@ -1812,7 +1843,6 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   );
 
   const pesananAktif = pesananGrosir_.filter((p) => p.status !== "Batal");
-  const pesananHariIni = pesananAktif.filter((p) => isToday(p.created_at));
 
   // Channel yang lagi "dibuka" panelnya di bawah kartu toggle (pola sama
   // seperti tabAlur/showDataBarang di DashboardGudang) — null = semua
@@ -1821,6 +1851,8 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
   // Halaman aktif untuk tabel "Belum Bayar / Hutang" & "Riwayat Pesanan" di
   // panel Reseller Toko — pola sama seperti halamanBarangDatang dkk di
   // DashboardGudang, 5 baris per halaman.
+  const [halamanBelumLunasGrosir, setHalamanBelumLunasGrosir] = useState(1);
+  const [halamanRiwayatGrosir, setHalamanRiwayatGrosir] = useState(1);
   const [halamanBelumLunasReseller, setHalamanBelumLunasReseller] = useState(1);
   const [halamanRiwayatReseller, setHalamanRiwayatReseller] = useState(1);
   const [halamanBelumLunasCekout, setHalamanBelumLunasCekout] = useState(1);
@@ -1860,11 +1892,25 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
     .filter((p) => p.status_bayar !== "Lunas")
     .sort((a, b) => sisaHutangPesanan(b, pembayaranGrosir) - sisaHutangPesanan(a, pembayaranGrosir));
 
-  const recentHariIni = [...pesananHariIni].sort(
+  const namaPelanggan = (id) => pelangganGrosir.find((c) => c.id === id)?.nama || "—";
+
+  // Riwayat Pesanan & Data Pelanggan Grosir — pola sama persis dengan panel
+  // Reseller Toko (riwayatReseller / dataPelangganReseller) di bawah.
+  const riwayatGrosir = [...pesananAktif].sort(
     (a, b) => new Date(b.created_at) - new Date(a.created_at)
   );
-
-  const namaPelanggan = (id) => pelangganGrosir.find((c) => c.id === id)?.nama || "—";
+  const dataPelangganGrosir = (() => {
+    const map = new Map();
+    for (const p of pesananAktif) {
+      const key = p.pelanggan_id || "-";
+      const entri = map.get(key) || { id: key, nama: namaPelanggan(p.pelanggan_id), jumlahPesanan: 0, omset: 0, sisaHutang: 0 };
+      entri.jumlahPesanan += 1;
+      entri.omset += Number(p.total) || 0;
+      entri.sisaHutang += sisaHutangPesanan(p, pembayaranGrosir);
+      map.set(key, entri);
+    }
+    return Array.from(map.values()).sort((a, b) => b.sisaHutang - a.sisaHutang);
+  })();
 
   // Laporan cepat harian/bulanan/tahunan (khusus Grosir) — angka lengkapnya
   // (grafik, tabel per bulan/tahun, unduh CSV) ada di menu Grosir > Laporan
@@ -2702,15 +2748,144 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
             </button>
           </div>
           <div className="p-4">
-            <MiniLaporanPeriode
-              hariIniStr={hariIniStr}
-              periodeLabel={periodeLabel}
-              tahunTerpilih={tahunTerpilih}
-              harian={laporanHarian}
-              bulanan={laporanBulanan}
-              tahunan={laporanTahunan}
-              satuanLabel="pesanan"
-            />
+            {/* Susunan sama persis dengan panel Reseller Toko: kartu ringkasan,
+                omset per periode, Data Pelanggan, Belum Bayar / Hutang, lalu
+                Riwayat Pesanan (5 baris per halaman). */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <StatCard label="Total Pesanan" value={pesananAktif.length} icon={ClipboardList} iconColor="text-amber-400" />
+              <StatCard label="Piutang Belum Lunas" value={fmtRp(totalPiutang)} icon={Wallet} accent="text-amber-400" iconColor="text-amber-500" />
+              <StatCard label="Jumlah Pelanggan" value={dataPelangganGrosir.length} icon={Users} iconColor="text-sky-400" />
+              <StatCard label="Saldo Deposit Grosir" value={fmtRp(totalDeposit)} icon={Package} />
+            </div>
+
+            <div className="mb-4">
+              <div className="text-xs text-slate-400 mb-2">Omset Grosir</div>
+              <MiniLaporanPeriode
+                hariIniStr={hariIniStr}
+                periodeLabel={periodeLabel}
+                tahunTerpilih={tahunTerpilih}
+                harian={laporanHarian}
+                bulanan={laporanBulanan}
+                tahunan={laporanTahunan}
+                satuanLabel="pesanan"
+              />
+            </div>
+
+            <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Users size={14} className="text-sky-400" /> <div className="text-sm font-semibold">Data Pelanggan</div>
+                </div>
+              </div>
+              {dataPelangganGrosir.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState label="Belum ada pelanggan Grosir." />
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500 border-b border-slate-800">
+                      <th className="px-4 py-2.5 font-medium">Pelanggan</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Jml. Pesanan</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Total Omset</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Sisa Hutang</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dataPelangganGrosir.slice(0, 5).map((d) => (
+                      <tr key={d.id} className="border-b border-slate-800/60 last:border-0">
+                        <td className="px-4 py-2.5 text-slate-300">{d.nama}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-400">{d.jumlahPesanan}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(d.omset)}</td>
+                        <td className={`px-4 py-2.5 text-right ${d.sisaHutang > 0 ? "text-amber-400" : "text-slate-500"}`}>{fmtRp(d.sisaHutang)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Belum Bayar / Hutang</div>
+                <button
+                  onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
+                >
+                  Lihat Semua <ArrowRight size={11} />
+                </button>
+              </div>
+              {belumLunas.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState label="Semua pesanan Grosir sudah lunas." />
+                </div>
+              ) : (
+                <>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {belumLunas
+                        .slice(
+                          (halamanBelumLunasGrosir - 1) * BARIS_PER_HALAMAN_RESELLER,
+                          halamanBelumLunasGrosir * BARIS_PER_HALAMAN_RESELLER
+                        )
+                        .map((p) => (
+                          <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
+                            <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
+                            <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
+                            <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
+                            <td className="px-4 py-2.5">
+                              <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  <PaginasiDashboard halaman={halamanBelumLunasGrosir} setHalaman={setHalamanBelumLunasGrosir} total={belumLunas.length} />
+                </>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Riwayat Pesanan</div>
+                <button
+                  onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1 flex-shrink-0"
+                >
+                  Lihat Semua <ArrowRight size={11} />
+                </button>
+              </div>
+              {riwayatGrosir.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState label="Belum ada pesanan Grosir." />
+                </div>
+              ) : (
+                <>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {riwayatGrosir
+                        .slice(
+                          (halamanRiwayatGrosir - 1) * BARIS_PER_HALAMAN_RESELLER,
+                          halamanRiwayatGrosir * BARIS_PER_HALAMAN_RESELLER
+                        )
+                        .map((p) => (
+                          <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
+                            <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
+                            <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
+                            <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(p.total)}</td>
+                            <td className="px-4 py-2.5">
+                              <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
+                                {p.status_bayar}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  <PaginasiDashboard halaman={halamanRiwayatGrosir} setHalaman={setHalamanRiwayatGrosir} total={riwayatGrosir.length} />
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2782,72 +2957,6 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
         </>
       )}
 
-      {tabStoreSelma === "grosir" && (
-        <>
-          <div className="grid grid-cols-2 gap-3 mb-8">
-            <StatCard label="Piutang Grosir Belum Lunas" value={fmtRp(totalPiutang)} accent="text-amber-400" iconColor="text-amber-500" icon={Wallet} />
-            <StatCard label="Total Saldo Deposit Grosir" value={fmtRp(totalDeposit)} icon={Package} />
-          </div>
-
-          <div className="rounded-xl border border-slate-800 overflow-hidden mb-8">
-            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Pesanan Grosir Belum Lunas</div>
-              <button
-                onClick={() => onNavigate && onNavigate("grosir", "semua-pesanan")}
-                className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
-              >
-                Lihat Semua Pesanan →
-              </button>
-            </div>
-            {belumLunas.length === 0 ? (
-              <div className="p-6">
-                <EmptyState label="Semua pesanan sudah lunas." />
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <tbody>
-                  {belumLunas.slice(0, 8).map((p) => (
-                    <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                      <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                      <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                      <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(sisaHutangPesanan(p, pembayaranGrosir))}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge color={p.status_bayar === "Sebagian" ? "sky" : "amber"}>{p.status_bayar}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-slate-800 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Pesanan Grosir Hari Ini</div>
-            {recentHariIni.length === 0 ? (
-              <div className="p-6">
-                <EmptyState label="Belum ada pesanan grosir hari ini." />
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <tbody>
-                  {recentHariIni.map((p) => (
-                    <tr key={p.id} className="border-b border-slate-800/60 last:border-0">
-                      <td className="px-4 py-2.5 font-mono text-xs">{p.nomor_pesanan}</td>
-                      <td className="px-4 py-2.5 text-slate-300">{namaPelanggan(p.pelanggan_id)}</td>
-                      <td className="px-4 py-2.5 text-slate-400 text-right">{fmtRp(p.total)}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge color={p.status_bayar === "Lunas" ? "emerald" : p.status_bayar === "Sebagian" ? "sky" : "amber"}>
-                          {p.status_bayar}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </>
-      )}
         </div>
       )}
     </div>
