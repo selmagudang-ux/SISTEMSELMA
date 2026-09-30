@@ -404,6 +404,7 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
         labaRugi={labaRugiBulanIni.labaRugi}
         marginPersen={labaRugiBulanIni.marginPersen}
         subtitle={periodeLabel}
+        onKategoriClick={setDetailKategori}
         action={
           <button
             onClick={() => onNavigate && onNavigate("keuangan", "laporan")}

@@ -569,12 +569,21 @@ export function DetailKelompokModal({ kelompok, tipe, list, rekeningList, subtit
 // Satu baris (dan turunannya) di Laporan Laba Rugi. Kelompok (isGrup) bisa
 // dibuka/ditutup — Kategori -> Sub Kategori -> Rincian; kategori biasa (daun)
 // tampil sebagai baris polos.
-function BarisLabaRugi({ d, depth, seksi, terbuka, toggle }) {
+function BarisLabaRugi({ d, depth, seksi, terbuka, toggle, onKategoriClick }) {
   const kunci = `${seksi}:${d.kode}`;
   const open = d.isGrup && terbuka.has(kunci);
+  // Kalau onKategoriClick diberikan, baris kategori biasa (daun) bisa diklik
+  // untuk membuka rincian transaksinya — sama seperti klik di grafik
+  // Breakdown Pemasukan/Pengeluaran. Baris kelompok tetap buka/tutup.
+  const bisaDiklik = !d.isGrup && !!onKategoriClick;
+  const klik = () => onKategoriClick({ tipe: seksi, kode: d.kode, label: d.label, isGrup: false, anak: d.anak });
   return (
     <>
-      <tr className="border-b border-slate-800/40 last:border-0">
+      <tr
+        className={`border-b border-slate-800/40 last:border-0 ${bisaDiklik ? "cursor-pointer hover:bg-slate-800/40" : ""}`}
+        onClick={bisaDiklik ? klik : undefined}
+        title={bisaDiklik ? "Klik untuk lihat rincian transaksi" : undefined}
+      >
         <td className="pr-4 py-1.5 text-slate-300" style={{ paddingLeft: 32 + depth * 20 }}>
           {d.isGrup ? (
             <button onClick={() => toggle(kunci)} className="flex items-center gap-1.5 text-left font-medium hover:text-slate-100">
@@ -583,14 +592,14 @@ function BarisLabaRugi({ d, depth, seksi, terbuka, toggle }) {
               <span className="text-[10px] text-slate-500 font-normal">({d.anak.length})</span>
             </button>
           ) : (
-            <span className="inline-block pl-[19px]">{d.label}</span>
+            <span className={`inline-block pl-[19px] ${bisaDiklik ? "underline decoration-dotted decoration-slate-600 underline-offset-4" : ""}`}>{d.label}</span>
           )}
         </td>
         <td className={`px-4 py-1.5 text-right ${d.isGrup ? "text-slate-200 font-medium" : "text-slate-300"}`}>{fmtRp(d.jumlah)}</td>
       </tr>
       {open &&
         d.anak.map((c) => (
-          <BarisLabaRugi key={c.kode || c.label} d={c} depth={depth + 1} seksi={seksi} terbuka={terbuka} toggle={toggle} />
+          <BarisLabaRugi key={c.kode || c.label} d={c} depth={depth + 1} seksi={seksi} terbuka={terbuka} toggle={toggle} onKategoriClick={onKategoriClick} />
         ))}
     </>
   );
@@ -600,7 +609,7 @@ function kunciSemuaKelompok(data, seksi) {
   return (data || []).flatMap((d) => (d.isGrup ? [`${seksi}:${d.kode}`, ...kunciSemuaKelompok(d.anak, seksi)] : []));
 }
 
-export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action }) {
+export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, onKategoriClick }) {
   const untung = labaRugi >= 0;
   const [terbuka, setTerbuka] = useState(() => new Set());
   const toggle = (k) =>
@@ -643,7 +652,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
             </tr>
           ) : (
             pendapatan.data.map((d) => (
-              <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="masuk" terbuka={terbuka} toggle={toggle} />
+              <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="masuk" terbuka={terbuka} toggle={toggle} onKategoriClick={onKategoriClick} />
             ))
           )}
           <tr className="bg-slate-900/60">
@@ -660,7 +669,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
             </tr>
           ) : (
             beban.data.map((d) => (
-              <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="keluar" terbuka={terbuka} toggle={toggle} />
+              <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="keluar" terbuka={terbuka} toggle={toggle} onKategoriClick={onKategoriClick} />
             ))
           )}
           <tr className="bg-slate-900/60">
@@ -1289,6 +1298,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
         labaRugi={labaRugi.labaRugi}
         marginPersen={labaRugi.marginPersen}
         subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
+        onKategoriClick={setDetailKategori}
       />
 
       <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
