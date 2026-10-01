@@ -117,6 +117,42 @@ function loadLayout() {
   }
 }
 
+// Input angka yang BISA dihapus/diketik bebas. Isian lama langsung "memaksa" nilai
+// minimum begitu kolom dikosongkan (mis. dihapus -> balik ke 3), jadi angka baru
+// tidak bisa diketik dan harus lewat tombol panah. Di sini yang diketik disimpan
+// dulu sebagai teks; nilai baru dipakai begitu valid (>= min), dan kalau kolom
+// dibiarkan kosong/tidak valid saat ditinggalkan, kembali ke nilai sebelumnya.
+function InputAngka({ value, onCommit, min = 0, step, className, disabled }) {
+  const [draft, setDraft] = useState(String(value ?? ""));
+  const [fokus, setFokus] = useState(false);
+  useEffect(() => {
+    if (!fokus) setDraft(String(value ?? ""));
+  }, [value, fokus]);
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      min={min}
+      step={step}
+      disabled={disabled}
+      value={draft}
+      onFocus={() => setFokus(true)}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        const n = Number(raw);
+        if (raw !== "" && Number.isFinite(n) && n >= min) onCommit(n);
+      }}
+      onBlur={() => {
+        setFokus(false);
+        const n = Number(draft);
+        if (draft === "" || !Number.isFinite(n) || n < min) setDraft(String(value ?? ""));
+      }}
+      className={className}
+    />
+  );
+}
+
 // Format angka dengan titik pemisah ribuan, mis. 54000 -> "54.000".
 function formatRibuan(n) {
   return String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -266,14 +302,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
         <td className="px-3 py-2 text-slate-400 font-mono text-xs">{skuLabel}</td>
         <td className="px-3 py-2 font-mono text-amber-400 text-xs">{kode}</td>
         <td className="px-3 py-2">
-          <input
-            type="number"
-            min="0"
-            disabled={!checked}
-            value={row?.qty ?? defaultQty}
-            onChange={(e) => patchRow(key, { qty: Math.max(0, Number(e.target.value) || 0) })}
-            className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-amber-500 disabled:opacity-40"
-          />
+          <InputAngka min={0} disabled={!checked} value={row?.qty ?? defaultQty} onCommit={(v) => patchRow(key, { qty: v })} className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs outline-none focus:border-amber-500 disabled:opacity-40" />
         </td>
         <td className="px-3 py-2">
           <SearchableSelect
@@ -492,15 +521,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             ].map(([key, label]) => (
               <label key={key} className="block">
                 <div className="text-[11px] text-slate-500 mb-1">{label}</div>
-                <input
-                  type="number"
-                  min="0"
-                  value={layout[key]}
-                  onChange={(e) =>
-                    setLayout((prev) => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))
-                  }
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-                />
+                <InputAngka min={0} value={layout[key]} onCommit={(v) => setLayout((prev) => ({ ...prev, [key]: v }))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500" />
               </label>
             ))}
           </div>
@@ -514,15 +535,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             ].map(([key, label, contoh]) => (
               <label key={key} className="block">
                 <div className="text-[11px] text-slate-500 mb-1">{label}</div>
-                <input
-                  type="number"
-                  min="1"
-                  value={layout[key]}
-                  onChange={(e) =>
-                    setLayout((prev) => ({ ...prev, [key]: Math.max(1, Number(e.target.value) || 1) }))
-                  }
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-                />
+                <InputAngka min={1} value={layout[key]} onCommit={(v) => setLayout((prev) => ({ ...prev, [key]: v }))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500" />
                 <div className="text-[10px] text-slate-600 mt-0.5">{contoh}</div>
               </label>
             ))}
@@ -539,15 +552,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                 ].map(([key, label, contoh]) => (
                   <label key={key} className="block">
                     <div className="text-[11px] text-slate-500 mb-1">{label}</div>
-                    <input
-                      type="number"
-                      min="1"
-                      value={layout[key]}
-                      onChange={(e) =>
-                        setLayout((prev) => ({ ...prev, [key]: Math.max(1, Number(e.target.value) || 1) }))
-                      }
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-                    />
+                    <InputAngka min={1} value={layout[key]} onCommit={(v) => setLayout((prev) => ({ ...prev, [key]: v }))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500" />
                     <div className="text-[10px] text-slate-600 mt-0.5">{contoh}</div>
                   </label>
                 ))}
@@ -561,16 +566,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                 ].map(([key, label]) => (
                   <label key={key} className="block">
                     <div className="text-[11px] text-slate-500 mb-1">{label}</div>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={layout[key]}
-                      onChange={(e) =>
-                        setLayout((prev) => ({ ...prev, [key]: Math.max(0, Number(e.target.value) || 0) }))
-                      }
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-                    />
+                    <InputAngka min={0} step="0.1" value={layout[key]} onCommit={(v) => setLayout((prev) => ({ ...prev, [key]: v }))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500" />
                   </label>
                 ))}
               </div>
@@ -594,16 +590,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                 {layout.kodeGrosir && (
                   <label className="block mt-3 max-w-[180px]">
                     <div className="text-[11px] text-slate-500 mb-1">Ukuran huruf kode (pt)</div>
-                    <input
-                      type="number"
-                      min="3"
-                      step="0.5"
-                      value={layout.fontKodeGrosir}
-                      onChange={(e) =>
-                        setLayout((prev) => ({ ...prev, fontKodeGrosir: Math.max(3, Number(e.target.value) || 3) }))
-                      }
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-                    />
+                    <InputAngka min={3} step="0.5" value={layout.fontKodeGrosir} onCommit={(v) => setLayout((prev) => ({ ...prev, fontKodeGrosir: v }))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500" />
                   </label>
                 )}
               </div>
@@ -633,15 +620,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
           {layout.gaya !== "harga" && layout.barcode && (
             <label className="block mt-2 max-w-[180px]">
               <div className="text-[11px] text-slate-500 mb-1">Tinggi Barcode (mm)</div>
-              <input
-                type="number"
-                min="4"
-                value={layout.tinggiBarcode}
-                onChange={(e) =>
-                  setLayout((prev) => ({ ...prev, tinggiBarcode: Math.max(4, Number(e.target.value) || 4) }))
-                }
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
-              />
+              <InputAngka min={4} value={layout.tinggiBarcode} onCommit={(v) => setLayout((prev) => ({ ...prev, tinggiBarcode: v }))} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500" />
             </label>
           )}
           <p className="text-[11px] text-slate-500 mt-3">
