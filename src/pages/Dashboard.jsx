@@ -4,7 +4,7 @@ import {
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
-  ChevronDown, Scale,
+  ChevronDown, Scale, AlertTriangle,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 import {
@@ -856,7 +856,7 @@ function DashboardGudang({
       0
     );
     if (!perSupplierBarangDatangMap.has(key)) {
-      perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0, totalPembayaran: 0 });
+      perSupplierBarangDatangMap.set(key, { supplier: key, items: [], totalModel: 0, totalNilai: 0, totalPembayaran: 0, totalRusak: 0 });
     }
     const grup = perSupplierBarangDatangMap.get(key);
     // Rincian model per pesanan (nama, qty, harga, sudah datang atau belum) —
@@ -871,6 +871,7 @@ function DashboardGudang({
           const models = (Array.isArray(inv.models) ? inv.models : []).map((m) => ({
             nama: m.nama || "—",
             jumlah: (Number(m.jumlah) || 0) + (Number(m.rusak) || 0),
+            rusak: Number(m.rusak) || 0,
             harga: Number(m.harga) || 0,
             datang: inv.status === "final",
           }));
@@ -885,6 +886,7 @@ function DashboardGudang({
         const models = detailModelPesanan(row).map((m) => ({
           nama: m.nama || "—",
           jumlah: (Number(m.jumlah) || 0) + (Number(m.rusak) || 0),
+          rusak: Number(m.rusak) || 0,
           harga: Number(m.harga) || 0,
           datang: !!m.datang,
         }));
@@ -896,7 +898,9 @@ function DashboardGudang({
         });
       }
     });
-    grup.items.push({ ...p, _nilai: nilai, _jumlahBox: jumlahBox, _pembayaran: Number(p.harga_kesepakatan) || 0, _grupModel: grupModel });
+    const rusakPesanan = grupModel.reduce((sum, g) => sum + g.models.reduce((x, m) => x + m.rusak, 0), 0);
+    grup.totalRusak += rusakPesanan;
+    grup.items.push({ ...p, _rusak: rusakPesanan, _nilai: nilai, _jumlahBox: jumlahBox, _pembayaran: Number(p.harga_kesepakatan) || 0, _grupModel: grupModel });
     grup.totalModel += 1;
     grup.totalNilai += nilai;
     grup.totalPembayaran += Number(p.harga_kesepakatan) || 0;
@@ -1385,6 +1389,14 @@ function DashboardGudang({
                                   </td>
                                   <td className="px-4 py-2.5 text-slate-400 text-xs whitespace-nowrap">
                                     {grup.totalModel} pesanan
+                                    {grup.totalRusak > 0 && (
+                                      <span
+                                        className="inline-flex items-center gap-1 text-red-400 text-[11px] ml-2 align-middle"
+                                        title="Total barang rusak/cacat dari supplier ini"
+                                      >
+                                        <AlertTriangle size={11} /> {grup.totalRusak.toLocaleString("id-ID")}x rusak
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="px-4 py-2.5 text-right text-xs whitespace-nowrap">
                                     <div className="flex justify-between gap-4 text-slate-500">
@@ -1460,6 +1472,14 @@ function DashboardGudang({
                                                   </td>
                                                   <td className="py-2 pr-3 font-mono text-xs text-amber-400 whitespace-nowrap">
                                                     {p.kode_pesanan || "—"}
+                                                    {p._rusak > 0 && (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 font-sans text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded-full ml-1.5"
+                                                        title="Jumlah barang rusak/cacat pada pesanan ini"
+                                                      >
+                                                        <AlertTriangle size={10} /> {p._rusak}x rusak
+                                                      </span>
+                                                    )}
                                                     {p._jumlahBox > 1 && (
                                                       <span
                                                         className="ml-1.5 font-sans text-[10px] text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded-full"
@@ -1558,7 +1578,13 @@ function DashboardGudang({
                                                                   {g.models.map((m, idx) => (
                                                                     <tr key={`${g.key}-${idx}`} className="border-b border-slate-800/40 last:border-0">
                                                                       <td className="py-1.5 pr-3 text-slate-200 font-mono">{m.nama}</td>
-                                                                      <td className="py-1.5 pr-3 text-right text-slate-300">{m.jumlah.toLocaleString("id-ID")}</td>
+                                                                      <td className="py-1.5 pr-3 text-right text-slate-300">{m.jumlah.toLocaleString("id-ID")}
+                                                                        {m.rusak > 0 && (
+                                                                          <span className="inline-flex items-center gap-0.5 text-red-400 text-[11px] ml-1.5" title="Qty rusak">
+                                                                            <AlertTriangle size={10} /> {m.rusak}x
+                                                                          </span>
+                                                                        )}
+                                                                      </td>
                                                                       <td className="py-1.5 pr-3 text-right text-slate-400">{m.harga > 0 ? fmtRp(m.harga) : "—"}</td>
                                                                       <td className="py-1.5 pr-3 text-right text-slate-200">
                                                                         {m.harga > 0 ? fmtRp(m.jumlah * m.harga) : "—"}
