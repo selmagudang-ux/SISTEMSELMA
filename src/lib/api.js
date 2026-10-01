@@ -1400,7 +1400,48 @@ export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList
 // kategori yang dipakai tapi belum terdaftar di master ikut ditambahkan di
 // akhir daftar (fallback label = kode transaksinya).
 // Dipakai bareng oleh preview di halaman Laporan Keuangan & PDF-nya.
-export function laporanBulananData(transaksi, kategoriMasukList, kategoriKeluarList, tahun) {
+//
+// pemetaanMasuk / pemetaanKeluar (opsional) = master.kelompok_masuk /
+// master.kelompok_keluar — kalau diisi, hasil juga memuat `pendapatanGrup` /
+// `pengeluaranGrup`: pohon bertingkat (Kategori > Sub Kategori > Rincian)
+// yang sama dengan Laporan Laba Rugi, tiap kelompok berisi jumlah per bulan
+// + total gabungan anak-anaknya. `pendapatan` / `pengeluaran` tetap daftar
+// datar (dipakai pemanggil lama).
+function kelompokkanBarisBulanan(baris, pemetaan) {
+  const peta = new Map();
+  (pemetaan || []).forEach((m) => {
+    if (!m?.kode || !m?.label) return;
+    const jalur = String(m.label).split(">").map((x) => x.trim()).filter(Boolean);
+    if (jalur.length) peta.set(m.kode, jalur);
+  });
+  if (peta.size === 0) return baris;
+
+  const akar = [];
+  baris.forEach((r) => {
+    const jalur = peta.get(r.kode);
+    if (!jalur) {
+      akar.push(r);
+      return;
+    }
+    let daftar = akar;
+    let kodeJalur = "";
+    jalur.forEach((nama) => {
+      kodeJalur = kodeJalur ? `${kodeJalur}>${nama}` : nama;
+      let g = daftar.find((x) => x.isGrup && x.label.toLowerCase() === nama.toLowerCase());
+      if (!g) {
+        g = { kode: `__grup__:${kodeJalur}`, label: nama, isGrup: true, bulan: Array(12).fill(0), total: 0, anak: [] };
+        daftar.push(g);
+      }
+      r.bulan.forEach((v, i) => (g.bulan[i] += v));
+      g.total += r.total;
+      daftar = g.anak;
+    });
+    daftar.push(r);
+  });
+  return akar;
+}
+
+export function laporanBulananData(transaksi, kategoriMasukList, kategoriKeluarList, tahun, pemetaanMasuk, pemetaanKeluar) {
   const tahunStr = String(tahun);
   const list = (transaksi || []).filter((t) => (t.tanggal || "").slice(0, 4) === tahunStr);
 
@@ -1438,7 +1479,16 @@ export function laporanBulananData(transaksi, kategoriMasukList, kategoriKeluarL
     total: totalPendapatan.total - totalPengeluaran.total,
   };
 
-  return { tahun: Number(tahun), pendapatan, pengeluaran, totalPendapatan, totalPengeluaran, labaRugi };
+  return {
+    tahun: Number(tahun),
+    pendapatan,
+    pengeluaran,
+    pendapatanGrup: kelompokkanBarisBulanan(pendapatan, pemetaanMasuk),
+    pengeluaranGrup: kelompokkanBarisBulanan(pengeluaran, pemetaanKeluar),
+    totalPendapatan,
+    totalPengeluaran,
+    labaRugi,
+  };
 }
 
 // Susun data "Rekap Tahunan": total pendapatan/pengeluaran/laba-rugi per

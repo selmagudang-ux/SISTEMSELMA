@@ -1402,11 +1402,61 @@ function BarisAngka({ label, nilai, bold, tinted, tint = "text-slate-100", label
 // (dikelompokkan per kategori pemasukan/pengeluaran, gaya sama seperti
 // workbook Excel SELMA_FINANCE.xlsx), lengkap dengan tombol unduh PDF siap
 // cetak untuk masing-masing.
+// Satu baris (dan turunannya) di tabel Laporan Bulanan. Kelompok (isGrup) bisa
+// dibuka/ditutup — Kategori -> Sub Kategori -> Rincian, sama seperti Laba Rugi.
+function BarisBulananPohon({ d, depth, seksi, terbuka, toggle }) {
+  const kunci = `${seksi}:${d.kode}`;
+  const open = d.isGrup && terbuka.has(kunci);
+  const f = (v) => (Math.round(v) === 0 ? "-" : fmtRp(v));
+  const nilai = [...d.bulan, d.total];
+  return (
+    <>
+      <tr className={d.isGrup ? "bg-slate-900/40" : ""}>
+        <td
+          className={`pr-3 py-1.5 min-w-[160px] sticky left-0 ${d.isGrup ? "bg-slate-900 font-medium text-slate-200" : "bg-slate-950 text-slate-400"}`}
+          style={{ paddingLeft: 12 + depth * 16 }}
+        >
+          {d.isGrup ? (
+            <button onClick={() => toggle(kunci)} className="flex items-center gap-1.5 text-left hover:text-slate-100">
+              {open ? <ChevronDown size={13} className="text-slate-500" /> : <ChevronRight size={13} className="text-slate-500" />}
+              {d.label}
+              <span className="text-[10px] text-slate-500 font-normal">({d.anak.length})</span>
+            </button>
+          ) : (
+            <span className="inline-block pl-[19px]">{d.label}</span>
+          )}
+        </td>
+        {nilai.map((v, i) => (
+          <td
+            key={i}
+            className={`px-3 py-1.5 text-right whitespace-nowrap ${
+              d.isGrup ? "font-medium text-slate-200" : v < 0 ? "text-red-400" : "text-slate-300"
+            } ${i === 12 ? "font-semibold" : ""}`}
+          >
+            {v < 0 ? `(${fmtRp(Math.abs(v)).replace("Rp ", "")})` : f(v)}
+          </td>
+        ))}
+      </tr>
+      {open &&
+        d.anak.map((c) => (
+          <BarisBulananPohon key={c.kode || c.label} d={c} depth={depth + 1} seksi={seksi} terbuka={terbuka} toggle={toggle} />
+        ))}
+    </>
+  );
+}
+
 function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
   // App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya; laporan
   // bulanan/tahunan butuh seluruh histori, jadi data lamanya ditarik sendiri.
   const { data: keuanganTransaksi, status: errLama } = useKeuanganRentang(keuanganDimuat, null);
   const [mode, setMode] = useState("bulanan"); // "bulanan" | "tahunan"
+  const [terbuka, setTerbuka] = useState(() => new Set());
+  const toggle = (k) =>
+    setTerbuka((s) => {
+      const next = new Set(s);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
   const tahunTersedia = daftarTahunTersedia(keuanganTransaksi);
   const [tahun, setTahun] = useState(tahunTersedia[0]);
   const [tahunMulai, setTahunMulai] = useState(tahunTersedia[tahunTersedia.length - 1]);
@@ -1414,7 +1464,19 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
-  const dataBulanan = laporanBulananData(keuanganTransaksi, kategoriMasukList, kategoriKeluarList, tahun);
+  const dataBulanan = laporanBulananData(
+    keuanganTransaksi,
+    kategoriMasukList,
+    kategoriKeluarList,
+    tahun,
+    master.kelompok_masuk,
+    master.kelompok_keluar
+  );
+  const semuaKunciBulanan = [
+    ...kunciSemuaKelompok(dataBulanan.pendapatanGrup, "masuk"),
+    ...kunciSemuaKelompok(dataBulanan.pengeluaranGrup, "keluar"),
+  ];
+  const semuaTerbukaBulanan = semuaKunciBulanan.length > 0 && semuaKunciBulanan.every((k) => terbuka.has(k));
   const dataTahunan = rekapTahunanData(keuanganTransaksi, tahunMulai, 6);
 
   const unduhBulanan = () => generateLaporanBulananPdf({ tahun, data: dataBulanan });
@@ -1475,10 +1537,20 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
         </div>
       </div>
 
-      <div className="p-3 text-[11px] text-slate-500">
-        {mode === "bulanan"
-          ? "Rekap tiap kategori pemasukan & pengeluaran per bulan untuk satu tahun, lengkap dengan total & laba/rugi bersih — bisa diunduh sebagai PDF siap cetak."
-          : "Perbandingan total pendapatan, pengeluaran, laba/rugi bersih, dan margin selama 6 tahun berurutan — bisa diunduh sebagai PDF siap cetak."}
+      <div className="p-3 text-[11px] text-slate-500 flex items-center justify-between gap-3 flex-wrap">
+        <span>
+          {mode === "bulanan"
+            ? "Rekap tiap kategori pemasukan & pengeluaran per bulan untuk satu tahun, lengkap dengan total & laba/rugi bersih — bisa diunduh sebagai PDF siap cetak."
+            : "Perbandingan total pendapatan, pengeluaran, laba/rugi bersih, dan margin selama 6 tahun berurutan — bisa diunduh sebagai PDF siap cetak."}
+        </span>
+        {mode === "bulanan" && semuaKunciBulanan.length > 0 && (
+          <button
+            onClick={() => setTerbuka(semuaTerbukaBulanan ? new Set() : new Set(semuaKunciBulanan))}
+            className="font-medium text-slate-400 hover:text-slate-200"
+          >
+            {semuaTerbukaBulanan ? "Tutup semua" : "Buka semua"}
+          </button>
+        )}
       </div>
 
       {mode === "bulanan" ? (
@@ -1504,8 +1576,8 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
                   <td colSpan={14} className="px-3 py-3 text-center text-slate-600">Belum ada kategori pemasukan.</td>
                 </tr>
               ) : (
-                dataBulanan.pendapatan.map((r) => (
-                  <BarisAngka key={r.kode || r.label} label={r.label} nilai={[...r.bulan, r.total]} />
+                (dataBulanan.pendapatanGrup || dataBulanan.pendapatan).map((r) => (
+                  <BarisBulananPohon key={r.kode || r.label} d={r} depth={0} seksi="masuk" terbuka={terbuka} toggle={toggle} />
                 ))
               )}
               <BarisAngka label="Total Pendapatan" nilai={[...dataBulanan.totalPendapatan.bulan, dataBulanan.totalPendapatan.total]} bold tinted tint="text-emerald-400" />
@@ -1520,8 +1592,8 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
                   <td colSpan={14} className="px-3 py-3 text-center text-slate-600">Belum ada kategori pengeluaran.</td>
                 </tr>
               ) : (
-                dataBulanan.pengeluaran.map((r) => (
-                  <BarisAngka key={r.kode || r.label} label={r.label} nilai={[...r.bulan, r.total]} />
+                (dataBulanan.pengeluaranGrup || dataBulanan.pengeluaran).map((r) => (
+                  <BarisBulananPohon key={r.kode || r.label} d={r} depth={0} seksi="keluar" terbuka={terbuka} toggle={toggle} />
                 ))
               )}
               <BarisAngka label="Total Pengeluaran" nilai={[...dataBulanan.totalPengeluaran.bulan, dataBulanan.totalPengeluaran.total]} bold tinted tint="text-red-400" />

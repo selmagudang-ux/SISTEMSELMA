@@ -124,7 +124,7 @@ export function generateLaporanBulananPdf({ tahun, data, namaUsaha = "SELMA ACC 
     y += ROW_H;
   }
 
-  function drawDataRow(label, bulan, total, { bold = false, subtotal = false } = {}) {
+  function drawDataRow(label, bulan, total, { bold = false, subtotal = false, indent = 0 } = {}) {
     ensureSpace(1);
     if (subtotal) {
       doc.setFillColor(...BLUE_SUBTOTAL);
@@ -133,7 +133,7 @@ export function generateLaporanBulananPdf({ tahun, data, namaUsaha = "SELMA ACC 
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(...BLACK);
-    doc.text(label, xKategori + 2, y + ROW_H - 1.6, { maxWidth: colKategoriW - 3 });
+    doc.text(label, xKategori + 2 + indent, y + ROW_H - 1.6, { maxWidth: colKategoriW - 3 - indent });
     bulan.forEach((v, i) => {
       const f = fmtAngka(v);
       drawCellNumber(doc, f.text, xBulan(i), colBulanW, y + ROW_H - 1.6, { bold, negative: f.negative });
@@ -171,13 +171,22 @@ export function generateLaporanBulananPdf({ tahun, data, namaUsaha = "SELMA ACC 
     y += ROW_H + 1;
   }
 
+  // Kelompok (Kategori > Sub Kategori > Rincian) dicetak terbuka semua: baris
+  // kelompok tebal berisi jumlah gabungan, anak-anaknya menjorok di bawahnya.
+  function drawPohon(daftar, depth = 0) {
+    daftar.forEach((r) => {
+      drawDataRow(r.label, r.bulan, r.total, { bold: !!r.isGrup, indent: depth * 3 });
+      if (r.isGrup) drawPohon(r.anak, depth + 1);
+    });
+  }
+
   drawSectionRow("PENDAPATAN");
-  data.pendapatan.forEach((r) => drawDataRow(r.label, r.bulan, r.total));
+  drawPohon(data.pendapatanGrup || data.pendapatan);
   drawDataRow("Total Pendapatan", data.totalPendapatan.bulan, data.totalPendapatan.total, { bold: true, subtotal: true });
 
   y += 2;
   drawSectionRow("PENGELUARAN");
-  data.pengeluaran.forEach((r) => drawDataRow(r.label, r.bulan, r.total));
+  drawPohon(data.pengeluaranGrup || data.pengeluaran);
   drawDataRow("Total Pengeluaran", data.totalPengeluaran.bulan, data.totalPengeluaran.total, { bold: true, subtotal: true });
 
   y += 2;
