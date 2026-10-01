@@ -1317,6 +1317,7 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "keuangan" && (
                 <Keuangan
                   sub={nav.sub || "transaksi"}
+                  session={session}
                   keuanganTransaksi={keuanganTransaksi}
                   pesananMasuk={pesananMasuk}
                   marketplaceTransaksi={marketplaceTransaksi}

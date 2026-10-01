@@ -177,7 +177,7 @@ export default function Sidebar({
 
   // Hanya tampilkan menu (dan group yang masih punya isi) yang diizinkan
   // untuk role user yang sedang login.
-  const visibleNav = filterNavByAllowed(NAV, allowedMenuKeys);
+  const visibleNav = filterNavByAllowed(NAV, allowedMenuKeys, user?.role);
 
   return (
     <>

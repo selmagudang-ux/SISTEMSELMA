@@ -50,6 +50,26 @@ function friendlyDbError(parsed, status) {
 const SESSION_KEY_LOKAL = "selma_session";
 const ROLE_READONLY = ["owner"];
 
+// Identitas user yang sedang login, dikirim sebagai header di SETIAP request
+// tulis (POST/PATCH/DELETE) supaya trigger audit di database
+// (supabase/migrations/20261001_keuangan_audit_log.sql) tahu siapa yang
+// menambah/mengubah/menghapus transaksi keuangan. Header ini hanya label
+// pencatat — bukan autentikasi.
+function headerAktor() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
+    if (!raw) return {};
+    const s = JSON.parse(raw);
+    return {
+      "x-selma-uid": String(s.id ?? ""),
+      "x-selma-username": encodeURIComponent(s.username ?? ""),
+      "x-selma-role": String(s.role ?? ""),
+    };
+  } catch {
+    return {};
+  }
+}
+
 function roleSaatIni() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
@@ -106,6 +126,7 @@ export async function sb(path, opts = {}) {
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
       Prefer: opts.prefer || "return=representation",
+      ...(method === "GET" ? {} : headerAktor()),
       ...(opts.headers || {}),
     },
   }, method === "GET" ? TIMEOUT_BACA_MS : TIMEOUT_TULIS_MS, method);

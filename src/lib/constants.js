@@ -368,6 +368,9 @@ export const NAV = [
           { key: "laporan", label: "Laporan Keuangan" },
           { key: "log", label: "Log Keterangan" },
           { key: "rekening", label: "Rekening & Kategori" },
+          // Khusus role "superappa" (disaring di filterNavByAllowed &
+          // allowedSubMenus) — jejak siapa yang menambah/mengubah/menghapus transaksi.
+          { key: "riwayat", label: "Riwayat Perubahan", onlyRole: "superappa" },
         ],
       },
     ],
@@ -443,15 +446,18 @@ export function navAncestorKeys(menuKey, nodes = NAV, path = []) {
 // yang diizinkan untuk role yang sedang login. allowedMenuKeys = null artinya
 // tidak dibatasi (tampilkan semua). Rekursif penuh supaya group bersarang
 // ikut disaring dengan benar di tiap tingkatnya.
-export function filterNavByAllowed(nodes, allowedMenuKeys) {
-  if (!allowedMenuKeys) return nodes;
+export function filterNavByAllowed(nodes, allowedMenuKeys, role) {
+  // Sub-menu bertanda onlyRole hanya tampil untuk role itu.
+  const sembunyikanSub = (n) =>
+    n.children ? { ...n, children: n.children.filter((c) => !c.onlyRole || c.onlyRole === role) } : n;
+  if (!allowedMenuKeys) return nodes.map(sembunyikanSub);
   return nodes
     .map((node) => {
       if (node.group) {
-        const children = filterNavByAllowed(node.children || [], allowedMenuKeys);
+        const children = filterNavByAllowed(node.children || [], allowedMenuKeys, role);
         return children.length ? { ...node, children } : null;
       }
-      return allowedMenuKeys.includes(node.key) ? node : null;
+      return allowedMenuKeys.includes(node.key) ? sembunyikanSub(node) : null;
     })
     .filter(Boolean);
 }
@@ -586,6 +592,10 @@ export const ROLE_SUBMENUS = {
 // Sub-menu apa saja yang boleh dilihat role ini untuk satu menu tertentu.
 // Return null = boleh akses semua anak menu (tidak dibatasi).
 export function allowedSubMenus(role, menuKey) {
+  // "Riwayat Perubahan" Keuangan: hanya superappa (guard navigasi & halaman).
+  if (menuKey === "keuangan" && role !== "superappa") {
+    return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "laporan", "log", "rekening"];
+  }
   return ROLE_SUBMENUS[role]?.[menuKey] || null;
 }
 

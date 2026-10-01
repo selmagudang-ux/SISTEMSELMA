@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt } from "lucide-react";
+import { useState, useMemo, useEffect } from "react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -17,6 +17,7 @@ import {
   sb,
 } from "../lib/api";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
+import { roleLabel } from "../lib/constants";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -88,7 +89,10 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
-export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal }) {
+export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session }) {
+  if (sub === "riwayat") {
+    return <RiwayatPerubahan master={master} session={session} />;
+  }
   if (sub === "rekening") {
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
   }
@@ -2024,6 +2028,274 @@ function RekeningKategori({ master, reload, showToast }) {
           })
         )}
       </div>
+    </div>
+  );
+}
+
+// =========================================================
+// RIWAYAT PERUBAHAN TRANSAKSI — khusus role "superappa".
+// Membaca tabel keuangan_audit_log yang diisi otomatis oleh trigger database
+// (supabase/migrations/20261001_keuangan_audit_log.sql): siapa, kapan, dan
+// apa yang ditambah / diubah (nilai lama -> baru) / dihapus di transaksi
+// keuangan. Perubahan yang terjadi DI LUAR aplikasi (Supabase Dashboard,
+// SQL Editor, atau panggilan API langsung) ditandai terpisah.
+// =========================================================
+const LABEL_KOLOM = {
+  tanggal: "Tanggal",
+  tipe: "Jenis",
+  rekening: "Rekening",
+  rekening_tujuan: "Rekening Tujuan",
+  kategori: "Kategori",
+  jumlah: "Jumlah",
+  keterangan: "Keterangan",
+};
+const KOLOM_ABAIKAN = new Set(["id", "created_at", "updated_at"]);
+
+function waktuWib(iso) {
+  try {
+    return new Date(iso).toLocaleString("id-ID", {
+      timeZone: "Asia/Jakarta",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function nilaiTampil(kolom, v, master) {
+  if (v === null || v === undefined || v === "") return "(kosong)";
+  if (kolom === "jumlah") return fmtRp(v);
+  if (kolom === "tanggal") return formatTanggalID(v);
+  if (kolom === "tipe") return { masuk: "Pemasukan", keluar: "Pengeluaran", transfer: "Transfer" }[v] || String(v);
+  if (kolom === "rekening" || kolom === "rekening_tujuan") return labelDari(master.rekening, v);
+  if (kolom === "kategori") return labelDari([...(master.kategori_masuk || []), ...(master.kategori_keluar || [])], v);
+  return String(v);
+}
+
+function namaPelaku(r) {
+  if (r.sumber === "luar-aplikasi") return null;
+  return r.nama || r.username || "User tidak dikenal";
+}
+
+// Perlu dicek lebih teliti: transaksi dihapus, jumlah diubah, atau perubahan
+// yang terjadi di luar aplikasi.
+function perluDicek(r) {
+  return (
+    r.aksi === "DELETE" ||
+    r.sumber === "luar-aplikasi" ||
+    (r.aksi === "UPDATE" && (r.kolom_berubah || []).includes("jumlah"))
+  );
+}
+
+function RiwayatPerubahan({ master = {}, session }) {
+  const [dari, setDari] = useState(awalBulanIni());
+  const [sampai, setSampai] = useState(hariIniIso());
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [aksi, setAksi] = useState("");
+  const [pengguna, setPengguna] = useState("");
+  const [q, setQ] = useState("");
+  const [hanyaDicek, setHanyaDicek] = useState(false);
+
+  const bolehLihat = session?.role === "superappa";
+
+  const muat = async () => {
+    if (!bolehLihat) return;
+    setLoading(true);
+    setError("");
+    try {
+      const dariTs = encodeURIComponent(`${dari}T00:00:00+07:00`);
+      const sampaiTs = encodeURIComponent(`${sampai}T23:59:59.999+07:00`);
+      const data = await sb(
+        `keuangan_audit_log?select=*&waktu=gte.${dariTs}&waktu=lte.${sampaiTs}&order=waktu.desc&limit=1000`
+      );
+      setRows(data || []);
+    } catch (e) {
+      const pesan = String(e?.message || e);
+      setError(
+        /keuangan_audit_log|PGRST205|does not exist|404/i.test(pesan)
+          ? "Tabel riwayat belum dibuat di database. Jalankan file supabase/migrations/20261001_keuangan_audit_log.sql di Supabase > SQL Editor, lalu klik Muat ulang."
+          : pesan
+      );
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    muat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dari, sampai]);
+
+  const daftarPengguna = useMemo(() => {
+    const set = new Set();
+    rows.forEach((r) => set.add(namaPelaku(r) || "__luar__"));
+    return [...set];
+  }, [rows]);
+
+  const filtered = useMemo(() => {
+    const kata = q.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (aksi && r.aksi !== aksi) return false;
+      if (pengguna && (namaPelaku(r) || "__luar__") !== pengguna) return false;
+      if (hanyaDicek && !perluDicek(r)) return false;
+      if (kata) {
+        const d = r.data_baru || r.data_lama || {};
+        const hay = [r.transaksi_id, r.username, r.nama, d.keterangan, d.kategori, d.rekening]
+          .map((x) => String(x ?? "").toLowerCase())
+          .join(" ");
+        if (!hay.includes(kata)) return false;
+      }
+      return true;
+    });
+  }, [rows, aksi, pengguna, hanyaDicek, q]);
+
+  if (!bolehLihat) {
+    return <EmptyState label="Halaman ini khusus untuk role superappa." />;
+  }
+
+  const jmlDicek = rows.filter(perluDicek).length;
+  const aksiMeta = {
+    INSERT: { label: "Ditambah", color: "emerald" },
+    UPDATE: { label: "Diubah", color: "amber" },
+    DELETE: { label: "Dihapus", color: "red" },
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Riwayat Perubahan Transaksi"
+        description="Jejak siapa yang menambah, mengubah, dan menghapus transaksi keuangan. Dicatat otomatis oleh database, tidak bisa diedit dari aplikasi."
+        action={
+          <button
+            onClick={muat}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat ulang
+          </button>
+        }
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <InputTanggal className={`${inputClass} w-auto`} value={dari} onChange={setDari} />
+          <span className="text-slate-500 text-xs">s/d</span>
+          <InputTanggal className={`${inputClass} w-auto`} value={sampai} onChange={setSampai} />
+        </div>
+        <select value={aksi} onChange={(e) => setAksi(e.target.value)} className={`${inputClass} w-auto`}>
+          <option value="">Semua Aksi</option>
+          <option value="INSERT">Ditambah</option>
+          <option value="UPDATE">Diubah</option>
+          <option value="DELETE">Dihapus</option>
+        </select>
+        <select value={pengguna} onChange={(e) => setPengguna(e.target.value)} className={`${inputClass} w-auto`}>
+          <option value="">Semua Pengguna</option>
+          {daftarPengguna.map((p) => (
+            <option key={p} value={p}>
+              {p === "__luar__" ? "Di luar aplikasi" : p}
+            </option>
+          ))}
+        </select>
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[180px]">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cari keterangan, kategori, atau ID transaksi…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+      </div>
+
+      <label className="inline-flex items-center gap-2 text-xs text-slate-300 mb-4 cursor-pointer select-none">
+        <input type="checkbox" checked={hanyaDicek} onChange={(e) => setHanyaDicek(e.target.checked)} />
+        <ShieldAlert size={14} className="text-amber-400" />
+        Hanya yang perlu dicek (dihapus, jumlah diubah, atau di luar aplikasi) — {jmlDicek} dari {rows.length}
+      </label>
+
+      {error && (
+        <div className="mb-4 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg">{error}</div>
+      )}
+
+      {!error && rows.length >= 1000 && (
+        <div className="mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-4 py-2.5 rounded-lg">
+          Menampilkan 1.000 catatan terbaru di rentang ini. Persempit rentang tanggal untuk melihat yang lebih lama.
+        </div>
+      )}
+
+      {loading && rows.length === 0 ? (
+        <div className="text-sm text-slate-500 py-10 text-center">Memuat riwayat…</div>
+      ) : filtered.length === 0 ? (
+        <EmptyState label={rows.length ? "Tidak ada catatan yang cocok dengan filter." : "Belum ada perubahan tercatat di rentang ini."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {filtered.map((r, i) => {
+            const meta = aksiMeta[r.aksi] || { label: r.aksi, color: "slate" };
+            const d = r.data_baru || r.data_lama || {};
+            const pelaku = namaPelaku(r);
+            const dicek = perluDicek(r);
+            const kolom = (r.kolom_berubah || []).filter((k) => !KOLOM_ABAIKAN.has(k));
+            return (
+              <div
+                key={r.id}
+                className={`px-4 py-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"} ${dicek ? "border-l-2 border-amber-500/60" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <Badge color={meta.color}>{meta.label}</Badge>
+                    {pelaku ? (
+                      <span className="text-sm text-slate-200 font-medium">
+                        {pelaku}
+                        {r.role ? <span className="text-[11px] text-slate-500 font-normal"> · {roleLabel(r.role)}</span> : null}
+                      </span>
+                    ) : (
+                      <Badge color="amber">Di luar aplikasi ({r.db_role || "database"})</Badge>
+                    )}
+                    {r.aksi === "UPDATE" && kolom.includes("jumlah") && <Badge color="pink">Jumlah diubah</Badge>}
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex-shrink-0">{waktuWib(r.waktu)} WIB</div>
+                </div>
+
+                <div className="text-[11px] text-slate-500 mt-1.5">
+                  Transaksi #{r.transaksi_id} · {nilaiTampil("tipe", d.tipe, master)} · {nilaiTampil("kategori", d.kategori, master)} ·{" "}
+                  {nilaiTampil("rekening", d.rekening, master)}
+                  {d.rekening_tujuan ? ` → ${nilaiTampil("rekening_tujuan", d.rekening_tujuan, master)}` : ""} ·{" "}
+                  {nilaiTampil("tanggal", d.tanggal, master)}
+                  {d.keterangan ? ` · ${d.keterangan}` : ""}
+                </div>
+
+                {r.aksi === "UPDATE" && kolom.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {kolom.map((k) => (
+                      <div key={k} className="text-xs flex items-center gap-2 flex-wrap">
+                        <span className="text-slate-500 min-w-[110px]">{LABEL_KOLOM[k] || k}</span>
+                        <span className="text-red-300/90 line-through">{nilaiTampil(k, r.data_lama?.[k], master)}</span>
+                        <span className="text-slate-600">→</span>
+                        <span className="text-emerald-300 font-medium">{nilaiTampil(k, r.data_baru?.[k], master)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {r.aksi !== "UPDATE" && (
+                  <div className={`mt-1.5 text-sm font-semibold ${r.aksi === "DELETE" ? "text-red-300" : "text-emerald-300"}`}>
+                    {r.aksi === "DELETE" ? "Dihapus: " : "Nilai: "}
+                    {fmtRp(d.jumlah)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
