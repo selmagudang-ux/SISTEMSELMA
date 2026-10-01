@@ -852,7 +852,7 @@ function DashboardGudang({
     const nilai = [p, ...anakBox].reduce(
       (sum, row) =>
         sum +
-        detailModelPesanan(row).reduce((s, m) => s + (Number(m.jumlah) || 0) * (Number(m.harga) || 0), 0),
+        detailModelPesanan(row).reduce((s, m) => s + ((Number(m.jumlah) || 0) + (Number(m.rusak) || 0)) * (Number(m.harga) || 0), 0),
       0
     );
     if (!perSupplierBarangDatangMap.has(key)) {
@@ -870,7 +870,7 @@ function DashboardGudang({
         rincian.forEach((inv, idxInv) => {
           const models = (Array.isArray(inv.models) ? inv.models : []).map((m) => ({
             nama: m.nama || "—",
-            jumlah: Number(m.jumlah) || 0,
+            jumlah: (Number(m.jumlah) || 0) + (Number(m.rusak) || 0),
             harga: Number(m.harga) || 0,
             datang: inv.status === "final",
           }));
@@ -884,7 +884,7 @@ function DashboardGudang({
       } else {
         const models = detailModelPesanan(row).map((m) => ({
           nama: m.nama || "—",
-          jumlah: Number(m.jumlah) || 0,
+          jumlah: (Number(m.jumlah) || 0) + (Number(m.rusak) || 0),
           harga: Number(m.harga) || 0,
           datang: !!m.datang,
         }));
@@ -1440,7 +1440,11 @@ function DashboardGudang({
                                               const hargaBarang = p._nilai || 0;
                                               const adaSelisih = pembayaran > 0 && hargaBarang > 0;
                                               const selisih = adaSelisih ? hargaBarang - pembayaran : 0;
-                                              const persen = adaSelisih ? (Math.abs(selisih) / pembayaran) * 100 : 0;
+                                              // Sama persis dengan halaman Pesanan Barang: harga barang LEBIH BESAR
+                                              // dari pembayaran = diskon (persen dari harga barang); kalau lebih
+                                              // kecil = "Kurang dari pembayaran" (persen dari pembayaran).
+                                              const diskon = adaSelisih && selisih > 0 ? { rp: selisih, persen: (selisih / hargaBarang) * 100 } : null;
+                                              const persenKurang = adaSelisih && selisih < 0 ? (Math.abs(selisih) / pembayaran) * 100 : 0;
                                               return (
                                                 <Fragment key={p.id}>
                                                 <tr
@@ -1509,14 +1513,16 @@ function DashboardGudang({
                                                     {adaSelisih && (
                                                       <div
                                                         className={`flex justify-between gap-4 font-semibold pt-0.5 mt-0.5 border-t border-slate-800/60 ${
-                                                          selisih === 0 ? "text-emerald-400" : selisih < 0 ? "text-amber-400" : "text-sky-400"
+                                                          diskon ? "text-emerald-400" : selisih < 0 ? "text-amber-400" : "text-emerald-400"
                                                         }`}
                                                       >
-                                                        <span>{selisih === 0 ? "Sesuai" : selisih < 0 ? "Selisih kurang" : "Selisih lebih"}</span>
+                                                        <span>{diskon ? "Diskon dari harga barang" : selisih < 0 ? "Kurang dari pembayaran" : "Sesuai"}</span>
                                                         <span>
-                                                          {selisih === 0
-                                                            ? fmtRp(0)
-                                                            : `${fmtRp(Math.abs(selisih))} (${persen.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)`}
+                                                          {diskon
+                                                            ? `${fmtRp(diskon.rp)} (${diskon.persen.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)`
+                                                            : selisih < 0
+                                                            ? `${fmtRp(Math.abs(selisih))} (${persenKurang.toLocaleString("id-ID", { maximumFractionDigits: 1 })}%)`
+                                                            : fmtRp(0)}
                                                         </span>
                                                       </div>
                                                     )}
