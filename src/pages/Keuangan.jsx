@@ -16,6 +16,7 @@ import {
   laporanLabaRugi,
   sb,
   muatKeuanganLama,
+  awalRentangKeuanganDefault,
 } from "../lib/api";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel } from "../lib/constants";
@@ -702,6 +703,26 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
   );
 }
 
+// App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya. Kalau periode yang
+// dipilih (dari) mulai lebih awal dari itu, transaksi lamanya ditarik sekali
+// (disimpan di memori) dan digabung, supaya bulan lama tidak tampil kosong.
+function useKeuanganRentang(dimuat, dari) {
+  const [lama, setLama] = useState(null);
+  const [err, setErr] = useState("");
+  const perluLama = !dari || dari < awalRentangKeuanganDefault();
+  useEffect(() => {
+    if (!perluLama || lama) return undefined;
+    let batal = false;
+    muatKeuanganLama()
+      .then((rows) => { if (!batal) { setLama(rows); setErr(""); } })
+      .catch((e) => { if (!batal) setErr(e?.message || "Gagal memuat data lama"); });
+    return () => { batal = true; };
+  }, [perluLama, lama]);
+  const data = useMemo(() => (perluLama && lama ? [...(dimuat || []), ...lama] : dimuat || []), [dimuat, lama, perluLama]);
+  const status = perluLama && !lama ? (err ? `Data bulan lama gagal dimuat (${err}). Muat ulang halaman.` : "Memuat data bulan sebelumnya…") : "";
+  return { data, status };
+}
+
 function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, showToast }) {
   const [detailPesanan, setDetailPesanan] = useState(null); // { transaksi, pesanan }
   const petaPesanan = useMemo(() => petaPesananKeuangan(pesananMasuk), [pesananMasuk]);
@@ -714,7 +735,8 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
-  const { list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
+  const { data: dataRentang, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
+  const { list } = ringkasanKeuangan(dataRentang, dari || null, sampai || null);
 
   const filtered = list
     .filter((t) => !tipeFilter || t.tipe === tipeFilter)
@@ -733,6 +755,9 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
 
   return (
     <div>
+      {statusLama && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>
+      )}
       <PageHeader
         title="Transaksi Keuangan"
         description="Pencatatan kas masuk, kas keluar, dan transfer antar rekening. Untuk ringkasan, grafik, dan unduh laporan, buka menu Laporan Keuangan."
@@ -1177,8 +1202,11 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
-  const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
+  const { data: dataRentang, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
+  const { masuk, keluar, saldo, list } = ringkasanKeuangan(dataRentang, dari || null, sampai || null);
 
+  // Saldo per rekening SENGAJA pakai data yang dimuat saja + saldo dasar dari database
+  // (bukan dataRentang), supaya transaksi lama tidak terhitung dua kali.
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList, true);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
@@ -1188,7 +1216,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const dataMasukGrup = kelompokkanBreakdown(breakdownMasuk.data, master.kelompok_masuk, breakdownMasuk.total);
   const dataKeluarGrup = kelompokkanBreakdown(breakdownKeluar.data, master.kelompok_keluar, breakdownKeluar.total);
   const labaRugi = laporanLabaRugi(
-    keuanganTransaksi,
+    dataRentang,
     kategoriMasukList,
     kategoriKeluarList,
     dari || null,
@@ -1209,6 +1237,9 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
 
   return (
     <div>
+      {statusLama && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>
+      )}
       <PageHeader
         title="Laporan Keuangan"
         description="Ringkasan, grafik arus kas, dan breakdown pengeluaran mengikuti rentang tanggal yang dipilih di bawah. Untuk mencatat transaksi, buka menu Transaksi."
