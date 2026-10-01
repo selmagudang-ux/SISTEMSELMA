@@ -279,6 +279,17 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
             );
           })}
 
+          {/* Ongkir TETAP tampil walau pesanan ini tidak punya total pembayaran
+              (Ringkasan Harga di bawah hanya muncul kalau ada). */}
+          {!adaKesepakatan && totalOngkir > 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3.5 py-3 text-[11px] w-full sm:max-w-md sm:ml-auto">
+              <div className="flex justify-between text-slate-400">
+                <span>Ongkir</span>
+                <span className="text-slate-300 font-medium">{fmtRp(totalOngkir)}</span>
+              </div>
+            </div>
+          )}
+
           {adaKesepakatan && (
             <div
               className={`rounded-xl border px-3.5 py-3 text-[11px] space-y-1.5 w-full sm:max-w-md sm:ml-auto ${
@@ -610,6 +621,12 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
             </span>
           )}
         </td>
+        <td className="px-3 py-2.5 text-slate-300 whitespace-nowrap" title="Ongkir dicatat lewat Datang? → Sudah Datang, dan masuk Keuangan sebagai pengeluaran terpisah">
+          {(() => {
+            const ongkirTotal = daftarInvoice.reduce((sum, inv) => sum + (Number(inv.ongkir_jumlah) || 0), 0);
+            return ongkirTotal > 0 ? fmtRp(ongkirTotal) : <span className="text-slate-700">—</span>;
+          })()}
+        </td>
         <td className="px-3 py-2.5 text-right whitespace-nowrap">
           <div className="flex items-center justify-end gap-1">
             {isDraft && (
@@ -664,7 +681,7 @@ function BarisInvoice({ p, anak, hideBoxLabel, rincianBox, anakInvoice, expanded
         <SemuaInvoicePanel
           key={`${p.id}-detail`}
           daftarInvoice={daftarInvoice}
-          colSpan={14}
+          colSpan={15}
           onLihatFoto={lihatFoto}
           hargaKesepakatan={p.harga_kesepakatan}
           keteranganSelisih={p.keterangan_selisih}
@@ -941,7 +958,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
       ) : (
         <div className="rounded-xl border border-slate-800">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[900px]">
+          <table className="w-full text-sm min-w-[980px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-3 py-2.5"></th>
@@ -957,6 +974,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
                 <th className="px-3 py-2.5">Model</th>
                 <th className="px-3 py-2.5">Qty Datang/Rusak</th>
                 <th className="px-3 py-2.5">Nilai</th>
+                <th className="px-3 py-2.5">Ongkir</th>
                 <th className="px-3 py-2.5">Aksi</th>
               </tr>
             </thead>
