@@ -1076,11 +1076,12 @@ export function daftarTokoMarketplace(marketplaceTransaksi, tokoMasterList, plat
 //   - transfer -> saldo rekening asal berkurang, saldo rekening tujuan bertambah
 // rekeningList = daftar master_data tipe "rekening" ({ kode, label }[]), dipakai
 // supaya rekening yang belum pernah ada transaksinya tetap muncul dengan saldo 0.
-// Batas bawah data keuangan yang dimuat App.jsx (awal bulan sebelumnya).
-// Rumusnya HARUS sama dengan awalRentangEgressDefault di App.jsx.
+// Batas bawah data keuangan yang dimuat App.jsx = awal BULAN INI. Data bulan
+// sebelumnya / tahun lalu baru ditarik saat user memilih periode itu (lihat
+// lib/useKeuanganRentang.js). Dipakai App.jsx juga, supaya satu sumber rumus.
 export function awalRentangKeuanganDefault() {
   const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const d = new Date(now.getFullYear(), now.getMonth(), 1);
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -1090,6 +1091,9 @@ export function awalRentangKeuanganDefault() {
 // Ditarik sekali lalu disimpan di memori (data lama jarang berubah), jadi
 // tidak menambah egress tiap buka halaman.
 let cacheKeuanganLama = null;
+export function resetKeuanganLama() {
+  cacheKeuanganLama = null;
+}
 export async function muatKeuanganLama(force = false) {
   const awal = awalRentangKeuanganDefault();
   if (!force && cacheKeuanganLama && cacheKeuanganLama.awal === awal) return cacheKeuanganLama.rows;

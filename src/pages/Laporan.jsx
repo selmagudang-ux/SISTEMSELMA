@@ -10,8 +10,8 @@ import {
   laporanBulananData,
   rekapTahunanData,
   sb,
-  muatKeuanganLama,
 } from "../lib/api";
+import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -662,19 +662,7 @@ function BarisAngka({ label, nilai, bold, tinted, tint = "text-slate-100", label
 function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
   // App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya; laporan
   // bulanan/tahunan butuh seluruh histori, jadi data lamanya ditarik sendiri.
-  const [dataLama, setDataLama] = useState([]);
-  const [errLama, setErrLama] = useState("");
-  useEffect(() => {
-    let batal = false;
-    muatKeuanganLama()
-      .then((rows) => { if (!batal) setDataLama(rows); })
-      .catch((e) => { if (!batal) setErrLama(e?.message || "Gagal memuat data lama"); });
-    return () => { batal = true; };
-  }, []);
-  const keuanganTransaksi = useMemo(
-    () => [...(keuanganDimuat || []), ...dataLama],
-    [keuanganDimuat, dataLama]
-  );
+  const { data: keuanganTransaksi, status: errLama } = useKeuanganRentang(keuanganDimuat, null);
   const [mode, setMode] = useState("bulanan"); // "bulanan" | "tahunan"
   const tahunTersedia = daftarTahunTersedia(keuanganTransaksi);
   const [tahun, setTahun] = useState(tahunTersedia[0]);
@@ -694,7 +682,7 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
     <div className="rounded-xl border border-slate-800 mb-5 overflow-hidden">
       {errLama && (
         <div className="px-4 py-2 text-xs text-amber-400 bg-amber-500/5 border-b border-slate-800">
-          Data bulan-bulan sebelumnya gagal dimuat ({errLama}) — laporan bisa tampak kosong. Muat ulang halaman.
+          {errLama}
         </div>
       )}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/30">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
-import { sb, sbAll, setSaldoDasarRekening } from "./lib/api";
+import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
@@ -789,7 +789,10 @@ function MainApp({ session, onLogout }) {
     // Dibatasi ke bulan berjalan + 1 bulan sebelumnya (bukan seluruh histori)
     // — tabel ini terus nambah tanpa henti; lihat catatan di
     // awalRentangEgressDefault di atas.
-    const awalRentang = awalRentangEgressDefault();
+    // Keuangan dimuat BULAN INI saja; bulan/tahun lalu ditarik saat user memilihnya
+    // (lib/useKeuanganRentang.js). Cache data lama dibuang tiap muat ulang.
+    const awalRentang = awalRentangKeuanganDefault();
+    resetKeuanganLama();
     const keuanganRes = await sbAll(
       `keuangan_transaksi?select=*&tanggal=gte.${awalRentang}&order=tanggal.desc`
     );

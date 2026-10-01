@@ -31,6 +31,7 @@ import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HAR
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
 import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, DetailKelompokModal, GrafikArusKas, LaporanLabaRugi } from "./Keuangan";
 import { isEntriTokoOffline } from "./TokoOffline";
+import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Penjualan vs
@@ -157,7 +158,7 @@ export default function Dashboard({
   pembayaranGrosir = [],
   depositGrosir = [],
   pelangganGrosir = [],
-  keuanganTransaksi = [],
+  keuanganTransaksi: keuanganDimuat = [],
   marketplaceTransaksi = [],
   master = {},
   absensiRows = [],
@@ -177,6 +178,9 @@ export default function Dashboard({
   const periodeDari = awalBulanPeriode(tahun, bulan);
   const periodeSampai = akhirBulanPeriode(tahun, bulan);
   const periodeLabel = `${BULAN_LABEL_PANJANG[bulan - 1]} ${tahun}`;
+  // App.jsx hanya memuat keuangan bulan ini; kalau periode yang dipilih lebih
+  // lama, data lamanya ditarik & digabung di sini (lib/useKeuanganRentang.js).
+  const { data: keuanganTransaksi, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, periodeDari);
 
   return (
     <div>
@@ -225,6 +229,10 @@ export default function Dashboard({
         })}
       </div>
 
+      {statusKeuanganLama && (tab === "keuangan" || tab === "penjualan") && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
+      )}
+
       {tab === "gudang" ? (
         <DashboardGudang
           onNavigate={onNavigate}
@@ -257,6 +265,7 @@ export default function Dashboard({
       ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
+          keuanganDimuat={keuanganDimuat}
           pesananMasuk={pesananMasuk}
           marketplaceTransaksi={marketplaceTransaksi}
           master={master}
@@ -279,7 +288,7 @@ export default function Dashboard({
   );
 }
 
-function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
   const [detailKategori, setDetailKategori] = useState(null);
   // Kartu toggle (pola sama seperti Dashboard Penjualan/Absensi): klik untuk
   // buka panelnya di bawah, klik lagi untuk menutup. Satu panel dalam satu waktu.
@@ -287,7 +296,7 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
-  const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || [], true);
+  const saldoRekening = saldoPerRekening(keuanganDimuat || keuanganTransaksi, master.rekening || [], true);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
 
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
