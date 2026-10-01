@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
-import { sb, sbAll } from "./lib/api";
+import { sb, sbAll, setSaldoDasarRekening } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
@@ -789,9 +789,22 @@ function MainApp({ session, onLogout }) {
     // Dibatasi ke bulan berjalan + 1 bulan sebelumnya (bukan seluruh histori)
     // — tabel ini terus nambah tanpa henti; lihat catatan di
     // awalRentangEgressDefault di atas.
+    const awalRentang = awalRentangEgressDefault();
     const keuanganRes = await sbAll(
-      `keuangan_transaksi?select=*&tanggal=gte.${awalRentangEgressDefault()}&order=tanggal.desc`
+      `keuangan_transaksi?select=*&tanggal=gte.${awalRentang}&order=tanggal.desc`
     );
+    // Saldo semua transaksi SEBELUM rentang di atas (hasil agregasi kecil dari
+    // database, bukan menarik ulang seluruh histori) — supaya saldo per
+    // rekening tetap akumulasi seluruh transaksi walau datanya dibatasi.
+    // Kalau fungsi database belum dibuat, jangan bikin halaman gagal.
+    try {
+      const dasar = await sb(`rpc/saldo_rekening_sebelum?p_tanggal=${awalRentang}`);
+      const peta = {};
+      (dasar || []).forEach((r) => { if (r.rekening) peta[r.rekening] = Number(r.saldo) || 0; });
+      setSaldoDasarRekening(awalRentang, peta);
+    } catch (e) {
+      console.warn("saldo_rekening_sebelum belum tersedia:", e?.message || e);
+    }
     setKeuanganTransaksi(keuanganRes || []);
     tandaiSudahDimuat("keuangan");
   }, []);

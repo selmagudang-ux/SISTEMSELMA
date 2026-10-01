@@ -1076,7 +1076,17 @@ export function daftarTokoMarketplace(marketplaceTransaksi, tokoMasterList, plat
 //   - transfer -> saldo rekening asal berkurang, saldo rekening tujuan bertambah
 // rekeningList = daftar master_data tipe "rekening" ({ kode, label }[]), dipakai
 // supaya rekening yang belum pernah ada transaksinya tetap muncul dengan saldo 0.
-export function saldoPerRekening(transaksi, rekeningList) {
+// Saldo DASAR = akumulasi semua transaksi SEBELUM batas bawah data yang dimuat
+// di memori (App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya demi
+// hemat egress, jadi transaksi yang lebih lama tidak ada di `transaksi`).
+// Diisi dari fungsi database saldo_rekening_sebelum(); tanpa ini, saldo per
+// rekening cuma menghitung transaksi yang dimuat dan jadi salah tiap ganti bulan.
+let saldoDasar = { sebelum: null, saldo: {} };
+export function setSaldoDasarRekening(sebelum, saldo) {
+  saldoDasar = { sebelum: sebelum || null, saldo: saldo || {} };
+}
+
+export function saldoPerRekening(transaksi, rekeningList, pakaiDasar = false) {
   const map = {};
   (rekeningList || []).forEach((r) => {
     map[r.kode] = { kode: r.kode, label: r.label, saldo: 0 };
@@ -1101,6 +1111,12 @@ export function saldoPerRekening(transaksi, rekeningList) {
       if (tujuan) tujuan.saldo += jumlah;
     }
   });
+  if (pakaiDasar) {
+    Object.entries(saldoDasar.saldo).forEach(([kode, nilai]) => {
+      const r = ensure(kode);
+      if (r) r.saldo += Number(nilai) || 0;
+    });
+  }
   return Object.values(map);
 }
 
@@ -1130,7 +1146,9 @@ export function saldoAwalRekening(transaksi, saldoAwalList, tahun, bulan, rekeni
   if (override) return { jumlah: Number(override.label) || 0, manual: true, id: override.id };
   const batasAwal = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
   const sebelum = (transaksi || []).filter((t) => t.tanggal < batasAwal);
-  const [hasil] = saldoPerRekening(sebelum, [{ kode: rekeningKode, label: rekeningKode }]);
+  // saldo dasar hanya berlaku kalau bulan ini jatuh di/setelah batas data yang dimuat
+  const pakaiDasar = !!saldoDasar.sebelum && batasAwal >= saldoDasar.sebelum;
+  const [hasil] = saldoPerRekening(sebelum, [{ kode: rekeningKode, label: rekeningKode }], pakaiDasar);
   return { jumlah: hasil?.saldo || 0, manual: false, id: null };
 }
 

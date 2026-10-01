@@ -287,7 +287,7 @@ function DashboardKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTr
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
-  const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || []);
+  const saldoRekening = saldoPerRekening(keuanganTransaksi, master.rekening || [], true);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
 
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard

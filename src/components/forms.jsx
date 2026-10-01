@@ -4546,7 +4546,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   // dari perhitungan supaya tidak dobel-hitung dampaknya ke saldo). Rekening
   // yang baru diketik (belum tersimpan) dianggap saldonya 0.
   const riwayatUntukSaldo = (keuanganTransaksi || []).filter((t) => t.id !== transaksi?.id);
-  const saldoSaatIni = saldoPerRekening(riwayatUntukSaldo, daftarRekening);
+  const saldoSaatIni = saldoPerRekening(riwayatUntukSaldo, daftarRekening, true);
   const saldoRekeningAsal = rekening
     ? (saldoSaatIni.find((r) => r.kode === rekening)?.saldo ?? 0)
     : rekeningBaru.trim()

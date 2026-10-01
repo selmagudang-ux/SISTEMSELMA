@@ -1178,7 +1178,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
 
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
 
-  const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
+  const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList, true);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
   const breakdownMasuk = breakdownPemasukanKategori(list, kategoriMasukList);

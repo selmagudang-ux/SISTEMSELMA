@@ -511,7 +511,7 @@ function LaporanKeuangan({ keuanganTransaksi, master, showToast }) {
   const kategoriKeluarList = master.kategori_keluar || [];
 
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(keuanganTransaksi, dari || null, sampai || null);
-  const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList);
+  const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList, true);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
 
