@@ -30,6 +30,27 @@ const warnaCss = (key) => (WARNA_OPTIONS.find((w) => w.key === key) || WARNA_OPT
 
 const DEFAULT_ROW = { qty: 1, warna: "hitam", catatan: "", tampilkanWarnaProduk: false, tandaiNew: false };
 
+// Kode sandi harga grosir: tiap angka 0-9 diganti huruf menurut KUNCI (10 huruf berbeda,
+// urutan huruf ke-1 = angka 0, ke-2 = angka 1, dst). Default "KEMBANGSUR":
+//   K=0 E=1 M=2 B=3 A=4 N=5 G=6 S=7 U=8 R=9
+// Harga ditulis dalam RIBUAN: Rp 27.000 -> 27 -> "MS". Kalau ada sisa ratusan
+// (mis. 27.500) ditulis setelah titik: "MS.N". Ganti kunci di pengaturan label
+// supaya hanya kalian yang tahu.
+const KUNCI_KODE_GROSIR_DEFAULT = "KEMBANGSUR";
+function kunciValid(k) {
+  const x = String(k || "").toUpperCase();
+  return /^[A-Z]{10}$/.test(x) && new Set(x).size === 10;
+}
+function kodeHargaGrosir(harga, kunciInput) {
+  const n = Math.round((Number(harga) || 0) / 100); // satuan ratusan
+  if (n <= 0) return "";
+  const kunci = kunciValid(kunciInput) ? String(kunciInput).toUpperCase() : KUNCI_KODE_GROSIR_DEFAULT;
+  const sandi = (angka) => String(angka).split("").map((d) => kunci[Number(d)]).join("");
+  const ribu = Math.floor(n / 10);
+  const ratus = n % 10;
+  return sandi(ribu) + (ratus > 0 ? "." + sandi(ratus) : "");
+}
+
 // Pengaturan kertas stiker terakhir disimpan di HP/komputer supaya tidak perlu diatur ulang.
 const LAYOUT_STORAGE_KEY = "ss-cetak-label-layout";
 const DEFAULT_LAYOUT = {
@@ -66,6 +87,11 @@ const DEFAULT_LAYOUT = {
   paddingV: 2, // padding atas & bawah
   paddingH: 2.5, // padding kiri & kanan
   gapHarga: 1, // jarak antara baris nama, barcode, dan baris harga
+  // Kode harga GROSIR (huruf sandi) di samping harga Ecer pada stiker gaya "harga" —
+  // supaya staf/pelanggan grosir tahu harga grosirnya tanpa buka aplikasi.
+  kodeGrosir: true,
+  kunciKodeGrosir: KUNCI_KODE_GROSIR_DEFAULT, // 10 huruf berbeda untuk angka 0-9
+  fontKodeGrosir: 7, // pt
 };
 // Preset khusus saat memilih kertas termal 100x150mm: satu label per lembar, tanpa margin/jarak.
 const TERMAL_PRESET = {
@@ -225,6 +251,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             .toUpperCase(),
           kodeBawah: (s.barcode_supplier || "").trim() || shortSku(s),
           harga: Number(s.ecer) > 0 ? `Rp.${formatRibuan(s.ecer)}` : "",
+          grosir: s.grosir,
           isNew: !!row.tandaiNew,
           rak: r.code,
           kode,
@@ -583,6 +610,52 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                 </span>
                 ). Kalau masih pendek, kecilkan ukuran huruf Nama/Kode/Harga di atas. Harga diambil dari harga Ecer.
               </p>
+              <div className="rounded-lg border border-slate-800 p-3 mb-3">
+                <label className="flex items-center gap-2 text-xs text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={layout.kodeGrosir}
+                    onChange={(e) => setLayout((prev) => ({ ...prev, kodeGrosir: e.target.checked }))}
+                    className="accent-amber-500"
+                  />
+                  Tampilkan kode harga Grosir (huruf sandi) di samping harga Ecer
+                </label>
+                {layout.kodeGrosir && (
+                  <div className="grid grid-cols-2 gap-3 mt-3 max-w-md">
+                    <label className="block">
+                      <div className="text-[11px] text-slate-500 mb-1">Kunci sandi (10 huruf berbeda = angka 0–9)</div>
+                      <input
+                        value={layout.kunciKodeGrosir}
+                        maxLength={10}
+                        onChange={(e) =>
+                          setLayout((prev) => ({ ...prev, kunciKodeGrosir: e.target.value.toUpperCase().replace(/[^A-Z]/g, "") }))
+                        }
+                        className={`w-full bg-slate-950 border rounded-lg px-2.5 py-1.5 text-xs font-mono outline-none focus:border-amber-500 ${
+                          kunciValid(layout.kunciKodeGrosir) ? "border-slate-800" : "border-red-500"
+                        }`}
+                      />
+                      <div className="text-[10px] text-slate-600 mt-0.5">
+                        {kunciValid(layout.kunciKodeGrosir)
+                          ? `Contoh: Rp 27.000 → ${kodeHargaGrosir(27000, layout.kunciKodeGrosir)}`
+                          : "Harus 10 huruf, tidak boleh ada yang sama (dipakai default sampai valid)"}
+                      </div>
+                    </label>
+                    <label className="block">
+                      <div className="text-[11px] text-slate-500 mb-1">Ukuran huruf kode (pt)</div>
+                      <input
+                        type="number"
+                        min="3"
+                        step="0.5"
+                        value={layout.fontKodeGrosir}
+                        onChange={(e) =>
+                          setLayout((prev) => ({ ...prev, fontKodeGrosir: Math.max(3, Number(e.target.value) || 3) }))
+                        }
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs outline-none focus:border-amber-500"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -686,6 +759,8 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
           .ss-print-harga-bawah { display: flex; justify-content: space-between; align-items: baseline; line-height: 1; }
           .ss-print-harga-kode { font-size: ${layout.fontBawah}pt; font-weight: 700; }
           .ss-print-harga-rp { font-size: ${layout.fontHarga}pt; font-weight: 800; }
+          .ss-print-harga-kanan { display: flex; align-items: baseline; gap: 1.5mm; }
+          .ss-print-harga-kg { font-size: ${layout.fontKodeGrosir}pt; font-weight: 700; letter-spacing: 0.3px; }
           .ss-print-barcode { width: 100%; }
           .ss-print-barcode-teks { font-size: 6pt; line-height: 1.1; margin-top: 0.5mm; font-family: Arial, Helvetica, sans-serif; }
         `}</style>
@@ -706,7 +781,12 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                   </div>
                   <div className="ss-print-harga-bawah">
                     <span className="ss-print-harga-kode">{l.kodeBawah}</span>
-                    <span className="ss-print-harga-rp">{l.harga}</span>
+                    <span className="ss-print-harga-kanan">
+                      {layout.kodeGrosir && kodeHargaGrosir(l.grosir, layout.kunciKodeGrosir) && (
+                        <span className="ss-print-harga-kg">{kodeHargaGrosir(l.grosir, layout.kunciKodeGrosir)}</span>
+                      )}
+                      <span className="ss-print-harga-rp">{l.harga}</span>
+                    </span>
                   </div>
                 </div>
               </div>
