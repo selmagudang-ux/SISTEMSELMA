@@ -4087,7 +4087,9 @@ export default function ModalRouter({
     // pesanan ini (lewat keuangan_transaksi_id, dibuat waktu pesan dicatat)
     // — ikut dihapus supaya tidak nyangkut di Keuangan setelah pesanannya
     // hilang. Invoice tambahan (anak) biasanya tidak punya baris sendiri.
-    const idKeuanganTerkait = [p, ...anakPesanan].map((row) => row.keuangan_transaksi_id).filter(Boolean);
+    const idKeuanganTerkait = [p, ...anakPesanan]
+      .flatMap((row) => [row.keuangan_transaksi_id, row.keuangan_ongkir_id])
+      .filter(Boolean);
     const rowKeuanganTerkait = idKeuanganTerkait
       .map((id) => (keuanganTransaksi || []).find((k) => k.id === id))
       .filter(Boolean);
@@ -4106,8 +4108,9 @@ export default function ModalRouter({
             {idKeuanganTerkait.length > 0 && (
               <div className="mt-1.5 text-red-200/90">
                 Pengeluaran pesanan ini di Keuangan
+                {p.keuangan_ongkir_id ? " (termasuk ongkir)" : ""}
                 {rowKeuanganTerkait.length === idKeuanganTerkait.length && nominalKeuanganTerkait > 0
-                  ? ` (${fmtRp(nominalKeuanganTerkait)})`
+                  ? ` — total ${fmtRp(nominalKeuanganTerkait)}`
                   : ""}{" "}
                 ikut dihapus.
               </div>
@@ -4138,7 +4141,7 @@ export default function ModalRouter({
                 // baris, cuma id-nya beda.
                 let keuanganDihapus = 0;
                 let keuanganGagal = 0;
-                const hapusSatuPesanan = async (pesananId, keuanganId) => {
+                const hapusSatuPesanan = async (pesananId, keuanganIds) => {
                   // 1) Ambil semua barang (items) yang lahir dari transaksi
                   //    pesanan ini lewat pesanan_penerimaan.
                   const penerimaanList =
@@ -4226,7 +4229,7 @@ export default function ModalRouter({
                   //    ini (foreign key), jadi kalau dihapus duluan bisa
                   //    ditolak database. Gagal di sini tidak membatalkan
                   //    penghapusan pesanan — cuma dilaporkan di pesan akhir.
-                  if (keuanganId) {
+                  for (const keuanganId of (keuanganIds || []).filter(Boolean)) {
                     try {
                       const hasil = await sb(`keuangan_transaksi?id=eq.${keuanganId}`, { method: "DELETE" });
                       if (Array.isArray(hasil) && hasil.length === 0) keuanganGagal += 1;
@@ -4244,9 +4247,9 @@ export default function ModalRouter({
                 // (FK constraint) dan tombol ini terlihat seperti tidak
                 // berfungsi. Setelah semua anak beres, baru induknya (p).
                 for (const anak of anakPesanan) {
-                  await hapusSatuPesanan(anak.id, anak.keuangan_transaksi_id);
+                  await hapusSatuPesanan(anak.id, [anak.keuangan_transaksi_id, anak.keuangan_ongkir_id]);
                 }
-                await hapusSatuPesanan(p.id, p.keuangan_transaksi_id);
+                await hapusSatuPesanan(p.id, [p.keuangan_transaksi_id, p.keuangan_ongkir_id]);
                 return (
                   "Riwayat pesanan & barang terkait dihapus" +
                   (keuanganDihapus > 0 ? " — pengeluarannya di Keuangan ikut dihapus" : "") +
@@ -4359,26 +4362,53 @@ export default function ModalRouter({
               const rekeningOngkir = await cariAtauBuatMasterTetap("rekening", REKENING_ONGKIR_BARANG_DATANG);
 
               const resiOngkir = (resi !== undefined ? resi : p.resi) || p.kode_pesanan || "";
-              await sb("keuangan_transaksi", {
-                method: "POST",
-                body: JSON.stringify({
-                  // Ongkir dicatat pada TANGGAL DATANG barang (isian di form), bukan hari
-                  // saat tombol ditekan. Fallback ke hari ini (jam lokal) hanya
-                  // jaga-jaga kalau tanggalnya kosong.
-                  tanggal: tanggalDatang || (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
-                  tipe: "keluar",
-                  rekening: rekeningOngkir,
-                  kategori: kategoriOngkir,
-                  jumlah: ongkir.jumlah,
-                  // Keterangan pakai No. Resi yang baru diinput di form ini
-                  // (bukan kode_pesanan internal) — resi lebih dikenali gudang/
-                  // finance buat nyocokin ke fisik paketnya. Fallback ke
-                  // resi lama pesanan (kalau field-nya dibiarkan kosong) lalu
-                  // kode_pesanan, cuma buat jaga-jaga kalau resi belum pernah
-                  // diisi sama sekali.
-                  keterangan: `Ongkir · ${resiOngkir}${p.supplier ? ` — ${p.supplier}` : ""}`.trim(),
-                }),
-              });
+              const bodyOngkir = {
+                // Ongkir dicatat pada TANGGAL DATANG barang (isian di form), bukan hari
+                // saat tombol ditekan. Fallback ke hari ini (jam lokal) hanya
+                // jaga-jaga kalau tanggalnya kosong.
+                tanggal: tanggalDatang || (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
+                tipe: "keluar",
+                rekening: rekeningOngkir,
+                kategori: kategoriOngkir,
+                jumlah: ongkir.jumlah,
+                // Keterangan pakai No. Resi yang baru diinput di form ini
+                // (bukan kode_pesanan internal) — resi lebih dikenali gudang/
+                // finance buat nyocokin ke fisik paketnya. Fallback ke
+                // resi lama pesanan (kalau field-nya dibiarkan kosong) lalu
+                // kode_pesanan, cuma buat jaga-jaga kalau resi belum pernah
+                // diisi sama sekali.
+                keterangan: `Ongkir · ${resiOngkir}${p.supplier ? ` — ${p.supplier}` : ""}`.trim(),
+              };
+              // Ongkir pesanan ini sudah pernah dicatat (ditautkan lewat
+              // keuangan_ongkir_id) → baris Keuangan yang SAMA diperbarui,
+              // bukan dibuat ganda tiap kali status dibolak-balik. Kalau
+              // belum pernah / barisnya sudah tidak ada, baru dibuat baru.
+              let barisOngkir = null;
+              if (p.keuangan_ongkir_id) {
+                const hasil = await sb(`keuangan_transaksi?id=eq.${p.keuangan_ongkir_id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify(bodyOngkir),
+                });
+                if (Array.isArray(hasil) && hasil.length > 0) barisOngkir = hasil[0];
+              }
+              if (!barisOngkir) {
+                const hasil = await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(bodyOngkir) });
+                barisOngkir = Array.isArray(hasil) ? hasil[0] : hasil;
+              }
+              // Simpan nominal & tautan ongkir di pesanannya supaya tampil di
+              // Ringkasan Harga (Pesanan Barang) dan ikut terhapus bareng
+              // pesanannya. Dipisah dari PATCH utama + try/catch: kalau kolom
+              // ongkir_jumlah / keuangan_ongkir_id belum dibuat di database
+              // (lihat migrasi_ongkir_pesanan.sql), status kedatangan &
+              // Keuangan tetap tersimpan normal.
+              try {
+                await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ ongkir_jumlah: ongkir.jumlah, keuangan_ongkir_id: barisOngkir?.id || null }),
+                });
+              } catch (e) {
+                console.error("Gagal menyimpan ongkir di pesanan (kolom belum dibuat?):", e);
+              }
             }
           }, `Ditandai ${KONFIRMASI_DATANG_META[akanJadi].label.toLowerCase()}`)
         }

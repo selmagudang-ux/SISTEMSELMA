@@ -150,6 +150,9 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
     (sum, inv) => sum + totalNilaiTransaksi(detailModelPesanan(inv)),
     0
   );
+  // Ongkir (dicatat lewat "Tandai Status Kedatangan") cuma DITAMPILKAN di akhir
+  // Ringkasan Harga — SENGAJA tidak ikut menghitung selisih/diskon di bawah.
+  const totalOngkir = daftarInvoice.reduce((sum, inv) => sum + (Number(inv.ongkir_jumlah) || 0), 0);
   const adaKesepakatan = Number(hargaKesepakatan) > 0;
   const selisih = adaKesepakatan ? nilaiGabungan - Number(hargaKesepakatan) : 0;
   const adaSelisih = adaKesepakatan && selisih !== 0;
@@ -299,6 +302,15 @@ function SemuaInvoicePanel({ daftarInvoice, colSpan, onLihatFoto, hargaKesepakat
                 </>
               ) : (
                 <div className="text-emerald-400 font-semibold pt-1 border-t border-slate-800/60">Sesuai pembayaran</div>
+              )}
+              {totalOngkir > 0 && (
+                <div
+                  className="flex justify-between pt-1.5 mt-0.5 border-t border-slate-800/60 text-slate-400"
+                  title="Ongkir dicatat terpisah di Keuangan — tidak ikut menghitung selisih di atas"
+                >
+                  <span>Ongkir</span>
+                  <span className="text-slate-300 font-medium">{fmtRp(totalOngkir)}</span>
+                </div>
               )}
             </div>
           )}
