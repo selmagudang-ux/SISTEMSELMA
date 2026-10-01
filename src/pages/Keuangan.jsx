@@ -15,6 +15,7 @@ import {
   rekapTahunanData,
   laporanLabaRugi,
   sb,
+  muatKeuanganLama,
 } from "../lib/api";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel } from "../lib/constants";
@@ -1391,7 +1392,22 @@ function BarisAngka({ label, nilai, bold, tinted, tint = "text-slate-100", label
 // (dikelompokkan per kategori pemasukan/pengeluaran, gaya sama seperti
 // workbook Excel SELMA_FINANCE.xlsx), lengkap dengan tombol unduh PDF siap
 // cetak untuk masing-masing.
-function LaporanBulananTahunan({ keuanganTransaksi, master }) {
+function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
+  // App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya; laporan
+  // bulanan/tahunan butuh seluruh histori, jadi data lamanya ditarik sendiri.
+  const [dataLama, setDataLama] = useState([]);
+  const [errLama, setErrLama] = useState("");
+  useEffect(() => {
+    let batal = false;
+    muatKeuanganLama()
+      .then((rows) => { if (!batal) setDataLama(rows); })
+      .catch((e) => { if (!batal) setErrLama(e?.message || "Gagal memuat data lama"); });
+    return () => { batal = true; };
+  }, []);
+  const keuanganTransaksi = useMemo(
+    () => [...(keuanganDimuat || []), ...dataLama],
+    [keuanganDimuat, dataLama]
+  );
   const [mode, setMode] = useState("bulanan"); // "bulanan" | "tahunan"
   const tahunTersedia = daftarTahunTersedia(keuanganTransaksi);
   const [tahun, setTahun] = useState(tahunTersedia[0]);
@@ -1409,6 +1425,11 @@ function LaporanBulananTahunan({ keuanganTransaksi, master }) {
 
   return (
     <div className="rounded-xl border border-slate-800 mb-5 overflow-hidden">
+      {errLama && (
+        <div className="px-4 py-2 text-xs text-amber-400 bg-amber-500/5 border-b border-slate-800">
+          Data bulan-bulan sebelumnya gagal dimuat ({errLama}) — laporan bisa tampak kosong. Muat ulang halaman.
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/30">
         <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1">
           <button
