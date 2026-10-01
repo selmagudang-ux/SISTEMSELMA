@@ -53,6 +53,8 @@ const DEFAULT_LAYOUT = {
   gapY: 2,
   spasiBaris: 2,
   border: true,
+  // Huruf tebal (bold). Matikan kalau hasil cetak terlihat terlalu tebal/blobor (mis. di printer termal).
+  hurufTebal: true,
   // Ukuran huruf per baris pada label (dalam pt) — bisa diatur masing-masing.
   fontRak: 13, // baris kode rak, mis. "G2C-1A"
   fontSku: 13, // baris SKU, mis. "TDCC-SIM-1" (atau "TDCC-SIM-1-KUN" jika warna produk dicentang)
@@ -597,6 +599,15 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             </>
           )}
 
+          <label className="flex items-center gap-2 text-xs text-slate-300 mb-2">
+            <input
+              type="checkbox"
+              checked={layout.hurufTebal}
+              onChange={(e) => setLayout((prev) => ({ ...prev, hurufTebal: e.target.checked }))}
+              className="accent-amber-500"
+            />
+            Huruf tebal (matikan kalau hasil cetak terlihat terlalu tebal)
+          </label>
           <label className="flex items-center gap-2 text-xs text-slate-300">
             <input
               type="checkbox"
@@ -677,18 +688,18 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
             ${layout.border ? "border: 1px solid #000;" : ""}
             text-align: center;
           }
-          .ss-print-rak { font-size: ${layout.fontRak}pt; font-weight: 700; }
-          .ss-print-sku { font-size: ${layout.fontSku}pt; font-weight: 800; }
-          .ss-print-catatan { font-size: ${layout.fontCatatan}pt; font-weight: 700; color: #dc2626; margin-top: 1mm; }
-          .ss-print-kode { font-size: ${layout.fontKode}pt; font-weight: 800; letter-spacing: 0.5px; }
+          .ss-print-rak { font-size: ${layout.fontRak}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; }
+          .ss-print-sku { font-size: ${layout.fontSku}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; }
+          .ss-print-catatan { font-size: ${layout.fontCatatan}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; color: #dc2626; margin-top: 1mm; }
+          .ss-print-kode { font-size: ${layout.fontKode}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; letter-spacing: 0.5px; }
           .ss-print-harga { width: 100%; height: 100%; display: flex; flex-direction: column; gap: ${layout.gapHarga}mm; text-align: left; }
           .ss-print-harga-atas { display: flex; justify-content: space-between; align-items: baseline; line-height: 1; }
-          .ss-print-harga-nama { font-size: ${layout.fontNama}pt; font-weight: 700; }
+          .ss-print-harga-nama { font-size: ${layout.fontNama}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; }
           .ss-print-harga-bar { flex: 1 1 auto; min-height: 0; }
           .ss-print-harga-bawah { display: flex; justify-content: space-between; align-items: baseline; line-height: 1; }
-          .ss-print-harga-kode { font-size: ${layout.fontBawah}pt; font-weight: 700; }
-          .ss-print-harga-rp { font-size: ${layout.fontHarga}pt; font-weight: 800; }
-          .ss-print-harga-kg { font-size: ${layout.fontKodeGrosir}pt; font-weight: 800; letter-spacing: 0.3px; }
+          .ss-print-harga-kode { font-size: ${layout.fontBawah}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; }
+          .ss-print-harga-rp { font-size: ${layout.fontHarga}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; }
+          .ss-print-harga-kg { font-size: ${layout.fontKodeGrosir}pt; font-weight: ${layout.hurufTebal ? 700 : 400}; letter-spacing: 0.3px; }
           .ss-print-barcode { width: 100%; }
           .ss-print-barcode-teks { font-size: 6pt; line-height: 1.1; margin-top: 0.5mm; font-family: Arial, Helvetica, sans-serif; }
         `}</style>
