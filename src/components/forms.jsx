@@ -1669,6 +1669,7 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   const [catatan, setCatatan] = useState(pesanan?.catatan || "");
   const [resi, setResi] = useState(pesanan?.resi || "");
   const [jumlahBox, setJumlahBox] = useState(pesanan?.jumlah_box ?? "");
+  const [ongkir, setOngkir] = useState(pesanan?.ongkir_jumlah ?? "");
 
   const handleFotoBon = (e) => {
     const f = e.target.files?.[0];
@@ -1820,6 +1821,16 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
         </>
       )}
 
+      {!bonTambahan && (
+        <Field label="Ongkir (opsional)">
+          <InputRupiah value={ongkir} onChange={setOngkir} placeholder="Nominal ongkir pesanan ini" />
+          <p className="text-[11px] text-slate-500 mt-1">
+            Dicatat di Keuangan sebagai pengeluaran <span className="text-slate-400 font-medium">Ongkir Barang Datang</span>.
+            Ubah/kosongkan nominalnya untuk memperbarui/menghapus catatan ongkir.
+          </p>
+        </Field>
+      )}
+
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
@@ -1846,6 +1857,7 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
             catatan: catatan.trim() || null,
             resi: bonTambahan ? undefined : resi.trim() || null,
             jumlahBox: bonTambahan ? undefined : jumlahBox === "" ? null : Number(jumlahBox) || 0,
+            ongkir: bonTambahan ? undefined : Number(ongkir) || 0,
           })
         }
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"

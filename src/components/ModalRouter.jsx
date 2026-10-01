@@ -3906,7 +3906,7 @@ export default function ModalRouter({
         onClose={close}
         saving={saving}
         suppliers={suppliers}
-        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan, resi, jumlahBox }) =>
+        onSubmit={({ tanggal, fotoBon, supplier, jenis, models, catatan, resi, jumlahBox, ongkir }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, supplier, models.map((m) => m.nama));
             let fotoBonUrl = p.foto_bon_url || null;
@@ -3955,6 +3955,78 @@ export default function ModalRouter({
                 } else {
                   keuanganDisinkron = true;
                 }
+              }
+            }
+
+            // ONGKIR — bisa diisi/diubah/dikosongkan dari form Edit ini (untuk
+            // pesanan yang sudah ditandai datang, form "Tandai Status
+            // Kedatangan" tidak muncul lagi). Dicatat sebagai Pengeluaran
+            // terpisah di Keuangan (kategori & rekening tetap, pola sama
+            // dengan "Tandai Status Kedatangan"), ditautkan lewat
+            // keuangan_ongkir_id supaya diperbarui — bukan dibuat ganda.
+            let ongkirPesan = "";
+            const ongkirLama = Number(p.ongkir_jumlah) || 0;
+            if (ongkir !== undefined && !p.induk_id && ongkir !== ongkirLama) {
+              // Cek dulu kolomnya ada di database SEBELUM menyentuh Keuangan,
+              // supaya tidak tercipta baris Keuangan yatim kalau migrasi
+              // (kolom ongkir_jumlah / keuangan_ongkir_id) belum dijalankan.
+              try {
+                await sb(`pesanan_masuk?select=ongkir_jumlah,keuangan_ongkir_id&id=eq.${p.id}`);
+              } catch (e) {
+                throw new Error(
+                  "Kolom ongkir belum ada di database (ongkir_jumlah / keuangan_ongkir_id). Jalankan migrasi SQL dulu di Supabase."
+                );
+              }
+              if (ongkir > 0) {
+                const cariAtauBuatMasterTetap = async (tipe, labelTetap) => {
+                  const daftar = master?.[tipe] || [];
+                  const ada = daftar.find((m) => (m.label || "").trim().toLowerCase() === labelTetap.toLowerCase());
+                  if (ada) return ada.kode;
+                  let kode = suggestKode(labelTetap);
+                  if (daftar.some((m) => m.kode === kode)) kode = `${kode}${daftar.length + 1}`;
+                  await sb("master_data", { method: "POST", body: JSON.stringify({ tipe, kode, label: labelTetap }) });
+                  return kode;
+                };
+                const kategoriOngkir = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_ONGKIR_BARANG_DATANG);
+                const rekeningOngkir = await cariAtauBuatMasterTetap("rekening", REKENING_ONGKIR_BARANG_DATANG);
+                const hariIni = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+                const resiOngkir = (resi !== undefined ? resi : p.resi) || p.kode_pesanan || "";
+                const bodyOngkir = {
+                  // Tanggal ongkir = tanggal DATANG barang (fallback hari ini).
+                  tanggal: String(p.tanggal_datang || "").slice(0, 10) || hariIni,
+                  tipe: "keluar",
+                  rekening: rekeningOngkir,
+                  kategori: kategoriOngkir,
+                  jumlah: ongkir,
+                  keterangan: `Ongkir · ${resiOngkir}${supplier ? ` — ${supplier}` : ""}`.trim(),
+                };
+                let barisOngkir = null;
+                if (p.keuangan_ongkir_id) {
+                  const hasil = await sb(`keuangan_transaksi?id=eq.${p.keuangan_ongkir_id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify(bodyOngkir),
+                  });
+                  if (Array.isArray(hasil) && hasil.length > 0) barisOngkir = hasil[0];
+                }
+                if (!barisOngkir) {
+                  const hasil = await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(bodyOngkir) });
+                  barisOngkir = Array.isArray(hasil) ? hasil[0] : hasil;
+                }
+                await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ ongkir_jumlah: ongkir, keuangan_ongkir_id: barisOngkir?.id || null }),
+                });
+                ongkirPesan = " — ongkir dicatat";
+              } else {
+                // Dikosongkan → hapus catatan ongkirnya di Keuangan juga.
+                if (p.keuangan_ongkir_id) {
+                  await sb(`keuangan_transaksi?id=eq.${p.keuangan_ongkir_id}`, { method: "DELETE" });
+                }
+                await sb(`pesanan_masuk?id=eq.${p.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ ongkir_jumlah: null, keuangan_ongkir_id: null }),
+                });
+                ongkirPesan = " — ongkir dihapus";
               }
             }
 
@@ -4037,9 +4109,10 @@ export default function ModalRouter({
                 alasanDilewati.push(`error: ${e.message || e}`);
               }
             }
-            if (itemDisinkron > 0 || alasanDilewati.length > 0 || keuanganDisinkron || keuanganDitolak) {
+            if (itemDisinkron > 0 || alasanDilewati.length > 0 || keuanganDisinkron || keuanganDitolak || ongkirPesan) {
               return (
                 "Riwayat barang datang diperbarui" +
+                ongkirPesan +
                 (keuanganDisinkron ? " — tanggal di Keuangan ikut diperbarui" : "") +
                 (keuanganDitolak ? " — TAPI tanggal di Keuangan gagal diubah (ditolak database, cek izin tabel keuangan_transaksi)" : "") +
                 (itemDisinkron > 0 ? ` — ${itemDisinkron} model di Alur Barang ikut diperbarui` : "") +
