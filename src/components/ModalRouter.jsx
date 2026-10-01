@@ -4083,6 +4083,15 @@ export default function ModalRouter({
     // anak-anaknya dikumpulkan dulu supaya ikut dibersihkan & dihapus lebih
     // dulu daripada induknya (lihat urutan di tombol "Ya, Hapus" di bawah).
     const anakPesanan = (pesananMasuk || []).filter((row) => row.induk_id === p.id);
+    // Baris Pengeluaran "Pesan Barang · ..." di Keuangan yang tertaut ke
+    // pesanan ini (lewat keuangan_transaksi_id, dibuat waktu pesan dicatat)
+    // — ikut dihapus supaya tidak nyangkut di Keuangan setelah pesanannya
+    // hilang. Invoice tambahan (anak) biasanya tidak punya baris sendiri.
+    const idKeuanganTerkait = [p, ...anakPesanan].map((row) => row.keuangan_transaksi_id).filter(Boolean);
+    const rowKeuanganTerkait = idKeuanganTerkait
+      .map((id) => (keuanganTransaksi || []).find((k) => k.id === id))
+      .filter(Boolean);
+    const nominalKeuanganTerkait = rowKeuanganTerkait.reduce((a, k) => a + (Number(k.jumlah) || 0), 0);
     return (
       <ModalShell title="Hapus Riwayat Barang Datang" onClose={close}>
         <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
@@ -4094,6 +4103,15 @@ export default function ModalRouter({
               Semua barang yang tercatat dari transaksi ini (Barang Masuk, SKU, penempatan rak,
               riwayat stok) ikut dihapus. Tindakan ini tidak bisa dibatalkan.
             </div>
+            {idKeuanganTerkait.length > 0 && (
+              <div className="mt-1.5 text-red-200/90">
+                Pengeluaran pesanan ini di Keuangan
+                {rowKeuanganTerkait.length === idKeuanganTerkait.length && nominalKeuanganTerkait > 0
+                  ? ` (${fmtRp(nominalKeuanganTerkait)})`
+                  : ""}{" "}
+                ikut dihapus.
+              </div>
+            )}
             {anakPesanan.length > 0 && (
               <div className="mt-1.5 text-red-200/90">
                 Pesanan ini punya {anakPesanan.length} invoice tambahan ({anakPesanan.map((a) => a.kode_pesanan || a.no_invoice || "—").join(", ")}) — ikut dihapus semua.
@@ -4118,7 +4136,9 @@ export default function ModalRouter({
                 // pesanan_masuk itu sendiri). Dipakai untuk pesanan induk
                 // MAUPUN tiap invoice tambahannya — logikanya identik per
                 // baris, cuma id-nya beda.
-                const hapusSatuPesanan = async (pesananId) => {
+                let keuanganDihapus = 0;
+                let keuanganGagal = 0;
+                const hapusSatuPesanan = async (pesananId, keuanganId) => {
                   // 1) Ambil semua barang (items) yang lahir dari transaksi
                   //    pesanan ini lewat pesanan_penerimaan.
                   const penerimaanList =
@@ -4199,6 +4219,23 @@ export default function ModalRouter({
                   // 3) Baru hapus riwayat penerimaan & baris pesanan ini.
                   await sb(`pesanan_penerimaan?pesanan_id=eq.${pesananId}`, { method: "DELETE" });
                   await sb(`pesanan_masuk?id=eq.${pesananId}`, { method: "DELETE" });
+
+                  // 4) Terakhir, hapus baris Pengeluaran-nya di Keuangan.
+                  //    Harus SETELAH pesanan_masuk terhapus: kolom
+                  //    pesanan_masuk.keuangan_transaksi_id menunjuk ke baris
+                  //    ini (foreign key), jadi kalau dihapus duluan bisa
+                  //    ditolak database. Gagal di sini tidak membatalkan
+                  //    penghapusan pesanan — cuma dilaporkan di pesan akhir.
+                  if (keuanganId) {
+                    try {
+                      const hasil = await sb(`keuangan_transaksi?id=eq.${keuanganId}`, { method: "DELETE" });
+                      if (Array.isArray(hasil) && hasil.length === 0) keuanganGagal += 1;
+                      else keuanganDihapus += 1;
+                    } catch (e) {
+                      console.error("Gagal menghapus baris Keuangan pesanan:", e);
+                      keuanganGagal += 1;
+                    }
+                  }
                 };
 
                 // Invoice tambahan (anakPesanan) HARUS dihapus duluan —
@@ -4207,9 +4244,16 @@ export default function ModalRouter({
                 // (FK constraint) dan tombol ini terlihat seperti tidak
                 // berfungsi. Setelah semua anak beres, baru induknya (p).
                 for (const anak of anakPesanan) {
-                  await hapusSatuPesanan(anak.id);
+                  await hapusSatuPesanan(anak.id, anak.keuangan_transaksi_id);
                 }
-                await hapusSatuPesanan(p.id);
+                await hapusSatuPesanan(p.id, p.keuangan_transaksi_id);
+                return (
+                  "Riwayat pesanan & barang terkait dihapus" +
+                  (keuanganDihapus > 0 ? " — pengeluarannya di Keuangan ikut dihapus" : "") +
+                  (keuanganGagal > 0
+                    ? " — TAPI baris di Keuangan gagal dihapus (ditolak database/sudah tidak ada), cek manual di Keuangan"
+                    : "")
+                );
               }, "Riwayat pesanan & barang terkait dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
