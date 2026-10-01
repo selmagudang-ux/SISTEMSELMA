@@ -819,8 +819,13 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   // Laporan kedatangan — dihitung dari SEMUA pesanan aktif (bukan cuma yang
   // sudah datang, beda dari 2 angka bongkar di atas), supaya kelihatan juga
   // berapa yang masih menunggu ditandai datang.
-  const jumlahSudahDatang = semuaTerfilter.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
-  const jumlahBelumDatang = semuaTerfilter.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
+  // Dihitung dari `list` (baris TOP-LEVEL, satu pesanan = satu hitungan) —
+  // SAMA dengan basis kartu "Total Pesanan", jadi Sudah + Belum = Total.
+  // Bon/invoice tambahan (induk_id) TIDAK dihitung sendiri: statusnya ikut
+  // pesanan induknya, dan di database mereka tidak pernah ditandai "datang"
+  // sendiri, jadi kalau ikut dihitung semuanya salah terbaca "Belum Datang".
+  const jumlahSudahDatang = list.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
+  const jumlahBelumDatang = list.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
 
   // Kalau halaman aktif jadi kelebihan (mis. sebelumnya di halaman 5 lalu
   // sebagian riwayat dihapus sehingga cuma tersisa 2 halaman), tarik balik
