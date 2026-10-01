@@ -165,8 +165,20 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
     [rak, penempatan, skuMap]
   );
 
+  const daftarTampil = showDaftar || q.trim() !== "";
+
   const filteredRak = rakList.filter(
     (r) => r.code.toLowerCase().includes(q.toLowerCase()) || r.occupantSku.toLowerCase().includes(q.toLowerCase())
+  );
+
+  // Baris yang ditampilkan di tabel pemilihan: rak yang SUDAH DICEKLIS selalu
+  // ikut tampil (tidak hilang waktu kolom cari diganti/dikosongkan), ditambah
+  // hasil pencarian / semua rak kalau daftar sedang dibuka.
+  const rowsTampil = rakList.filter(
+    (r) =>
+      selected[r.code] != null ||
+      (daftarTampil &&
+        (r.code.toLowerCase().includes(q.toLowerCase()) || r.occupantSku.toLowerCase().includes(q.toLowerCase())))
   );
 
   const toggle = (key, defaultQty) => {
@@ -183,9 +195,13 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
   };
 
   const pilihSemua = () => {
-    const next = {};
-    filteredRak.forEach((r) => (next[r.code] = { ...DEFAULT_ROW }));
-    setSelected(next);
+    setSelected((prev) => {
+      const next = { ...prev };
+      filteredRak.forEach((r) => {
+        if (next[r.code] == null) next[r.code] = { ...DEFAULT_ROW };
+      });
+      return next;
+    });
   };
   const batalSemua = () => setSelected({});
 
@@ -221,7 +237,6 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
   }, [rakList, selected, skuMap, master]);
 
   const totalTerpilih = Object.keys(selected).length;
-  const daftarTampil = showDaftar || q.trim() !== "";
 
   const cetak = () => {
     if (labels.length === 0) return;
@@ -348,12 +363,14 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
         </div>
 
         {/* ---- Daftar pilihan ---- */}
-        {!daftarTampil ? (
-          <div className="rounded-xl border border-dashed border-slate-800 px-4 py-6 mb-5 text-center text-xs text-slate-500">
-            Ketik kode rak atau SKU di kolom cari, atau klik “Tampilkan Semua Rak”, untuk memilih label yang mau dicetak.
-          </div>
-        ) : filteredRak.length === 0 ? (
-          <EmptyState label="Tidak ada rak yang sedang berisi SKU." />
+        {rowsTampil.length === 0 ? (
+          !daftarTampil ? (
+            <div className="rounded-xl border border-dashed border-slate-800 px-4 py-6 mb-5 text-center text-xs text-slate-500">
+              Ketik kode rak atau SKU di kolom cari, atau klik “Tampilkan Semua Rak”, untuk memilih label yang mau dicetak.
+            </div>
+          ) : (
+            <EmptyState label="Tidak ada rak yang sedang berisi SKU." />
+          )
         ) : (
           <div className="rounded-xl border border-slate-800 overflow-x-auto mb-5">
             <table className="w-full text-sm min-w-[920px]">
@@ -371,7 +388,7 @@ export default function CetakLabel({ penempatan, rak, skuMaster, master }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredRak.map((r) => {
+                {rowsTampil.map((r) => {
                   const s = skuMap[r.occupantSku];
                   const kode = priceCode(s.grosir, s.tengah, s.ecer);
                   return renderRow(r.code, r.code, r.occupantSku, kode, 1);
