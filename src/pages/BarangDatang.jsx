@@ -51,6 +51,32 @@ const jenisColor = (j) => JENIS_COLOR[j] || "slate";
 // supaya perilakunya konsisten di seluruh sistem.
 const BARIS_PER_HALAMAN = 10;
 
+// ---- Periode bulanan (default tabel Pesanan Barang = BULAN INI) ----
+// Tanggal disimpan sebagai string "YYYY-MM-DD" (sama seperti tanggal_pesan),
+// dibuat dari komponen LOKAL supaya tidak geser sehari karena zona waktu.
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoTanggal = (tahun, bulan0, hari) => `${tahun}-${pad2(bulan0 + 1)}-${pad2(hari)}`;
+function rentangBulan(tahun, bulan0) {
+  const hariTerakhir = new Date(tahun, bulan0 + 1, 0).getDate();
+  return { dari: isoTanggal(tahun, bulan0, 1), sampai: isoTanggal(tahun, bulan0, hariTerakhir) };
+}
+function rentangBulanIni() {
+  const now = new Date();
+  return rentangBulan(now.getFullYear(), now.getMonth());
+}
+// Kalau (dari, sampai) persis satu bulan penuh, kembalikan { tahun, bulan0 };
+// selain itu (rentang bebas / kosong) null.
+function bulanDariRentang(dari, sampai) {
+  if (!dari || !sampai) return null;
+  const tahun = Number(dari.slice(0, 4));
+  const bulan0 = Number(dari.slice(5, 7)) - 1;
+  if (Number.isNaN(tahun) || Number.isNaN(bulan0)) return null;
+  const r = rentangBulan(tahun, bulan0);
+  return r.dari === dari && r.sampai === sampai ? { tahun, bulan0 } : null;
+}
+const labelBulan = (tahun, bulan0) =>
+  new Date(tahun, bulan0, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+
 // Ringkasan singkat daftar nama model, dipakai di kolom "Model" supaya tabel
 // tidak perlu diperlebar — nama lengkap per model tetap bisa dilihat dengan
 // membuka baris (lihat SemuaInvoicePanel).
@@ -662,10 +688,38 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   // Filter periode (tanggal_pesan) buat tabel di bawah — "" berarti tidak
   // dibatasi di sisi itu. Ganti tanggal -> balik ke halaman 1 supaya tidak
   // nyangkut di halaman kosong kalau hasil filter barunya lebih sedikit.
-  const [dariTanggal, setDariTanggal] = useState("");
-  const [sampaiTanggal, setSampaiTanggal] = useState("");
+  // DEFAULT = BULAN INI (tgl 1 s/d akhir bulan). Bulan-bulan sebelumnya bisa
+  // dilihat lewat tombol panah bulan, atau pilih "Semua" / tanggal manual.
+  const [dariTanggal, setDariTanggal] = useState(() => rentangBulanIni().dari);
+  const [sampaiTanggal, setSampaiTanggal] = useState(() => rentangBulanIni().sampai);
   const ubahDariTanggal = (v) => { setDariTanggal(v); setHalaman(1); };
   const ubahSampaiTanggal = (v) => { setSampaiTanggal(v); setHalaman(1); };
+  const pilihBulan = (tahun, bulan0) => {
+    const r = rentangBulan(tahun, bulan0);
+    setDariTanggal(r.dari);
+    setSampaiTanggal(r.sampai);
+    setHalaman(1);
+  };
+  const now = new Date();
+  const bulanSekarang = { tahun: now.getFullYear(), bulan0: now.getMonth() };
+  // Bulan acuan untuk tombol panah: bulan yang sedang dipilih, atau (kalau
+  // rentang bebas) bulan dari "Dari Tanggal", atau bulan ini.
+  const bulanTerpilih = bulanDariRentang(dariTanggal, sampaiTanggal);
+  const bulanAcuan =
+    bulanTerpilih ||
+    (dariTanggal
+      ? { tahun: Number(dariTanggal.slice(0, 4)), bulan0: Number(dariTanggal.slice(5, 7)) - 1 }
+      : bulanSekarang);
+  const geserBulan = (delta) => {
+    const d = new Date(bulanAcuan.tahun, bulanAcuan.bulan0 + delta, 1);
+    pilihBulan(d.getFullYear(), d.getMonth());
+  };
+  const sedangBulanIni =
+    bulanTerpilih &&
+    bulanTerpilih.tahun === bulanSekarang.tahun &&
+    bulanTerpilih.bulan0 === bulanSekarang.bulan0;
+  const nextDisabled =
+    bulanAcuan.tahun * 12 + bulanAcuan.bulan0 >= bulanSekarang.tahun * 12 + bulanSekarang.bulan0;
   const toggle = (id) =>
     setExpanded((s) => {
       const next = new Set(s);
@@ -813,9 +867,39 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
       </div>
 
-      {/* Filter periode (berdasar tanggal pesan) — memotong tabel di bawah
-          DAN angka StatCard di atas ikut menyesuaikan. */}
+      {/* Filter periode (berdasar tanggal pesan) — default BULAN INI. Panah
+          untuk pindah bulan; tanggal manual untuk rentang bebas. Tabel di
+          bawah DAN angka StatCard di atas ikut menyesuaikan. */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div>
+          <label className="block text-[11px] uppercase text-slate-500 font-semibold mb-1">Bulan</label>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => geserBulan(-1)}
+              className="p-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800"
+              title="Bulan sebelumnya"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <div className="min-w-[140px] text-center text-sm font-medium text-slate-200 px-2 capitalize">
+              {bulanTerpilih
+                ? labelBulan(bulanTerpilih.tahun, bulanTerpilih.bulan0)
+                : dariTanggal || sampaiTanggal
+                ? "Rentang kustom"
+                : "Semua periode"}
+            </div>
+            <button
+              type="button"
+              onClick={() => geserBulan(1)}
+              disabled={nextDisabled}
+              className="p-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+              title="Bulan berikutnya"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </div>
         <div className="w-40">
           <label className="block text-[11px] uppercase text-slate-500 font-semibold mb-1">Dari Tanggal</label>
           <InputTanggal value={dariTanggal} onChange={ubahDariTanggal} />
@@ -824,14 +908,26 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
           <label className="block text-[11px] uppercase text-slate-500 font-semibold mb-1">Sampai Tanggal</label>
           <InputTanggal value={sampaiTanggal} onChange={ubahSampaiTanggal} />
         </div>
-        {(dariTanggal || sampaiTanggal) && (
-          <button
-            onClick={() => { setDariTanggal(""); setSampaiTanggal(""); setHalaman(1); }}
-            className="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2 mb-2"
-          >
-            Reset periode
-          </button>
-        )}
+        <div className="flex items-center gap-3 mb-2">
+          {!sedangBulanIni && (
+            <button
+              type="button"
+              onClick={() => pilihBulan(bulanSekarang.tahun, bulanSekarang.bulan0)}
+              className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2"
+            >
+              Bulan ini
+            </button>
+          )}
+          {(dariTanggal || sampaiTanggal) && (
+            <button
+              type="button"
+              onClick={() => { setDariTanggal(""); setSampaiTanggal(""); setHalaman(1); }}
+              className="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-2"
+            >
+              Semua periode
+            </button>
+          )}
+        </div>
       </div>
 
       {list.length === 0 ? (
