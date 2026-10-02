@@ -4421,6 +4421,9 @@ export function CairkanDepositForm({
                   <div className="text-[11px] text-slate-500">
                     {ps.created_at ? new Date(ps.created_at).toLocaleString("id-ID") : ""}
                   </div>
+                  {ps.keterangan && (
+                    <div className="text-[11px] text-slate-600 truncate" title={ps.keterangan}>{ps.keterangan}</div>
+                  )}
                 </div>
                 <span className="text-emerald-400 font-semibold shrink-0 ml-2">{fmtRp(ps.sisa)}</span>
               </div>
