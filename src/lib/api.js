@@ -826,6 +826,41 @@ export function saldoDepositPelanggan(pelangganId, depositList) {
     .reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
 }
 
+// Rincian saldo deposit satu pelanggan per sumber pesanan — dipakai di form
+// Pencairan (daftar "Rincian Pesanan", pasangan dari daftar rincian hutang di
+// Penagihan Hutang). Tiap baris grosir_deposit POSITIF (kelebihan bayar/cair)
+// adalah satu sumber; baris NEGATIF (sudah dicairkan / dipakai bayar pesanan)
+// memotong sumber yang paling lama dulu (FIFO), jadi total sisa semua baris =
+// saldoDepositPelanggan(). Hasil: [{id, nomor_pesanan, keterangan, created_at,
+// sisa}] urut dari yang paling lama, hanya yang sisanya > 0.
+export function rincianDepositPelanggan(pelangganId, depositList, pesananList) {
+  const rows = (depositList || [])
+    .filter((d) => d.pelanggan_id === pelangganId)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  let terpakai = rows.reduce((a, d) => a + (Number(d.jumlah) < 0 ? -Number(d.jumlah) : 0), 0);
+  const hasil = [];
+  rows.forEach((d) => {
+    const jml = Number(d.jumlah) || 0;
+    if (jml <= 0) return;
+    const potong = Math.min(jml, terpakai);
+    terpakai -= potong;
+    const sisa = jml - potong;
+    if (sisa <= 0.0001) return;
+    const ps = d.pesanan_id_terkait ? (pesananList || []).find((x) => x.id === d.pesanan_id_terkait) : null;
+    // Kelebihan hasil edit pesanan Cekout sengaja tidak punya pesanan_id_terkait
+    // (lihat ModalRouter) — nomor pesanannya diambil dari teks keterangan.
+    const dariKet = (d.keterangan || "").match(/pesanan\s+(\S+)/i)?.[1];
+    hasil.push({
+      id: d.id,
+      nomor_pesanan: ps?.nomor_pesanan || dariKet || d.nomor_deposit || "Deposit",
+      keterangan: d.keterangan || "",
+      created_at: d.created_at,
+      sisa,
+    });
+  });
+  return hasil;
+}
+
 // Peta {pelangganId: totalSisaHutang} lintas semua pesanan aktif (bukan Batal) milik tiap pelanggan.
 export function totalHutangPerPelanggan(pesananList, pembayaranList) {
   const map = {};

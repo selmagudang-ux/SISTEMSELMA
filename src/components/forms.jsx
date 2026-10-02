@@ -4365,6 +4365,10 @@ export function BayarHutangPelangganForm({
 // bayar/titipan) dan mau dilunasi keluar, bukan dipakai lagi buat pesanan.
 export function CairkanDepositForm({
   pelanggan, saldoDeposit, master, onClose, onSubmit, saving,
+  // Opsional — rincian sumber saldo per pesanan (lihat rincianDepositPelanggan
+  // di lib/api.js). Kalau diisi, tampil "Rincian Pesanan" seperti di form
+  // Bayar Hutang. Kalau kosong/tidak diisi, form tampil seperti sebelumnya.
+  daftarPesanan,
   // Override opsional — dipakai modal "reseller-cekout-cairkan-deposit"
   // (tab "Pencairan" di Reseller > Penagihan atau Pencairan) supaya form
   // yang sama persis ini bisa dipakai ulang dengan kategori pengeluaran &
@@ -4403,6 +4407,27 @@ export function CairkanDepositForm({
           <span className="text-emerald-400 font-semibold">{fmtRp(saldoDeposit)}</span>
         </div>
       </div>
+
+      {daftarPesanan && daftarPesanan.length > 0 && (
+        <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+          <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-900 border-b border-slate-800">
+            Rincian Pesanan ({daftarPesanan.length})
+          </div>
+          <div className="max-h-40 overflow-y-auto divide-y divide-slate-800/70">
+            {daftarPesanan.map((ps) => (
+              <div key={ps.id} className="flex items-center justify-between px-3 py-2 text-xs bg-slate-950">
+                <div className="min-w-0">
+                  <div className="text-slate-200 font-medium truncate">{ps.nomor_pesanan}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {ps.created_at ? new Date(ps.created_at).toLocaleString("id-ID") : ""}
+                  </div>
+                </div>
+                <span className="text-emerald-400 font-semibold shrink-0 ml-2">{fmtRp(ps.sisa)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <p className="text-xs text-slate-500 mb-3">
         {description ||

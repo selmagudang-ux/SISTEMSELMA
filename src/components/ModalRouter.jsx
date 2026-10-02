@@ -4,7 +4,7 @@ import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from
 import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG, KATEGORI_PEMBAYARAN_SUPPLIER, REKENING_PEMBAYARAN_SUPPLIER, REKENING_ONGKIR_BARANG_DATANG } from "../lib/constants";
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
-  totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, todayDDMMYYYY,
+  totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
   detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang,
 } from "../lib/api";
 import {
@@ -3012,11 +3012,13 @@ export default function ModalRouter({
   if (modal.type === "reseller-cekout-cairkan-deposit") {
     const p = modal.item; // p = pelanggan
     const saldoDeposit = saldoDepositPelanggan(p.id, depositGrosir);
+    const daftarRincian = rincianDepositPelanggan(p.id, depositGrosir, pesananGrosir);
 
     return (
       <CairkanDepositForm
         pelanggan={p}
         saldoDeposit={saldoDeposit}
+        daftarPesanan={daftarRincian}
         master={master}
         onClose={close}
         saving={saving}
