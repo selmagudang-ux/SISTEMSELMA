@@ -862,6 +862,13 @@ export function rincianDepositPelanggan(pelangganId, depositList, pesananList) {
       // supaya kelihatan: cair = total pesanan + kelebihan.
       kelebihan: jml,
       total_pesanan: totalPesanan,
+      // Pesanan asalnya sudah tidak ada di data (mis. sudah dihapus) tapi
+      // catatan kelebihannya masih tersisa.
+      yatim: !ps && Boolean(d.pesanan_id_terkait || dariKet),
+      // Belum pernah terpotong pencairan/pemakaian sama sekali — hanya baris
+      // utuh yang boleh dihapus satuan dari form Pencairan (supaya saldo tidak
+      // meleset kalau sebagian sudah dicairkan).
+      utuh: potong <= 0.0001,
       keterangan: d.keterangan || "",
       created_at: d.created_at,
       sisa,

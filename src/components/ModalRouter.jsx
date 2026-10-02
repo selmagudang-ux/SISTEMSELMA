@@ -1877,7 +1877,23 @@ export default function ModalRouter({
                 // jaring pengaman supaya saldo deposit pelanggan tidak jadi
                 // minus.
                 {
-                  const depositTerkaitPesanan = (depositGrosir || []).filter((d) => d.pesanan_id_terkait === p.id);
+                  // Kelebihan bayar hasil EDIT pesanan Cekout sengaja tidak punya
+                  // pesanan_id_terkait (lihat catatan di edit pesanan), jadi
+                  // dikenali lewat teks keterangan persis + pelanggan yang sama
+                  // — supaya tidak tertinggal jadi saldo "yatim" setelah
+                  // pesanannya dihapus.
+                  const ketKelebihanEdit = `Kelebihan bayar akibat edit pesanan ${p.nomor_pesanan}`;
+                  const depositYatimEdit = (depositGrosir || []).filter(
+                    (d) =>
+                      d.pelanggan_id === p.pelanggan_id &&
+                      !d.pesanan_id_terkait &&
+                      (Number(d.jumlah) || 0) > 0 &&
+                      (d.keterangan || "").trim() === ketKelebihanEdit
+                  );
+                  const depositTerkaitPesanan = [
+                    ...(depositGrosir || []).filter((d) => d.pesanan_id_terkait === p.id),
+                    ...depositYatimEdit,
+                  ];
                   const netDariPesananIni = depositTerkaitPesanan.reduce((a, d) => a + (Number(d.jumlah) || 0), 0);
                   const saldoPelangganSaatIni = saldoDepositPelanggan(p.pelanggan_id, depositGrosir);
 
@@ -2019,6 +2035,9 @@ export default function ModalRouter({
                     }
                   } else {
                     await sb(`grosir_deposit?pesanan_id_terkait=eq.${p.id}`, { method: "DELETE" });
+                    for (const d of depositYatimEdit) {
+                      await sb(`grosir_deposit?id=eq.${d.id}`, { method: "DELETE" });
+                    }
                   }
                 }
                 await sb(`grosir_pembayaran?pesanan_id=eq.${p.id}`, { method: "DELETE" });
@@ -3019,6 +3038,19 @@ export default function ModalRouter({
         pelanggan={p}
         saldoDeposit={saldoDeposit}
         daftarPesanan={daftarRincian}
+        onHapusBaris={
+          isSuperadminLike(session?.role)
+            ? (row) =>
+                run(
+                  async () => {
+                    await sb(`grosir_deposit?id=eq.${row.id}`, { method: "DELETE" });
+                    return `Baris ${row.nomor_pesanan} dihapus — saldo deposit berkurang ${fmtRp(row.sisa)}`;
+                  },
+                  "Baris dihapus",
+                  { keepOpen: true }
+                )
+            : undefined
+        }
         master={master}
         onClose={close}
         saving={saving}

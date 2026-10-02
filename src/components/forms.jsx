@@ -4369,6 +4369,10 @@ export function CairkanDepositForm({
   // di lib/api.js). Kalau diisi, tampil "Rincian Pesanan" seperti di form
   // Bayar Hutang. Kalau kosong/tidak diisi, form tampil seperti sebelumnya.
   daftarPesanan,
+  // Opsional — fungsi hapus satu baris kelebihan yang pesanan asalnya sudah
+  // dihapus (baris bertanda yatim & utuh). Kalau tidak diisi, tombol hapus
+  // tidak tampil.
+  onHapusBaris,
   // Override opsional — dipakai modal "reseller-cekout-cairkan-deposit"
   // (tab "Pencairan" di Reseller > Penagihan atau Pencairan) supaya form
   // yang sama persis ini bisa dipakai ulang dengan kategori pengeluaran &
@@ -4384,6 +4388,7 @@ export function CairkanDepositForm({
   const [metodeBayar, setMetodeBayar] = useState("Cash");
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+  const [konfirmasiHapusId, setKonfirmasiHapusId] = useState(null);
 
   const daftarRekening = master?.rekening || [];
   const daftarKategoriKeluar = master?.kategori_keluar || [];
@@ -4430,7 +4435,44 @@ export function CairkanDepositForm({
                     <div className="text-[11px] text-slate-600 truncate" title={ps.keterangan}>{ps.keterangan}</div>
                   )}
                 </div>
-                <span className="text-emerald-400 font-semibold shrink-0 ml-2">{fmtRp(ps.sisa)}</span>
+                <div className="shrink-0 ml-2 text-right">
+                  <div className="text-emerald-400 font-semibold">{fmtRp(ps.sisa)}</div>
+                  {ps.yatim && (
+                    <div className="text-[11px] text-amber-400">Pesanan sudah dihapus</div>
+                  )}
+                  {ps.yatim && onHapusBaris && (
+                    ps.utuh ? (
+                      konfirmasiHapusId === ps.id ? (
+                        <div className="flex items-center justify-end gap-2 mt-1">
+                          <button
+                            disabled={saving}
+                            onClick={async () => { await onHapusBaris(ps); setKonfirmasiHapusId(null); }}
+                            className="text-[11px] font-semibold text-red-400 hover:text-red-300 disabled:opacity-40"
+                          >
+                            Ya, hapus
+                          </button>
+                          <button
+                            disabled={saving}
+                            onClick={() => setKonfirmasiHapusId(null)}
+                            className="text-[11px] text-slate-400 hover:text-slate-200"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          disabled={saving}
+                          onClick={() => setKonfirmasiHapusId(ps.id)}
+                          className="text-[11px] text-red-400 hover:text-red-300 mt-1 disabled:opacity-40"
+                        >
+                          Hapus baris ini
+                        </button>
+                      )
+                    ) : (
+                      <div className="text-[11px] text-slate-500 mt-1">Sebagian sudah dicairkan</div>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </div>
