@@ -1682,3 +1682,4 @@ export async function downloadFotos(fotos, opts = {}) {
 
   const zipBlob = await zip.generateAsync({ type: "blob" });
   triggerBlobDownload(zipBlob, `foto-produk-${new Date().toISOString().slice(0, 10)}.zip`);
+}
