@@ -4413,7 +4413,7 @@ export function CairkanDepositForm({
           <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-900 border-b border-slate-800">
             Rincian Pesanan ({daftarPesanan.length})
           </div>
-          <div className="max-h-40 overflow-y-auto divide-y divide-slate-800/70">
+          <div className="max-h-[60vh] overflow-y-auto divide-y divide-slate-800/70">
             {daftarPesanan.map((ps) => (
               <div key={ps.id} className="flex items-center justify-between px-3 py-2 text-xs bg-slate-950">
                 <div className="min-w-0">
@@ -4421,6 +4421,11 @@ export function CairkanDepositForm({
                   <div className="text-[11px] text-slate-500">
                     {ps.created_at ? new Date(ps.created_at).toLocaleString("id-ID") : ""}
                   </div>
+                  {ps.total_pesanan != null && (
+                    <div className="text-[11px] text-slate-400">
+                      Total pesanan {fmtRp(ps.total_pesanan)} · cair {fmtRp(ps.total_pesanan + (ps.kelebihan || 0))}
+                    </div>
+                  )}
                   {ps.keterangan && (
                     <div className="text-[11px] text-slate-600 truncate" title={ps.keterangan}>{ps.keterangan}</div>
                   )}

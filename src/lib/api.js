@@ -846,13 +846,22 @@ export function rincianDepositPelanggan(pelangganId, depositList, pesananList) {
     terpakai -= potong;
     const sisa = jml - potong;
     if (sisa <= 0.0001) return;
-    const ps = d.pesanan_id_terkait ? (pesananList || []).find((x) => x.id === d.pesanan_id_terkait) : null;
     // Kelebihan hasil edit pesanan Cekout sengaja tidak punya pesanan_id_terkait
     // (lihat ModalRouter) — nomor pesanannya diambil dari teks keterangan.
     const dariKet = (d.keterangan || "").match(/pesanan\s+(\S+)/i)?.[1];
+    const ps = d.pesanan_id_terkait
+      ? (pesananList || []).find((x) => x.id === d.pesanan_id_terkait)
+      : dariKet
+        ? (pesananList || []).find((x) => x.nomor_pesanan === dariKet)
+        : null;
+    const totalPesanan = ps && ps.total != null ? Number(ps.total) || 0 : null;
     hasil.push({
       id: d.id,
       nomor_pesanan: ps?.nomor_pesanan || dariKet || d.nomor_deposit || "Deposit",
+      // Kelebihan asli baris ini (sebelum dipotong pencairan) & total pesanannya,
+      // supaya kelihatan: cair = total pesanan + kelebihan.
+      kelebihan: jml,
+      total_pesanan: totalPesanan,
       keterangan: d.keterangan || "",
       created_at: d.created_at,
       sisa,
