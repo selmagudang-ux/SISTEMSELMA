@@ -41,6 +41,7 @@ import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal,
 import { isEntriTokoOffline } from "./TokoOffline";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
+import PanelBarangHabisPakai from "../components/PanelBarangHabisPakai";
 
 // Tab kecil di atas Dashboard — pisahkan ringkasan Gudang vs Penjualan vs
 // Keuangan vs Absensi supaya masing-masing tetap fokus (angka gudang tidak
@@ -586,6 +587,7 @@ function DashboardGudang({
   const [halamanModelBaru, setHalamanModelBaru] = useState(1);
   const [filterSupplier, setFilterSupplier] = useState(""); // "" = semua supplier
   const [stageTerbuka, setStageTerbuka] = useState(null); // null | salah satu key STAGE_ORDER — tahap yang listnya sedang ditampilkan di tab "Tahapan Barang"
+  const [showHabisPakai, setShowHabisPakai] = useState(false); // panel "Barang Habis Pakai" (data dimuat sendiri oleh PanelBarangHabisPakai saat dibuka)
   const [showDataBarang, setShowDataBarang] = useState(false); // panel "Data Barang" (sumber: skuMaster, sama seperti Master Barang di menu SKU & Harga)
   const [qDataBarang, setQDataBarang] = useState("");
   const [kategoriDataBarang, setKategoriDataBarang] = useState("");
@@ -1060,12 +1062,30 @@ function DashboardGudang({
 
   return (
     <div>
-      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+        <button
+          type="button"
+          onClick={() => {
+            setShowHabisPakai((v) => !v);
+            setTabAlur(null);
+            setShowDataBarang(false);
+          }}
+          className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            showHabisPakai ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+          }`}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+            <ShoppingCart size={17} />
+          </div>
+          <div className="text-base font-semibold text-slate-100">Barang Habis Pakai</div>
+        </button>
+
         <button
           type="button"
           onClick={() => {
             setTabAlur((v) => (v ? null : "diajukan"));
             setShowDataBarang(false);
+            setShowHabisPakai(false);
           }}
           className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
             tabAlur ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
@@ -1082,6 +1102,7 @@ function DashboardGudang({
           onClick={() => {
             setShowDataBarang((v) => !v);
             setTabAlur(null);
+            setShowHabisPakai(false);
           }}
           className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
             showDataBarang ? "border-amber-500/50 bg-slate-900/70" : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
@@ -1093,6 +1114,15 @@ function DashboardGudang({
           <div className="text-base font-semibold text-slate-100">Data Barang</div>
         </button>
       </div>
+
+      {showHabisPakai && (
+        <PanelBarangHabisPakai
+          onNavigate={onNavigate}
+          periodeDari={periodeDari}
+          periodeSampai={periodeSampai}
+          periodeLabel={periodeLabel}
+        />
+      )}
 
       {showDataBarang && (
         <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
