@@ -926,18 +926,26 @@ export function SearchableSelectOrNew({
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-64 overflow-y-auto bg-md-container-highest border border-md-outline-variant rounded-md-md shadow-lg">
           {filtered.length > 0 ? (
-            filtered.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => commitExisting(o)}
-                className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-md-on-surface/10 ${
-                  String(o.value) === String(value) ? "bg-md-primary/15 text-md-primary" : "text-md-on-surface"
-                }`}
-              >
-                {o.label}
-              </button>
+            filtered.map((o, idx) => (
+              <div key={o.value}>
+                {/* Opsi boleh punya field "group" — header muncul tiap kali grup berganti
+                    (opsi harus sudah diurutkan per grup oleh pemanggil). */}
+                {o.group && (idx === 0 || filtered[idx - 1].group !== o.group) && (
+                  <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-md-on-surface-variant bg-md-on-surface/5">
+                    {o.group}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => commitExisting(o)}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm hover:bg-md-on-surface/10 ${
+                    String(o.value) === String(value) ? "bg-md-primary/15 text-md-primary" : "text-md-on-surface"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              </div>
             ))
           ) : !showAddPrompt ? (
             <div className="px-3 py-2 text-xs text-md-on-surface-variant">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_BESAR, KAS_KECIL } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { isSuperadminLike, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
@@ -4571,6 +4571,29 @@ export function CairkanDepositForm({
 // langsung di input polos di bawahnya. Kode untuk entri baru (rekening/
 // kategori) baru dibuat otomatis dari nama yang diketik saat form ini
 // disimpan — lihat penanganannya di ModalRouter.
+// Pilihan Kas Besar/Kas Kecil untuk rekening yang baru diketik di form transaksi.
+function PilihKasBaru({ value, onChange }) {
+  return (
+    <div className="mt-2">
+      <div className="text-[11px] text-slate-500 mb-1">Rekening baru ini masuk ke:</div>
+      <div className="grid grid-cols-2 gap-1.5">
+        {[KAS_BESAR, KAS_KECIL].map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => onChange(k)}
+            className={`py-1.5 rounded-lg text-[11px] font-semibold border ${
+              value === k ? "bg-amber-500/15 border-amber-500/40 text-amber-400" : "border-slate-800 text-slate-400 hover:border-slate-700"
+            }`}
+          >
+            {LABEL_KAS[k]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, reload, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(transaksi?.tanggal || todayIso);
@@ -4581,6 +4604,10 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   const [rekeningTujuan, setRekeningTujuan] = useState(transaksi?.rekening_tujuan || "");
   const [rekeningTujuanBaruKode, setRekeningTujuanBaruKode] = useState("");
   const [rekeningTujuanBaru, setRekeningTujuanBaru] = useState("");
+  // Kas (Besar/Kecil) untuk rekening yang baru diketik — default Kas Kecil,
+  // sama seperti rekening yang belum ditandai (lihat petaKasRekening di lib/api.js).
+  const [kasBaru, setKasBaru] = useState(KAS_KECIL);
+  const [kasTujuanBaru, setKasTujuanBaru] = useState(KAS_KECIL);
   const [kategori, setKategori] = useState(transaksi?.kategori || "");
   const [kategoriBaruKode, setKategoriBaruKode] = useState("");
   const [kategoriBaru, setKategoriBaru] = useState("");
@@ -4594,7 +4621,11 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
 
   const daftarRekening = master?.rekening || [];
   const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
-  const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  // Pilihan rekening dikelompokkan per kas: Kas Besar (holding) dulu, baru Kas Kecil.
+  const petaKas = petaKasRekening(master?.kas_grup);
+  const rekeningOptions = daftarRekening
+    .map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})`, group: LABEL_KAS[kasDariRekening(petaKas, r.kode)] }))
+    .sort((a, b) => (a.group === b.group ? 0 : a.group === LABEL_KAS[KAS_BESAR] ? -1 : 1));
   const kategoriOptions = daftarKategori.map((k) => ({ value: k.kode, label: `${k.label} (${k.kode})` }));
   const isTransfer = tipe === "transfer";
   const isKeluarSaldo = tipe === "keluar" || isTransfer; // dua-duanya narik dari saldo rekening asal
@@ -4638,6 +4669,14 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
     ? (saldoSaatIni.find((r) => r.kode === rekening)?.saldo ?? 0)
     : rekeningBaru.trim()
     ? 0
+    : null;
+
+  // Kas rekening asal/tujuan (yang sudah ada -> dari penanda; yang baru -> pilihan di form).
+  const kasAsal = rekening ? kasDariRekening(petaKas, rekening) : rekeningBaru.trim() ? kasBaru : null;
+  const kasTujuan = rekeningTujuan
+    ? kasDariRekening(petaKas, rekeningTujuan)
+    : rekeningTujuanBaru.trim()
+    ? kasTujuanBaru
     : null;
 
   const rekeningTerisi = !!(rekening || rekeningBaru.trim());
@@ -4719,11 +4758,17 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
           placeholder="Cari rekening yang sudah ada…"
           newPlaceholder="Atau ketik nama rekening baru"
         />
+        {kasAsal && (
+          <div className="text-[11px] mt-1 text-slate-500">
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 mr-1.5">{LABEL_KAS[kasAsal]}</span>
+          </div>
+        )}
         {saldoRekeningAsal !== null && (
           <div className={`text-[11px] mt-1 ${saldoTidakCukup ? "text-red-400" : "text-slate-500"}`}>
             Saldo saat ini: {fmtRp(saldoRekeningAsal)}
           </div>
         )}
+        {!rekening && rekeningBaru.trim() && <PilihKasBaru value={kasBaru} onChange={setKasBaru} />}
       </Field>
 
       {isTransfer && (
@@ -4741,6 +4786,18 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
           />
           {rekeningSamaDenganTujuan && (
             <div className="text-[11px] text-red-400 mt-1">Rekening tujuan tidak boleh sama dengan rekening asal.</div>
+          )}
+          {kasTujuan && (
+            <div className="text-[11px] mt-1 text-slate-500">
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{LABEL_KAS[kasTujuan]}</span>
+            </div>
+          )}
+          {!rekeningTujuan && rekeningTujuanBaru.trim() && <PilihKasBaru value={kasTujuanBaru} onChange={setKasTujuanBaru} />}
+          {kasAsal && kasTujuan && kasAsal !== kasTujuan && !rekeningSamaDenganTujuan && (
+            <div className="text-[11px] text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded-lg px-3 py-2 mt-2">
+              Transfer antar kas: {LABEL_KAS[kasAsal]} → {LABEL_KAS[kasTujuan]}. Dicatat sebagai mutasi saldo, tidak dihitung
+              sebagai pemasukan/pengeluaran di Laba Rugi.
+            </div>
           )}
         </Field>
       )}
@@ -4837,9 +4894,11 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
             rekening: rekening || null,
             rekeningBaruKode: rekeningBaruKode.trim() || null,
             rekeningBaru: rekeningBaru.trim() || null,
+            kasBaru: rekeningBaru.trim() && !rekening ? kasBaru : null,
             rekening_tujuan: isTransfer ? rekeningTujuan || null : null,
             rekeningTujuanBaruKode: isTransfer ? rekeningTujuanBaruKode.trim() || null : null,
             rekeningTujuanBaru: isTransfer ? rekeningTujuanBaru.trim() || null : null,
+            kasTujuanBaru: isTransfer && rekeningTujuanBaru.trim() && !rekeningTujuan ? kasTujuanBaru : null,
             kategori: isTransfer ? null : kategori || null,
             kategoriBaruKode: isTransfer ? null : kategoriBaruKode.trim() || null,
             kategoriBaru: isTransfer ? null : kategoriBaru.trim() || null,
