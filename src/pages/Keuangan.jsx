@@ -5,6 +5,14 @@ import {
   fmtRp,
   ringkasanKeuangan,
   saldoPerRekening,
+  petaKasRekening,
+  kasDariRekening,
+  kasTerkait,
+  ringkasanPerKas,
+  saldoPerKas,
+  LABEL_KAS,
+  KAS_BESAR,
+  KAS_KECIL,
   saldoAwalBulan,
   kodeSaldoAwal,
   arusKasPerPeriode,
@@ -717,7 +725,17 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
   const { data: dataRentang, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   const { list } = ringkasanKeuangan(dataRentang, dari || null, sampai || null);
 
+  // Kas Besar (holding) / Kas Kecil — lihat petaKasRekening() di lib/api.js.
+  const [kasTab, setKasTab] = useState("semua");
+  const petaKas = useMemo(() => petaKasRekening(master.kas_grup), [master.kas_grup]);
+  const saldoKas = useMemo(
+    () => saldoPerKas(saldoPerRekening(keuanganTransaksi, rekeningList, true), petaKas),
+    [keuanganTransaksi, rekeningList, petaKas]
+  );
+  const ringkasKas = kasTab === "semua" ? null : ringkasanPerKas(list, petaKas, kasTab);
+
   const filtered = list
+    .filter((t) => kasTab === "semua" || kasTerkait(t, petaKas).includes(kasTab))
     .filter((t) => !tipeFilter || t.tipe === tipeFilter)
     .filter((t) => {
       const s = q.trim().toLowerCase();
@@ -751,6 +769,47 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
         }
       />
 
+      <div className="flex flex-wrap gap-1.5 mb-3 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {[
+          { key: "semua", label: "Semua" },
+          { key: KAS_BESAR, label: "Kas Besar (Holding)" },
+          { key: KAS_KECIL, label: "Kas Kecil" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setKasTab(t.key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              kasTab === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {kasTab === "semua" ? (
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {[KAS_BESAR, KAS_KECIL].map((k) => (
+            <div key={k} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+                <Landmark size={12} /> Saldo {LABEL_KAS[k]}
+              </div>
+              <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>
+                {fmtRp(saldoKas[k])}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+          <StatCard label="Saldo Saat Ini" value={fmtRp(saldoKas[kasTab])} accent={saldoKas[kasTab] >= 0 ? "text-slate-100" : "text-red-400"} icon={Landmark} iconColor="text-slate-400" />
+          <StatCard label="Pemasukan" value={fmtRp(ringkasKas.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+          <StatCard label="Pengeluaran" value={fmtRp(ringkasKas.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+          <StatCard label="Transfer Masuk" value={fmtRp(ringkasKas.transferMasuk)} accent="text-sky-400" icon={ArrowRightLeft} iconColor="text-sky-500" />
+          <StatCard label="Transfer Keluar" value={fmtRp(ringkasKas.transferKeluar)} accent="text-sky-400" icon={ArrowRightLeft} iconColor="text-sky-500" />
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2">
           <InputTanggal className={`${inputClass} w-auto`} value={dari} onChange={setDari} />
@@ -783,6 +842,9 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
             const kategoriLabel = labelDari(t.tipe === "masuk" ? kategoriMasukList : kategoriKeluarList, t.kategori);
             const rekeningLabel = labelDari(rekeningList, t.rekening);
             const rekeningTujuanLabel = labelDari(rekeningList, t.rekening_tujuan);
+            const kasAsal = kasDariRekening(petaKas, t.rekening);
+            const kasTujuan = isTransfer ? kasDariRekening(petaKas, t.rekening_tujuan) : null;
+            const kasTeks = isTransfer && kasAsal !== kasTujuan ? `${LABEL_KAS[kasAsal]} → ${LABEL_KAS[kasTujuan]}` : LABEL_KAS[kasAsal];
             return (
               <div
                 key={t.id}
@@ -807,6 +869,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                         rekeningLabel
                       )}
                     </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{kasTeks}</span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5 truncate">
                     {formatTanggalID(t.tanggal)}{t.keterangan ? ` · ${t.keterangan}` : ""}
@@ -1187,6 +1250,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   // Saldo per rekening SENGAJA pakai data yang dimuat saja + saldo dasar dari database
   // (bukan dataRentang), supaya transaksi lama tidak terhitung dua kali.
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList, true);
+  const petaKas = petaKasRekening(master.kas_grup);
+  const saldoKas = saldoPerKas(saldoRekening, petaKas);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
   const breakdownMasuk = breakdownPemasukanKategori(list, kategoriMasukList);
@@ -1292,11 +1357,20 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
       {rekeningList.length > 0 && (
         <div className="mb-5">
           <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {[KAS_BESAR, KAS_KECIL].map((k) => (
+              <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-amber-500/5">
+                <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
+                <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(saldoKas[k])}</div>
+              </div>
+            ))}
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {saldoRekening.map((r) => (
               <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
                 <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
                   <Landmark size={12} /> {r.label}
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{LABEL_KAS[kasDariRekening(petaKas, r.kode)]}</span>
                 </div>
                 <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>
                   {fmtRp(r.saldo)}
@@ -1890,6 +1964,31 @@ function RekeningKategori({ master, reload, showToast }) {
   const tabInfo = TAB_KEUANGAN.find((t) => t.key === activeTab) || TAB_KEUANGAN[0];
   const list = master[activeTab] || [];
 
+  // Penanda Kas Besar/Kas Kecil per rekening (master_data tipe "kas_grup").
+  // Tanpa penanda = Kas Kecil, jadi rekening lama otomatis Kas Kecil.
+  const kasGrupList = master.kas_grup || [];
+  const petaKas = petaKasRekening(kasGrupList);
+  const [kasSaving, setKasSaving] = useState(null);
+
+  const setKas = async (m, kas) => {
+    const ada = kasGrupList.find((x) => x.kode === m.kode);
+    setKasSaving(m.id);
+    try {
+      if (kas === KAS_BESAR) {
+        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: KAS_BESAR }) });
+        else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: m.kode, label: KAS_BESAR }) });
+      } else if (ada) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      }
+      await reload();
+      showToast(`${m.label} → ${LABEL_KAS[kas]}`);
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan", "err");
+    } finally {
+      setKasSaving(null);
+    }
+  };
+
   const startEdit = (m) => {
     setEditingId(m.id);
     setEditKode(m.kode);
@@ -1920,6 +2019,11 @@ function RekeningKategori({ master, reload, showToast }) {
         method: "PATCH",
         body: JSON.stringify({ kode: kodeBaru, label: labelBaru }),
       });
+      // Kode rekening diganti -> penanda kasnya ikut pindah ke kode baru.
+      if (activeTab === "rekening" && kodeBaru !== m.kode) {
+        const g = kasGrupList.find((x) => x.kode === m.kode);
+        if (g) await sb(`master_data?id=eq.${g.id}`, { method: "PATCH", body: JSON.stringify({ kode: kodeBaru }) });
+      }
       await reload();
       cancelEdit();
       showToast("Perubahan disimpan");
@@ -1950,9 +2054,13 @@ function RekeningKategori({ master, reload, showToast }) {
     }
   };
 
-  const deleteEntry = async (id) => {
+  const deleteEntry = async (id, kodeRek) => {
     try {
       await sb(`master_data?id=eq.${id}`, { method: "DELETE" });
+      if (activeTab === "rekening" && kodeRek) {
+        const g = kasGrupList.find((x) => x.kode === kodeRek);
+        if (g) await sb(`master_data?id=eq.${g.id}`, { method: "DELETE" });
+      }
       await reload();
       showToast("Dihapus");
     } catch (e) {
@@ -2003,6 +2111,12 @@ function RekeningKategori({ master, reload, showToast }) {
       />
 
       {tabBar}
+
+      {activeTab === "rekening" && (
+        <div className="text-[11px] text-slate-500 mb-3 max-w-lg">
+          Tandai tiap rekening sebagai Kas Besar (holding) atau Kas Kecil. Rekening yang belum ditandai otomatis masuk Kas Kecil.
+        </div>
+      )}
 
       <div className="flex items-end gap-2 mb-4 max-w-lg">
         <div className="flex-1">
@@ -2095,6 +2209,22 @@ function RekeningKategori({ master, reload, showToast }) {
                     <div className="flex items-center gap-3">
                       <span className="font-mono text-xs text-amber-400 w-14">{m.kode}</span>
                       <span className="text-sm text-slate-200">{m.label}</span>
+                      {activeTab === "rekening" && (
+                        <div className="flex rounded-md border border-slate-800 overflow-hidden ml-1">
+                          {[KAS_BESAR, KAS_KECIL].map((k) => (
+                            <button
+                              key={k}
+                              disabled={kasSaving === m.id}
+                              onClick={() => kasDariRekening(petaKas, m.kode) !== k && setKas(m, k)}
+                              className={`px-2 py-0.5 text-[10px] font-medium disabled:opacity-40 ${
+                                kasDariRekening(petaKas, m.kode) === k ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              {LABEL_KAS[k]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
@@ -2105,7 +2235,7 @@ function RekeningKategori({ master, reload, showToast }) {
                         <Pencil size={14} />
                       </button>
                       <button
-                        onClick={() => deleteEntry(m.id)}
+                        onClick={() => deleteEntry(m.id, m.kode)}
                         className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800"
                         title="Hapus"
                       >

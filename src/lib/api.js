@@ -1683,3 +1683,70 @@ export async function downloadFotos(fotos, opts = {}) {
   const zipBlob = await zip.generateAsync({ type: "blob" });
   triggerBlobDownload(zipBlob, `foto-produk-${new Date().toISOString().slice(0, 10)}.zip`);
 }
+
+
+// =========================================================
+// KAS BESAR / KAS KECIL
+// Kas Besar = kas holding. Kas Kecil = kas usaha/operasional (semua rekening
+// lama otomatis masuk sini). Penandaan disimpan di master_data dengan tipe
+// "kas_grup": kode = kode rekening, label = "besar". Rekening yang TIDAK punya
+// baris penanda = Kas Kecil (jadi tidak perlu migrasi data lama).
+// Transfer antar rekening DALAM kas yang sama tidak mengubah saldo kas itu;
+// transfer ANTAR kas (mis. setor ke holding / isi ulang kas kecil) tampil
+// sebagai "transfer masuk/keluar", bukan pemasukan/pengeluaran.
+// =========================================================
+export const KAS_BESAR = "besar";
+export const KAS_KECIL = "kecil";
+export const LABEL_KAS = { besar: "Kas Besar", kecil: "Kas Kecil" };
+
+export function petaKasRekening(kasGrupList) {
+  const peta = {};
+  (kasGrupList || []).forEach((m) => {
+    peta[m.kode] = m.label === KAS_BESAR ? KAS_BESAR : KAS_KECIL;
+  });
+  return peta;
+}
+
+export function kasDariRekening(peta, kodeRekening) {
+  return peta && peta[kodeRekening] === KAS_BESAR ? KAS_BESAR : KAS_KECIL;
+}
+
+// Kas mana saja yang tersentuh satu transaksi (transfer antar kas = dua kas).
+export function kasTerkait(t, peta) {
+  const asal = kasDariRekening(peta, t.rekening);
+  if (t.tipe !== "transfer") return [asal];
+  const tujuan = kasDariRekening(peta, t.rekening_tujuan);
+  return asal === tujuan ? [asal] : [asal, tujuan];
+}
+
+// Ringkasan satu kas dari daftar transaksi (sudah difilter rentang tanggal).
+export function ringkasanPerKas(list, peta, kas) {
+  let masuk = 0;
+  let keluar = 0;
+  let transferMasuk = 0;
+  let transferKeluar = 0;
+  (list || []).forEach((t) => {
+    const j = Number(t.jumlah) || 0;
+    if (t.tipe === "masuk" && kasDariRekening(peta, t.rekening) === kas) masuk += j;
+    else if (t.tipe === "keluar" && kasDariRekening(peta, t.rekening) === kas) keluar += j;
+    else if (t.tipe === "transfer") {
+      const asal = kasDariRekening(peta, t.rekening);
+      const tujuan = kasDariRekening(peta, t.rekening_tujuan);
+      if (asal !== tujuan) {
+        if (asal === kas) transferKeluar += j;
+        if (tujuan === kas) transferMasuk += j;
+      }
+    }
+  });
+  return { masuk, keluar, transferMasuk, transferKeluar };
+}
+
+// Saldo per kas = jumlah saldo rekening-rekening di dalamnya.
+// saldoRekening = hasil saldoPerRekening().
+export function saldoPerKas(saldoRekening, peta) {
+  const hasil = { besar: 0, kecil: 0 };
+  (saldoRekening || []).forEach((r) => {
+    hasil[kasDariRekening(peta, r.kode)] += Number(r.saldo) || 0;
+  });
+  return hasil;
+}
