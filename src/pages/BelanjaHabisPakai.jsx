@@ -32,6 +32,8 @@ import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS
 // =========================================================
 
 const KATEGORI_KEUANGAN = "Barang Habis Pakai";
+// Nilai khusus pilihan kategori: "Barang Habis Pakai" belum ada di master -> dibuat saat simpan.
+const KATEGORI_BARU = "__baru__";
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -904,6 +906,18 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
   const [rekening, setRekening] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Kategori pengeluaran di Keuangan bisa dipilih (tidak semua belanja masuk
+  // "Barang Habis Pakai"). Default-nya "Barang Habis Pakai" — kalau kategori itu
+  // belum ada di master, pilihan default ini membuatnya otomatis saat disimpan.
+  const kategoriList = master.kategori_keluar || [];
+  const kategoriDefault = kategoriList.find((m) => (m.label || "").trim().toLowerCase() === KATEGORI_KEUANGAN.toLowerCase());
+  const [kategoriPilih, setKategoriPilih] = useState(kategoriDefault ? kategoriDefault.kode : KATEGORI_BARU);
+  const kategoriLain = kategoriList.filter((m) => m !== kategoriDefault);
+  const labelKategori =
+    kategoriPilih === KATEGORI_BARU
+      ? KATEGORI_KEUANGAN
+      : kategoriList.find((m) => m.kode === kategoriPilih)?.label || KATEGORI_KEUANGAN;
+
   const grup = (k) => rekeningList.filter((r) => kasDariRekening(petaKas, r.kode) === k);
 
   // Kategori Keuangan "Barang Habis Pakai": pakai yang sudah ada, kalau belum ada dibuat otomatis.
@@ -920,7 +934,7 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
   const bayar = async () => {
     setSaving(true);
     try {
-      const kategori = await cariAtauBuatKategori();
+      const kategori = kategoriPilih === KATEGORI_BARU ? await cariAtauBuatKategori() : kategoriPilih;
       const res = await sb("keuangan_transaksi", {
         method: "POST",
         body: JSON.stringify({
@@ -971,11 +985,21 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
           <div className="text-[11px] text-amber-400 mt-1">Belum ada rekening. Buat dulu di Keuangan → Rekening & Kategori.</div>
         )}
       </Field>
+      <Field label="Kategori di Keuangan">
+        <select className={inputClass} value={kategoriPilih} onChange={(e) => setKategoriPilih(e.target.value)}>
+          <option value={kategoriDefault ? kategoriDefault.kode : KATEGORI_BARU}>{KATEGORI_KEUANGAN}</option>
+          {kategoriLain.map((m) => (
+            <option key={m.kode} value={m.kode}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </Field>
       <Field label="Tanggal bayar">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
       <div className="text-[11px] text-slate-500 mb-3">
-        Tercatat sebagai pengeluaran kategori "{KATEGORI_KEUANGAN}" di Keuangan.
+        Tercatat sebagai pengeluaran kategori "{labelKategori}" di Keuangan.
       </div>
       <button
         disabled={!rekening || Number(belanja.total) <= 0 || saving}
