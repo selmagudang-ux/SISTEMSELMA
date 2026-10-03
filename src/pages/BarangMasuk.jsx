@@ -24,12 +24,13 @@ export default function BarangMasuk({ items, setModal }) {
         <EmptyState label="Belum ada catatan barang masuk." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full text-sm min-w-[560px]">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">Jenis</th>
                 <th className="px-4 py-2.5">Jumlah</th>
+                <th className="px-4 py-2.5">Model/Barcode Supplier</th>
                 <th className="px-4 py-2.5">SKU</th>
                 <th className="px-4 py-2.5">Tahap</th>
               </tr>
@@ -42,6 +43,7 @@ export default function BarangMasuk({ items, setModal }) {
                     <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{i.tanggal}</td>
                     <td className="px-4 py-2.5 text-slate-400">{i.gudang || "—"}</td>
                     <td className="px-4 py-2.5">{i.jumlah}x</td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{i.barcode_supplier || "—"}</td>
                     <td className="px-4 py-2.5 font-mono text-xs">{i.sku || "—"}</td>
                     <td className="px-4 py-2.5">
                       <Badge color={meta.color}>{meta.label}</Badge>

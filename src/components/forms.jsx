@@ -76,7 +76,7 @@ function ModelNamaDatalist({ id, suppliers, supplierNama }) {
 
 // Satu baris input barang masuk (dipakai berulang saat mode banyak-sekaligus).
 function baris(tanggal) {
-  return { tanggal, jenis: "Pembelian", jenisLainnya: "", jumlah: 1 };
+  return { tanggal, jenis: "Pembelian", jenisLainnya: "", jumlah: 1, barcodeSupplier: "" };
 }
 
 export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
@@ -95,7 +95,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
 
   const toPayload = (r) => {
     const gudang = r.jenis === "Lainnya" ? r.jenisLainnya.trim() : r.jenis;
-    return { tanggal: r.tanggal, gudang: gudang || null, jumlah: r.jumlah };
+    return { tanggal: r.tanggal, gudang: gudang || null, jumlah: r.jumlah, barcode_supplier: r.barcodeSupplier.trim() || null };
   };
   const barisValid = (r) => r.jumlah >= 1 && (r.jenis !== "Lainnya" || r.jenisLainnya.trim());
 
@@ -104,6 +104,7 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
   const [jenis, setJenis] = useState("Pembelian");
   const [jenisLainnya, setJenisLainnya] = useState("");
   const [jumlah, setJumlah] = useState(1);
+  const [barcodeSupplier, setBarcodeSupplier] = useState("");
   const gudang = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
 
   if (multi) {
@@ -166,6 +167,14 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
                   onChange={(e) => updateBaris(idx, { jumlah: Number(e.target.value) })}
                 />
               </Field>
+              <Field label="Model/Barcode Supplier (opsional)">
+                <input
+                  className={inputClass}
+                  value={r.barcodeSupplier}
+                  onChange={(e) => updateBaris(idx, { barcodeSupplier: e.target.value })}
+                  placeholder="Kode/nama model dari supplier"
+                />
+              </Field>
             </div>
           ))}
         </div>
@@ -223,9 +232,17 @@ export function BarangMasukForm({ onClose, onSubmit, saving, session }) {
       <Field label="Jumlah">
         <input type="number" min="1" className={inputClass} value={jumlah} onChange={(e) => setJumlah(Number(e.target.value))} />
       </Field>
+      <Field label="Model/Barcode Supplier (opsional)">
+        <input
+          className={inputClass}
+          value={barcodeSupplier}
+          onChange={(e) => setBarcodeSupplier(e.target.value)}
+          placeholder="Kode/nama model dari supplier"
+        />
+      </Field>
       <button
         disabled={saving || jumlah < 1 || (jenis === "Lainnya" && !gudang)}
-        onClick={() => onSubmit({ tanggal, gudang: gudang || null, jumlah })}
+        onClick={() => onSubmit({ tanggal, gudang: gudang || null, jumlah, barcode_supplier: barcodeSupplier.trim() || null })}
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan"}
