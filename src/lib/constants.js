@@ -217,6 +217,9 @@ export const NAV = [
           // supaya bisa dipilih ulang & tidak beda-beda ejaan tiap kali
           // catat barang datang (sama pola dengan "Toko Pengirim" di Grosir).
           { key: "supplier", label: "Data Supplier" },
+          // Pembelian keperluan usaha non-dagangan (bubble wrap, lakban, ATK, dst)
+          // + pantauan stok perlengkapan. Halaman: pages/BelanjaHabisPakai.jsx.
+          { key: "habis-pakai", label: "Belanja Barang Habis Pakai" },
         ],
       },
       { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
