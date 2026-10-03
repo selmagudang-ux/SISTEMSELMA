@@ -1195,6 +1195,7 @@ function MainApp({ session, onLogout }) {
                   master={master}
                   reload={reloadCurrentMenu}
                   showToast={showToast}
+                  session={session}
                 />
               )}
               {nav.menu === "barang-datang" && nav.sub !== "habis-pakai" && (

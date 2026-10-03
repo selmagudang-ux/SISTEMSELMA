@@ -15,6 +15,7 @@ import {
   suggestKode,
 } from "../components/ui";
 import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_BESAR, KAS_KECIL } from "../lib/api";
+import { isSuperadminLike } from "../lib/constants";
 
 // =========================================================
 // BELANJA BARANG HABIS PAKAI (sub-menu Pengadaan Barang)
@@ -47,7 +48,7 @@ function statusStok(p) {
 
 const fmtJumlah = (n) => (Number(n) || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
 
-export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload, showToast }) {
+export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload, showToast, session }) {
   const [tab, setTab] = useState("stok");
   const [stok, setStok] = useState([]);
   const [belanja, setBelanja] = useState([]);
@@ -55,6 +56,8 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
   const [mutasi, setMutasi] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
+  // Edit/hapus riwayat stok hanya untuk superadmin / superappa.
+  const bisaUbahRiwayat = isSuperadminLike(session?.role);
 
   // showToast dari App dibuat ulang tiap render — disimpan di ref supaya muat()
   // stabil dan halaman tidak memuat ulang data terus-menerus.
@@ -155,7 +158,7 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
       ) : tab === "belanja" ? (
         <TabBelanja belanja={belanja} item={item} stok={stok} setModal={setModal} />
       ) : (
-        <TabRiwayat mutasi={mutasi} stok={stok} />
+        <TabRiwayat mutasi={mutasi} stok={stok} bisaUbah={bisaUbahRiwayat} setModal={setModal} />
       )}
 
       {modal?.type === "barang" && (
@@ -188,6 +191,24 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
           belanja={modal.item}
           itemBelanja={item.filter((x) => x.belanja_id === modal.item.id)}
           stok={stok}
+          onClose={() => setModal(null)}
+          onSaved={tutupDanMuat}
+          showToast={showToast}
+        />
+      )}
+      {modal?.type === "edit-mutasi" && bisaUbahRiwayat && (
+        <FormEditMutasi
+          mutasi={modal.item}
+          barang={stok.find((p) => p.id === modal.item.perlengkapan_id)}
+          onClose={() => setModal(null)}
+          onSaved={tutupDanMuat}
+          showToast={showToast}
+        />
+      )}
+      {modal?.type === "hapus-mutasi" && bisaUbahRiwayat && (
+        <KonfirmasiHapusMutasi
+          mutasi={modal.item}
+          barang={stok.find((p) => p.id === modal.item.perlengkapan_id)}
           onClose={() => setModal(null)}
           onSaved={tutupDanMuat}
           showToast={showToast}
@@ -400,7 +421,7 @@ function TabBelanja({ belanja, item, stok, setModal }) {
 // ---------------------------------------------------------
 // TAB: RIWAYAT STOK (100 mutasi terakhir)
 // ---------------------------------------------------------
-function TabRiwayat({ mutasi, stok }) {
+function TabRiwayat({ mutasi, stok, bisaUbah, setModal }) {
   const nama = useMemo(() => Object.fromEntries(stok.map((p) => [p.id, p])), [stok]);
   const META = { masuk: { label: "Masuk", color: "emerald" }, pakai: { label: "Dipakai", color: "red" }, koreksi: { label: "Koreksi", color: "sky" } };
   if (mutasi.length === 0) return <EmptyState label="Belum ada pergerakan stok." />;
@@ -422,14 +443,169 @@ function TabRiwayat({ mutasi, stok }) {
                 {m.keterangan ? ` · ${m.keterangan}` : ""}
               </div>
             </div>
-            <div className={`text-sm font-semibold flex-shrink-0 ${j >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {j >= 0 ? "+" : ""}
-              {fmtJumlah(j)} {p?.satuan || ""}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className={`text-sm font-semibold ${j >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {j >= 0 ? "+" : ""}
+                {fmtJumlah(j)} {p?.satuan || ""}
+              </div>
+              {bisaUbah &&
+                (m.belanja_id ? (
+                  // Stok masuk dari belanja terikat ke rincian & status belanjanya — diubah lewat tab Pembelian.
+                  <span className="text-[10px] text-slate-600 w-[52px] text-right" title="Berasal dari pembelian. Ubah atau hapus lewat tab Pembelian.">
+                    dari belanja
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setModal({ type: "edit-mutasi", item: m })}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800"
+                      title="Edit"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => setModal({ type: "hapus-mutasi", item: m })}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-red-400 hover:bg-slate-800"
+                      title="Hapus"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
             </div>
           </div>
         );
       })}
     </div>
+  );
+}
+
+// ---------------------------------------------------------
+// FORM: EDIT RIWAYAT STOK (superadmin / superappa)
+// Stok dihitung dari jumlah semua mutasi, jadi mengubah mutasi langsung
+// mengubah sisa stok. Perubahan yang membuat stok negatif ditolak.
+// ---------------------------------------------------------
+const META_MUTASI = { masuk: "Masuk", pakai: "Dipakai", koreksi: "Koreksi" };
+
+function FormEditMutasi({ mutasi, barang, onClose, onSaved, showToast }) {
+  const lama = Number(mutasi.jumlah) || 0;
+  const [jumlah, setJumlah] = useState(String(Math.abs(lama)));
+  const [tanda, setTanda] = useState(lama < 0 ? "-" : "+"); // hanya dipakai untuk tipe koreksi
+  const [tanggal, setTanggal] = useState(mutasi.tanggal ? String(mutasi.tanggal).slice(0, 10) : todayIso());
+  const [ket, setKet] = useState(mutasi.keterangan || "");
+  const [saving, setSaving] = useState(false);
+
+  const abs = Number(String(jumlah).replace(",", ".")) || 0;
+  const baru = mutasi.tipe === "pakai" ? -abs : mutasi.tipe === "masuk" ? abs : tanda === "-" ? -abs : abs;
+  const stokSekarang = Number(barang?.stok) || 0;
+  const stokSesudah = stokSekarang - lama + baru;
+  const negatif = stokSesudah < 0;
+  const valid = abs > 0 && !!tanggal && !negatif;
+
+  const simpan = async () => {
+    setSaving(true);
+    try {
+      await sb(`perlengkapan_mutasi?id=eq.${mutasi.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ jumlah: baru, tanggal, keterangan: ket.trim() || null }),
+      });
+      await onSaved("Riwayat stok diperbarui");
+    } catch (e) {
+      showToast?.(e.message || "Gagal menyimpan", "err");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title={`Edit Riwayat: ${barang?.nama || "Barang dihapus"}`} onClose={onClose}>
+      <div className="text-xs text-slate-500 -mt-1 mb-3">
+        Jenis: {META_MUTASI[mutasi.tipe] || mutasi.tipe} · stok sekarang {fmtJumlah(stokSekarang)} {barang?.satuan || ""}
+      </div>
+      {mutasi.tipe === "koreksi" && (
+        <Field label="Arah koreksi">
+          <select className={inputClass} value={tanda} onChange={(e) => setTanda(e.target.value)}>
+            <option value="+">Menambah stok (+)</option>
+            <option value="-">Mengurangi stok (−)</option>
+          </select>
+        </Field>
+      )}
+      <Field label={`Jumlah${barang?.satuan ? ` (${barang.satuan})` : ""}`}>
+        <input className={inputClass} inputMode="decimal" value={jumlah} onChange={(e) => setJumlah(e.target.value)} autoFocus />
+      </Field>
+      <Field label="Tanggal">
+        <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+      <Field label="Keterangan">
+        <input className={inputClass} value={ket} onChange={(e) => setKet(e.target.value)} />
+      </Field>
+      {barang && abs > 0 && (
+        <div className={`text-xs mb-3 ${negatif ? "text-red-400" : "text-slate-400"}`}>
+          {negatif
+            ? `Tidak bisa disimpan: stok akan menjadi ${fmtJumlah(stokSesudah)} ${barang.satuan}.`
+            : `Stok setelah diubah: ${fmtJumlah(stokSesudah)} ${barang.satuan}`}
+        </div>
+      )}
+      <button
+        onClick={simpan}
+        disabled={!valid || saving}
+        className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+      >
+        {saving ? "Menyimpan…" : "Simpan Perubahan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------
+// KONFIRMASI: HAPUS RIWAYAT STOK (superadmin / superappa)
+// ---------------------------------------------------------
+function KonfirmasiHapusMutasi({ mutasi, barang, onClose, onSaved, showToast }) {
+  const [saving, setSaving] = useState(false);
+  const lama = Number(mutasi.jumlah) || 0;
+  const stokSekarang = Number(barang?.stok) || 0;
+  const stokSesudah = stokSekarang - lama;
+  const negatif = stokSesudah < 0;
+
+  const hapus = async () => {
+    setSaving(true);
+    try {
+      await sb(`perlengkapan_mutasi?id=eq.${mutasi.id}`, { method: "DELETE" });
+      await onSaved("Riwayat stok dihapus");
+    } catch (e) {
+      showToast?.(e.message || "Gagal menghapus", "err");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Hapus Riwayat Stok" onClose={onClose}>
+      <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+        <div>
+          Catatan <span className="font-semibold">{META_MUTASI[mutasi.tipe] || mutasi.tipe}</span> {lama >= 0 ? "+" : ""}
+          {fmtJumlah(lama)} {barang?.satuan || ""} pada {formatTanggalID(mutasi.tanggal)} akan dihapus permanen.
+        </div>
+      </div>
+      {barang && (
+        <div className={`text-xs mb-4 ${negatif ? "text-red-400" : "text-slate-400"}`}>
+          {negatif
+            ? `Tidak bisa dihapus: stok ${barang.nama} akan menjadi ${fmtJumlah(stokSesudah)} ${barang.satuan}.`
+            : `Stok ${barang.nama}: ${fmtJumlah(stokSekarang)} → ${fmtJumlah(stokSesudah)} ${barang.satuan}`}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <button onClick={onClose} className="flex-1 border border-slate-700 text-slate-300 text-sm py-2.5 rounded-lg hover:bg-slate-800">
+          Batal
+        </button>
+        <button
+          onClick={hapus}
+          disabled={saving || negatif}
+          className="flex-1 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg"
+        >
+          {saving ? "Menghapus…" : "Hapus"}
+        </button>
+      </div>
+    </ModalShell>
   );
 }
 
