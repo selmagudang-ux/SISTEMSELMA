@@ -12,6 +12,14 @@ import {
   sisaHutangPesanan,
   ringkasanKeuangan,
   saldoPerRekening,
+  petaKasRekening,
+  kasDariRekening,
+  kasTerkait,
+  ringkasanPerKas,
+  saldoPerKas,
+  LABEL_KAS,
+  KAS_BESAR,
+  KAS_KECIL,
   breakdownPengeluaranKategori,
   breakdownPemasukanKategori,
   laporanLabaRugi,
@@ -288,16 +296,31 @@ export default function Dashboard({
   );
 }
 
-function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
   const [detailKategori, setDetailKategori] = useState(null);
   // Kartu toggle (pola sama seperti Dashboard Penjualan/Absensi): klik untuk
   // buka panelnya di bawah, klik lagi untuk menutup. Satu panel dalam satu waktu.
   const [panelAktif, setPanelAktif] = useState("ringkasan");
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
+
+  // Kas Besar (holding) / Kas Kecil — lihat petaKasRekening() di lib/api.js.
+  // "semua" = gabungan keduanya (perilaku lama). Pilihan kas menyaring SEMUA
+  // panel di bawah (ringkasan, laba rugi, arus kas, breakdown, saldo rekening).
+  const [kasTab, setKasTab] = useState("semua");
+  const petaKas = useMemo(() => petaKasRekening(master.kas_grup), [master.kas_grup]);
+  const keuanganTransaksi = useMemo(
+    () => (kasTab === "semua" ? keuanganSemua : (keuanganSemua || []).filter((t) => kasTerkait(t, petaKas).includes(kasTab))),
+    [keuanganSemua, kasTab, petaKas]
+  );
+
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
-  const saldoRekening = saldoPerRekening(keuanganDimuat || keuanganTransaksi, master.rekening || [], true);
+  const saldoRekeningSemua = saldoPerRekening(keuanganDimuat || keuanganSemua, master.rekening || [], true);
+  const saldoKas = saldoPerKas(saldoRekeningSemua, petaKas);
+  const saldoRekening =
+    kasTab === "semua" ? saldoRekeningSemua : saldoRekeningSemua.filter((r) => kasDariRekening(petaKas, r.kode) === kasTab);
   const totalSaldoKas = saldoRekening.reduce((a, r) => a + r.saldo, 0);
+  const transferKas = kasTab === "semua" ? null : ringkasanPerKas(ringkasanBulanIni.list, petaKas, kasTab);
 
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
   // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
@@ -323,6 +346,25 @@ function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [
 
   return (
     <div>
+      <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {[
+          { key: "semua", label: "Semua Kas" },
+          { key: KAS_BESAR, label: "Kas Besar (Holding)" },
+          { key: KAS_KECIL, label: "Kas Kecil" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setKasTab(t.key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              kasTab === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
         <button
           type="button"
@@ -335,7 +377,7 @@ function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [
             <Landmark size={17} />
           </div>
           <div className="text-base font-semibold text-slate-100">Ringkasan</div>
-          <div className="text-[11px] mt-1 text-slate-500">{`Saldo kas ${fmtRp(totalSaldoKas)}`}</div>
+          <div className="text-[11px] mt-1 text-slate-500">{`${kasTab === "semua" ? "Saldo kas" : `Saldo ${LABEL_KAS[kasTab]}`} ${fmtRp(totalSaldoKas)}`}</div>
         </button>
         <button
           type="button"
@@ -393,7 +435,7 @@ function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [
 
       {panelAktif === "ringkasan" && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Saldo Kas Saat Ini" value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
+        <StatCard label={kasTab === "semua" ? "Saldo Kas Saat Ini" : `Saldo ${LABEL_KAS[kasTab]} Saat Ini`} value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
         <StatCard label={`Kas Masuk (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
         <StatCard label={`Kas Keluar (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
         <StatCard
@@ -403,6 +445,17 @@ function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [
           icon={Wallet}
           iconColor={ringkasanBulanIni.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
         />
+        {kasTab === "semua" ? (
+          <>
+            <StatCard label="Saldo Kas Besar (Holding)" value={fmtRp(saldoKas[KAS_BESAR])} icon={Landmark} accent={saldoKas[KAS_BESAR] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
+            <StatCard label="Saldo Kas Kecil" value={fmtRp(saldoKas[KAS_KECIL])} icon={Landmark} accent={saldoKas[KAS_KECIL] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
+          </>
+        ) : (
+          <>
+            <StatCard label={`Transfer Masuk (${periodeLabel})`} value={fmtRp(transferKas.transferMasuk)} icon={TrendingUp} accent="text-sky-400" iconColor="text-sky-500" />
+            <StatCard label={`Transfer Keluar (${periodeLabel})`} value={fmtRp(transferKas.transferKeluar)} icon={TrendingDown} accent="text-sky-400" iconColor="text-sky-500" />
+          </>
+        )}
       </div>
       )}
 
@@ -476,14 +529,29 @@ function DashboardKeuangan({ keuanganTransaksi, keuanganDimuat, pesananMasuk = [
         ) : (
           <table className="w-full text-sm">
             <tbody>
-              {saldoRekening.map((r) => (
-                <tr key={r.kode} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-4 py-2.5 text-slate-300">{r.label}</td>
-                  <td className={`px-4 py-2.5 text-right font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>
-                    {fmtRp(r.saldo)}
-                  </td>
-                </tr>
-              ))}
+              {[KAS_BESAR, KAS_KECIL].map((k) => {
+                const baris = saldoRekening.filter((r) => kasDariRekening(petaKas, r.kode) === k);
+                if (baris.length === 0) return null;
+                const subtotal = baris.reduce((a, r) => a + r.saldo, 0);
+                return (
+                  <Fragment key={k}>
+                    <tr className="bg-slate-900/70 border-b border-slate-800/60">
+                      <td className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-amber-400">{LABEL_KAS[k]}</td>
+                      <td className={`px-4 py-2 text-right text-xs font-semibold ${subtotal < 0 ? "text-red-400" : "text-slate-200"}`}>
+                        {fmtRp(subtotal)}
+                      </td>
+                    </tr>
+                    {baris.map((r) => (
+                      <tr key={r.kode} className="border-b border-slate-800/60 last:border-0">
+                        <td className="px-4 py-2.5 pl-7 text-slate-300">{r.label}</td>
+                        <td className={`px-4 py-2.5 text-right font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>
+                          {fmtRp(r.saldo)}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}
