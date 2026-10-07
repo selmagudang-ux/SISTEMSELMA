@@ -1,9 +1,9 @@
 // =========================================================
 // KONEKSI SUPABASE (REST / PostgREST — anon key)
 // =========================================================
-const SUPABASE_URL = "https://vkkjlnndfvoctnbbpahm.supabase.co";
+const SUPABASE_URL = "https://sewzimjibwehvnosgqss.supabase.co";
 const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZra2psbm5kZnZvY3RuYmJwYWhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4MjI3NjEsImV4cCI6MjEwNjM5ODc2MX0.TEykYrzzgCY0wTL_J8gVa6GCEq0mlTeseILFObZC0GI";
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNld3ppbWppYndlaHZub3NncXNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzMjU1MjMsImV4cCI6MjEwNjkwMTUyM30.BNkpdEzDbjxEY_VFnGh8yCmoJTfxZ_Bw4SY9HfqWim0";
 export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 // Terjemahan kode error Postgres (lewat PostgREST) jadi pesan yang bisa dibaca
