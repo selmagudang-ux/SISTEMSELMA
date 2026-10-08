@@ -1,8 +1,9 @@
 // =========================================================
 // KONEKSI SUPABASE (REST / PostgREST — anon key)
 // =========================================================
-const SUPABASE_URL = "https://sewzimjibwehvnosgqss.supabase.co";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://sewzimjibwehvnosgqss.supabase.co";
 const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNld3ppbWppYndlaHZub3NncXNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzMjU1MjMsImV4cCI6MjEwNjkwMTUyM30.BNkpdEzDbjxEY_VFnGh8yCmoJTfxZ_Bw4SY9HfqWim0";
 export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
