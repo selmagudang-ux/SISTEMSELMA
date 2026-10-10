@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
-  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen,
+  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -376,6 +376,7 @@ export const NAV = [
           { key: "riwayat", label: "Riwayat Perubahan", onlyRole: "superappa" },
         ],
       },
+      { key: "penggajian", label: "Penggajian", icon: Banknote },
     ],
   },
   {

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
-import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2 } from "lucide-react";
+import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2, QrCode, Wallet, History } from "lucide-react";
 import { gantiPasswordKaryawan, getAbsensiSettings, hitungJarakMeter, submitAbsen, daftarShift } from "../lib/absensi";
+import { fmtRp, lihatGajiDariQr, konfirmasiGajiDiterima, riwayatGajiKaryawan, labelPeriodeGaji } from "../lib/api";
+import { ScanKameraModal } from "../components/ScanKamera";
 
 // Form absen Masuk/Pulang untuk karyawan, dipakai setelah login lewat
 // halaman Login gabungan (lib/unifiedLogin.js) — karyawan absen pakai akun
@@ -184,6 +186,8 @@ export function FormAbsen({ session, onLogout }) {
             {submitting ? "Mengirim…" : "Kirim Absen"}
           </button>
         </div>
+
+        <KartuGaji session={session} />
       </div>
     </div>
   );
@@ -255,6 +259,247 @@ function GantiPasswordBox({ karyawanId, onDone }) {
           Batal
         </button>
       </div>
+    </div>
+  );
+}
+
+// =========================================================
+// GAJI — scan QR dari admin, lihat rincian, konfirmasi terima, dan riwayat.
+// Server meminta ID + password karyawan di setiap aksi, jadi password diketik
+// di sini dan hanya ditahan di memori selama alur berlangsung.
+// =========================================================
+const TOKEN_GAJI_RE = /^[0-9a-f]{48}$/;
+const inputGaji =
+  "w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500";
+
+function waktuWib(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" });
+}
+
+function KartuGaji({ session }) {
+  const [scan, setScan] = useState(false);
+  const [token, setToken] = useState("");
+  const [pw, setPw] = useState("");
+  const [rincian, setRincian] = useState(null);
+  const [sukses, setSukses] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const [bukaRiwayat, setBukaRiwayat] = useState(false);
+  const [pwRiwayat, setPwRiwayat] = useState("");
+  const [riwayat, setRiwayat] = useState(null);
+  const [loadingRiwayat, setLoadingRiwayat] = useState(false);
+  const [errorRiwayat, setErrorRiwayat] = useState("");
+
+  const reset = () => {
+    setToken("");
+    setPw("");
+    setRincian(null);
+    setError("");
+  };
+
+  const onDetect = (teks) => {
+    if (!TOKEN_GAJI_RE.test(String(teks || "").trim())) {
+      setError("QR ini bukan QR gaji. Pastikan memindai QR yang diberikan admin.");
+      return;
+    }
+    setSukses(null);
+    setRincian(null);
+    setPw("");
+    setError("");
+    setToken(String(teks).trim());
+  };
+
+  const lihat = async () => {
+    if (!pw) return setError("Password wajib diisi.");
+    setLoading(true);
+    setError("");
+    try {
+      setRincian(await lihatGajiDariQr(session.id_karyawan, pw, token));
+    } catch (e) {
+      setError(e.message || "Gagal membuka rincian gaji.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const konfirmasi = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const r = await konfirmasiGajiDiterima(session.id_karyawan, pw, token);
+      setSukses(r);
+      reset();
+      setRiwayat(null); // riwayat dimuat ulang saat dibuka lagi
+    } catch (e) {
+      setError(e.message || "Gagal mengonfirmasi gaji.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const muatRiwayat = async () => {
+    if (!pwRiwayat) return setErrorRiwayat("Password wajib diisi.");
+    setLoadingRiwayat(true);
+    setErrorRiwayat("");
+    try {
+      setRiwayat(await riwayatGajiKaryawan(session.id_karyawan, pwRiwayat));
+      setPwRiwayat("");
+    } catch (e) {
+      setErrorRiwayat(e.message || "Gagal memuat riwayat gaji.");
+    } finally {
+      setLoadingRiwayat(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 bg-slate-900/50 border border-slate-800 rounded-xl p-5 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold">
+        <Wallet size={16} className="text-amber-400" /> Gaji
+      </div>
+
+      {sukses && (
+        <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg">
+          <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5" />
+          Terima kasih! Gaji periode {labelPeriodeGaji(sukses.periode)} sebesar {fmtRp(sukses.nominal)} sudah tercatat diterima.
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> {error}
+        </div>
+      )}
+
+      {!token && (
+        <button
+          onClick={() => {
+            setError("");
+            setScan(true);
+          }}
+          className="w-full flex items-center justify-center gap-2 border border-amber-500/60 text-amber-400 hover:bg-amber-500/10 font-semibold text-sm py-3 rounded-lg"
+        >
+          <QrCode size={16} /> Scan QR Gaji
+        </button>
+      )}
+
+      {token && !rincian && (
+        <div className="space-y-2.5">
+          <div className="text-xs text-slate-400">QR terbaca. Masukkan password Anda untuk melihat rincian gaji.</div>
+          <input
+            type="password"
+            autoFocus
+            placeholder="Password Anda"
+            className={inputGaji}
+            value={pw}
+            onChange={(e) => setPw(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && lihat()}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={lihat}
+              disabled={loading}
+              className="flex-1 flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {loading && <Loader2 size={14} className="animate-spin" />} Lihat Gaji
+            </button>
+            <button onClick={reset} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold py-2.5 rounded-lg">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      {token && rincian && (
+        <div className="space-y-3">
+          <div className="bg-slate-950 border border-slate-800 rounded-lg p-3.5 text-center">
+            <div className="text-xs text-slate-400">Gaji periode {labelPeriodeGaji(rincian.periode)}</div>
+            <div className="text-2xl font-bold text-amber-400 mt-1">{fmtRp(rincian.nominal)}</div>
+            {rincian.catatan && <div className="text-xs text-slate-400 mt-1.5">Catatan: {rincian.catatan}</div>}
+            <div className="text-[11px] text-slate-500 mt-2">QR berlaku sampai {waktuWib(rincian.kedaluwarsa)}</div>
+          </div>
+          <div className="text-[11px] text-slate-400">
+            Tekan konfirmasi hanya jika uang gaji sudah Anda terima. Konfirmasi tidak bisa dibatalkan.
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={konfirmasi}
+              disabled={loading}
+              className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-sm py-2.5 rounded-lg"
+            >
+              {loading ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Saya sudah terima
+            </button>
+            <button onClick={reset} disabled={loading} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold py-2.5 rounded-lg">
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="border-t border-slate-800 pt-3">
+        <button
+          onClick={() => {
+            setBukaRiwayat((v) => !v);
+            setErrorRiwayat("");
+          }}
+          className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
+        >
+          <History size={12} /> {bukaRiwayat ? "Tutup riwayat gaji" : "Riwayat gaji saya"}
+        </button>
+
+        {bukaRiwayat && riwayat === null && (
+          <div className="mt-2.5 space-y-2">
+            <input
+              type="password"
+              placeholder="Password Anda"
+              className={inputGaji}
+              value={pwRiwayat}
+              onChange={(e) => setPwRiwayat(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && muatRiwayat()}
+            />
+            {errorRiwayat && <div className="text-xs text-red-300">{errorRiwayat}</div>}
+            <button
+              onClick={muatRiwayat}
+              disabled={loadingRiwayat}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-semibold py-2 rounded-lg"
+            >
+              {loadingRiwayat && <Loader2 size={12} className="animate-spin" />} Tampilkan
+            </button>
+          </div>
+        )}
+
+        {bukaRiwayat && riwayat !== null && (
+          <div className="mt-2.5 space-y-1.5">
+            {riwayat.length === 0 ? (
+              <div className="text-xs text-slate-500">Belum ada gaji yang tercatat diterima.</div>
+            ) : (
+              riwayat.map((g) => (
+                <div key={g.id} className="flex items-start justify-between gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+                  <div>
+                    <div className="text-xs text-slate-200">{labelPeriodeGaji(g.periode)}</div>
+                    <div className="text-[11px] text-slate-500">
+                      Diterima {waktuWib(g.diterima_pada)}
+                      {g.cara_diterima === "admin" ? " (dikonfirmasi admin)" : ""}
+                    </div>
+                    {g.catatan && <div className="text-[11px] text-slate-500">{g.catatan}</div>}
+                  </div>
+                  <div className="text-sm font-semibold text-emerald-300 whitespace-nowrap">{fmtRp(g.nominal)}</div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {scan && (
+        <ScanKameraModal
+          format="qr"
+          judul="Scan QR Gaji"
+          onDetect={onDetect}
+          onClose={() => setScan(false)}
+        />
+      )}
     </div>
   );
 }

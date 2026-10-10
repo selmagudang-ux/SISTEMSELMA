@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ScanLine, X, Loader2 } from "lucide-react";
 
-// Scan barcode Code 128 lewat kamera (HP/laptop). Library pembaca (@zxing)
+// Scan barcode Code 128 (default) atau QR (format="qr") lewat kamera HP/laptop.
+// Library pembaca (@zxing)
 // baru di-load saat kamera dibuka, jadi tidak menambah beban awal aplikasi.
 //
 // continuous = false -> tutup otomatis begitu satu barcode terbaca.
 // continuous = true  -> kamera tetap terbuka, tiap barcode yang terbaca
 //                       dikirim ke onDetect (cocok untuk hitung +1 tiap scan).
-export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode" }) {
+export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128" }) {
+  const isQr = format === "qr";
   const videoRef = useRef(null);
   const onDetectRef = useRef(onDetect);
   const onCloseRef = useRef(onClose);
@@ -37,7 +39,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         if (batal) return;
 
         const hints = new Map();
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]);
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [isQr ? BarcodeFormat.QR_CODE : BarcodeFormat.CODE_128]);
         hints.set(DecodeHintType.TRY_HARDER, true);
         const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80 });
 
@@ -85,7 +87,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         // sudah berhenti
       }
     };
-  }, [continuous]);
+  }, [continuous, isQr]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4">
@@ -98,8 +100,11 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         </div>
         <div className="relative bg-black aspect-[4/3]">
           <video ref={videoRef} className="w-full h-full object-cover" playsInline muted autoPlay />
-          {status === "ready" && (
+          {status === "ready" && !isQr && (
             <div className="pointer-events-none absolute inset-x-6 top-1/2 h-0.5 -translate-y-1/2 bg-red-500/80" />
+          )}
+          {status === "ready" && isQr && (
+            <div className="pointer-events-none absolute inset-0 m-auto w-48 h-48 border-2 border-red-500/80 rounded-lg" />
           )}
           {status === "loading" && (
             <div className="absolute inset-0 flex items-center justify-center text-slate-300 text-xs gap-2">
@@ -114,9 +119,16 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         </div>
         <div className="px-4 py-3 text-[11px] text-slate-400">
           {terakhir ? (
-            <span>
-              Terbaca: <span className="font-mono text-amber-300">{terakhir}</span>
-            </span>
+            // Isi QR gaji bersifat rahasia — tidak ditampilkan di layar.
+            isQr ? (
+              <span>QR terbaca.</span>
+            ) : (
+              <span>
+                Terbaca: <span className="font-mono text-amber-300">{terakhir}</span>
+              </span>
+            )
+          ) : isQr ? (
+            "Arahkan kamera ke QR sampai terbaca."
           ) : (
             "Arahkan garis merah ke barcode di stiker."
           )}
@@ -127,7 +139,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
   );
 }
 
-export function TombolScanKamera({ onDetect, continuous = false, label = "Scan", judul }) {
+export function TombolScanKamera({ onDetect, continuous = false, label = "Scan", judul, format }) {
   const [buka, setBuka] = useState(false);
   return (
     <>
@@ -142,6 +154,7 @@ export function TombolScanKamera({ onDetect, continuous = false, label = "Scan",
         <ScanKameraModal
           continuous={continuous}
           judul={judul}
+          format={format}
           onDetect={onDetect}
           onClose={() => setBuka(false)}
         />

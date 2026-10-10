@@ -1751,3 +1751,139 @@ export function saldoPerKas(saldoRekening, peta) {
   });
   return hasil;
 }
+// =========================================================
+// PENGGAJIAN — pemanggil Edge Function gaji-admin & gaji-karyawan
+// Tabel penggajian dikunci total dari anon key (RLS), jadi SEMUA baca/tulis
+// lewat dua Edge Function ini (service_role di server). Jangan pakai sb()
+// untuk tabel ini. Logika gaji (verifikasi password, token QR, transaksi
+// Keuangan) semuanya di server; di sini hanya mengirim permintaan.
+// =========================================================
+async function panggilGaji(fn, body) {
+  const res = await fetchBatas(
+    `${SUPABASE_URL}/functions/v1/${fn}`,
+    {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(body),
+    },
+    TIMEOUT_TULIS_MS,
+    "POST"
+  );
+  const hasil = await res.json().catch(() => null);
+  if (!res.ok || !hasil || hasil.error) {
+    throw new Error(hasil?.error || friendlyDbError(null, res.status) || "Permintaan gaji gagal diproses.");
+  }
+  return hasil;
+}
+
+// ---- Sisi admin (gaji-admin) ----
+// Bentuk request sesuai server: { username, password, aksi, data: {...} }.
+// Server memverifikasi ulang username+password di setiap aksi (password tidak
+// disimpan di browser). Role owner read-only: hanya boleh aksi baca.
+const AKSI_GAJI_BACA = ["cek", "daftar"];
+async function gajiAdmin(aksi, passwordAdmin, data = {}) {
+  if (ROLE_READONLY.includes(roleSaatIni()) && !AKSI_GAJI_BACA.includes(aksi)) {
+    throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menyiapkan, menyerahkan, atau mengubah gaji.");
+  }
+  if (!passwordAdmin) throw new Error("Password admin wajib diisi.");
+  let username = "";
+  try {
+    username = JSON.parse(sessionStorage.getItem(SESSION_KEY_LOKAL) || "{}").username || "";
+  } catch {
+    username = "";
+  }
+  return panggilGaji("gaji-admin", { aksi, username, password: passwordAdmin, data });
+}
+
+// Cek password admin saja (tanpa mengubah data) -> { ok, nama, role }
+export const cekPasswordAdmin = (passwordAdmin) => gajiAdmin("cek", passwordAdmin);
+
+// Daftar gaji (opsional filter: { periode: "2026-10", karyawan_id, status }).
+// Butuh aksi "daftar" di gaji-admin (lihat petunjuk penambahan).
+export const daftarGaji = (passwordAdmin, filter = {}) =>
+  gajiAdmin("daftar", passwordAdmin, filter).then((r) => r.data || []);
+
+// Simpan draft banyak karyawan sekaligus (maks 200 baris).
+// baris: [{ karyawan_id (uuid), periode ("YYYY-MM"), nominal (angka), catatan?, rekening_sumber? }]
+// Hasil: [{ index, ok, id?, tindakan?: "dibuat"|"diperbarui", error? }] — per baris,
+// jadi sebagian bisa berhasil dan sebagian gagal.
+export const simpanDraftGaji = (passwordAdmin, baris) =>
+  gajiAdmin("simpan_draft", passwordAdmin, { baris }).then((r) => r.hasil || []);
+
+// Ubah nominal/catatan/rekening satu draft = simpan draft untuk karyawan+periode
+// yang sama (server memperbarui draft yang sudah ada). Gaji yang sudah
+// diserahkan/diterima tidak bisa diubah; batalkan dulu bila perlu.
+export async function ubahDraftGaji(passwordAdmin, baris) {
+  const hasil = await simpanDraftGaji(passwordAdmin, [baris]);
+  if (!hasil[0]?.ok) throw new Error(hasil[0]?.error || "Gagal menyimpan draft gaji.");
+  return hasil[0];
+}
+
+// "Serahkan gaji": server membuat token QR. berlaku_menit opsional
+// (5 menit – 7 hari, default 1440 = 24 jam). Hasil: { id, token, kedaluwarsa }.
+// Memanggil ulang pada gaji berstatus "diserahkan" membuat token BARU (QR lama mati).
+export const serahkanGaji = (passwordAdmin, id, berlakuMenit) =>
+  gajiAdmin("serahkan", passwordAdmin, berlakuMenit == null ? { id } : { id, berlaku_menit: berlakuMenit });
+
+export const batalkanGaji = (passwordAdmin, id) => gajiAdmin("batal", passwordAdmin, { id });
+
+// Gaji yang sudah diterima ikut menghapus transaksi Keuangan terkait (di server).
+export const hapusGaji = (passwordAdmin, id) => gajiAdmin("hapus", passwordAdmin, { id });
+
+// Cadangan bila karyawan tidak bisa memindai: admin menandai diterima
+// (server mencatat transaksi Keuangan, kategori GAJI).
+export const tandaiGajiDiterimaAdmin = (passwordAdmin, id) =>
+  gajiAdmin("tandai_diterima", passwordAdmin, { id });
+
+// ---- Sisi karyawan (gaji-karyawan) ----
+// Bentuk request sesuai server: { id_karyawan, password, aksi, data }.
+// Server memverifikasi ID + password karyawan di SETIAP aksi, jadi QR milik
+// orang lain ditolak walau ikut terpindai. Password tidak disimpan di sini:
+// halaman yang memanggil hanya memegangnya selama alur scan berlangsung.
+async function gajiKaryawan(aksi, idKaryawan, password, data = {}) {
+  const id = String(idKaryawan || "").trim();
+  if (!id || !password) throw new Error("ID Karyawan dan password wajib diisi.");
+  return panggilGaji("gaji-karyawan", { aksi, id_karyawan: id, password, data });
+}
+
+// Tampilkan rincian gaji dari QR (tidak mengubah apa pun).
+// Hasil: { periode, nominal, catatan, kedaluwarsa }
+export const lihatGajiDariQr = (idKaryawan, password, token) =>
+  gajiKaryawan("lihat", idKaryawan, password, { token });
+
+// Konfirmasi terima: server mencatat transaksi Keuangan + status "diterima".
+// Hasil: { periode, nominal }. QR hanya bisa dipakai satu kali.
+export const konfirmasiGajiDiterima = (idKaryawan, password, token) =>
+  gajiKaryawan("konfirmasi", idKaryawan, password, { token });
+
+// Riwayat gaji yang sudah DITERIMA karyawan itu sendiri (terbaru dulu).
+// Butuh aksi "riwayat" di gaji-karyawan.
+// Tiap baris: { id, periode, nominal, catatan, diterima_pada, cara_diterima }
+export const riwayatGajiKaryawan = (idKaryawan, password) =>
+  gajiKaryawan("riwayat", idKaryawan, password).then((r) => r.data || []);
+
+// Label periode gaji yang enak dibaca (dipakai halaman karyawan):
+//   "2026-10" -> "Oktober 2026" | "2026-10-10" -> "10 Okt 2026"
+//   "2026-10-01_2026-10-15" -> "1 Okt 2026 – 15 Okt 2026"
+export function labelPeriodeGaji(p) {
+  const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const tgl = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+  const pendek = (iso) => {
+    const [y, m, d] = iso.split("-");
+    return `${Number(d)} ${BULAN[Number(m) - 1].slice(0, 3)} ${y}`;
+  };
+  const v = String(p || "");
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(v)) {
+    const [y, m] = v.split("-");
+    return `${BULAN[Number(m) - 1]} ${y}`;
+  }
+  if (tgl.test(v)) return pendek(v);
+  const r = v.split("_");
+  if (r.length === 2 && tgl.test(r[0]) && tgl.test(r[1])) return `${pendek(r[0])} – ${pendek(r[1])}`;
+  return v || "—";
+}
