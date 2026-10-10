@@ -416,6 +416,17 @@ function KartuGaji({ session }) {
           <div className="bg-slate-950 border border-slate-800 rounded-lg p-3.5 text-center">
             <div className="text-xs text-slate-400">Gaji periode {labelPeriodeGaji(rincian.periode)}</div>
             <div className="text-2xl font-bold text-amber-400 mt-1">{fmtRp(rincian.nominal)}</div>
+            {[["gaji_pokok", "Gaji Pokok"], ["premi_jabatan", "Premi Jabatan"], ["premi_kehadiran", "Premi Kehadiran"], ["bonus", "Bonus"]].some(([k]) => Number(rincian[k]) > 0) && (
+              <div className="mt-2 space-y-0.5 text-left">
+                {[["gaji_pokok", "Gaji Pokok"], ["premi_jabatan", "Premi Jabatan"], ["premi_kehadiran", "Premi Kehadiran"], ["bonus", "Bonus"]]
+                  .filter(([k]) => Number(rincian[k]) > 0)
+                  .map(([k, l]) => (
+                    <div key={k} className="flex justify-between text-xs text-slate-300">
+                      <span>{l}</span><span>{fmtRp(rincian[k])}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
             {rincian.catatan && <div className="text-xs text-slate-400 mt-1.5">Catatan: {rincian.catatan}</div>}
             <div className="text-[11px] text-slate-500 mt-2">QR berlaku sampai {waktuWib(rincian.kedaluwarsa)}</div>
           </div>

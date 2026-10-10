@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import QRCode from "qrcode";
-import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw } from "lucide-react";
+import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download } from "lucide-react";
 import {
   PageHeader, EmptyState, Badge, Field, ModalShell, InputRupiah,
   inputClass, btnFilled, btnTonal, btnOutlined, btnText,
@@ -50,6 +50,66 @@ function fmtWaktu(iso) {
   return new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" });
 }
 const sudahKedaluwarsa = (iso) => !!iso && new Date(iso).getTime() < Date.now();
+
+// Komponen gaji. nominal (total) = jumlah semua komponen, jadi menu Keuangan,
+// QR, dan konfirmasi karyawan tetap memakai satu angka total seperti sebelumnya.
+const KOMPONEN = [
+  { k: "gaji_pokok", l: "Gaji Pokok" },
+  { k: "premi_jabatan", l: "Premi Jabatan" },
+  { k: "premi_kehadiran", l: "Premi Kehadiran" },
+  { k: "bonus", l: "Bonus" },
+];
+const angka = (v) => Number(v) || 0;
+const totalKomponen = (v) => KOMPONEN.reduce((s, c) => s + angka(v?.[c.k]), 0);
+// Dari baris gaji server -> nilai komponen. Server lama belum punya kolom rincian:
+// seluruh nominal dianggap gaji pokok supaya total tetap sama.
+const komponenDariGaji = (g) => {
+  const adaRincian = g && g.gaji_pokok !== undefined && g.gaji_pokok !== null;
+  return {
+    gaji_pokok: adaRincian ? g.gaji_pokok : g?.nominal ?? "",
+    premi_jabatan: g?.premi_jabatan ?? "",
+    premi_kehadiran: g?.premi_kehadiran ?? "",
+    bonus: g?.bonus ?? "",
+  };
+};
+
+// Gambar QR siap unduh: nama, periode, nominal, dan masa berlaku ikut tercetak.
+async function buatGambarQr(data) {
+  const qrUrl = await QRCode.toDataURL(data.token, { width: 520, margin: 2, errorCorrectionLevel: "M" });
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = qrUrl;
+  });
+  const W = 640, H = 820;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  x.fillStyle = "#ffffff"; x.fillRect(0, 0, W, H);
+  x.textAlign = "center"; x.fillStyle = "#111827";
+  x.font = "bold 30px sans-serif"; x.fillText("QR GAJI", W / 2, 56);
+  x.font = "bold 28px sans-serif"; x.fillText(data.nama, W / 2, 104);
+  x.fillStyle = "#4b5563"; x.font = "22px sans-serif";
+  x.fillText(`${labelPeriode(data.periode)} · ${fmtRp(data.nominal)}`, W / 2, 142);
+  x.drawImage(img, (W - 520) / 2, 170, 520, 520);
+  x.fillStyle = "#4b5563"; x.font = "20px sans-serif";
+  x.fillText(`Berlaku sampai ${fmtWaktu(data.kedaluwarsa)}`, W / 2, 740);
+  x.fillStyle = "#9ca3af"; x.font = "16px sans-serif";
+  x.fillText("Jangan bagikan QR ini ke orang lain", W / 2, 780);
+  return new Promise((res) => c.toBlob(res, "image/png"));
+}
+async function unduhGambarQr(data) {
+  const blob = await buatGambarQr(data);
+  const aman = (t) => String(t).replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `QR-Gaji-${aman(data.nama)}-${aman(data.periode)}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 export default function Penggajian({ session, master, showToast }) {
   const readOnly = session?.role === "owner"; // owner hanya melihat
@@ -142,18 +202,20 @@ export default function Penggajian({ session, master, showToast }) {
   const nilaiBaris = (kid) => {
     if (edit[kid]) return edit[kid];
     const g = gajiPeriode.get(kid);
-    return g?.status === "draft" ? { nominal: g.nominal, catatan: g.catatan || "" } : { nominal: "", catatan: "" };
+    return g?.status === "draft"
+      ? { ...komponenDariGaji(g), catatan: g.catatan || "" }
+      : { gaji_pokok: "", premi_jabatan: "", premi_kehadiran: "", bonus: "", catatan: "" };
   };
   const ubahBaris = (kid, patch) => setEdit((p) => ({ ...p, [kid]: { ...nilaiBaris(kid), ...patch } }));
 
   const barisTersimpan = !periode ? [] : karyawanAktif.filter((k) => {
     const g = gajiPeriode.get(k.id);
-    return edit[k.id] && (!g || g.status === "draft") && Number(edit[k.id].nominal) > 0;
+    return edit[k.id] && (!g || g.status === "draft") && totalKomponen(edit[k.id]) > 0;
   });
 
   const simpan = async () => {
     if (barisTersimpan.length === 0) {
-      showToast?.("Belum ada nominal yang diisi/diubah.", "err");
+      showToast?.("Belum ada komponen gaji yang diisi/diubah.", "err");
       return;
     }
     setSibuk("simpan");
@@ -161,7 +223,11 @@ export default function Penggajian({ session, master, showToast }) {
       const baris = barisTersimpan.map((k) => ({
         karyawan_id: k.id,
         periode,
-        nominal: Number(edit[k.id].nominal),
+        gaji_pokok: angka(edit[k.id].gaji_pokok),
+        premi_jabatan: angka(edit[k.id].premi_jabatan),
+        premi_kehadiran: angka(edit[k.id].premi_kehadiran),
+        bonus: angka(edit[k.id].bonus),
+        nominal: totalKomponen(edit[k.id]),
         catatan: edit[k.id].catatan || null,
         rekening_sumber: rekening || null,
       }));
@@ -199,8 +265,16 @@ export default function Penggajian({ session, master, showToast }) {
     }
   };
 
-  const bukaQr = (g, token, kedaluwarsa) =>
-    setQr({ nama: peta.get(g.karyawan_id)?.nama || "—", periode: g.periode, nominal: g.nominal, token, kedaluwarsa });
+  const dataQr = (g, token, kedaluwarsa) =>
+    ({ nama: peta.get(g.karyawan_id)?.nama || "—", periode: g.periode, nominal: g.nominal, token, kedaluwarsa });
+  const bukaQr = (g, token, kedaluwarsa) => setQr(dataQr(g, token, kedaluwarsa));
+  const unduhQr = async (g) => {
+    try {
+      await unduhGambarQr(dataQr(g, g.token_qr, g.token_kedaluwarsa));
+    } catch {
+      showToast?.("Gagal mengunduh QR.", "err");
+    }
+  };
 
   const serahkan = async (g) => {
     const hasil = await jalankan(g, () => serahkanGaji(pw, g.id, berlaku));
@@ -240,6 +314,11 @@ export default function Penggajian({ session, master, showToast }) {
         {g.status === "diserahkan" && !kedaluwarsa && g.token_qr && (
           <button disabled={proses} className={btnText} onClick={() => bukaQr(g, g.token_qr, g.token_kedaluwarsa)}>
             Lihat QR
+          </button>
+        )}
+        {g.status === "diserahkan" && !kedaluwarsa && g.token_qr && (
+          <button disabled={proses} className={btnText} onClick={() => unduhQr(g)}>
+            <Download size={14} /> Unduh QR
           </button>
         )}
         {g.status === "diserahkan" && (
@@ -286,7 +365,7 @@ export default function Penggajian({ session, master, showToast }) {
     );
   }
 
-  const totalDraft = karyawanAktif.reduce((s, k) => s + (Number(nilaiBaris(k.id).nominal) || 0), 0);
+  const totalDraft = karyawanAktif.reduce((s, k) => s + (totalKomponen(nilaiBaris(k.id))), 0);
   const riwayat = gaji.filter((g) => !filterKaryawan || g.karyawan_id === filterKaryawan);
 
   return (
@@ -367,8 +446,9 @@ export default function Penggajian({ session, master, showToast }) {
                 <thead>
                   <tr className="text-left text-xs text-md-on-surface-variant">
                     <th className="px-4 py-3">Karyawan</th>
-                    <th className="px-2 py-3 w-44">Nominal</th>
-                    <th className="px-2 py-3">Catatan</th>
+                    {KOMPONEN.map((c) => <th key={c.k} className="px-2 py-3 min-w-[9rem]">{c.l}</th>)}
+                    <th className="px-2 py-3 min-w-[8rem]">Total</th>
+                    <th className="px-2 py-3 min-w-[10rem]">Catatan</th>
                     <th className="px-2 py-3">Status</th>
                     <th className="px-4 py-3 text-right">Aksi</th>
                   </tr>
@@ -384,12 +464,17 @@ export default function Penggajian({ session, master, showToast }) {
                           <div className="text-md-on-surface">{k.nama}</div>
                           <div className="text-[11px] text-md-on-surface-variant">{k.id_karyawan}</div>
                         </td>
-                        <td className="px-2 py-2">
-                          {terkunci ? (
-                            <span>{g ? fmtRp(g.nominal) : "—"}</span>
-                          ) : (
-                            <InputRupiah value={v.nominal} onChange={(n) => ubahBaris(k.id, { nominal: n })} placeholder="0" />
-                          )}
+                        {KOMPONEN.map((c) => (
+                          <td key={c.k} className="px-2 py-2">
+                            {terkunci ? (
+                              <span>{g ? fmtRp(angka(komponenDariGaji(g)[c.k])) : "—"}</span>
+                            ) : (
+                              <InputRupiah value={v[c.k]} onChange={(n) => ubahBaris(k.id, { [c.k]: n })} placeholder="0" />
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-2 py-2 font-medium text-md-on-surface">
+                          {terkunci ? (g ? fmtRp(g.nominal) : "—") : fmtRp(totalKomponen(v))}
                         </td>
                         <td className="px-2 py-2">
                           {terkunci ? (
@@ -468,7 +553,14 @@ export default function Penggajian({ session, master, showToast }) {
                         {peta.get(g.karyawan_id)?.nama || "—"}
                         {g.catatan && <div className="text-[11px] text-md-on-surface-variant">{g.catatan}</div>}
                       </td>
-                      <td className="px-2 py-2">{fmtRp(g.nominal)}</td>
+                      <td className="px-2 py-2">
+                        {fmtRp(g.nominal)}
+                        {g.gaji_pokok !== undefined && g.gaji_pokok !== null && (
+                          <div className="text-[11px] text-md-on-surface-variant leading-snug">
+                            {KOMPONEN.filter((c) => angka(g[c.k]) > 0).map((c) => `${c.l} ${fmtRp(g[c.k])}`).join(" · ")}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-2 py-2"><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge></td>
                       <td className="px-2 py-2 text-md-on-surface-variant">
                         {g.diterima_pada ? `${fmtWaktu(g.diterima_pada)} (${g.cara_diterima === "admin" ? "oleh admin" : "scan QR"})` : "—"}
@@ -490,6 +582,11 @@ export default function Penggajian({ session, master, showToast }) {
 
 function ModalQr({ data, onClose }) {
   const [gambar, setGambar] = useState(null);
+  const [mengunduh, setMengunduh] = useState(false);
+  const unduh = async () => {
+    setMengunduh(true);
+    try { await unduhGambarQr(data); } finally { setMengunduh(false); }
+  };
   useEffect(() => {
     QRCode.toDataURL(data.token, { width: 320, margin: 2, errorCorrectionLevel: "M" })
       .then(setGambar)
@@ -515,7 +612,12 @@ function ModalQr({ data, onClose }) {
         <p className="text-[11px] text-md-on-surface-variant mt-2">
           Minta karyawan memindai QR ini dari halaman absen di HP-nya. Jangan kirim QR ke orang lain.
         </p>
-        <button className={btnFilled + " mt-4"} onClick={onClose}>Tutup</button>
+        <div className="flex justify-center gap-2 mt-4">
+          <button className={btnFilled} onClick={unduh} disabled={!gambar || mengunduh}>
+            {mengunduh ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Unduh QR
+          </button>
+          <button className={btnOutlined} onClick={onClose}>Tutup</button>
+        </div>
       </div>
     </ModalShell>
   );
