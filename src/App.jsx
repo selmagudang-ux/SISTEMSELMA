@@ -42,6 +42,7 @@ const TokoOffline = lazy(() => import("./pages/TokoOffline"));
 const Penjualanmarketplace = lazy(() => import("./pages/Penjualanmarketplace"));
 const Reseller = lazy(() => import("./pages/Reseller"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
+const Penggajian = lazy(() => import("./pages/Penggajian"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
 const Absensi = lazy(() => import("./pages/Absensi"));
 const Panduan = lazy(() => import("./pages/Panduan"));
@@ -1352,6 +1353,9 @@ function MainApp({ session, onLogout }) {
                   showToast={showToast}
                   setModal={setModal}
                 />
+              )}
+              {nav.menu === "penggajian" && (
+                <Penggajian session={session} master={master} showToast={showToast} />
               )}
               {nav.menu === "absensi" && (
                 <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} />
