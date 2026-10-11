@@ -14,6 +14,7 @@ import {
   PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm, BatalkanPesananForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
+import { TempatkanRakBanyakForm } from "./TempatkanRakBanyakForm";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 
@@ -5085,6 +5086,43 @@ export default function ModalRouter({
               body: JSON.stringify(patchItem),
             });
           }, "Barang ditempatkan di rak")
+        }
+      />
+    );
+  }
+
+  // Tempatkan BANYAK barang (tahap "rak") ke SATU rak sekaligus — dipicu dari
+  // checklist di halaman Alur Barang (DataBarang.jsx). Logika per item sama
+  // persis dengan "advance-rak": catat penempatan, lalu pindahkan tahap item
+  // sesuai stage_setelah_rak (default "verifikasi").
+  if (modal.type === "advance-rak-banyak") {
+    const itemsTerpilih = modal.items || [];
+    return (
+      <TempatkanRakBanyakForm
+        items={itemsTerpilih}
+        rakList={rakList}
+        penempatan={penempatan}
+        skuMaster={skuMaster}
+        onClose={close}
+        saving={saving}
+        onSubmit={(rakCode, qtyMap) =>
+          run(async () => {
+            for (const it of itemsTerpilih) {
+              const qty = Number(qtyMap[it.id]) || it.jumlah || 1;
+              await sb("penempatan", {
+                method: "POST",
+                body: JSON.stringify({ sku: it.sku, rak_code: rakCode, qty }),
+              });
+              const tujuan = it.stage_setelah_rak || "verifikasi";
+              await sb(`items?id=eq.${it.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  rak_code: rakCode,
+                  stage: tujuan === "selesai" ? "selesai" : tujuan === "menunggu-harga" ? "menunggu-harga" : "verifikasi",
+                }),
+              });
+            }
+          }, `${itemsTerpilih.length} SKU ditempatkan di rak`)
         }
       />
     );

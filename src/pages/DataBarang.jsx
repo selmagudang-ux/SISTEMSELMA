@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Search, Camera, Download, Plus } from "lucide-react";
+import { Search, Camera, Download, Plus, MapPin, X, CheckCircle2, Circle } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { STAGE_META } from "../lib/constants";
+import { STAGE_META, canAdvanceStage } from "../lib/constants";
 import { downloadCsv } from "../lib/api";
 import { rakForSku } from "./Rak";
 
@@ -16,12 +16,24 @@ const jenisColor = (j) => JENIS_COLOR[j] || "slate";
 // tabel tidak memanjang tanpa batas begitu datanya ratusan baris.
 const BARIS_PER_HALAMAN = 10;
 
-export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
+export default function DataBarang({ items, penempatan, skuMaster, setModal, session }) {
   const [q, setQ] = useState("");
   // "" = semua tahap. Filter ini berdiri sendiri dari pencarian teks (q) —
   // keduanya digabung (AND) di `filtered` di bawah.
   const [tahapFilter, setTahapFilter] = useState("");
   const [halaman, setHalaman] = useState(1);
+  // Pilihan untuk aksi banyak "Tempatkan di 1 Rak" — hanya baris tahap "Rak"
+  // (sudah punya SKU, belum ditempatkan). Dipertahankan antar halaman supaya
+  // bisa centang barang dari beberapa halaman sekaligus.
+  const [selected, setSelected] = useState(() => new Set());
+  const bolehTempatkan = canAdvanceStage(session?.role, "rak");
+  const bisaDipilih = (i) => bolehTempatkan && i.stage === "rak" && !!i.sku;
+  const toggleSelect = (id) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   // Kode rak diambil dari data penempatan terbaru (sumber yang sama dengan Peta Rak),
   // BUKAN dari field items.rak_code yang bisa basi kalau SKU-nya sudah dipindah rak.
@@ -76,6 +88,19 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
     (halamanAktif - 1) * BARIS_PER_HALAMAN,
     halamanAktif * BARIS_PER_HALAMAN
   );
+
+  // Hanya yang MASIH tahap "Rak" yang dihitung (yang barusan disimpan otomatis gugur).
+  const itemsTerpilih = items.filter((i) => selected.has(i.id) && bisaDipilih(i));
+  const dapatDipilihDiHalaman = paged.filter(bisaDipilih);
+  const semuaHalamanTerpilih =
+    dapatDipilihDiHalaman.length > 0 && dapatDipilihDiHalaman.every((i) => selected.has(i.id));
+  const togglePilihHalaman = () =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (semuaHalamanTerpilih) dapatDipilihDiHalaman.forEach((i) => next.delete(i.id));
+      else dapatDipilihDiHalaman.forEach((i) => next.add(i.id));
+      return next;
+    });
 
   const handleDownload = () => {
     downloadCsv(
@@ -165,6 +190,20 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
           <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
+                {bolehTempatkan && (
+                  <th className="px-3 py-2.5 w-8">
+                    {dapatDipilihDiHalaman.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={togglePilihHalaman}
+                        className={semuaHalamanTerpilih ? "text-amber-400" : "text-slate-600 hover:text-slate-300"}
+                        title="Pilih semua barang tahap Rak di halaman ini"
+                      >
+                        {semuaHalamanTerpilih ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                      </button>
+                    )}
+                  </th>
+                )}
                 <th className="px-4 py-2.5">Foto</th>
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">SKU</th>
@@ -185,6 +224,20 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
                     className="border-b border-slate-800/60 last:border-0 hover:bg-slate-900/50 cursor-pointer"
                     onClick={() => setModal({ type: "detail-item", item: i })}
                   >
+                    {bolehTempatkan && (
+                      <td className="px-3 py-2.5 w-8" onClick={(e) => e.stopPropagation()}>
+                        {bisaDipilih(i) && (
+                          <button
+                            type="button"
+                            onClick={() => toggleSelect(i.id)}
+                            className={selected.has(i.id) ? "text-amber-400" : "text-slate-600 hover:text-slate-300"}
+                            title={selected.has(i.id) ? "Batalkan pilih" : "Pilih untuk ditempatkan ke 1 rak"}
+                          >
+                            {selected.has(i.id) ? <CheckCircle2 size={16} /> : <Circle size={16} />}
+                          </button>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-2.5">
                       {i.foto_url ? (
                         <img src={i.foto_url} alt={i.sku} loading="lazy" decoding="async" className="w-9 h-9 object-cover rounded-md border border-slate-800" />
@@ -257,6 +310,23 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
             </div>
           </div>
         )}
+        </div>
+      )}
+
+      {itemsTerpilih.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-slate-900 border border-amber-500/40 rounded-xl shadow-lg px-4 py-2.5">
+          <span className="text-xs text-slate-300">
+            <span className="text-amber-400 font-semibold">{itemsTerpilih.length}</span> SKU dipilih
+          </span>
+          <button
+            onClick={() => setModal({ type: "advance-rak-banyak", items: itemsTerpilih })}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg"
+          >
+            <MapPin size={13} /> Tempatkan di 1 Rak
+          </button>
+          <button onClick={() => setSelected(new Set())} className="text-slate-500 hover:text-red-400" title="Batal pilih">
+            <X size={16} />
+          </button>
         </div>
       )}
     </div>
