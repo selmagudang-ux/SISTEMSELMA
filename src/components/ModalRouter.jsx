@@ -14,6 +14,7 @@ import {
   PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm, BatalkanPesananForm,
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
+import { TempatkanRakBanyakForm } from "./TempatkanRakBanyakForm";
 import { changeOwnPassword } from "../lib/auth";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 
@@ -5085,6 +5086,59 @@ export default function ModalRouter({
               body: JSON.stringify(patchItem),
             });
           }, "Barang ditempatkan di rak")
+        }
+      />
+    );
+  }
+
+  // Tempatkan BANYAK barang (tahap "rak") ke SATU rak sekaligus — dipicu dari
+  // checklist di halaman Alur Barang (DataBarang.jsx). Logika per item sama
+  // persis dengan "advance-rak": catat penempatan, lalu pindahkan tahap item
+  // sesuai stage_setelah_rak (default "verifikasi").
+  if (modal.type === "advance-rak-banyak") {
+    const itemsTerpilih = modal.items || [];
+    return (
+      <TempatkanRakBanyakForm
+        items={itemsTerpilih}
+        rakList={rakList}
+        penempatan={penempatan}
+        skuMaster={skuMaster}
+        onClose={close}
+        saving={saving}
+        onSubmit={(rakCode, qtyMap) =>
+          run(async () => {
+            // Digabung jadi sedikit request (bukan 2 request per SKU) supaya
+            // cepat walau koneksi lambat: 1 request POST array untuk semua
+            // penempatan (atomik — semua masuk atau tidak sama sekali), lalu
+            // PATCH tahap item per kelompok tujuan (maks 50 id per request).
+            await sb("penempatan", {
+              method: "POST",
+              prefer: "return=minimal",
+              body: JSON.stringify(
+                itemsTerpilih.map((it) => ({
+                  sku: it.sku,
+                  rak_code: rakCode,
+                  qty: Number(qtyMap[it.id]) || it.jumlah || 1,
+                })).filter((r) => r.qty >= 1)
+              ),
+            });
+            const perTujuan = {};
+            for (const it of itemsTerpilih) {
+              const t = it.stage_setelah_rak || "verifikasi";
+              const stage = t === "selesai" ? "selesai" : t === "menunggu-harga" ? "menunggu-harga" : "verifikasi";
+              (perTujuan[stage] = perTujuan[stage] || []).push(it.id);
+            }
+            for (const [stage, ids] of Object.entries(perTujuan)) {
+              for (let i = 0; i < ids.length; i += 50) {
+                const potong = ids.slice(i, i + 50);
+                await sb(`items?id=in.(${potong.map(encodeURIComponent).join(",")})`, {
+                  method: "PATCH",
+                  prefer: "return=minimal",
+                  body: JSON.stringify({ rak_code: rakCode, stage }),
+                });
+              }
+            }
+          }, `${itemsTerpilih.length} SKU ditempatkan di rak`)
         }
       />
     );
