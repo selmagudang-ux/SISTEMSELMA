@@ -151,8 +151,8 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       .sort((a, b) => b.laba - a.laba);
   }, [data, q]);
 
-  const daftar = tampil === "pesanan" ? pesananFiltered : skuList;
-  const jumlahHal = Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
+  const daftar = tampil === "sku" ? skuList : pesananFiltered;
+  const jumlahHal = tampil === "biaya" ? 1 : Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
   const potong = daftar.slice((halaman - 1) * PER_HALAMAN, halaman * PER_HALAMAN);
 
   // ---- SKU yang belum cocok ----
@@ -267,7 +267,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex rounded-full border border-md-outline-variant overflow-hidden text-xs">
-          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"]].map(([k, l]) => (
+          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ["biaya", "Rincian Biaya"]].map(([k, l]) => (
             <button key={k} onClick={() => setTampil(k)} className={`px-4 py-2 ${tampil === k ? "bg-md-primary-container text-md-on-primary-container font-medium" : "text-md-on-surface-variant"}`}>{l}</button>
           ))}
         </div>
@@ -275,7 +275,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
           <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. pesanan / SKU / nama produk" className={`${inputClass} !pl-9`} />
         </div>
-        <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "pesanan" ? "pesanan" : "SKU"}</div>
+        <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "sku" ? "SKU" : "pesanan"}</div>
       </div>
 
       {loading && data.length === 0 ? (
@@ -284,6 +284,8 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         <EmptyState label={platform === "shopee" ? "Belum ada data di periode ini. Klik “Import Laporan Shopee” untuk mengunggah Laporan Penghasilan + Export Pesanan." : "Import otomatis baru tersedia untuk Shopee."} />
       ) : tampil === "pesanan" ? (
         <TabelPesanan list={potong} buka={buka} setBuka={setBuka} />
+      ) : tampil === "biaya" ? (
+        <TabelBiaya list={pesananFiltered} />
       ) : (
         <TabelSku list={potong} />
       )}
@@ -411,6 +413,50 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
         </tr>
       )}
     </>
+  );
+}
+
+// Jumlah SEMUA pesanan di periode (dan sesuai kotak cari) per komponen biaya
+function TabelBiaya({ list }) {
+  const baris = list.flatMap((p) => p.lines);
+  const jml = (f) => baris.reduce((a, b) => a + n0(b[f]), 0);
+  const harga = jml("harga_produk");
+  const refund = jml("refund");
+  const dana = jml("dana_dilepas");
+  const lengkap = list.filter((p) => p.r.hppLengkap);
+  const rl = ringkasBaris(lengkap.flatMap((p) => p.lines));
+  const persen = (v) => (harga > 0 ? `${((v / harga) * 100).toFixed(1)}%` : "—");
+
+  const komponen = [
+    ...(refund !== 0 ? [["Refund ke pembeli", refund]] : []),
+    ...Object.keys(LABEL_BIAYA).map((f) => [LABEL_BIAYA[f], jml(f)]).filter(([, v]) => v !== 0),
+  ];
+  const Baris = ({ label, v, tebal, warna, pct = true }) => (
+    <tr className={`border-b border-md-outline-variant last:border-0 ${tebal ? "bg-md-on-surface/[0.04] font-medium" : ""}`}>
+      <td className="px-4 py-2.5">{label}</td>
+      <td className={`px-4 py-2.5 text-right whitespace-nowrap ${warna || ""}`}>{fmtRp(v)}</td>
+      <td className="px-4 py-2.5 text-right text-md-on-surface-variant">{pct ? persen(v) : ""}</td>
+    </tr>
+  );
+  return (
+    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto max-w-2xl">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
+            <th className="px-4 py-2.5 font-medium">Komponen ({list.length} pesanan)</th>
+            <th className="px-4 py-2.5 font-medium text-right">Total</th>
+            <th className="px-4 py-2.5 font-medium text-right">% harga produk</th>
+          </tr>
+        </thead>
+        <tbody>
+          <Baris label="Harga produk" v={harga} tebal />
+          {komponen.map(([label, v]) => <Baris key={label} label={label} v={v} warna={v < 0 ? "text-red-300" : "text-emerald-400"} />)}
+          <Baris label="Dana dilepas ke saldo" v={dana} tebal />
+          <Baris label={`HPP barang terjual (${lengkap.length} pesanan dengan SKU lengkap)`} v={-rl.hpp} warna="text-red-300" pct={false} />
+          <Baris label="Laba bersih (dari pesanan dengan SKU lengkap)" v={rl.laba} tebal warna={rl.laba >= 0 ? "text-emerald-400" : "text-red-400"} pct={false} />
+        </tbody>
+      </table>
+    </div>
   );
 }
 
