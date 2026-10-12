@@ -16,6 +16,9 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("jszip")) return "vendor-jszip";
           if (id.includes("html2canvas")) return "vendor-html2canvas";
+          // SheetJS (xlsx) cuma dipakai lewat import() dinamis di lib/marketplaceImport.js
+          // (tombol "Import Laporan Shopee") — dipisah supaya TIDAK ikut bundle awal.
+          if (id.includes("node_modules/xlsx")) return "vendor-xlsx";
           if (id.includes("lucide-react")) return "vendor-icons";
           // jsPDF cuma dipakai dari halaman SkuHarga & Keuangan (sudah
           // lazy-loaded). Sengaja TIDAK dikasih nama chunk manual (beda

@@ -1,0 +1,584 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Upload, ChevronDown, ChevronRight, Search, AlertTriangle, RefreshCw, Link2,
+  TrendingUp, Receipt, Package, Wallet,
+} from "lucide-react";
+import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
+import { sb, sbAll, fmtRp } from "../lib/api";
+import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, FIELD_BIAYA } from "../lib/marketplaceImport";
+
+// =========================================================
+// RINCIAN PENJUALAN MARKETPLACE (per toko) — SKU, HPP, biaya dari marketplace,
+// laba bersih. Sumber data: import 2 file Shopee (lihat lib/marketplaceImport.js).
+//
+// Rumus (per pesanan):
+//   Dana Dilepas   = angka "Total Penghasilan" Shopee (sudah dipotong semua biaya,
+//                    voucher penjual, selisih ongkir, PPh, refund)
+//   Potongan       = Harga Produk + Refund - Dana Dilepas   (= total biaya marketplace)
+//   HPP            = HPP satuan SKU (sku_master.hpp) x (qty - qty retur)
+//   Laba Bersih    = Dana Dilepas - HPP
+// Pesanan yang SKU-nya belum cocok / belum ada datanya TIDAK ikut dihitung ke
+// Laba & HPP (supaya laba tidak kelihatan semu besar) — jumlahnya ditampilkan.
+//
+// TIDAK menyentuh saldo toko (marketplace_transaksi) maupun Keuangan.
+// =========================================================
+
+const PER_HALAMAN = 50;
+const LABEL_BIAYA = {
+  voucher_penjual: "Voucher/diskon penjual",
+  biaya_admin: "Biaya administrasi",
+  biaya_proses: "Biaya proses pesanan",
+  biaya_ongkir_xtra: "Gratis Ongkir XTRA",
+  biaya_layanan: "Layanan Promo XTRA / transaksi",
+  biaya_promosi: "Komisi AMS / kampanye / isi saldo",
+  biaya_lain: "Biaya lainnya",
+  pajak: "PPh 22",
+  ongkir_net: "Selisih ongkir",
+};
+
+const pad = (n) => String(n).padStart(2, "0");
+const isoHariIni = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const isoAwalBulan = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
+const n0 = (v) => Number(v) || 0;
+const qtyBersih = (b) => (b.qty == null ? null : Math.max(0, n0(b.qty) - n0(b.qty_retur)));
+// HPP baris: null kalau belum bisa dihitung (SKU belum cocok / qty tidak diketahui)
+const hppBaris = (b) => (b.hpp_satuan == null || b.qty == null ? null : n0(b.hpp_satuan) * qtyBersih(b));
+const potonganBaris = (b) => n0(b.harga_produk) + n0(b.refund) - n0(b.dana_dilepas);
+
+function ringkasBaris(list) {
+  const r = { penjualan: 0, refund: 0, potongan: 0, dana: 0, hpp: 0, laba: 0, qty: 0, hppLengkap: true, barisTanpaHpp: 0 };
+  for (const b of list) {
+    r.penjualan += n0(b.harga_produk);
+    r.refund += n0(b.refund);
+    r.potongan += potonganBaris(b);
+    r.dana += n0(b.dana_dilepas);
+    r.qty += qtyBersih(b) || 0;
+    const h = hppBaris(b);
+    if (h == null) { r.hppLengkap = false; r.barisTanpaHpp++; } else r.hpp += h;
+  }
+  r.laba = r.dana - r.hpp;
+  return r;
+}
+
+export default function PenjualanRincian({ platform, toko, skuMaster, showToast }) {
+  const tokoKode = toko.kode || "";
+  const [dari, setDari] = useState(isoAwalBulan());
+  const [sampai, setSampai] = useState(isoHariIni());
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [tampil, setTampil] = useState("pesanan"); // pesanan | sku
+  const [cari, setCari] = useState("");
+  const [halaman, setHalaman] = useState(1);
+  const [buka, setBuka] = useState({});
+  const [importOpen, setImportOpen] = useState(false);
+  const [aliasList, setAliasList] = useState([]);
+
+  const skuMap = useMemo(() => {
+    const m = new Map();
+    for (const s of skuMaster || []) if (s.sku) m.set(normSku(s.sku), s);
+    return m;
+  }, [skuMaster]);
+  const aliasMap = useMemo(() => new Map(aliasList.map((a) => [a.referensi, a.sku])), [aliasList]);
+
+  const filterToko = `platform=eq.${platform}&toko=eq.${encodeURIComponent(tokoKode)}`;
+
+  const muat = useCallback(async () => {
+    setLoading(true);
+    setErr("");
+    try {
+      const [rows, alias] = await Promise.all([
+        sbAll(`marketplace_penjualan?select=*&${filterToko}&tanggal_dilepas=gte.${dari}&tanggal_dilepas=lte.${sampai}&order=tanggal_dilepas.desc,no_pesanan.asc,no_baris.asc`),
+        sb(`marketplace_sku_alias?select=referensi,sku&platform=eq.${platform}`),
+      ]);
+      setData(rows || []);
+      setAliasList(alias || []);
+    } catch (e) {
+      setErr(e.message || "Gagal memuat data");
+    } finally {
+      setLoading(false);
+    }
+  }, [filterToko, dari, sampai, platform]);
+
+  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai]);
+
+  // ---- olah data ----
+  const pesananList = useMemo(() => {
+    const m = new Map();
+    for (const b of data) {
+      if (!m.has(b.no_pesanan)) m.set(b.no_pesanan, { no: b.no_pesanan, tanggal: b.tanggal_dilepas, dibuat: b.tanggal_pesanan, lines: [] });
+      m.get(b.no_pesanan).lines.push(b);
+    }
+    return [...m.values()].map((p) => ({ ...p, r: ringkasBaris(p.lines) }));
+  }, [data]);
+
+  const total = useMemo(() => {
+    const lengkap = pesananList.filter((p) => p.r.hppLengkap);
+    const tanpa = pesananList.length - lengkap.length;
+    const acuan = ringkasBaris(lengkap.flatMap((p) => p.lines));
+    const semua = ringkasBaris(data);
+    return {
+      penjualan: semua.penjualan, potongan: semua.potongan, dana: semua.dana,
+      hpp: acuan.hpp, laba: acuan.laba, danaLengkap: acuan.dana,
+      margin: acuan.dana > 0 ? (acuan.laba / acuan.dana) * 100 : 0,
+      pesananLengkap: lengkap.length, pesananTanpaHpp: tanpa,
+    };
+  }, [pesananList, data]);
+
+  const q = cari.trim().toLowerCase();
+  const pesananFiltered = useMemo(() => {
+    if (!q) return pesananList;
+    return pesananList.filter((p) => p.no.toLowerCase().includes(q) || p.lines.some((l) =>
+      `${l.sku || ""} ${l.sku_referensi || ""} ${l.nama_produk || ""}`.toLowerCase().includes(q)));
+  }, [pesananList, q]);
+
+  const skuList = useMemo(() => {
+    const m = new Map();
+    for (const b of data) {
+      const kunci = b.sku || b.sku_referensi || b.nama_produk || "(tanpa SKU)";
+      if (!m.has(kunci)) m.set(kunci, { kunci, cocok: !!b.sku, nama: b.nama_produk, lines: [] });
+      m.get(kunci).lines.push(b);
+    }
+    return [...m.values()]
+      .map((s) => {
+        const lengkap = s.lines.filter((l) => hppBaris(l) != null);
+        const r = ringkasBaris(s.lines);
+        const rl = ringkasBaris(lengkap);
+        return { ...s, r, laba: rl.laba, hpp: rl.hpp, danaLengkap: rl.dana, qty: r.qty };
+      })
+      .filter((s) => !q || `${s.kunci} ${s.nama || ""}`.toLowerCase().includes(q))
+      .sort((a, b) => b.laba - a.laba);
+  }, [data, q]);
+
+  const daftar = tampil === "pesanan" ? pesananFiltered : skuList;
+  const jumlahHal = Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
+  const potong = daftar.slice((halaman - 1) * PER_HALAMAN, halaman * PER_HALAMAN);
+
+  // ---- SKU yang belum cocok ----
+  const belumCocok = useMemo(() => {
+    const m = new Map();
+    for (const b of data) {
+      if (!b.sku && b.sku_referensi) {
+        const k = normSku(b.sku_referensi);
+        if (!m.has(k)) m.set(k, { ref: b.sku_referensi, k, jumlah: 0, nama: b.nama_produk, variasi: b.variasi });
+        m.get(k).jumlah++;
+      }
+    }
+    return [...m.values()].sort((a, b) => b.jumlah - a.jumlah);
+  }, [data]);
+  const tanpaDataSku = useMemo(() => new Set(data.filter((b) => b.sumber_sku === "laporan").map((b) => b.no_pesanan)).size, [data]);
+
+  // ---- aksi: perbarui HPP dari sku_master ----
+  const [sibuk, setSibuk] = useState(false);
+  const perbaruiHpp = async () => {
+    setSibuk(true);
+    try {
+      const berubah = new Map();
+      for (const b of data) {
+        if (!b.sku) continue;
+        const hppBaru = skuMap.get(normSku(b.sku))?.hpp;
+        if (hppBaru != null && Number(hppBaru) !== n0(b.hpp_satuan)) berubah.set(b.sku, Number(hppBaru));
+      }
+      for (const [sku, hpp] of berubah) {
+        await sb(`marketplace_penjualan?${filterToko}&sku=eq.${encodeURIComponent(sku)}&tanggal_dilepas=gte.${dari}&tanggal_dilepas=lte.${sampai}`, {
+          method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ hpp_satuan: hpp }),
+        });
+      }
+      showToast?.(berubah.size ? `HPP diperbarui untuk ${berubah.size} SKU` : "HPP sudah sama dengan Master Barang");
+      await muat();
+    } catch (e) {
+      showToast?.(e.message || "Gagal memperbarui HPP", "error");
+    } finally {
+      setSibuk(false);
+    }
+  };
+
+  const simpanAlias = async (ref, skuSistem) => {
+    const master = skuMap.get(normSku(skuSistem));
+    if (!master) { showToast?.("SKU itu tidak ada di Master Barang (SKU & Harga)", "error"); return false; }
+    try {
+      await sb("marketplace_sku_alias?on_conflict=platform,referensi", {
+        method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+        body: JSON.stringify({ platform, referensi: normSku(ref), sku: master.sku }),
+      });
+      // Terapkan ke semua baris toko ini dengan referensi yang sama (semua periode)
+      await sb(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}`, {
+        method: "PATCH", prefer: "return=minimal",
+        body: JSON.stringify({ sku: master.sku, hpp_satuan: master.hpp != null ? Number(master.hpp) : null }),
+      });
+      showToast?.(`${ref} dipetakan ke ${master.sku}`);
+      await muat();
+      return true;
+    } catch (e) {
+      showToast?.(e.message || "Gagal menyimpan pemetaan", "error");
+      return false;
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div>
+          <div className="text-[11px] text-md-on-surface-variant mb-1">Dana dilepas dari</div>
+          <input type="date" value={dari} onChange={(e) => setDari(e.target.value)} className={`${inputClass} !w-40`} />
+        </div>
+        <div>
+          <div className="text-[11px] text-md-on-surface-variant mb-1">sampai</div>
+          <input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className={`${inputClass} !w-40`} />
+        </div>
+        <button onClick={muat} className={btnOutlined} disabled={loading}><RefreshCw size={14} /> Muat ulang</button>
+        <div className="flex-1" />
+        <button onClick={perbaruiHpp} className={btnOutlined} disabled={sibuk || data.length === 0} title="Ambil HPP terbaru dari Master Barang untuk baris di periode ini">
+          Perbarui HPP
+        </button>
+        {platform === "shopee" && (
+          <button onClick={() => setImportOpen((v) => !v)} className={btnFilled}><Upload size={14} /> Import Laporan Shopee</button>
+        )}
+      </div>
+
+      {importOpen && (
+        <PanelImport
+          platform={platform} tokoKode={tokoKode} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap}
+          showToast={showToast} onSelesai={(rentang) => { setImportOpen(false); if (rentang) { setDari(rentang.dari); setSampai(rentang.sampai); } else muat(); }}
+        />
+      )}
+
+      {err && <div className="mb-4 text-sm text-red-400">{err}</div>}
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+        <StatCard label="Penjualan (harga produk)" value={fmtRp(total.penjualan)} icon={TrendingUp} iconColor="text-emerald-400" />
+        <StatCard label="Biaya & potongan marketplace" value={fmtRp(total.potongan)} icon={Receipt} iconColor="text-amber-400" />
+        <StatCard label="Dana dilepas ke saldo" value={fmtRp(total.dana)} icon={Wallet} iconColor="text-sky-400" />
+        <StatCard label="HPP barang terjual" value={fmtRp(total.hpp)} icon={Package} />
+        <StatCard label={`Laba bersih (${total.margin.toFixed(1)}% dari dana)`} value={fmtRp(total.laba)} accent={total.laba >= 0 ? "text-emerald-400" : "text-red-400"} icon={TrendingUp} iconColor="text-emerald-400" />
+      </div>
+      {(total.pesananTanpaHpp > 0 || tanpaDataSku > 0) && (
+        <div className="mb-4 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Laba & HPP baru dihitung dari {total.pesananLengkap} pesanan yang SKU-nya lengkap. {total.pesananTanpaHpp} pesanan belum bisa dihitung HPP-nya
+            {tanpaDataSku > 0 && <> ({tanpaDataSku} di antaranya belum punya data SKU — import <b>Export Pesanan</b> yang mencakup tanggal pesanan itu)</>}
+            {belumCocok.length > 0 && <>; {belumCocok.length} SKU Shopee belum cocok dengan Master Barang (lihat panel di bawah)</>}.
+            Penjualan, biaya, dan dana dilepas di atas tetap mencakup semua pesanan.
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="flex rounded-full border border-md-outline-variant overflow-hidden text-xs">
+          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTampil(k)} className={`px-4 py-2 ${tampil === k ? "bg-md-primary-container text-md-on-primary-container font-medium" : "text-md-on-surface-variant"}`}>{l}</button>
+          ))}
+        </div>
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
+          <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. pesanan / SKU / nama produk" className={`${inputClass} !pl-9`} />
+        </div>
+        <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "pesanan" ? "pesanan" : "SKU"}</div>
+      </div>
+
+      {loading && data.length === 0 ? (
+        <div className="text-sm text-md-on-surface-variant py-10 text-center">Memuat…</div>
+      ) : data.length === 0 ? (
+        <EmptyState label={platform === "shopee" ? "Belum ada data di periode ini. Klik “Import Laporan Shopee” untuk mengunggah Laporan Penghasilan + Export Pesanan." : "Import otomatis baru tersedia untuk Shopee."} />
+      ) : tampil === "pesanan" ? (
+        <TabelPesanan list={potong} buka={buka} setBuka={setBuka} />
+      ) : (
+        <TabelSku list={potong} />
+      )}
+
+      {jumlahHal > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-4 text-sm">
+          <button className={btnText} disabled={halaman <= 1} onClick={() => setHalaman((h) => h - 1)}>‹ Sebelumnya</button>
+          <span className="text-md-on-surface-variant">{halaman} / {jumlahHal}</span>
+          <button className={btnText} disabled={halaman >= jumlahHal} onClick={() => setHalaman((h) => h + 1)}>Berikutnya ›</button>
+        </div>
+      )}
+
+      {belumCocok.length > 0 && <PanelBelumCocok list={belumCocok} skuMaster={skuMaster} onSimpan={simpanAlias} />}
+    </div>
+  );
+}
+
+function Angka({ v, plus }) {
+  const n = n0(v);
+  return <span className={n < 0 ? "text-red-300" : plus && n > 0 ? "text-emerald-400" : ""}>{fmtRp(n)}</span>;
+}
+
+function TabelPesanan({ list, buka, setBuka }) {
+  return (
+    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
+            <th className="px-3 py-2.5 w-8" />
+            <th className="px-3 py-2.5 font-medium">Pesanan</th>
+            <th className="px-3 py-2.5 font-medium">SKU</th>
+            <th className="px-3 py-2.5 font-medium text-right">Harga Jual</th>
+            <th className="px-3 py-2.5 font-medium text-right">Biaya Marketplace</th>
+            <th className="px-3 py-2.5 font-medium text-right">Dana Dilepas</th>
+            <th className="px-3 py-2.5 font-medium text-right">HPP</th>
+            <th className="px-3 py-2.5 font-medium text-right">Laba Bersih</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((p) => {
+            const terbuka = !!buka[p.no];
+            const adaSku = p.lines.filter((l) => l.sku_referensi || l.sku);
+            return (
+              <FragmenPesanan key={p.no} p={p} terbuka={terbuka} adaSku={adaSku} toggle={() => setBuka((b) => ({ ...b, [p.no]: !b[p.no] }))} />
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
+  const r = p.r;
+  return (
+    <>
+      <tr className="border-b border-md-outline-variant cursor-pointer hover:bg-md-on-surface/[0.04]" onClick={toggle}>
+        <td className="px-3 py-2.5 text-md-on-surface-variant">{terbuka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+        <td className="px-3 py-2.5 whitespace-nowrap">
+          <div className="font-medium">{p.no}</div>
+          <div className="text-[11px] text-md-on-surface-variant">cair {formatTanggalID(p.tanggal)}</div>
+        </td>
+        <td className="px-3 py-2.5 text-xs text-md-on-surface-variant max-w-[260px]">
+          {p.lines.length === 0 ? "—" : p.lines.slice(0, 2).map((l, i) => (
+            <div key={i} className="truncate">{l.sku || l.sku_referensi || "(SKU belum ada)"}{l.qty != null ? ` ×${qtyBersih(l)}` : ""}</div>
+          ))}
+          {p.lines.length > 2 && <div>+{p.lines.length - 2} lainnya</div>}
+        </td>
+        <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(r.penjualan)}</td>
+        <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{fmtRp(r.potongan)}</td>
+        <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(r.dana)}</td>
+        <td className="px-3 py-2.5 text-right whitespace-nowrap">{r.hppLengkap ? fmtRp(r.hpp) : <Badge color="amber">SKU?</Badge>}</td>
+        <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${r.hppLengkap ? (r.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
+          {r.hppLengkap ? fmtRp(r.laba) : "—"}
+        </td>
+      </tr>
+      {terbuka && (
+        <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
+          <td />
+          <td colSpan={7} className="px-3 py-3">
+            <table className="w-full text-xs mb-3">
+              <thead>
+                <tr className="text-left text-md-on-surface-variant">
+                  <th className="py-1 pr-3 font-medium">SKU</th>
+                  <th className="py-1 pr-3 font-medium">Produk / variasi</th>
+                  <th className="py-1 pr-3 font-medium text-right">Qty</th>
+                  <th className="py-1 pr-3 font-medium text-right">Harga Jual</th>
+                  <th className="py-1 pr-3 font-medium text-right">Biaya</th>
+                  <th className="py-1 pr-3 font-medium text-right">Dana</th>
+                  <th className="py-1 pr-3 font-medium text-right">HPP/unit</th>
+                  <th className="py-1 font-medium text-right">Laba</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.lines.map((l) => {
+                  const h = hppBaris(l);
+                  return (
+                    <tr key={l.id ?? l.no_baris} className="border-t border-md-outline-variant/60">
+                      <td className="py-1.5 pr-3 whitespace-nowrap">
+                        {l.sku ? l.sku : l.sku_referensi ? <span className="text-amber-400">{l.sku_referensi} (belum cocok)</span> : <span className="text-amber-400">belum ada data SKU</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 text-md-on-surface-variant max-w-[260px] truncate">{l.nama_produk}{l.variasi ? ` — ${l.variasi}` : ""}</td>
+                      <td className="py-1.5 pr-3 text-right">{l.qty == null ? "?" : `${qtyBersih(l)}${n0(l.qty_retur) ? ` (retur ${l.qty_retur})` : ""}`}</td>
+                      <td className="py-1.5 pr-3 text-right">{fmtRp(l.harga_produk)}</td>
+                      <td className="py-1.5 pr-3 text-right text-amber-400">{fmtRp(potonganBaris(l))}</td>
+                      <td className="py-1.5 pr-3 text-right">{fmtRp(l.dana_dilepas)}</td>
+                      <td className="py-1.5 pr-3 text-right">{l.hpp_satuan == null ? "—" : fmtRp(l.hpp_satuan)}</td>
+                      <td className={`py-1.5 text-right font-medium ${h == null ? "text-md-on-surface-variant" : n0(l.dana_dilepas) - h >= 0 ? "text-emerald-400" : "text-red-400"}`}>{h == null ? "—" : fmtRp(n0(l.dana_dilepas) - h)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="text-[11px] text-md-on-surface-variant mb-1">Rincian biaya dari marketplace (pesanan ini)</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1 text-xs">
+              <div className="flex justify-between gap-2"><span className="text-md-on-surface-variant">Harga produk</span><Angka v={r.penjualan} /></div>
+              {n0(r.refund) !== 0 && <div className="flex justify-between gap-2"><span className="text-md-on-surface-variant">Refund pembeli</span><Angka v={r.refund} /></div>}
+              {Object.keys(LABEL_BIAYA).map((f) => {
+                const v = p.lines.reduce((a, l) => a + n0(l[f]), 0);
+                if (v === 0) return null;
+                return <div key={f} className="flex justify-between gap-2"><span className="text-md-on-surface-variant">{LABEL_BIAYA[f]}</span><Angka v={v} plus /></div>;
+              })}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function TabelSku({ list }) {
+  return (
+    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
+            <th className="px-3 py-2.5 font-medium">SKU</th>
+            <th className="px-3 py-2.5 font-medium text-right">Qty</th>
+            <th className="px-3 py-2.5 font-medium text-right">Harga Jual</th>
+            <th className="px-3 py-2.5 font-medium text-right">Biaya Marketplace</th>
+            <th className="px-3 py-2.5 font-medium text-right">Dana Dilepas</th>
+            <th className="px-3 py-2.5 font-medium text-right">HPP</th>
+            <th className="px-3 py-2.5 font-medium text-right">Laba Bersih</th>
+            <th className="px-3 py-2.5 font-medium text-right">Margin</th>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((s) => {
+            const dapat = s.danaLengkap > 0 ? (s.laba / s.danaLengkap) * 100 : null;
+            return (
+              <tr key={s.kunci} className="border-b border-md-outline-variant last:border-0">
+                <td className="px-3 py-2.5">
+                  <div className="font-medium">{s.kunci}{!s.cocok && <span className="ml-2"><Badge color="amber">belum cocok</Badge></span>}</div>
+                  <div className="text-[11px] text-md-on-surface-variant truncate max-w-[320px]">{s.nama}</div>
+                </td>
+                <td className="px-3 py-2.5 text-right">{s.qty || "—"}</td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.penjualan)}</td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{fmtRp(s.r.potongan)}</td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.dana)}</td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap">{s.danaLengkap > 0 || s.hpp > 0 ? fmtRp(s.hpp) : "—"}</td>
+                <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${s.hpp > 0 || s.danaLengkap > 0 ? (s.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
+                  {s.hpp > 0 || s.danaLengkap > 0 ? fmtRp(s.laba) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right whitespace-nowrap text-md-on-surface-variant">{dapat == null ? "—" : `${dapat.toFixed(1)}%`}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PanelBelumCocok({ list, skuMaster, onSimpan }) {
+  const [input, setInput] = useState({});
+  const [sibuk, setSibuk] = useState("");
+  const tampil = list.slice(0, 40);
+  return (
+    <div className="mt-8">
+      <div className="text-sm font-medium mb-1 flex items-center gap-2"><Link2 size={14} /> SKU Shopee yang belum cocok dengan Master Barang ({list.length})</div>
+      <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
+        Ketik SKU yang benar dari Master Barang, lalu Simpan — dipakai untuk semua baris yang sama (termasuk import berikutnya) dan HPP-nya langsung terisi.
+        Biasanya ini SKU yang di Shopee ditulis dengan kode pemasok / huruf berbeda dari SKU sistem.
+      </p>
+      <datalist id="dl-sku-master">{(skuMaster || []).slice(0, 8000).map((s) => <option key={s.id ?? s.sku} value={s.sku} />)}</datalist>
+      <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 divide-y divide-md-outline-variant max-h-[420px] overflow-y-auto">
+        {tampil.map((x) => (
+          <div key={x.k} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+            <div className="min-w-0 flex-1 basis-60">
+              <div className="text-sm font-medium truncate">{x.ref}</div>
+              <div className="text-[11px] text-md-on-surface-variant truncate">{x.jumlah} baris · {x.nama}{x.variasi ? ` — ${x.variasi}` : ""}</div>
+            </div>
+            <input list="dl-sku-master" value={input[x.k] || ""} onChange={(e) => setInput((m) => ({ ...m, [x.k]: e.target.value }))}
+              placeholder="SKU di Master Barang" className={`${inputClass} !w-64`} />
+            <button className={btnTonal} disabled={!input[x.k] || sibuk === x.k}
+              onClick={async () => { setSibuk(x.k); await onSimpan(x.ref, input[x.k]); setSibuk(""); }}>Simpan</button>
+          </div>
+        ))}
+      </div>
+      {list.length > tampil.length && <div className="text-[11px] text-md-on-surface-variant mt-2">Menampilkan 40 teratas (paling banyak muncul) — sisanya muncul setelah ini diselesaikan.</div>}
+    </div>
+  );
+}
+
+function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToast, onSelesai }) {
+  const [fPenghasilan, setFPenghasilan] = useState(null);
+  const [fPesanan, setFPesanan] = useState(null);
+  const [status, setStatus] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [sibuk, setSibuk] = useState(false);
+
+  const baca = async () => {
+    setSibuk(true); setStatus("Membaca file…"); setPreview(null);
+    try {
+      const income = await parseLaporanPenghasilan(await fPenghasilan.arrayBuffer());
+      const pesanan = fPesanan ? await parseExportPesanan(await fPesanan.arrayBuffer()) : null;
+
+      // baris yang sudah tersimpan untuk pesanan-pesanan ini (supaya data SKU lama tidak hilang)
+      const nomor = [...income.orders.keys()];
+      const existingByOrder = new Map();
+      for (let i = 0; i < nomor.length; i += 80) {
+        const potong = nomor.slice(i, i + 80).map(encodeURIComponent).join(",");
+        const rows = await sbAll(`marketplace_penjualan?select=*&${filterToko}&no_pesanan=in.(${potong})`);
+        for (const r of rows) { if (!existingByOrder.has(r.no_pesanan)) existingByOrder.set(r.no_pesanan, []); existingByOrder.get(r.no_pesanan).push(r); }
+        setStatus(`Memeriksa data lama… ${Math.min(i + 80, nomor.length)}/${nomor.length}`);
+      }
+      const hasil = bangunBaris({ income, pesanan, existingByOrder, aliasMap, skuMap, platform, toko: tokoKode });
+      const tanggal = [...income.orders.values()].map((o) => o.tanggal_dilepas).filter(Boolean).sort();
+      setPreview({ ...hasil, existingByOrder, tidakPas: income.tidakPas, dari: tanggal[0], sampai: tanggal[tanggal.length - 1] });
+      setStatus("");
+    } catch (e) {
+      setStatus(e.message || "Gagal membaca file");
+    } finally {
+      setSibuk(false);
+    }
+  };
+
+  const simpan = async () => {
+    setSibuk(true);
+    try {
+      const { baris, existingByOrder } = preview;
+      for (let i = 0; i < baris.length; i += 400) {
+        setStatus(`Menyimpan… ${Math.min(i + 400, baris.length)}/${baris.length}`);
+        await sb("marketplace_penjualan?on_conflict=platform,toko,no_pesanan,no_baris", {
+          method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baris.slice(i, i + 400)),
+        });
+      }
+      // bersihkan baris sisa kalau jumlah baris SKU suatu pesanan berkurang dibanding import lama
+      const barisMax = new Map();
+      for (const b of baris) barisMax.set(b.no_pesanan, Math.max(barisMax.get(b.no_pesanan) || 0, b.no_baris));
+      for (const [no, lama] of existingByOrder) {
+        const max = barisMax.get(no);
+        if (max && lama.some((l) => l.no_baris > max)) {
+          await sb(`marketplace_penjualan?${filterToko}&no_pesanan=eq.${encodeURIComponent(no)}&no_baris=gt.${max}`, { method: "DELETE", prefer: "return=minimal" });
+        }
+      }
+      showToast?.(`${barisMax.size} pesanan (${baris.length} baris SKU) tersimpan`);
+      onSelesai({ dari: preview.dari, sampai: preview.sampai });
+    } catch (e) {
+      setStatus(e.message || "Gagal menyimpan");
+      setSibuk(false);
+    }
+  };
+
+  const r = preview?.ringkas;
+  return (
+    <div className="mb-5 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4">
+      <div className="text-sm font-medium mb-3">Import dari Shopee</div>
+      <div className="grid sm:grid-cols-2 gap-4 mb-3">
+        <label className="block text-xs text-md-on-surface-variant">
+          <span className="block mb-1 text-md-on-surface">1. Laporan Penghasilan (wajib)</span>
+          Seller Centre → Penghasilan Saya → Sudah Dilepas → Unduh Laporan Penghasilan
+          <input type="file" accept=".xlsx" onChange={(e) => { setFPenghasilan(e.target.files?.[0] || null); setPreview(null); }} className="block mt-2 text-xs" />
+        </label>
+        <label className="block text-xs text-md-on-surface-variant">
+          <span className="block mb-1 text-md-on-surface">2. Export Pesanan (disarankan)</span>
+          Pesanan Saya → Export — isi SKU variasi & qty. Pakai rentang tanggal PESANAN yang mencakup pesanan di laporan di atas.
+          <input type="file" accept=".xlsx" onChange={(e) => { setFPesanan(e.target.files?.[0] || null); setPreview(null); }} className="block mt-2 text-xs" />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className={btnTonal} disabled={!fPenghasilan || sibuk} onClick={baca}>Baca file</button>
+        {preview && <button className={btnFilled} disabled={sibuk} onClick={simpan}>Simpan {r.pesanan} pesanan</button>}
+        <button className={btnText} onClick={() => onSelesai(null)} disabled={sibuk}>Tutup</button>
+        {status && <span className="text-xs text-md-on-surface-variant">{status}</span>}
+      </div>
+      {preview && (
+        <div className="mt-3 text-xs text-md-on-surface-variant space-y-1">
+          <div>Periode dana dilepas: <b className="text-md-on-surface">{formatTanggalID(preview.dari)} – {formatTanggalID(preview.sampai)}</b> · {r.pesanan} pesanan</div>
+          <div>SKU lengkap dari Export Pesanan: {r.dariExport}{r.dariTersimpan > 0 && <> · memakai data SKU tersimpan: {r.dariTersimpan}</>} · <span className={r.tanpaSku ? "text-amber-400" : ""}>belum ada data SKU: {r.tanpaSku}</span></div>
+          <div>Baris SKU cocok Master Barang: {r.barisCocok} · <span className={r.barisTidakCocok ? "text-amber-400" : ""}>tidak cocok: {r.barisTidakCocok} ({r.referensiTidakCocok.size} kode berbeda — bisa dipetakan manual setelah disimpan)</span></div>
+          {preview.tidakPas > 0 && <div className="text-amber-400">{preview.tidakPas} pesanan angkanya tidak pas dengan Total Penghasilan Shopee — periksa file.</div>}
+          <div>Menyimpan ulang pesanan yang sudah ada akan menimpanya (aman diulang).</div>
+        </div>
+      )}
+    </div>
+  );
+}

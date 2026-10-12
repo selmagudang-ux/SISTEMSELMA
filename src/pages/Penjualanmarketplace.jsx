@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { TrendingUp, Megaphone, Wallet, Plus, Banknote, Trash2, Store, ArrowLeft, ChevronRight, Pencil } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID } from "../components/ui";
 import { fmtRp, saldoMarketplace, daftarTokoMarketplace } from "../lib/api";
+import PenjualanRincian from "./PenjualanRincian";
 
 // =========================================================
 // MARKETPLACE (Shopee/TikTok/Lazada) — lihat catatan lengkap soal desain
@@ -37,7 +38,7 @@ function awalBulanIni() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-export default function PenjualanMarketplace({ sub, marketplaceTransaksi, master, reload, showToast, setModal }) {
+export default function PenjualanMarketplace({ sub, marketplaceTransaksi, master, skuMaster, reload, showToast, setModal }) {
   const platform = PLATFORM_LABEL[sub] ? sub : "shopee";
   const label = PLATFORM_LABEL[platform];
 
@@ -75,6 +76,8 @@ export default function PenjualanMarketplace({ sub, marketplaceTransaksi, master
       toko={tokoTerbaru}
       marketplaceTransaksi={marketplaceTransaksi}
       master={master}
+      skuMaster={skuMaster}
+      showToast={showToast}
       setModal={setModal}
       onKembali={() => setTokoAktif(null)}
     />
@@ -145,7 +148,9 @@ function DaftarToko({ platform, label, daftarToko, onPilih, setModal }) {
   );
 }
 
-function DetailToko({ platform, label, toko, marketplaceTransaksi, master, setModal, onKembali }) {
+function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMaster, showToast, setModal, onKembali }) {
+  // "saldo" = saldo & riwayat (lama); "rincian" = rincian penjualan per SKU/HPP/laba (baru, Shopee saja)
+  const [tab, setTab] = useState("saldo");
   const semuaEntri = (marketplaceTransaksi || []).filter(
     (t) => t.platform === platform && (t.toko || null) === (toko.kode || null)
   );
@@ -185,7 +190,7 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, setMo
       <PageHeader
         title={`${label} — ${toko.label}`}
         description="Pemasukan & pengeluaran iklan dicatat di sini, saldonya dihitung sendiri (belum masuk Keuangan). Saat dicairkan, baru tercatat sebagai pemasukan di Keuangan."
-        action={
+        action={tab !== "saldo" ? null : (
           <div className="flex gap-2">
             <button
               onClick={() => setModal({ type: "marketplace-transaksi-form", tipe: "pemasukan", ...modalDasar })}
@@ -207,9 +212,29 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, setMo
               <Banknote size={14} /> Cairkan
             </button>
           </div>
-        }
+        )}
       />
 
+      {platform === "shopee" && (
+        <div className="flex gap-1 mb-5 border-b border-md-outline-variant">
+          {[["saldo", "Saldo & Riwayat"], ["rincian", "Rincian Penjualan"]].map(([k, l]) => (
+            <button
+              key={k}
+              onClick={() => setTab(k)}
+              className={`px-4 py-2.5 text-sm -mb-px border-b-2 transition-colors ${
+                tab === k ? "border-md-primary text-md-primary font-medium" : "border-transparent text-md-on-surface-variant hover:text-md-on-surface"
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {tab === "rincian" && platform === "shopee" ? (
+        <PenjualanRincian platform={platform} toko={toko} skuMaster={skuMaster} showToast={showToast} />
+      ) : (
+      <>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <StatCard label={`Saldo ${toko.label} Saat Ini`} value={fmtRp(saldo)} icon={Wallet} accent="text-md-primary" />
         <StatCard label="Pemasukan Bulan Ini" value={fmtRp(jumlahByTipe(entriBulanIni, "pemasukan"))} icon={TrendingUp} iconColor="text-emerald-400" />
@@ -264,6 +289,8 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, setMo
             </tbody>
           </table>
         </div>
+      )}
+      </>
       )}
     </div>
   );
