@@ -1319,6 +1319,7 @@ function MainApp({ session, onLogout }) {
                   sub={nav.sub || "shopee"}
                   marketplaceTransaksi={marketplaceTransaksi}
                   master={master}
+                  skuMaster={skuMaster}
                   reload={reloadCurrentMenu}
                   showToast={showToast}
                   setModal={setModal}
