@@ -460,16 +460,77 @@ function TabelBiaya({ list }) {
   );
 }
 
+const KOLOM_BIAYA = [
+  ["biaya_admin", "Admin"], ["biaya_proses", "Proses"], ["biaya_ongkir_xtra", "XTRA"], ["biaya_layanan", "Layanan"],
+  ["biaya_promosi", "AMS/Promo"], ["biaya_lain", "Lainnya"], ["pajak", "PPh 22"], ["voucher_penjual", "Voucher"], ["ongkir_net", "Ongkir"],
+];
+const MAKS_BARIS_DETAIL = 100;
+
+// Rincian biaya satu SKU: total per komponen + biaya yang kena di tiap pesanan
+function DetailBiayaSku({ s }) {
+  const lines = s.lines;
+  const tampil = lines.slice(0, MAKS_BARIS_DETAIL);
+  const kolom = KOLOM_BIAYA.filter(([f]) => lines.some((l) => n0(l[f]) !== 0));
+  const totalKol = (f) => lines.reduce((a, l) => a + n0(l[f]), 0);
+  return (
+    <div className="px-4 py-3">
+      <div className="text-[11px] text-md-on-surface-variant mb-1">Total biaya marketplace SKU ini per komponen ({lines.length} baris pesanan)</div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1 text-xs mb-4">
+        {kolom.map(([f]) => (
+          <div key={f} className="flex justify-between gap-2"><span className="text-md-on-surface-variant">{LABEL_BIAYA[f]}</span><Angka v={totalKol(f)} plus /></div>
+        ))}
+      </div>
+      <div className="text-[11px] text-md-on-surface-variant mb-1">Biaya yang kena per pesanan</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-md-on-surface-variant">
+              <th className="py-1 pr-3 font-medium">Pesanan</th>
+              <th className="py-1 pr-3 font-medium text-right">Qty</th>
+              <th className="py-1 pr-3 font-medium text-right">Harga Jual</th>
+              {kolom.map(([f, l]) => <th key={f} className="py-1 pr-3 font-medium text-right">{l}</th>)}
+              <th className="py-1 pr-3 font-medium text-right">Total Biaya</th>
+              <th className="py-1 font-medium text-right">Dana</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tampil.map((l) => (
+              <tr key={l.id ?? `${l.no_pesanan}-${l.no_baris}`} className="border-t border-md-outline-variant/60">
+                <td className="py-1.5 pr-3 whitespace-nowrap">
+                  {l.no_pesanan}<div className="text-[10px] text-md-on-surface-variant">cair {formatTanggalID(l.tanggal_dilepas)}</div>
+                </td>
+                <td className="py-1.5 pr-3 text-right">{l.qty == null ? "?" : qtyBersih(l)}</td>
+                <td className="py-1.5 pr-3 text-right whitespace-nowrap">{fmtRp(l.harga_produk)}</td>
+                {kolom.map(([f]) => <td key={f} className="py-1.5 pr-3 text-right whitespace-nowrap"><Angka v={l[f]} plus /></td>)}
+                <td className="py-1.5 pr-3 text-right whitespace-nowrap text-amber-400">{fmtRp(potonganBaris(l))}</td>
+                <td className="py-1.5 text-right whitespace-nowrap">{fmtRp(l.dana_dilepas)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {lines.length > tampil.length && (
+        <div className="text-[11px] text-md-on-surface-variant mt-2">Menampilkan {tampil.length} dari {lines.length} baris terbaru. Total di atas tetap mencakup semuanya.</div>
+      )}
+      <div className="text-[11px] text-md-on-surface-variant mt-2">
+        Biaya proses pesanan dari Shopee flat per pesanan, lalu dibagi ke tiap SKU sesuai harga — sama seperti baris "Sku" di Laporan Penghasilan.
+      </div>
+    </div>
+  );
+}
+
 function TabelSku({ list }) {
+  const [terbuka, setTerbuka] = useState({});
   return (
     <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
+            <th className="px-3 py-2.5 w-8" />
             <th className="px-3 py-2.5 font-medium">SKU</th>
             <th className="px-3 py-2.5 font-medium text-right">Qty</th>
             <th className="px-3 py-2.5 font-medium text-right">Harga Jual</th>
-            <th className="px-3 py-2.5 font-medium text-right">Biaya Marketplace</th>
+            <th className="px-3 py-2.5 font-medium text-right">Biaya Marketplace <span className="font-normal">(klik baris)</span></th>
             <th className="px-3 py-2.5 font-medium text-right">Dana Dilepas</th>
             <th className="px-3 py-2.5 font-medium text-right">HPP</th>
             <th className="px-3 py-2.5 font-medium text-right">Laba Bersih</th>
@@ -479,28 +540,41 @@ function TabelSku({ list }) {
         <tbody>
           {list.map((s) => {
             const dapat = s.danaLengkap > 0 ? (s.laba / s.danaLengkap) * 100 : null;
+            const buka = !!terbuka[s.kunci];
             return (
-              <tr key={s.kunci} className="border-b border-md-outline-variant last:border-0">
-                <td className="px-3 py-2.5">
-                  <div className="font-medium">{s.kunci}{!s.cocok && <span className="ml-2"><Badge color="amber">belum cocok</Badge></span>}</div>
-                  <div className="text-[11px] text-md-on-surface-variant truncate max-w-[320px]">{s.nama}</div>
-                </td>
-                <td className="px-3 py-2.5 text-right">{s.qty || "—"}</td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.penjualan)}</td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{fmtRp(s.r.potongan)}</td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.dana)}</td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">{s.danaLengkap > 0 || s.hpp > 0 ? fmtRp(s.hpp) : "—"}</td>
-                <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${s.hpp > 0 || s.danaLengkap > 0 ? (s.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
-                  {s.hpp > 0 || s.danaLengkap > 0 ? fmtRp(s.laba) : "—"}
-                </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap text-md-on-surface-variant">{dapat == null ? "—" : `${dapat.toFixed(1)}%`}</td>
-              </tr>
+              <FragmenSku key={s.kunci}>
+                <tr className="border-b border-md-outline-variant cursor-pointer hover:bg-md-on-surface/[0.04]" onClick={() => setTerbuka((m) => ({ ...m, [s.kunci]: !m[s.kunci] }))}>
+                  <td className="px-3 py-2.5 text-md-on-surface-variant">{buka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="font-medium">{s.kunci}{!s.cocok && <span className="ml-2"><Badge color="amber">belum cocok</Badge></span>}</div>
+                    <div className="text-[11px] text-md-on-surface-variant truncate max-w-[320px]">{s.nama}</div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right">{s.qty || "—"}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.penjualan)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400 underline decoration-dotted underline-offset-4">{fmtRp(s.r.potongan)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.dana)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{s.danaLengkap > 0 || s.hpp > 0 ? fmtRp(s.hpp) : "—"}</td>
+                  <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${s.hpp > 0 || s.danaLengkap > 0 ? (s.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
+                    {s.hpp > 0 || s.danaLengkap > 0 ? fmtRp(s.laba) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap text-md-on-surface-variant">{dapat == null ? "—" : `${dapat.toFixed(1)}%`}</td>
+                </tr>
+                {buka && (
+                  <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
+                    <td colSpan={9}><DetailBiayaSku s={s} /></td>
+                  </tr>
+                )}
+              </FragmenSku>
             );
           })}
         </tbody>
       </table>
     </div>
   );
+}
+
+function FragmenSku({ children }) {
+  return <>{children}</>;
 }
 
 function PanelBelumCocok({ list, skuMaster, onSimpan }) {
