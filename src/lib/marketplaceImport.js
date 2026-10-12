@@ -18,6 +18,21 @@
 // Keuangan, jadi tidak ada risiko saldo terhitung dobel.
 // =========================================================
 
+import { sb } from "./api";
+
+// POST dengan Prefer: return=minimal dibalas PostgREST 201 + isi KOSONG (bukan 204),
+// dan sb() mencoba res.json() pada isi kosong itu -> SyntaxError "Unexpected end of JSON
+// input" padahal data SUDAH tersimpan. Helper ini menelan error khusus itu saja;
+// error lain (jaringan, validasi, RLS) tetap dilempar.
+export async function sbTulis(path, opts) {
+  try {
+    return await sb(path, opts);
+  } catch (e) {
+    if (e instanceof SyntaxError || /Unexpected end of JSON/i.test(e?.message || "")) return null;
+    throw e;
+  }
+}
+
 export const normSku = (s) => String(s ?? "").trim().toUpperCase();
 
 function num(v) {

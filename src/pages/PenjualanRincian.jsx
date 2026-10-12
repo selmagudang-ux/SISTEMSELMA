@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
 import { sb, sbAll, fmtRp } from "../lib/api";
-import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, FIELD_BIAYA } from "../lib/marketplaceImport";
+import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
 
 // =========================================================
 // RINCIAN PENJUALAN MARKETPLACE (per toko) — SKU, HPP, biaya dari marketplace,
@@ -181,7 +181,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         if (hppBaru != null && Number(hppBaru) !== n0(b.hpp_satuan)) berubah.set(b.sku, Number(hppBaru));
       }
       for (const [sku, hpp] of berubah) {
-        await sb(`marketplace_penjualan?${filterToko}&sku=eq.${encodeURIComponent(sku)}&tanggal_dilepas=gte.${dari}&tanggal_dilepas=lte.${sampai}`, {
+        await sbTulis(`marketplace_penjualan?${filterToko}&sku=eq.${encodeURIComponent(sku)}&tanggal_dilepas=gte.${dari}&tanggal_dilepas=lte.${sampai}`, {
           method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ hpp_satuan: hpp }),
         });
       }
@@ -198,12 +198,12 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     const master = skuMap.get(normSku(skuSistem));
     if (!master) { showToast?.("SKU itu tidak ada di Master Barang (SKU & Harga)", "error"); return false; }
     try {
-      await sb("marketplace_sku_alias?on_conflict=platform,referensi", {
+      await sbTulis("marketplace_sku_alias?on_conflict=platform,referensi", {
         method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
         body: JSON.stringify({ platform, referensi: normSku(ref), sku: master.sku }),
       });
       // Terapkan ke semua baris toko ini dengan referensi yang sama (semua periode)
-      await sb(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}`, {
+      await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}`, {
         method: "PATCH", prefer: "return=minimal",
         body: JSON.stringify({ sku: master.sku, hpp_satuan: master.hpp != null ? Number(master.hpp) : null }),
       });
@@ -527,7 +527,7 @@ function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToa
       const { baris, existingByOrder } = preview;
       for (let i = 0; i < baris.length; i += 400) {
         setStatus(`Menyimpan… ${Math.min(i + 400, baris.length)}/${baris.length}`);
-        await sb("marketplace_penjualan?on_conflict=platform,toko,no_pesanan,no_baris", {
+        await sbTulis("marketplace_penjualan?on_conflict=platform,toko,no_pesanan,no_baris", {
           method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baris.slice(i, i + 400)),
         });
       }
@@ -537,7 +537,7 @@ function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToa
       for (const [no, lama] of existingByOrder) {
         const max = barisMax.get(no);
         if (max && lama.some((l) => l.no_baris > max)) {
-          await sb(`marketplace_penjualan?${filterToko}&no_pesanan=eq.${encodeURIComponent(no)}&no_baris=gt.${max}`, { method: "DELETE", prefer: "return=minimal" });
+          await sbTulis(`marketplace_penjualan?${filterToko}&no_pesanan=eq.${encodeURIComponent(no)}&no_baris=gt.${max}`, { method: "DELETE", prefer: "return=minimal" });
         }
       }
       showToast?.(`${barisMax.size} pesanan (${baris.length} baris SKU) tersimpan`);
