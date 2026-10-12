@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
 import { sb, sbAll, fmtRp } from "../lib/api";
-import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
+import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
 
 // =========================================================
 // RINCIAN PENJUALAN MARKETPLACE (per toko) — SKU, HPP, biaya dari marketplace,
@@ -79,7 +79,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     for (const s of skuMaster || []) if (s.sku) m.set(normSku(s.sku), s);
     return m;
   }, [skuMaster]);
-  const aliasMap = useMemo(() => new Map(aliasList.map((a) => [a.referensi, a.sku])), [aliasList]);
+  const aliasMap = useMemo(() => new Map(aliasList.map((a) => [normSku(a.referensi), a.sku])), [aliasList]);
 
   const filterToko = `platform=eq.${platform}&toko=eq.${encodeURIComponent(tokoKode)}`;
 
@@ -169,6 +169,32 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   }, [data]);
   const tanpaDataSku = useMemo(() => new Set(data.filter((b) => b.sumber_sku === "laporan").map((b) => b.no_pesanan)).size, [data]);
 
+  // ---- aksi: cocokkan ulang SKU yang "belum cocok" dengan Master Barang terbaru ----
+  const [sibukCocok, setSibukCocok] = useState(false);
+  const cocokkanUlang = async () => {
+    setSibukCocok(true);
+    try {
+      const refs = new Map(); // referensi mentah -> baris Master
+      for (const b of data) {
+        if (b.sku || !b.sku_referensi || refs.has(b.sku_referensi)) continue;
+        const m = cariMaster(b.sku_referensi, aliasMap, skuMap);
+        if (m) refs.set(b.sku_referensi, m);
+      }
+      for (const [ref, m] of refs) {
+        await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}&sku=is.null`, {
+          method: "PATCH", prefer: "return=minimal",
+          body: JSON.stringify({ sku: m.sku, hpp_satuan: m.hpp != null ? Number(m.hpp) : null }),
+        });
+      }
+      showToast?.(refs.size ? `${refs.size} kode SKU berhasil dicocokkan` : "Tidak ada SKU yang bisa dicocokkan otomatis — petakan manual di panel bawah");
+      await muat();
+    } catch (e) {
+      showToast?.(e.message || "Gagal mencocokkan ulang", "error");
+    } finally {
+      setSibukCocok(false);
+    }
+  };
+
   // ---- aksi: perbarui HPP dari sku_master ----
   const [sibuk, setSibuk] = useState(false);
   const perbaruiHpp = async () => {
@@ -229,6 +255,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         </div>
         <button onClick={muat} className={btnOutlined} disabled={loading}><RefreshCw size={14} /> Muat ulang</button>
         <div className="flex-1" />
+        {belumCocok.length > 0 && (
+          <button onClick={cocokkanUlang} className={btnOutlined} disabled={sibukCocok} title="Cocokkan ulang SKU yang belum cocok dengan Master Barang terbaru">
+            <Link2 size={14} /> Cocokkan ulang SKU
+          </button>
+        )}
         <button onClick={perbaruiHpp} className={btnOutlined} disabled={sibuk || data.length === 0} title="Ambil HPP terbaru dari Master Barang untuk baris di periode ini">
           Perbarui HPP
         </button>

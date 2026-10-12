@@ -33,7 +33,31 @@ export async function sbTulis(path, opts) {
   }
 }
 
-export const normSku = (s) => String(s ?? "").trim().toUpperCase();
+// Normalisasi untuk pencocokan SKU: buang karakter tak terlihat (zero-width, BOM, soft hyphen),
+// samakan semua jenis tanda strip (– — ‑ − dst) jadi "-", spasi ganda/NBSP jadi satu spasi biasa,
+// lalu trim + huruf besar. Supaya SKU yang tampak sama di layar juga dianggap sama oleh sistem.
+export const normSku = (s) =>
+  String(s ?? "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, "")
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
+// Cari baris Master Barang untuk satu kode referensi marketplace.
+// Urutan: pemetaan manual (alias) -> kalau SKU tujuannya sudah tidak ada di Master, tetap coba
+// cocok langsung dengan SKU yang sama persis.
+export function cariMaster(ref, aliasMap, skuMap) {
+  const k = normSku(ref);
+  if (!k) return null;
+  const viaAlias = aliasMap?.get(k);
+  if (viaAlias) {
+    const m = skuMap.get(normSku(viaAlias));
+    if (m) return m;
+  }
+  return skuMap.get(k) || null;
+}
 
 function num(v) {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
@@ -215,8 +239,7 @@ export function bangunBaris({ income, pesanan, existingByOrder, aliasMap, skuMap
 
     lines.forEach((l, i) => {
       const ref = normSku(l.sku_referensi);
-      const skuSistem = ref ? aliasMap.get(ref) || (skuMap.has(ref) ? skuMap.get(ref).sku : null) : null;
-      const master = skuSistem ? skuMap.get(normSku(skuSistem)) : null;
+      const master = ref ? cariMaster(l.sku_referensi, aliasMap, skuMap) : null;
       if (ref) {
         if (master) ringkas.barisCocok++;
         else { ringkas.barisTidakCocok++; ringkas.referensiTidakCocok.add(l.sku_referensi); }
