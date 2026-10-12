@@ -180,13 +180,20 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         const m = cariMaster(b.sku_referensi, aliasMap, skuMap);
         if (m) refs.set(b.sku_referensi, m);
       }
+      let barisUpdate = 0;
       for (const [ref, m] of refs) {
-        await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}&sku=is.null`, {
-          method: "PATCH", prefer: "return=minimal",
+        const hasil = await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}`, {
+          method: "PATCH", prefer: "return=representation",
           body: JSON.stringify({ sku: m.sku, hpp_satuan: m.hpp != null ? Number(m.hpp) : null }),
         });
+        barisUpdate += Array.isArray(hasil) ? hasil.length : 0;
       }
-      showToast?.(refs.size ? `${refs.size} kode SKU berhasil dicocokkan` : "Tidak ada SKU yang bisa dicocokkan otomatis — petakan manual di panel bawah");
+      showToast?.(
+        !refs.size ? "Tidak ada SKU yang bisa dicocokkan otomatis — lihat petunjuk di panel bawah"
+        : barisUpdate ? `${refs.size} kode SKU dicocokkan (${barisUpdate} baris diperbarui)`
+        : `${refs.size} kode SKU ketemu di Master, tapi 0 baris tersimpan — kemungkinan izin tulis (RLS) di tabel marketplace_penjualan`,
+        barisUpdate || !refs.size ? undefined : "error"
+      );
       await muat();
     } catch (e) {
       showToast?.(e.message || "Gagal mencocokkan ulang", "error");
@@ -608,10 +615,32 @@ function FragmenSku({ children }) {
   return <>{children}</>;
 }
 
+// Petunjuk kenapa satu kode tidak cocok: karakter tak biasa + kandidat Master yang "mirip"
+// (sama kalau semua tanda baca/spasi dibuang).
+const kunciLonggar = (s) => normSku(s).replace(/[^A-Z0-9]/g, "");
+function karakterAneh(s) {
+  const out = [];
+  [...String(s ?? "")].forEach((c, i) => {
+    const cp = c.codePointAt(0);
+    if (cp < 32 || cp > 126) out.push(`U+${cp.toString(16).toUpperCase().padStart(4, "0")} (posisi ${i + 1})`);
+  });
+  return out;
+}
+
 function PanelBelumCocok({ list, skuMaster, onSimpan }) {
   const [input, setInput] = useState({});
   const [sibuk, setSibuk] = useState("");
   const tampil = list.slice(0, 40);
+  const indeksLonggar = useMemo(() => {
+    const m = new Map();
+    for (const s of skuMaster || []) {
+      if (!s.sku) continue;
+      const k = kunciLonggar(s.sku);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(s.sku);
+    }
+    return m;
+  }, [skuMaster]);
   return (
     <div className="mt-8">
       <div className="text-sm font-medium mb-1 flex items-center gap-2"><Link2 size={14} /> SKU Shopee yang belum cocok dengan Master Barang ({list.length})</div>
@@ -626,6 +655,22 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
             <div className="min-w-0 flex-1 basis-60">
               <div className="text-sm font-medium truncate">{x.ref}</div>
               <div className="text-[11px] text-md-on-surface-variant truncate">{x.jumlah} baris · {x.nama}{x.variasi ? ` — ${x.variasi}` : ""}</div>
+              {(() => {
+                const aneh = karakterAneh(x.ref);
+                const mirip = indeksLonggar.get(kunciLonggar(x.ref)) || [];
+                return (
+                  <>
+                    {aneh.length > 0 && <div className="text-[11px] text-amber-400">Ada karakter tak biasa di kode Shopee: {aneh.join(", ")}</div>}
+                    {mirip.length > 0 && (
+                      <div className="text-[11px] text-sky-400 flex flex-wrap items-center gap-2">
+                        Mirip di Master: {mirip.join(", ")}
+                        <button className="underline" disabled={sibuk === x.k} onClick={async () => { setSibuk(x.k); await onSimpan(x.ref, mirip[0]); setSibuk(""); }}>Pakai ini</button>
+                      </div>
+                    )}
+                    {!aneh.length && !mirip.length && <div className="text-[11px] text-md-on-surface-variant">Tidak ada SKU mirip di Master Barang yang dimuat ({(skuMaster || []).length} SKU).</div>}
+                  </>
+                );
+              })()}
             </div>
             <input list="dl-sku-master" value={input[x.k] || ""} onChange={(e) => setInput((m) => ({ ...m, [x.k]: e.target.value }))}
               placeholder="SKU di Master Barang" className={`${inputClass} !w-64`} />
