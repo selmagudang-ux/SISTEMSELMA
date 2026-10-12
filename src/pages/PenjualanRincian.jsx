@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Upload, ChevronDown, ChevronRight, Search, AlertTriangle, RefreshCw, Link2,
-  TrendingUp, Receipt, Package, Wallet,
+  TrendingUp, Receipt, Package, Wallet, Download,
 } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
-import { sb, sbAll, fmtRp } from "../lib/api";
+import { sb, sbAll, fmtRp, downloadCsv } from "../lib/api";
+import { downloadXlsx } from "../lib/exportData";
 import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
 
 // =========================================================
@@ -169,6 +170,83 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   }, [data]);
   const tanpaDataSku = useMemo(() => new Set(data.filter((b) => b.sumber_sku === "laporan").map((b) => b.no_pesanan)).size, [data]);
 
+  // ---- aksi: unduh data periode ini (CSV / Excel) ----
+  // Isi = SEMUA baris periode yang dipilih (tidak ikut filter pencarian/tab di layar).
+  const [sibukUnduh, setSibukUnduh] = useState(false);
+  const kolomRincian = useMemo(() => [
+    { key: "tanggal_dilepas", label: "Tanggal Dana Dilepas" },
+    { key: "tanggal_pesanan", label: "Tanggal Pesanan" },
+    { key: "no_pesanan", label: "No. Pesanan" },
+    { key: "status_pesanan", label: "Status Pesanan" },
+    { key: "sku_referensi", label: "SKU di Marketplace" },
+    { key: "sku", label: "SKU Sistem" },
+    { key: "status_sku", label: "Status Pencocokan SKU" },
+    { key: "nama_produk", label: "Nama Produk" },
+    { key: "variasi", label: "Variasi" },
+    { key: "qty", label: "Qty" },
+    { key: "qty_retur", label: "Qty Retur" },
+    { key: "harga_satuan", label: "Harga Satuan" },
+    { key: "subtotal", label: "Subtotal" },
+    { key: "harga_produk", label: "Harga Produk (bagian baris)" },
+    { key: "refund", label: "Refund" },
+    ...Object.entries(LABEL_BIAYA).map(([key, label]) => ({ key, label })),
+    { key: "potongan", label: "Total Potongan Marketplace" },
+    { key: "dana_dilepas", label: "Dana Dilepas" },
+    { key: "hpp_satuan", label: "HPP Satuan" },
+    { key: "hpp_total", label: "HPP Total" },
+    { key: "laba", label: "Laba Bersih" },
+  ], []);
+  const barisUnduh = useMemo(() => data.map((b) => {
+    const hpp = hppBaris(b);
+    return {
+      ...b,
+      status_sku: b.sku ? "cocok" : b.sku_referensi ? "belum cocok" : "belum ada data SKU",
+      potongan: potonganBaris(b),
+      hpp_total: hpp,
+      laba: hpp == null ? null : n0(b.dana_dilepas) - hpp,
+    };
+  }), [data]);
+  const unduh = async (format) => {
+    if (!barisUnduh.length) return;
+    setSibukUnduh(true);
+    try {
+      const nama = `rincian-penjualan-${platform}-${String(tokoKode || "toko").replace(/[^a-zA-Z0-9-_]/g, "-")}-${dari}_${sampai}`;
+      if (format === "csv") {
+        downloadCsv(`${nama}.csv`, kolomRincian, barisUnduh);
+      } else {
+        const kolomPesanan = [
+          { key: "no", label: "No. Pesanan" },
+          { key: "tanggal", label: "Tanggal Dana Dilepas" },
+          { key: "dibuat", label: "Tanggal Pesanan" },
+          { key: "jumlahBaris", label: "Jumlah Baris SKU" },
+          { key: "qty", label: "Qty" },
+          { key: "penjualan", label: "Harga Produk" },
+          { key: "refund", label: "Refund" },
+          { key: "potongan", label: "Total Potongan Marketplace" },
+          { key: "dana", label: "Dana Dilepas" },
+          { key: "hpp", label: "HPP Total" },
+          { key: "laba", label: "Laba Bersih" },
+          { key: "hppLengkap", label: "HPP Lengkap?" },
+        ];
+        const barisPesanan = pesananList.map((p) => ({
+          no: p.no, tanggal: p.tanggal, dibuat: p.dibuat, jumlahBaris: p.lines.length,
+          qty: p.r.qty, penjualan: p.r.penjualan, refund: p.r.refund, potongan: p.r.potongan, dana: p.r.dana,
+          hpp: p.r.hppLengkap ? p.r.hpp : null, laba: p.r.hppLengkap ? p.r.laba : null,
+          hppLengkap: p.r.hppLengkap ? "ya" : "belum (SKU belum cocok / qty tidak diketahui)",
+        }));
+        await downloadXlsx(`${nama}.xlsx`, [
+          { name: "Rincian per SKU", columns: kolomRincian, rows: barisUnduh },
+          { name: "Ringkasan per Pesanan", columns: kolomPesanan, rows: barisPesanan },
+        ]);
+      }
+      showToast?.(`${barisUnduh.length} baris diunduh (${format === "csv" ? "CSV" : "Excel"})`);
+    } catch (e) {
+      showToast?.(e.message || "Gagal mengunduh", "error");
+    } finally {
+      setSibukUnduh(false);
+    }
+  };
+
   // ---- aksi: cocokkan ulang SKU yang "belum cocok" dengan Master Barang terbaru ----
   const [sibukCocok, setSibukCocok] = useState(false);
   const cocokkanUlang = async () => {
@@ -267,6 +345,12 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
             <Link2 size={14} /> Cocokkan ulang SKU
           </button>
         )}
+        <button onClick={() => unduh("csv")} className={btnOutlined} disabled={sibukUnduh || data.length === 0} title="Unduh semua baris periode ini sebagai CSV">
+          <Download size={14} /> CSV
+        </button>
+        <button onClick={() => unduh("xlsx")} className={btnOutlined} disabled={sibukUnduh || data.length === 0} title="Unduh periode ini sebagai Excel (2 sheet: per SKU & per pesanan)">
+          <Download size={14} /> Excel
+        </button>
         <button onClick={perbaruiHpp} className={btnOutlined} disabled={sibuk || data.length === 0} title="Ambil HPP terbaru dari Master Barang untuk baris di periode ini">
           Perbarui HPP
         </button>
