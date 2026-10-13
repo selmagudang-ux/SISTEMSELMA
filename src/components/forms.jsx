@@ -4409,6 +4409,9 @@ export function CairkanDepositForm({
   // ke rekening orang). Default nama pelanggan, tapi boleh diganti kalau
   // transfernya ke orang lain (mis. keluarga/titipan pelanggan).
   const [namaPenerima, setNamaPenerima] = useState(pelanggan?.nama || "");
+  // Bukti transfer — OPSIONAL (tidak menghalangi simpan). Kalau kosong, baris
+  // riwayatnya ditandai "belum ada bukti" supaya gampang dicari & dilengkapi.
+  const [fotoBukti, setFotoBukti] = useState(null);
   const [konfirmasiHapusId, setKonfirmasiHapusId] = useState(null);
 
   const daftarRekening = master?.rekening || [];
@@ -4553,6 +4556,24 @@ export function CairkanDepositForm({
         </Field>
       )}
 
+      {butuhPenerima && (
+        <Field label="Bukti Transfer (opsional)">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFotoBukti(e.target.files?.[0] || null)}
+            className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
+          />
+          {fotoBukti ? (
+            <div className="text-[11px] text-slate-400 mt-1 truncate">{fotoBukti.name}</div>
+          ) : (
+            <div className="text-[11px] text-slate-500 mt-1">
+              Boleh dikosongkan — nanti ditandai "belum ada bukti" di riwayat.
+            </div>
+          )}
+        </Field>
+      )}
+
       <Field label="Jumlah Dicairkan">
         <input
           type="number"
@@ -4576,7 +4597,7 @@ export function CairkanDepositForm({
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, rekening, kategoriKode: kategoriObj?.kode, catatan: catatan.trim(), namaPenerima: butuhPenerima ? namaPenerima.trim() : "" })}
+        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, rekening, kategoriKode: kategoriObj?.kode, catatan: catatan.trim(), namaPenerima: butuhPenerima ? namaPenerima.trim() : "", fotoBukti: butuhPenerima ? fotoBukti : null })}
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : submitLabel || "Cairkan Deposit"}

@@ -2991,6 +2991,15 @@ export default function ModalRouter({
               throw new Error('Pilih rekening & pastikan kategori "PENGEMBALIAN DEPOSIT" sudah ada di Keuangan');
             }
 
+            // Bukti transfer (opsional) — diperkecil dulu (tetap tajam supaya
+            // nominal/nama terbaca), lalu diupload. Kolom bukti_transfer_url
+            // cuma ikut dikirim kalau ada fotonya.
+            let buktiTransferUrl = null;
+            if (data.fotoBukti) {
+              const fotoKecil = await kompresFotoProduk(data.fotoBukti, { maxDim: 1600, quality: 0.88 });
+              buktiTransferUrl = await sbUploadFoto(fotoKecil, `bukti-transfer-${Date.now()}-${p.id}.jpg`);
+            }
+
             // Uang beneran keluar dari rekening Keuangan waktu deposit
             // dicairkan ke pelanggan — dicatat sebagai baris pengeluaran
             // DULU (biar konsisten dengan pola pemasukan di
@@ -3019,6 +3028,7 @@ export default function ModalRouter({
                 pelanggan_id: p.id,
                 jumlah: -jumlah,
                 keterangan: `Dicairkan ke pelanggan (${data.metodeBayar})${data.namaPenerima ? ` · Penerima: ${data.namaPenerima}` : ""}${data.catatan ? ` · ${data.catatan}` : ""}`,
+                ...(buktiTransferUrl ? { bukti_transfer_url: buktiTransferUrl } : {}),
               }),
             });
           }, "Deposit dicairkan ke pelanggan — tercatat juga di Keuangan")
@@ -3077,6 +3087,15 @@ export default function ModalRouter({
               throw new Error(`Pilih rekening & pastikan kategori "${LABEL_KATEGORI_PENCAIRAN_RESELLER_CEKOUT}" sudah ada di Keuangan`);
             }
 
+            // Bukti transfer (opsional) — diperkecil dulu (tetap tajam supaya
+            // nominal/nama terbaca), lalu diupload. Kolom bukti_transfer_url
+            // cuma ikut dikirim kalau ada fotonya.
+            let buktiTransferUrl = null;
+            if (data.fotoBukti) {
+              const fotoKecil = await kompresFotoProduk(data.fotoBukti, { maxDim: 1600, quality: 0.88 });
+              buktiTransferUrl = await sbUploadFoto(fotoKecil, `bukti-transfer-${Date.now()}-${p.id}.jpg`);
+            }
+
             await sb("keuangan_transaksi", {
               method: "POST",
               body: JSON.stringify({
@@ -3096,6 +3115,7 @@ export default function ModalRouter({
                 pelanggan_id: p.id,
                 jumlah: -jumlah,
                 keterangan: `Dicairkan ke pelanggan Reseller Cekout (${data.metodeBayar})${data.namaPenerima ? ` · Penerima: ${data.namaPenerima}` : ""}${data.catatan ? ` · ${data.catatan}` : ""}`,
+                ...(buktiTransferUrl ? { bukti_transfer_url: buktiTransferUrl } : {}),
               }),
             });
           }, "Pencairan tercatat — tercatat juga di Keuangan")
