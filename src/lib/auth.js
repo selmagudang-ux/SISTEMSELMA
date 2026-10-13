@@ -40,6 +40,7 @@ export async function login(username, password) {
     username: user.username,
     nama: user.nama,
     role: user.role,
+    token: user.token || null, // token bertanda tangan untuk fitur Chat (lihat functions/chat)
     loginAt: new Date().toISOString(),
   };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));

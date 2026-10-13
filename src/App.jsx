@@ -4,6 +4,7 @@ import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-re
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
+import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import { rippleEffect, iconBtnClass } from "./components/ui";
@@ -46,6 +47,7 @@ const Penggajian = lazy(() => import("./pages/Penggajian"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
 const Absensi = lazy(() => import("./pages/Absensi"));
 const Panduan = lazy(() => import("./pages/Panduan"));
+const Chat = lazy(() => import("./pages/Chat"));
 import { FormAbsen } from "./pages/AbsenKaryawan";
 import { listAbsensi, listKaryawan } from "./lib/absensi";
 
@@ -352,6 +354,19 @@ function AppShell({
 
 function MainApp({ session, onLogout }) {
   const allowed = allowedMenus(session.role);
+
+  // Badge "Chat" di sidebar = jumlah pesan belum dibaca. Polling ringan tiap 20 detik
+  // (hanya saat tab terlihat); Chat.jsx memanggil refreshChatBadge() begitu pesan dibaca.
+  const [chatBelumDibacaCount, setChatBelumDibacaCount] = useState(0);
+  const refreshChatBadge = useCallback(async () => {
+    if (!session?.token || document.visibilityState !== "visible") return;
+    try { setChatBelumDibacaCount(await chatBelumDibaca()); } catch { /* diam: badge tidak kritis */ }
+  }, [session?.token]);
+  useEffect(() => {
+    refreshChatBadge();
+    const t = setInterval(refreshChatBadge, 20000);
+    return () => clearInterval(t);
+  }, [refreshChatBadge]);
 
   // Menu terakhir disimpan di sessionStorage supaya begitu halaman di-reload
   // (lihat fungsi navigate di bawah), tampilan langsung kembali ke menu yang
@@ -1113,7 +1128,7 @@ function MainApp({ session, onLogout }) {
       <AppShell
         active={nav}
         onNavigate={navigate}
-        badges={sidebarBadges}
+        badges={{ ...sidebarBadges, chat: chatBelumDibacaCount }}
         allowedMenuKeys={allowed}
         user={session}
         onLogout={onLogout}
@@ -1365,6 +1380,7 @@ function MainApp({ session, onLogout }) {
                 <Pengaturan settings={settings} reload={reloadCurrentMenu} showToast={showToast} session={session} />
               )}
               {nav.menu === "panduan" && <Panduan session={session} />}
+              {nav.menu === "chat" && <Chat session={session} showToast={showToast} onBacaBerubah={refreshChatBadge} />}
             </Suspense>
             </ErrorBoundary>
           )}

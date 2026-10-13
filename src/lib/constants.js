@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
-  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote,
+  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -398,6 +398,8 @@ export const NAV = [
   // sendiri yang menyaring bagian mana yang ditampilkan sesuai role yang
   // login (lihat pages/Panduan.jsx) — jadi satu menu ini isinya beda-beda
   // tergantung siapa yang buka, bukan cuma soal boleh/tidak boleh akses.
+  // Chat pribadi antar user (teks + foto, hapus otomatis 3 hari) — untuk SEMUA role.
+  { key: "chat", label: "CHAT", icon: MessageCircle },
   { key: "panduan", label: "PANDUAN PENGGUNAAN", icon: BookOpen },
   { key: "pengaturan", label: "PENGATURAN", icon: Settings },
 ];
@@ -554,24 +556,24 @@ export const ROLE_MENUS = {
   // "persetujuan-restock" sama sekali — keduanya murni untuk owner &
   // superadmin. Landing page login gudang tetap ke "barang-datang" (lihat
   // App.jsx).
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "panduan", "barang-masuk"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "chat", "panduan", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
-  pemotretan: ["foto", "panduan"],
+  pemotretan: ["foto", "chat", "panduan"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma
   // "Marketplace", dengan semua sub-nya — Belum/Sudah/Riwayat Upload).
-  marketplace: ["marketplace", "panduan"],
+  marketplace: ["marketplace", "chat", "panduan"],
   // "store-selma" (key group, bukan halaman) sudah tidak ada lagi — diganti
   // dengan key menu asli di dalamnya ("grosir" tetap, "toko-offline" baru,
   // "pelanggan" baru — sebelumnya sub dari "grosir", sekarang menu sendiri),
   // ditambah 2 menu baru satu domain (Marketplace-keuangan & Reseller) yang
   // untuk sementara masih halaman "segera hadir". Sesuaikan lagi kalau
   // aksesnya mau dibedakan per menu.
-  grosir: ["grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller", "panduan"],
+  grosir: ["grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller", "chat", "panduan"],
   // Admin Keuangan: hanya menu "Keuangan" (Transaksi + Rekening & Kategori),
   // sama seperti pola role operasional lain — tidak dapat "dashboard" (langsung
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
   // karena tidak didaftarkan di ROLE_SUBMENUS.
-  keuangan: ["keuangan", "panduan"],
+  keuangan: ["keuangan", "chat", "panduan"],
 };
 
 export function allowedMenus(role) {
