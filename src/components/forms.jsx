@@ -4405,6 +4405,10 @@ export function CairkanDepositForm({
   const [metodeBayar, setMetodeBayar] = useState("Cash");
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+  // Nama penerima — cuma dipakai kalau metode Transfer (uangnya ditransfer
+  // ke rekening orang). Default nama pelanggan, tapi boleh diganti kalau
+  // transfernya ke orang lain (mis. keluarga/titipan pelanggan).
+  const [namaPenerima, setNamaPenerima] = useState(pelanggan?.nama || "");
   const [konfirmasiHapusId, setKonfirmasiHapusId] = useState(null);
 
   const daftarRekening = master?.rekening || [];
@@ -4414,12 +4418,14 @@ export function CairkanDepositForm({
 
   const jumlahNum = Number(jumlah) || 0;
   const melebihi = jumlahNum > saldoDeposit;
+  const butuhPenerima = metodeBayar === "Transfer";
+  const penerimaOk = !butuhPenerima || namaPenerima.trim().length > 0;
   // Uang beneran keluar dari rekening Keuangan waktu deposit dicairkan ke
   // pelanggan, jadi wajib pilih rekening & kategori pengeluarannya (label
   // di atas) harus sudah ada dulu di Keuangan > Rekening & Kategori (sama
   // pola dengan LABEL_KATEGORI_GROSIR_CASH/TRANSFER di BayarHutangForm).
   const siapDicatat = Boolean(rekening) && Boolean(kategoriObj);
-  const canSubmit = jumlahNum > 0 && !melebihi && siapDicatat && !saving;
+  const canSubmit = jumlahNum > 0 && !melebihi && siapDicatat && penerimaOk && !saving;
 
   return (
     <ModalShell title={title || `Cairkan Deposit — ${pelanggan.nama}`} onClose={onClose}>
@@ -4533,6 +4539,20 @@ export function CairkanDepositForm({
         )}
       </Field>
 
+      {butuhPenerima && (
+        <Field label="Nama Penerima">
+          <input
+            className={inputClass}
+            value={namaPenerima}
+            onChange={(e) => setNamaPenerima(e.target.value)}
+            placeholder="Nama pemilik rekening yang menerima transfer"
+          />
+          <div className="text-[11px] text-slate-500 mt-1">
+            Otomatis diisi nama pelanggan — ganti kalau transfernya ke orang lain.
+          </div>
+        </Field>
+      )}
+
       <Field label="Jumlah Dicairkan">
         <input
           type="number"
@@ -4556,7 +4576,7 @@ export function CairkanDepositForm({
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, rekening, kategoriKode: kategoriObj?.kode, catatan: catatan.trim() })}
+        onClick={() => onSubmit({ jumlah: jumlahNum, metodeBayar, rekening, kategoriKode: kategoriObj?.kode, catatan: catatan.trim(), namaPenerima: butuhPenerima ? namaPenerima.trim() : "" })}
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : submitLabel || "Cairkan Deposit"}

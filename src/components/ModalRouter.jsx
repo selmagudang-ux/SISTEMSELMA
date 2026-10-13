@@ -3008,7 +3008,7 @@ export default function ModalRouter({
                 rekening: data.rekening,
                 kategori: data.kategoriKode,
                 jumlah,
-                keterangan: `Pengembalian deposit — ${p.nama}${data.catatan ? ` · ${data.catatan}` : ""}`,
+                keterangan: `Pengembalian deposit — ${p.nama}${data.namaPenerima ? ` · Penerima: ${data.namaPenerima}` : ""}${data.catatan ? ` · ${data.catatan}` : ""}`,
               }),
             });
 
@@ -3018,7 +3018,7 @@ export default function ModalRouter({
                 nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
                 pelanggan_id: p.id,
                 jumlah: -jumlah,
-                keterangan: `Dicairkan ke pelanggan (${data.metodeBayar})${data.catatan ? ` · ${data.catatan}` : ""}`,
+                keterangan: `Dicairkan ke pelanggan (${data.metodeBayar})${data.namaPenerima ? ` · Penerima: ${data.namaPenerima}` : ""}${data.catatan ? ` · ${data.catatan}` : ""}`,
               }),
             });
           }, "Deposit dicairkan ke pelanggan — tercatat juga di Keuangan")
@@ -3085,7 +3085,7 @@ export default function ModalRouter({
                 rekening: data.rekening,
                 kategori: data.kategoriKode,
                 jumlah,
-                keterangan: `R.CO · Pencairan — ${p.nama}${data.catatan ? ` · ${data.catatan}` : ""}`,
+                keterangan: `R.CO · Pencairan — ${p.nama}${data.namaPenerima ? ` · Penerima: ${data.namaPenerima}` : ""}${data.catatan ? ` · ${data.catatan}` : ""}`,
               }),
             });
 
@@ -3095,7 +3095,7 @@ export default function ModalRouter({
                 nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
                 pelanggan_id: p.id,
                 jumlah: -jumlah,
-                keterangan: `Dicairkan ke pelanggan Reseller Cekout (${data.metodeBayar})${data.catatan ? ` · ${data.catatan}` : ""}`,
+                keterangan: `Dicairkan ke pelanggan Reseller Cekout (${data.metodeBayar})${data.namaPenerima ? ` · Penerima: ${data.namaPenerima}` : ""}${data.catatan ? ` · ${data.catatan}` : ""}`,
               }),
             });
           }, "Pencairan tercatat — tercatat juga di Keuangan")
