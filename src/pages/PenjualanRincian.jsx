@@ -48,6 +48,52 @@ const qtyBersih = (b) => (b.qty == null ? null : Math.max(0, n0(b.qty) - n0(b.qt
 const hppBaris = (b) => (b.hpp_satuan == null || b.qty == null ? null : n0(b.hpp_satuan) * qtyBersih(b));
 const potonganBaris = (b) => n0(b.harga_produk) + n0(b.refund) - n0(b.dana_dilepas);
 
+// ---- pengurutan kolom (Per Pesanan & Per SKU) ----
+// nilai kosong (mis. HPP belum lengkap) selalu di paling bawah, apa pun arahnya
+const bandingkan = (a, b, arah) => {
+  const an = a == null, bn = b == null;
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  const r = typeof a === "string" ? a.localeCompare(b, "id", { numeric: true }) : a - b;
+  return arah === "asc" ? r : -r;
+};
+const AKSES_PESANAN = {
+  tanggal: (p) => p.tanggal || "",
+  sku: (p) => p.lines[0]?.sku || p.lines[0]?.sku_referensi || "",
+  penjualan: (p) => p.r.penjualan,
+  potongan: (p) => p.r.potongan,
+  dana: (p) => p.r.dana,
+  hpp: (p) => (p.r.hppLengkap ? p.r.hpp : null),
+  laba: (p) => (p.r.hppLengkap ? p.r.laba : null),
+};
+const adaHpp = (s) => s.danaLengkap > 0 || s.hpp > 0;
+const AKSES_SKU = {
+  kunci: (s) => s.kunci,
+  qty: (s) => s.qty,
+  penjualan: (s) => s.r.penjualan,
+  potongan: (s) => s.r.potongan,
+  dana: (s) => s.r.dana,
+  hpp: (s) => (adaHpp(s) ? s.hpp : null),
+  laba: (s) => (adaHpp(s) ? s.laba : null),
+  margin: (s) => (s.danaLengkap > 0 ? s.laba / s.danaLengkap : null),
+};
+// klik judul kolom: kolom baru -> teks naik (A-Z) / angka turun (terbesar dulu); klik lagi membalik arah
+function ubahUrut(set, k) {
+  set((u) => (u && u.k === k ? { k, d: u.d === "asc" ? "desc" : "asc" } : { k, d: k === "kunci" || k === "sku" ? "asc" : "desc" }));
+}
+function ThUrut({ label, k, urut, onUrut, kanan = true, children }) {
+  const aktif = urut?.k === k;
+  return (
+    <th className={`px-3 py-2.5 font-medium ${kanan ? "text-right" : ""}`} aria-sort={aktif ? (urut.d === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" onClick={() => onUrut(k)} className={`inline-flex items-center gap-1 hover:text-md-on-surface ${aktif ? "text-md-on-surface" : ""}`}>
+        {label}{children}
+        <span className={aktif ? "" : "opacity-30"}>{aktif ? (urut.d === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 function ringkasBaris(list) {
   const r = { penjualan: 0, refund: 0, potongan: 0, dana: 0, hpp: 0, laba: 0, qty: 0, hppLengkap: true, barisTanpaHpp: 0 };
   for (const b of list) {
@@ -76,6 +122,8 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [buka, setBuka] = useState({});
   const [importOpen, setImportOpen] = useState(false);
   const [aliasList, setAliasList] = useState([]);
+  const [urutPesanan, setUrutPesanan] = useState(null); // null = urutan asli (tanggal dana dilepas terbaru)
+  const [urutSku, setUrutSku] = useState({ k: "laba", d: "desc" });
   const [rentangImport, setRentangImport] = useState(null); // periode data yang baru diimport (tidak memindahkan filter otomatis)
 
   const skuMap = useMemo(() => {
@@ -105,7 +153,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   }, [filterToko, dari, sampai, platform]);
 
   useEffect(() => { muat(); }, [muat]);
-  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai]);
+  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku]);
 
   // ---- olah data ----
   const pesananList = useMemo(() => {
@@ -155,7 +203,17 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       .sort((a, b) => b.laba - a.laba);
   }, [data, q]);
 
-  const daftar = tampil === "sku" ? skuList : pesananFiltered;
+  const pesananUrut = useMemo(() => {
+    if (!urutPesanan) return pesananFiltered;
+    const ak = AKSES_PESANAN[urutPesanan.k];
+    return [...pesananFiltered].sort((a, b) => bandingkan(ak(a), ak(b), urutPesanan.d));
+  }, [pesananFiltered, urutPesanan]);
+  const skuUrut = useMemo(() => {
+    if (!urutSku) return skuList;
+    const ak = AKSES_SKU[urutSku.k];
+    return [...skuList].sort((a, b) => bandingkan(ak(a), ak(b), urutSku.d));
+  }, [skuList, urutSku]);
+  const daftar = tampil === "sku" ? skuUrut : pesananUrut;
   const jumlahHal = tampil === "biaya" ? 1 : Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
   const potong = daftar.slice((halaman - 1) * PER_HALAMAN, halaman * PER_HALAMAN);
 
@@ -434,11 +492,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       ) : data.length === 0 ? (
         <EmptyState label={platform === "shopee" ? "Belum ada data di periode ini. Klik “Import Laporan Shopee” untuk mengunggah Laporan Penghasilan + Export Pesanan." : "Import otomatis baru tersedia untuk Shopee."} />
       ) : tampil === "pesanan" ? (
-        <TabelPesanan list={potong} buka={buka} setBuka={setBuka} />
+        <TabelPesanan list={potong} buka={buka} setBuka={setBuka} urut={urutPesanan} onUrut={(k) => ubahUrut(setUrutPesanan, k)} />
       ) : tampil === "biaya" ? (
         <TabelBiaya list={pesananFiltered} />
       ) : (
-        <TabelSku list={potong} />
+        <TabelSku list={potong} urut={urutSku} onUrut={(k) => ubahUrut(setUrutSku, k)} />
       )}
 
       {jumlahHal > 1 && (
@@ -459,20 +517,20 @@ function Angka({ v, plus }) {
   return <span className={n < 0 ? "text-red-300" : plus && n > 0 ? "text-emerald-400" : ""}>{fmtRp(n)}</span>;
 }
 
-function TabelPesanan({ list, buka, setBuka }) {
+function TabelPesanan({ list, buka, setBuka, urut, onUrut }) {
   return (
     <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
       <table className="w-full text-sm">
         <thead className="sticky top-0 z-10 bg-md-container-low">
           <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
             <th className="px-3 py-2.5 w-8" />
-            <th className="px-3 py-2.5 font-medium">Pesanan</th>
-            <th className="px-3 py-2.5 font-medium">SKU</th>
-            <th className="px-3 py-2.5 font-medium text-right">Harga Jual</th>
-            <th className="px-3 py-2.5 font-medium text-right">Biaya Marketplace</th>
-            <th className="px-3 py-2.5 font-medium text-right">Dana Dilepas</th>
-            <th className="px-3 py-2.5 font-medium text-right">HPP</th>
-            <th className="px-3 py-2.5 font-medium text-right">Laba Bersih</th>
+            <ThUrut label="Pesanan (tgl cair)" k="tanggal" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="SKU" k="sku" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="Harga Jual" k="penjualan" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Biaya Marketplace" k="potongan" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Dana Dilepas" k="dana" urut={urut} onUrut={onUrut} />
+            <ThUrut label="HPP" k="hpp" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
           </tr>
         </thead>
         <tbody>
@@ -670,7 +728,7 @@ function DetailBiayaSku({ s }) {
   );
 }
 
-function TabelSku({ list }) {
+function TabelSku({ list, urut, onUrut }) {
   const [terbuka, setTerbuka] = useState({});
   return (
     <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
@@ -678,14 +736,14 @@ function TabelSku({ list }) {
         <thead className="sticky top-0 z-10 bg-md-container-low">
           <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
             <th className="px-3 py-2.5 w-8" />
-            <th className="px-3 py-2.5 font-medium">SKU</th>
-            <th className="px-3 py-2.5 font-medium text-right">Qty</th>
-            <th className="px-3 py-2.5 font-medium text-right">Harga Jual</th>
-            <th className="px-3 py-2.5 font-medium text-right">Biaya Marketplace <span className="font-normal">(klik baris)</span></th>
-            <th className="px-3 py-2.5 font-medium text-right">Dana Dilepas</th>
-            <th className="px-3 py-2.5 font-medium text-right">HPP</th>
-            <th className="px-3 py-2.5 font-medium text-right">Laba Bersih</th>
-            <th className="px-3 py-2.5 font-medium text-right">Margin</th>
+            <ThUrut label="SKU" k="kunci" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="Qty" k="qty" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Harga Jual" k="penjualan" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Biaya Marketplace" k="potongan" urut={urut} onUrut={onUrut}><span className="font-normal">(klik baris)</span></ThUrut>
+            <ThUrut label="Dana Dilepas" k="dana" urut={urut} onUrut={onUrut} />
+            <ThUrut label="HPP" k="hpp" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut} />
           </tr>
         </thead>
         <tbody>
