@@ -122,6 +122,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [buka, setBuka] = useState({});
   const [importOpen, setImportOpen] = useState(false);
   const [aliasList, setAliasList] = useState([]);
+  const [hanyaRefund, setHanyaRefund] = useState(false);
   const [urutPesanan, setUrutPesanan] = useState(null); // null = urutan asli (tanggal dana dilepas terbaru)
   const [urutSku, setUrutSku] = useState({ k: "laba", d: "desc" });
   const [rentangImport, setRentangImport] = useState(null); // periode data yang baru diimport (tidak memindahkan filter otomatis)
@@ -153,7 +154,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   }, [filterToko, dari, sampai, platform]);
 
   useEffect(() => { muat(); }, [muat]);
-  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku]);
+  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku, hanyaRefund]);
 
   // ---- olah data ----
   const pesananList = useMemo(() => {
@@ -180,10 +181,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
 
   const q = cari.trim().toLowerCase();
   const pesananFiltered = useMemo(() => {
-    if (!q) return pesananList;
-    return pesananList.filter((p) => p.no.toLowerCase().includes(q) || p.lines.some((l) =>
+    const dasar = hanyaRefund ? pesananList.filter((p) => n0(p.r.refund) !== 0 || p.lines.some((l) => n0(l.qty_retur) > 0)) : pesananList;
+    if (!q) return dasar;
+    return dasar.filter((p) => p.no.toLowerCase().includes(q) || p.lines.some((l) =>
       `${l.sku || ""} ${l.sku_referensi || ""} ${l.nama_produk || ""}`.toLowerCase().includes(q)));
-  }, [pesananList, q]);
+  }, [pesananList, q, hanyaRefund]);
 
   const skuList = useMemo(() => {
     const m = new Map();
@@ -484,6 +486,12 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
           <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. pesanan / SKU / nama produk" className={`${inputClass} !pl-9`} />
         </div>
+        {tampil !== "sku" && (
+          <label className="flex items-center gap-1.5 text-xs text-md-on-surface-variant cursor-pointer select-none">
+            <input type="checkbox" checked={hanyaRefund} onChange={(e) => setHanyaRefund(e.target.checked)} />
+            Hanya refund/retur ({pesananList.filter((p) => n0(p.r.refund) !== 0 || p.lines.some((l) => n0(l.qty_retur) > 0)).length})
+          </label>
+        )}
         <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "sku" ? "SKU" : "pesanan"}</div>
       </div>
 
@@ -556,6 +564,8 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
         <td className="px-3 py-2.5 whitespace-nowrap">
           <div className="font-medium">{p.no}</div>
           <div className="text-[11px] text-md-on-surface-variant">cair {formatTanggalID(p.tanggal)}</div>
+          {n0(r.refund) !== 0 && <div className="mt-1"><Badge color="red">Refund {fmtRp(Math.abs(n0(r.refund)))}</Badge></div>}
+          {n0(r.refund) === 0 && p.lines.some((l) => n0(l.qty_retur) > 0) && <div className="mt-1"><Badge color="amber">Ada retur</Badge></div>}
         </td>
         <td className="px-3 py-2.5 text-xs text-md-on-surface-variant max-w-[260px]">
           {p.lines.length === 0 ? "—" : p.lines.slice(0, 2).map((l, i) => (
