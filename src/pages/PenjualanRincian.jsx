@@ -461,9 +461,9 @@ function Angka({ v, plus }) {
 
 function TabelPesanan({ list, buka, setBuka }) {
   return (
-    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
+    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10 bg-md-container-low">
           <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
             <th className="px-3 py-2.5 w-8" />
             <th className="px-3 py-2.5 font-medium">Pesanan</th>
@@ -673,9 +673,9 @@ function DetailBiayaSku({ s }) {
 function TabelSku({ list }) {
   const [terbuka, setTerbuka] = useState({});
   return (
-    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
+    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
       <table className="w-full text-sm">
-        <thead>
+        <thead className="sticky top-0 z-10 bg-md-container-low">
           <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
             <th className="px-3 py-2.5 w-8" />
             <th className="px-3 py-2.5 font-medium">SKU</th>
