@@ -40,6 +40,8 @@ const LABEL_BIAYA = {
 const pad = (n) => String(n).padStart(2, "0");
 const isoHariIni = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const isoAwalBulan = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`; };
+const isoAwalBulanLalu = () => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-01`; };
+const isoAkhirBulanLalu = () => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth(), 0); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
 const n0 = (v) => Number(v) || 0;
 const qtyBersih = (b) => (b.qty == null ? null : Math.max(0, n0(b.qty) - n0(b.qty_retur)));
 // HPP baris: null kalau belum bisa dihitung (SKU belum cocok / qty tidak diketahui)
@@ -74,6 +76,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [buka, setBuka] = useState({});
   const [importOpen, setImportOpen] = useState(false);
   const [aliasList, setAliasList] = useState([]);
+  const [rentangImport, setRentangImport] = useState(null); // periode data yang baru diimport (tidak memindahkan filter otomatis)
 
   const skuMap = useMemo(() => {
     const m = new Map();
@@ -339,6 +342,15 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className={`${inputClass} !w-40`} />
         </div>
         <button onClick={muat} className={btnOutlined} disabled={loading}><RefreshCw size={14} /> Muat ulang</button>
+        <div className="flex rounded-full border border-md-outline-variant overflow-hidden text-xs">
+          {[
+            ["Bulan ini", () => { setDari(isoAwalBulan()); setSampai(isoHariIni()); }, dari === isoAwalBulan() && sampai === isoHariIni()],
+            ["Bulan lalu", () => { setDari(isoAwalBulanLalu()); setSampai(isoAkhirBulanLalu()); }, dari === isoAwalBulanLalu() && sampai === isoAkhirBulanLalu()],
+            ["Semua", () => { setDari("2000-01-01"); setSampai(isoHariIni()); }, dari === "2000-01-01"],
+          ].map(([l, aksi, aktif]) => (
+            <button key={l} onClick={aksi} className={`px-3 py-2 ${aktif ? "bg-md-primary-container text-md-on-primary-container font-medium" : "text-md-on-surface-variant"}`}>{l}</button>
+          ))}
+        </div>
         <div className="flex-1" />
         {belumCocok.length > 0 && (
           <button onClick={cocokkanUlang} className={btnOutlined} disabled={sibukCocok} title="Cocokkan ulang SKU yang belum cocok dengan Master Barang terbaru">
@@ -362,16 +374,33 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       {importOpen && (
         <PanelImport
           platform={platform} tokoKode={tokoKode} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap}
-          showToast={showToast} onSelesai={(rentang) => { setImportOpen(false); if (rentang) { setDari(rentang.dari); setSampai(rentang.sampai); } else muat(); }}
+          showToast={showToast} onSelesai={(rentang) => { setImportOpen(false); setRentangImport(rentang || null); muat(); }}
         />
       )}
 
       {err && <div className="mb-4 text-sm text-red-400">{err}</div>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+      {rentangImport && rentangImport.dari && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-xs bg-sky-500/10 text-sky-300 rounded-md-lg px-3 py-2">
+          <span>Import tersimpan untuk dana dilepas {formatTanggalID(rentangImport.dari)} – {formatTanggalID(rentangImport.sampai)}. Filter tampilan tidak diubah.</span>
+          {(rentangImport.dari < dari || rentangImport.sampai > sampai) && (
+            <button className="underline" onClick={() => { setDari(rentangImport.dari); setSampai(rentangImport.sampai); setRentangImport(null); }}>Lihat periode ini</button>
+          )}
+          <button className="underline ml-auto" onClick={() => setRentangImport(null)}>Tutup</button>
+        </div>
+      )}
+
+      <div className="text-[11px] text-md-on-surface-variant mb-1">Semua pesanan di periode ({pesananList.length})</div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
         <StatCard label="Penjualan (harga produk)" value={fmtRp(total.penjualan)} icon={TrendingUp} iconColor="text-emerald-400" />
         <StatCard label="Biaya & potongan marketplace" value={fmtRp(total.potongan)} icon={Receipt} iconColor="text-amber-400" />
         <StatCard label="Dana dilepas ke saldo" value={fmtRp(total.dana)} icon={Wallet} iconColor="text-sky-400" />
+      </div>
+      <div className="text-[11px] text-md-on-surface-variant mb-1">
+        Hanya pesanan dengan SKU lengkap ({total.pesananLengkap} dari {pesananList.length}) — dana − HPP = laba
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+        <StatCard label="Dana dilepas (SKU lengkap)" value={fmtRp(total.danaLengkap)} icon={Wallet} iconColor="text-sky-400" />
         <StatCard label="HPP barang terjual" value={fmtRp(total.hpp)} icon={Package} />
         <StatCard label={`Laba bersih (${total.margin.toFixed(1)}% dari dana)`} value={fmtRp(total.laba)} accent={total.laba >= 0 ? "text-emerald-400" : "text-red-400"} icon={TrendingUp} iconColor="text-emerald-400" />
       </div>
@@ -379,10 +408,10 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         <div className="mb-4 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
           <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
           <div>
-            Laba & HPP baru dihitung dari {total.pesananLengkap} pesanan yang SKU-nya lengkap. {total.pesananTanpaHpp} pesanan belum bisa dihitung HPP-nya
+            {total.pesananTanpaHpp} pesanan belum bisa dihitung HPP-nya, jadi tidak masuk HPP & laba di atas
             {tanpaDataSku > 0 && <> ({tanpaDataSku} di antaranya belum punya data SKU — import <b>Export Pesanan</b> yang mencakup tanggal pesanan itu)</>}
             {belumCocok.length > 0 && <>; {belumCocok.length} SKU Shopee belum cocok dengan Master Barang (lihat panel di bawah)</>}.
-            Penjualan, biaya, dan dana dilepas di atas tetap mencakup semua pesanan.
+            Baris "Semua pesanan" tetap mencakup semuanya.
           </div>
         </div>
       )}
