@@ -6,7 +6,7 @@ import {
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
 import { sb, sbAll, fmtRp, downloadCsv } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
-import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
+import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, buangKodeRak, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
 
 // =========================================================
 // RINCIAN PENJUALAN MARKETPLACE (per toko) — SKU, HPP, biaya dari marketplace,
@@ -941,7 +941,7 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
       <div className="text-sm font-medium mb-1 flex items-center gap-2"><Link2 size={14} /> SKU Shopee yang belum cocok dengan Master Barang ({list.length})</div>
       <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
         Ketik SKU yang benar dari Master Barang, lalu Simpan — dipakai untuk semua baris yang sama (termasuk import berikutnya) dan HPP-nya langsung terisi.
-        Biasanya ini SKU yang di Shopee ditulis dengan kode pemasok / huruf berbeda dari SKU sistem.
+        Awalan kode rak (mis. G6J-1B-) otomatis diabaikan saat mencocokkan, jadi yang tersisa di sini biasanya SKU berformat lama (kode rak + nama barang) atau huruf yang memang berbeda dari SKU sistem.
       </p>
       <datalist id="dl-sku-master">{(skuMaster || []).slice(0, 8000).map((s) => <option key={s.id ?? s.sku} value={s.sku} />)}</datalist>
       <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 divide-y divide-md-outline-variant max-h-[420px] overflow-y-auto">
@@ -952,7 +952,7 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
               <div className="text-[11px] text-md-on-surface-variant truncate">{x.jumlah} baris · {x.nama}{x.variasi ? ` — ${x.variasi}` : ""}</div>
               {(() => {
                 const aneh = karakterAneh(x.ref);
-                const mirip = indeksLonggar.get(kunciLonggar(x.ref)) || [];
+                const mirip = [...new Set([...(indeksLonggar.get(kunciLonggar(x.ref)) || []), ...(indeksLonggar.get(kunciLonggar(buangKodeRak(x.ref))) || [])])];
                 return (
                   <>
                     {aneh.length > 0 && <div className="text-[11px] text-amber-400">Ada karakter tak biasa di kode Shopee: {aneh.join(", ")}</div>}

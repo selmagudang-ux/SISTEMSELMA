@@ -45,9 +45,16 @@ export const normSku = (s) =>
     .trim()
     .toUpperCase();
 
+// Awalan KODE RAK yang ditempel di SKU Shopee supaya mudah diambil di gudang, mis.
+// "G6J-1B-TDKA-KLR-89-PER-P60CM" (satu pasang) atau "G3J-6C-G4I-6C-TDKA-KLL-9-PER-P45CM" (dua pasang;
+// bisa dua digit: "G4I-10A-..."). SKU di Master Barang hanya "TDKA-KLR-89-PER-P60CM". Kode rak berubah
+// kalau barang pindah rak, jadi bukan bagian identitas SKU — dibuang saat mencocokkan.
+const POLA_KODE_RAK = /^(?:[A-Z]\d[A-Z]-\d{1,2}[A-Z]-)+/;
+export const buangKodeRak = (s) => normSku(s).replace(POLA_KODE_RAK, "");
+
 // Cari baris Master Barang untuk satu kode referensi marketplace.
 // Urutan: pemetaan manual (alias) -> kalau SKU tujuannya sudah tidak ada di Master, tetap coba
-// cocok langsung dengan SKU yang sama persis.
+// cocok langsung dengan SKU yang sama persis -> terakhir, coba lagi tanpa awalan kode rak.
 export function cariMaster(ref, aliasMap, skuMap) {
   const k = normSku(ref);
   if (!k) return null;
@@ -56,7 +63,18 @@ export function cariMaster(ref, aliasMap, skuMap) {
     const m = skuMap.get(normSku(viaAlias));
     if (m) return m;
   }
-  return skuMap.get(k) || null;
+  const langsung = skuMap.get(k);
+  if (langsung) return langsung;
+  const polos = k.replace(POLA_KODE_RAK, "");
+  if (polos && polos !== k) {
+    const aliasPolos = aliasMap?.get(polos);
+    if (aliasPolos) {
+      const m = skuMap.get(normSku(aliasPolos));
+      if (m) return m;
+    }
+    return skuMap.get(polos) || null;
+  }
+  return null;
 }
 
 function num(v) {
@@ -386,7 +404,7 @@ export function bangunIndeksProduk(petaRows) {
     if (!produk.has(r.kode_produk)) produk.set(r.kode_produk, { kode: r.kode_produk, nama: r.nama_produk || "", skuSet: new Set() });
     const p = produk.get(r.kode_produk);
     if (!p.nama && r.nama_produk) p.nama = r.nama_produk;
-    if (r.sku_variasi) p.skuSet.add(normSku(r.sku_variasi));
+    if (r.sku_variasi) p.skuSet.add(buangKodeRak(r.sku_variasi));
   }
   const byJudul = new Map(), bySku = new Map();
   for (const p of produk.values()) {
@@ -399,7 +417,7 @@ export function bangunIndeksProduk(petaRows) {
 
 function produkDariBaris(b, idx) {
   const kand = idx.byJudul.get(normJudul(b.nama_produk)) || [];
-  const ref = normSku(b.sku_referensi);
+  const ref = buangKodeRak(b.sku_referensi);
   if (kand.length === 1) return kand[0];
   if (kand.length > 1) {
     const cocok = ref ? kand.filter((k) => idx.produk.get(k).skuSet.has(ref)) : [];
