@@ -72,10 +72,13 @@ const bandingkan = (a, b, arah) => {
   const r = typeof a === "string" ? a.localeCompare(b, "id", { numeric: true }) : a - b;
   return arah === "asc" ? r : -r;
 };
+// Etalase yang terjual di satu pesanan = judul produk Shopee-nya (satu pesanan bisa berisi beberapa etalase)
+const etalasePesanan = (p) => [...new Set(p.lines.map((l) => (l.nama_produk || "").trim()).filter(Boolean))];
 const AKSES_PESANAN = {
   no: (p) => p.no || "",
   dibuat: (p) => p.dibuat || "",
   tanggal: (p) => p.tanggal || "",
+  etalase: (p) => etalasePesanan(p)[0] || "",
   sku: (p) => p.lines[0]?.sku || p.lines[0]?.sku_referensi || "",
   penjualan: (p) => p.r.penjualan,
   potongan: (p) => p.r.potongan,
@@ -112,7 +115,7 @@ const AKSES_ETALASE = {
 };
 // klik judul kolom: kolom baru -> teks naik (A-Z) / angka turun (terbesar dulu); klik lagi membalik arah
 function ubahUrut(set, k) {
-  set((u) => (u && u.k === k ? { k, d: u.d === "asc" ? "desc" : "asc" } : { k, d: k === "kunci" || k === "sku" || k === "no" ? "asc" : "desc" }));
+  set((u) => (u && u.k === k ? { k, d: u.d === "asc" ? "desc" : "asc" } : { k, d: k === "kunci" || k === "sku" || k === "no" || k === "etalase" ? "asc" : "desc" }));
 }
 function ThUrut({ label, k, urut, onUrut, kanan = true, children }) {
   const aktif = urut?.k === k;
@@ -424,6 +427,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           { key: "no", label: "No. Pesanan" },
           { key: "tanggal", label: "Tanggal Dana Dilepas" },
           { key: "dibuat", label: "Tanggal Pesanan" },
+          { key: "etalase", label: "Etalase" },
           { key: "jumlahBaris", label: "Jumlah Baris SKU" },
           { key: "qty", label: "Qty" },
           { key: "penjualan", label: "Harga Produk" },
@@ -435,7 +439,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           { key: "hppLengkap", label: "HPP Lengkap?" },
         ];
         const barisPesanan = pesananList.map((p) => ({
-          no: p.no, tanggal: p.tanggal, dibuat: p.dibuat, jumlahBaris: p.lines.length,
+          no: p.no, tanggal: p.tanggal, dibuat: p.dibuat, etalase: etalasePesanan(p).join(" | "), jumlahBaris: p.lines.length,
           qty: p.r.qty, penjualan: p.r.penjualan, refund: p.r.refund, potongan: p.r.potongan, dana: p.r.dana,
           hpp: p.r.hppLengkap ? p.r.hpp : null, laba: p.r.hppLengkap ? p.r.laba : null,
           hppLengkap: p.r.hppLengkap ? "ya" : "belum (SKU belum cocok / qty tidak diketahui)",
@@ -750,6 +754,7 @@ function TabelPesanan({ list, buka, setBuka, urut, onUrut }) {
             <ThUrut label="No. Pesanan" k="no" urut={urut} onUrut={onUrut} kanan={false} />
             <ThUrut label="Tgl Pesanan" k="dibuat" urut={urut} onUrut={onUrut} kanan={false} />
             <ThUrut label="Tgl Cair" k="tanggal" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="Etalase" k="etalase" urut={urut} onUrut={onUrut} kanan={false} />
             <ThUrut label="SKU" k="sku" urut={urut} onUrut={onUrut} kanan={false} />
             <ThUrut label="Harga Jual" k="penjualan" urut={urut} onUrut={onUrut} />
             <ThUrut label="Biaya Marketplace" k="potongan" urut={urut} onUrut={onUrut} />
@@ -785,9 +790,13 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
         </td>
         <td className="px-3 py-2.5 whitespace-nowrap text-xs">{p.dibuat ? formatTanggalID(p.dibuat) : "—"}</td>
         <td className="px-3 py-2.5 whitespace-nowrap text-xs">{p.tanggal ? formatTanggalID(p.tanggal) : "—"}</td>
+        <td className="px-3 py-2.5 text-xs min-w-[220px] max-w-[320px]">
+          {etalasePesanan(p).length === 0 ? "—" : etalasePesanan(p).slice(0, 2).map((n, i) => <div key={i} className="whitespace-normal break-words">{n}</div>)}
+          {etalasePesanan(p).length > 2 && <div className="text-md-on-surface-variant">+{etalasePesanan(p).length - 2} etalase lain</div>}
+        </td>
         <td className="px-3 py-2.5 text-xs text-md-on-surface-variant max-w-[260px]">
           {p.lines.length === 0 ? "—" : p.lines.slice(0, 2).map((l, i) => (
-            <div key={i} className="truncate">{l.sku || l.sku_referensi || "(SKU belum ada)"}{l.qty != null ? ` ×${qtyBersih(l)}` : ""}</div>
+            <div key={i} className="break-all">{l.sku || l.sku_referensi || "(SKU belum ada)"}{l.qty != null ? ` ×${qtyBersih(l)}` : ""}</div>
           ))}
           {p.lines.length > 2 && <div>+{p.lines.length - 2} lainnya</div>}
         </td>
@@ -802,7 +811,7 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
       {terbuka && (
         <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
           <td />
-          <td colSpan={9} className="px-3 py-3">
+          <td colSpan={10} className="px-3 py-3">
             <table className="w-full text-xs mb-3">
               <thead>
                 <tr className="text-left text-md-on-surface-variant">
@@ -824,7 +833,7 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
                       <td className="py-1.5 pr-3 whitespace-nowrap">
                         {l.sku ? l.sku : l.sku_referensi ? <span className="text-amber-400">{l.sku_referensi} (belum cocok)</span> : <span className="text-amber-400">belum ada data SKU</span>}
                       </td>
-                      <td className="py-1.5 pr-3 text-md-on-surface-variant max-w-[260px] truncate">{l.nama_produk}{l.variasi ? ` — ${l.variasi}` : ""}</td>
+                      <td className="py-1.5 pr-3 text-md-on-surface-variant min-w-[240px] max-w-[420px] whitespace-normal break-words">{l.nama_produk}{l.variasi ? ` — ${l.variasi}` : ""}</td>
                       <td className="py-1.5 pr-3 text-right">{l.qty == null ? "?" : `${qtyBersih(l)}${n0(l.qty_retur) ? ` (retur ${l.qty_retur})` : ""}`}</td>
                       <td className="py-1.5 pr-3 text-right">{fmtRp(l.harga_produk)}</td>
                       <td className="py-1.5 pr-3 text-right text-amber-400">{fmtRp(potonganBaris(l))}</td>
@@ -986,7 +995,7 @@ function TabelSku({ list, urut, onUrut, adaIklan }) {
                   <td className="px-3 py-2.5 text-md-on-surface-variant">{buka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
                   <td className="px-3 py-2.5">
                     <div className="font-medium">{s.kunci}{!s.cocok && <span className="ml-2"><Badge color="amber">{s.tanpaData ? "belum ada data SKU" : "belum cocok"}</Badge></span>}</div>
-                    <div className="text-[11px] text-md-on-surface-variant truncate max-w-[320px]">{s.nama}</div>
+                    <div className="text-[11px] text-md-on-surface-variant whitespace-normal break-words max-w-[320px]">{s.nama}</div>
                   </td>
                   <td className="px-3 py-2.5 text-right">{s.qty || "—"}</td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.penjualan)}</td>
@@ -1095,7 +1104,7 @@ function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
                 <tr className="border-b border-md-outline-variant cursor-pointer hover:bg-md-on-surface/[0.04]" onClick={() => setTerbuka((m) => ({ ...m, [e.kunci]: !m[e.kunci] }))}>
                   <td className="px-3 py-2.5 text-md-on-surface-variant">{buka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
                   <td className="px-3 py-2.5">
-                    <div className="font-medium truncate max-w-[340px]">{e.nama || "(tanpa nama)"}</div>
+                    <div className="font-medium whitespace-normal break-words max-w-[340px]">{e.nama || "(tanpa nama)"}</div>
                     <div className="text-[11px] text-md-on-surface-variant">
                       {e.kode ? `Kode ${e.kode} · ` : ""}{[...new Set(e.lines.map(kunciSku))].filter((k) => k !== KUNCI_TANPA_SKU).length} SKU{e.lines.some((l) => kunciSku(l) === KUNCI_TANPA_SKU) ? " + pesanan tanpa data SKU" : ""}
                       {!e.kode && <span className="ml-2"><Badge color="amber">belum terpetakan</Badge></span>}
