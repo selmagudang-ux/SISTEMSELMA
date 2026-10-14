@@ -50,7 +50,10 @@ const isoAwalBulanLalu = () => { const d = new Date(); const x = new Date(d.getF
 const isoAkhirBulanLalu = () => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth(), 0); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
 const n0 = (v) => Number(v) || 0;
 // kunci baris di tabel Per SKU (dipakai juga untuk membagi biaya iklan)
-const kunciSku = (b) => b.sku || b.sku_referensi || b.nama_produk || "(tanpa SKU)";
+// Pesanan yang belum punya data SKU (belum ada Export Pesanan) dikumpulkan di satu kelompok khusus,
+// BUKAN memakai judul produk sebagai pengganti SKU supaya tidak tercampur dengan SKU asli.
+const KUNCI_TANPA_SKU = "(belum ada data SKU)";
+const kunciSku = (b) => b.sku || b.sku_referensi || KUNCI_TANPA_SKU;
 const qtyBersih = (b) => (b.qty == null ? null : Math.max(0, n0(b.qty) - n0(b.qty_retur)));
 // HPP baris: null kalau belum bisa dihitung (SKU belum cocok / qty tidak diketahui)
 const hppBaris = (b) => (b.hpp_satuan == null || b.qty == null ? null : n0(b.hpp_satuan) * qtyBersih(b));
@@ -282,7 +285,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     const m = new Map();
     for (const b of data) {
       const kunci = kunciSku(b);
-      if (!m.has(kunci)) m.set(kunci, { kunci, cocok: !!b.sku, nama: b.nama_produk, lines: [] });
+      if (!m.has(kunci)) m.set(kunci, { kunci, cocok: !!b.sku, tanpaData: kunci === KUNCI_TANPA_SKU, nama: kunci === KUNCI_TANPA_SKU ? "Pesanan dari berbagai produk yang Export Pesanannya belum diimport" : b.nama_produk, lines: [] });
       m.get(kunci).lines.push(b);
     }
     return [...m.values()]
@@ -292,7 +295,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         const rl = ringkasBaris(lengkap);
         return { ...s, r, laba: rl.laba, hpp: rl.hpp, danaLengkap: rl.dana, qty: r.qty, iklan: Math.round(bagiIklan.perKunci.get(s.kunci) || 0) };
       })
-      .filter((s) => !q || `${s.kunci} ${s.nama || ""}`.toLowerCase().includes(q))
+      .filter((s) => !q || `${s.kunci} ${s.nama || ""}`.toLowerCase().includes(q) || (s.tanpaData && s.lines.some((l) => (l.nama_produk || "").toLowerCase().includes(q))))
       .sort((a, b) => b.laba - a.laba);
   }, [data, q, bagiIklan]);
 
@@ -974,7 +977,7 @@ function TabelSku({ list, urut, onUrut, adaIklan }) {
                 <tr className="border-b border-md-outline-variant cursor-pointer hover:bg-md-on-surface/[0.04]" onClick={() => setTerbuka((m) => ({ ...m, [s.kunci]: !m[s.kunci] }))}>
                   <td className="px-3 py-2.5 text-md-on-surface-variant">{buka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
                   <td className="px-3 py-2.5">
-                    <div className="font-medium">{s.kunci}{!s.cocok && <span className="ml-2"><Badge color="amber">belum cocok</Badge></span>}</div>
+                    <div className="font-medium">{s.kunci}{!s.cocok && <span className="ml-2"><Badge color="amber">{s.tanpaData ? "belum ada data SKU" : "belum cocok"}</Badge></span>}</div>
                     <div className="text-[11px] text-md-on-surface-variant truncate max-w-[320px]">{s.nama}</div>
                   </td>
                   <td className="px-3 py-2.5 text-right">{s.qty || "—"}</td>
@@ -1086,7 +1089,7 @@ function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
                   <td className="px-3 py-2.5">
                     <div className="font-medium truncate max-w-[340px]">{e.nama || "(tanpa nama)"}</div>
                     <div className="text-[11px] text-md-on-surface-variant">
-                      {e.kode ? `Kode ${e.kode} · ` : ""}{new Set(e.lines.map(kunciSku)).size} SKU
+                      {e.kode ? `Kode ${e.kode} · ` : ""}{[...new Set(e.lines.map(kunciSku))].filter((k) => k !== KUNCI_TANPA_SKU).length} SKU{e.lines.some((l) => kunciSku(l) === KUNCI_TANPA_SKU) ? " + pesanan tanpa data SKU" : ""}
                       {!e.kode && <span className="ml-2"><Badge color="amber">belum terpetakan</Badge></span>}
                     </div>
                   </td>
