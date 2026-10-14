@@ -139,6 +139,25 @@ export const FIELD_BIAYA = [
   "biaya_ongkir_xtra", "biaya_layanan", "biaya_ams", "biaya_kampanye", "biaya_isi_saldo", "biaya_promosi", "biaya_lain", "pajak",
 ];
 
+const FIELD_UANG = ["harga_produk", "refund", "dana_dilepas", ...FIELD_BIAYA];
+
+// Angka final tiap baris Sku (s.m). Kalau jumlah baris Sku = angka baris Order (selisih <= Rp1), angka Shopee
+// per baris dipakai apa adanya. Kalau tidak sama (mis. Biaya Isi Saldo Otomatis: Shopee hanya mengisinya di baris
+// Order), total Order dibagi ke baris Sku sesuai porsi harga. Total per pesanan selalu tetap sama dengan baris Order.
+function hitungUangSku(o) {
+  const rows = o.skuRows;
+  const bobot = rows.map((s) => Math.max(0, s.harga_produk || 0));
+  for (const f of FIELD_UANG) {
+    const jml = rows.reduce((a, s) => a + s.uang[f], 0);
+    let nilai;
+    if (Math.abs(jml - o[f]) <= 1) {
+      nilai = rows.map((s) => s.uang[f]);
+      nilai[nilai.length - 1] += Math.round(o[f]) - nilai.reduce((a, b) => a + b, 0);
+    } else nilai = alokasi(o[f], bobot);
+    rows.forEach((s, i) => (s.m[f] = nilai[i]));
+  }
+}
+
 export async function parseLaporanPenghasilan(buffer) {
   const rows = await bacaSheetRows(buffer, (names) => names.find((s) => s.toLowerCase() === "penghasilan"));
   const pm = petaKolom(rows, "No. Pesanan");
@@ -172,15 +191,28 @@ export async function parseLaporanPenghasilan(buffer) {
       orders.set(no, o);
     } else if (jenis === "Sku") {
       if (!skuRows.has(no)) skuRows.set(no, []);
-      skuRows.get(no).push({
-        nama_produk: String(r[kol["Nama Produk"]] ?? "").trim(),
+      // Baris "Sku" = rincian satu item di dalam pesanan; baris "Order" = jumlah semua baris Sku-nya.
+      // Shopee sudah membagi harga, dana, dan hampir semua biaya per baris Sku, jadi angka itu dipakai apa adanya.
+      const uang = {
         harga_produk: num(r[kol["Harga Produk"]]),
+        refund: num(r[kol["Jumlah Pengembalian Dana ke Pembeli"]]),
+        dana_dilepas: num(r[kol["Total Penghasilan"]]),
+      };
+      FIELD_BIAYA.forEach((f) => (uang[f] = 0));
+      for (const { i, grup } of kolBiaya) uang[grup] += num(r[i]);
+      const idp = "ID Produk" in kol ? String(r[kol["ID Produk"]] ?? "").trim() : "";
+      skuRows.get(no).push({
+        kode_produk: idp && idp !== "-" ? idp : "", // ID Produk Shopee = Kode Produk etalase
+        nama_produk: String(r[kol["Nama Produk"]] ?? "").trim(),
+        harga_produk: uang.harga_produk,
+        uang, m: {},
       });
     }
   }
   let tidakPas = 0;
   for (const [no, o] of orders) {
     o.skuRows = skuRows.get(no) || [];
+    if (o.skuRows.length) hitungUangSku(o);
     const hitung = o.harga_produk + o.refund + FIELD_BIAYA.reduce((a, f) => a + o[f], 0);
     if (Math.abs(hitung - o.dana_dilepas) > 1) tidakPas++;
   }
@@ -420,6 +452,9 @@ export function bangunIndeksProduk(petaRows) {
 }
 
 export function produkDariBaris(b, idx) {
+  // ID Produk dari Laporan Penghasilan (kalau baris sudah diimport ulang) = penentu etalase paling pasti
+  const kd = b.kode_produk ? String(b.kode_produk).trim() : "";
+  if (kd) return kd;
   const kand = idx.byJudul.get(normJudul(b.nama_produk)) || [];
   const ref = buangKodeRak(b.sku_referensi);
   if (kand.length === 1) return kand[0];
@@ -453,10 +488,10 @@ export function bagiIklanKeSku({ iklanRows, dari, sampai, lines, idx, kunciBaris
   }
   // porsi omzet tiap SKU di tiap produk beriklan
   const bobot = new Map(); // kode -> Map(kunci -> omzet)
-  if (idx?.produk?.size) {
+  if (idx?.produk?.size || (lines || []).some((b) => b.kode_produk)) {
     const cache = new Map();
     for (const b of lines || []) {
-      const ck = `${b.nama_produk || ""}|${b.sku_referensi || ""}`;
+      const ck = `${b.kode_produk || ""}|${b.nama_produk || ""}|${b.sku_referensi || ""}`;
       if (!cache.has(ck)) cache.set(ck, produkDariBaris(b, idx));
       const kode = cache.get(ck);
       if (!kode || !biayaProduk.has(kode)) continue;
@@ -510,6 +545,42 @@ function alokasi(total, bobot) {
   return hasil;
 }
 
+// Baris pesanan dari Export Pesanan / data tersimpan dipetakan ke etalase (ID Produk) lewat judul produk
+// di baris Sku laporan. Kalau semua baris bisa dipetakan dan semua etalase di laporan terwakili, dana & biaya
+// tiap etalase dijumlahkan dari baris Sku Shopee lalu dibagi ke baris-baris etalase itu sesuai subtotal.
+// Kalau ada yang tidak cocok, kembali ke pembagian proporsional seluruh pesanan (bagi = null).
+function petakanKeEtalase(o, lines, bobot) {
+  const kodeSku = new Set(o.skuRows.map((s) => s.kode_produk).filter(Boolean));
+  if (kodeSku.size === 1) return { kodeBaris: lines.map(() => [...kodeSku][0]), bagi: null };
+  const idPerJudul = new Map();
+  for (const s of o.skuRows) {
+    if (!s.kode_produk) continue;
+    const k = normJudul(s.nama_produk);
+    if (!idPerJudul.has(k)) idPerJudul.set(k, new Set());
+    idPerJudul.get(k).add(s.kode_produk);
+  }
+  const kodeBaris = lines.map((l) => {
+    const set = idPerJudul.get(normJudul(l.nama_produk));
+    return set && set.size === 1 ? [...set][0] : null;
+  });
+  const kodeLine = new Set(kodeBaris.filter(Boolean));
+  const konsisten = kodeSku.size > 0 && o.skuRows.every((s) => s.kode_produk) && kodeBaris.every(Boolean)
+    && kodeSku.size === kodeLine.size && [...kodeSku].every((k) => kodeLine.has(k));
+  if (!konsisten) return { kodeBaris, bagi: null };
+  const bagi = {};
+  for (const f of FIELD_UANG) {
+    const hasil = lines.map(() => 0);
+    for (const k of kodeSku) {
+      const idx = lines.map((_, i) => i).filter((i) => kodeBaris[i] === k);
+      const total = o.skuRows.filter((s) => s.kode_produk === k).reduce((a, s) => a + s.m[f], 0);
+      const bagian = alokasi(total, idx.map((i) => bobot[i]));
+      idx.forEach((i, j) => (hasil[i] = bagian[j]));
+    }
+    bagi[f] = hasil;
+  }
+  return { kodeBaris, bagi };
+}
+
 // existingByOrder: Map no_pesanan -> baris tersimpan di DB (supaya import ulang
 // laporan penghasilan SAJA tidak menghapus data SKU hasil import Export Pesanan
 // sebelumnya). aliasMap: Map normSku(referensi Shopee) -> SKU sistem.
@@ -543,8 +614,22 @@ export function bangunBaris({ income, pesanan, existingByOrder, aliasMap, skuMap
     }
 
     const bobot = lines.map((l) => Math.max(0, l.subtotal || 0));
-    const bagi = {};
-    for (const f of ["harga_produk", "refund", "dana_dilepas", ...FIELD_BIAYA]) bagi[f] = alokasi(o[f], bobot);
+    let kodeBaris = lines.map(() => null);
+    let bagi = null;
+    if (sumber === "laporan" && o.skuRows.length && lines.length === o.skuRows.length) {
+      // tiap baris = satu baris Sku laporan: angka Shopee apa adanya + ID Produk-nya
+      kodeBaris = o.skuRows.map((s) => s.kode_produk || null);
+      bagi = {};
+      for (const f of FIELD_UANG) bagi[f] = o.skuRows.map((s) => s.m[f]);
+    } else if (o.skuRows.length) {
+      const r = petakanKeEtalase(o, lines, bobot);
+      kodeBaris = r.kodeBaris;
+      bagi = r.bagi;
+    }
+    if (!bagi) {
+      bagi = {};
+      for (const f of FIELD_UANG) bagi[f] = alokasi(o[f], bobot);
+    }
 
     lines.forEach((l, i) => {
       const ref = normSku(l.sku_referensi);
@@ -564,8 +649,9 @@ export function bangunBaris({ income, pesanan, existingByOrder, aliasMap, skuMap
         harga_satuan: l.harga_satuan, subtotal: l.subtotal,
         hpp_satuan: master && master.hpp != null ? Number(master.hpp) : null,
         sumber_sku: sumber,
+        kode_produk: kodeBaris[i],
       };
-      for (const f of ["harga_produk", "refund", "dana_dilepas", ...FIELD_BIAYA]) baris[f] = bagi[f][i];
+      for (const f of FIELD_UANG) baris[f] = bagi[f][i];
       hasil.push(baris);
     });
   }

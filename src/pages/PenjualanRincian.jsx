@@ -319,7 +319,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       return m.get(kunci);
     };
     for (const b of data) {
-      const ck = `${b.nama_produk || ""}|${b.sku_referensi || ""}`;
+      const ck = `${b.kode_produk || ""}|${b.nama_produk || ""}|${b.sku_referensi || ""}`;
       if (!cache.has(ck)) cache.set(ck, produkDariBaris(b, idxProduk));
       const kode = cache.get(ck);
       const kunci = kode ? `kode:${kode}` : `judul:${normJudul(b.nama_produk) || "(tanpa nama)"}`;
