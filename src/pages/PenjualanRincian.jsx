@@ -73,6 +73,8 @@ const bandingkan = (a, b, arah) => {
   return arah === "asc" ? r : -r;
 };
 const AKSES_PESANAN = {
+  no: (p) => p.no || "",
+  dibuat: (p) => p.dibuat || "",
   tanggal: (p) => p.tanggal || "",
   sku: (p) => p.lines[0]?.sku || p.lines[0]?.sku_referensi || "",
   penjualan: (p) => p.r.penjualan,
@@ -110,7 +112,7 @@ const AKSES_ETALASE = {
 };
 // klik judul kolom: kolom baru -> teks naik (A-Z) / angka turun (terbesar dulu); klik lagi membalik arah
 function ubahUrut(set, k) {
-  set((u) => (u && u.k === k ? { k, d: u.d === "asc" ? "desc" : "asc" } : { k, d: k === "kunci" || k === "sku" ? "asc" : "desc" }));
+  set((u) => (u && u.k === k ? { k, d: u.d === "asc" ? "desc" : "asc" } : { k, d: k === "kunci" || k === "sku" || k === "no" ? "asc" : "desc" }));
 }
 function ThUrut({ label, k, urut, onUrut, kanan = true, children }) {
   const aktif = urut?.k === k;
@@ -745,7 +747,9 @@ function TabelPesanan({ list, buka, setBuka, urut, onUrut }) {
         <thead className="sticky top-0 z-10 bg-md-container-low">
           <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
             <th className="px-3 py-2.5 w-8" />
-            <ThUrut label="Pesanan (tgl cair)" k="tanggal" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="No. Pesanan" k="no" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="Tgl Pesanan" k="dibuat" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="Tgl Cair" k="tanggal" urut={urut} onUrut={onUrut} kanan={false} />
             <ThUrut label="SKU" k="sku" urut={urut} onUrut={onUrut} kanan={false} />
             <ThUrut label="Harga Jual" k="penjualan" urut={urut} onUrut={onUrut} />
             <ThUrut label="Biaya Marketplace" k="potongan" urut={urut} onUrut={onUrut} />
@@ -776,10 +780,11 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
         <td className="px-3 py-2.5 text-md-on-surface-variant">{terbuka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
         <td className="px-3 py-2.5 whitespace-nowrap">
           <div className="font-medium">{p.no}</div>
-          <div className="text-[11px] text-md-on-surface-variant">cair {formatTanggalID(p.tanggal)}</div>
           {n0(r.refund) !== 0 && <div className="mt-1"><Badge color="red">Refund {fmtRp(Math.abs(n0(r.refund)))}</Badge></div>}
           {n0(r.refund) === 0 && p.lines.some((l) => n0(l.qty_retur) > 0) && <div className="mt-1"><Badge color="amber">Ada retur</Badge></div>}
         </td>
+        <td className="px-3 py-2.5 whitespace-nowrap text-xs">{p.dibuat ? formatTanggalID(p.dibuat) : "—"}</td>
+        <td className="px-3 py-2.5 whitespace-nowrap text-xs">{p.tanggal ? formatTanggalID(p.tanggal) : "—"}</td>
         <td className="px-3 py-2.5 text-xs text-md-on-surface-variant max-w-[260px]">
           {p.lines.length === 0 ? "—" : p.lines.slice(0, 2).map((l, i) => (
             <div key={i} className="truncate">{l.sku || l.sku_referensi || "(SKU belum ada)"}{l.qty != null ? ` ×${qtyBersih(l)}` : ""}</div>
@@ -797,7 +802,7 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
       {terbuka && (
         <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
           <td />
-          <td colSpan={7} className="px-3 py-3">
+          <td colSpan={9} className="px-3 py-3">
             <table className="w-full text-xs mb-3">
               <thead>
                 <tr className="text-left text-md-on-surface-variant">
@@ -929,7 +934,7 @@ function DetailBiayaSku({ s }) {
             {tampil.map((l) => (
               <tr key={l.id ?? `${l.no_pesanan}-${l.no_baris}`} className="border-t border-md-outline-variant/60">
                 <td className="py-1.5 pr-3 whitespace-nowrap">
-                  {l.no_pesanan}<div className="text-[10px] text-md-on-surface-variant">cair {formatTanggalID(l.tanggal_dilepas)}</div>
+                  {l.no_pesanan}<div className="text-[10px] text-md-on-surface-variant">{l.tanggal_pesanan ? `pesan ${formatTanggalID(l.tanggal_pesanan)} · ` : ""}cair {formatTanggalID(l.tanggal_dilepas)}</div>
                 </td>
                 <td className="py-1.5 pr-3 text-right">{l.qty == null ? "?" : qtyBersih(l)}</td>
                 <td className="py-1.5 pr-3 text-right whitespace-nowrap">{fmtRp(l.harga_produk)}</td>
