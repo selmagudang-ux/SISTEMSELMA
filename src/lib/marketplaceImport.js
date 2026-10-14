@@ -192,6 +192,292 @@ export async function parseExportPesanan(buffer) {
   return { lines };
 }
 
+// =========================================================
+// LAPORAN IKLAN SHOPEE (CSV) -> biaya iklan per periode, dikurangkan dari laba
+// bersih di Rincian Penjualan. File yang dibaca: "Data Keseluruhan Iklan"
+// (Seller Centre > Iklan Shopee > Data Keseluruhan > Unduh) — satu baris per
+// kampanye (Iklan Produk Otomatis + GMV Max), kolom "Biaya" = uang iklan
+// yang terpakai. File "Rincian Data Iklan Produk Otomatis" TIDAK dipakai:
+// isinya hanya pecahan per produk dari baris "Iklan Produk Otomatis" di file
+// keseluruhan (kalau ikut dijumlahkan, biayanya terhitung dobel).
+// =========================================================
+
+// Parser CSV kecil (mendukung tanda kutip, koma di dalam kutip, CRLF, BOM)
+function parseCsv(teks) {
+  const t = String(teks).replace(/^\uFEFF/, "");
+  const rows = [];
+  let row = [], cell = "", kutip = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (kutip) {
+      if (c === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else kutip = false; }
+      else cell += c;
+    } else if (c === '"') kutip = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && t[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      rows.push(row); row = [];
+    } else cell += c;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+// "01/09/2026" -> "2026-09-01"
+function tglDmy(s) {
+  const m = String(s ?? "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
+// Baca CSV laporan iklan Shopee: header tabel (baris "Urutan"), blok info di atasnya
+// (Periode, Nama Toko, ...) dan periode dalam ISO.
+function bacaCsvIklan(buffer) {
+  const rows = parseCsv(new TextDecoder("utf-8").decode(buffer));
+  const idxHeader = rows.findIndex((r) => r.some((c) => c.trim() === "Urutan"));
+  const header = idxHeader >= 0 ? rows[idxHeader].map((c) => c.trim()) : [];
+  const meta = {};
+  if (idxHeader > 0) for (const r of rows.slice(0, idxHeader)) if (r[0] && r[1] != null) meta[r[0].trim()] = String(r[1]).trim();
+  const [d1, d2] = String(meta["Periode"] || "").split(" - ");
+  return { rows, idxHeader, header, meta, dari: tglDmy(d1), sampai: tglDmy(d2) };
+}
+
+// Ubah baris tabel CSV jadi baris iklan. kolNama = kolom nama ("Nama Iklan" / "Nama Produk").
+function barisIklan(csv, kolNama, modeTetap) {
+  const { rows, idxHeader, header } = csv;
+  const k = (nama) => header.indexOf(nama);
+  const ambil = (r, nama) => (k(nama) >= 0 ? r[k(nama)] : "");
+  const hasil = [];
+  for (const r of rows.slice(idxHeader + 1)) {
+    if (!r.length || !String(r[0]).trim() || !String(ambil(r, kolNama)).trim()) continue;
+    hasil.push({
+      urutan: num(r[0]),
+      nama_iklan: String(ambil(r, kolNama)).trim(),
+      status: String(ambil(r, "Status")).trim() || null,
+      mode: modeTetap || String(ambil(r, "Mode Bidding")).trim() || null,
+      kode_produk: String(ambil(r, "Kode Produk")).trim().replace(/^-$/, "") || null,
+      dilihat: num(ambil(r, "Dilihat")),
+      klik: num(ambil(r, "Jumlah Klik")),
+      produk_terjual: num(ambil(r, "Produk Terjual")),
+      omzet: num(ambil(r, "Omzet Penjualan")),
+      biaya: num(ambil(r, "Biaya")),
+    });
+  }
+  return hasil;
+}
+
+const jumlahBiaya = (list) => list.reduce((a, x) => a + x.biaya, 0);
+const jumlahOmzet = (list) => list.reduce((a, x) => a + x.omzet, 0);
+const MODE_OTOMATIS = "Iklan Produk Otomatis";
+
+// File 1: "Data Keseluruhan Iklan" — satu baris per kampanye
+export async function parseLaporanIklan(buffer) {
+  const csv = bacaCsvIklan(buffer);
+  if (csv.header.includes("Nama Produk") && !csv.header.includes("Nama Iklan")) {
+    throw new Error("Ini file \"Rincian Data Iklan Produk Otomatis\" — isi di kotak ke-2. Kotak ke-1 untuk file \"Data Keseluruhan Iklan\".");
+  }
+  if (!csv.header.includes("Nama Iklan") || !csv.header.includes("Biaya")) {
+    throw new Error("Ini bukan file Data Keseluruhan Iklan Shopee (kolom \"Nama Iklan\" / \"Biaya\" tidak ditemukan). Unduh dari Seller Centre > Iklan Shopee > Data Keseluruhan.");
+  }
+  if (!csv.dari || !csv.sampai) throw new Error("Periode laporan iklan tidak terbaca di bagian atas file.");
+  const iklan = barisIklan(csv, "Nama Iklan", null);
+  return {
+    dari: csv.dari, sampai: csv.sampai, iklan,
+    namaToko: csv.meta["Nama Toko"] || "", username: csv.meta["Username"] || "",
+    totalBiaya: jumlahBiaya(iklan), totalOmzet: jumlahOmzet(iklan),
+  };
+}
+
+// File 2 (opsional): "Rincian Data Iklan Produk Otomatis" — pecahan per produk dari baris
+// "Iklan Produk Otomatis" di file 1 (baris pertamanya, Kode Produk "-", adalah ringkasannya).
+export async function parseRincianIklanOtomatis(buffer) {
+  const csv = bacaCsvIklan(buffer);
+  if (csv.header.includes("Nama Iklan")) {
+    throw new Error("Ini file \"Data Keseluruhan Iklan\" — isi di kotak ke-1. Kotak ke-2 untuk \"Rincian Data Iklan Produk Otomatis\".");
+  }
+  if (!csv.header.includes("Nama Produk") || !csv.header.includes("Kode Produk") || !csv.header.includes("Biaya")) {
+    throw new Error("Ini bukan file Rincian Data Iklan Produk Otomatis Shopee (kolom \"Nama Produk\" / \"Kode Produk\" / \"Biaya\" tidak ditemukan).");
+  }
+  if (!csv.dari || !csv.sampai) throw new Error("Periode laporan iklan tidak terbaca di bagian atas file.");
+  const semua = barisIklan(csv, "Nama Produk", MODE_OTOMATIS);
+  return {
+    dari: csv.dari, sampai: csv.sampai,
+    iklan: semua.filter((x) => x.kode_produk),
+    ringkasanBiaya: semua.filter((x) => !x.kode_produk).reduce((a, x) => a + x.biaya, 0),
+  };
+}
+
+// Gabungkan: baris ringkasan "Iklan Produk Otomatis" di file 1 diganti pecahan per produk dari
+// file 2. Selisih pembulatan (mis. Rp 4) dijadikan satu baris tanpa kode produk supaya total
+// biaya tetap persis sama dengan angka Shopee.
+export function gabungIklan(utama, rincian) {
+  if (!rincian) return { ...utama, selisihBulat: 0, rincianDipakai: false };
+  if (rincian.dari !== utama.dari || rincian.sampai !== utama.sampai) {
+    throw new Error("Periode kedua file iklan berbeda — unduh keduanya dengan periode yang sama.");
+  }
+  const ringkas = utama.iklan.find((x) => x.mode === MODE_OTOMATIS && !x.kode_produk);
+  if (!ringkas) throw new Error("File Data Keseluruhan tidak punya baris \"Iklan Produk Otomatis\", jadi file rincian tidak bisa dipasangkan.");
+  const sisa = utama.iklan.filter((x) => x !== ringkas);
+  const selisih = Math.round((ringkas.biaya - jumlahBiaya(rincian.iklan)) * 100) / 100;
+  const tambahan = Math.abs(selisih) >= 0.5
+    ? [{ ...ringkas, nama_iklan: "Selisih pembulatan Iklan Produk Otomatis", biaya: selisih, dilihat: 0, klik: 0, produk_terjual: 0, omzet: 0 }]
+    : [];
+  const iklan = [...sisa, ...rincian.iklan, ...tambahan];
+  return { ...utama, iklan, totalBiaya: jumlahBiaya(iklan), totalOmzet: jumlahOmzet(iklan), selisihBulat: selisih, rincianDipakai: true };
+}
+
+// =========================================================
+// MASS UPDATE PRODUK SHOPEE (.xlsx "Info Penjualan") -> tabel pemetaan
+// Kode Produk (item ID) <-> judul produk <-> SKU tiap variasi. Dipakai untuk membagi biaya
+// iklan (yang hanya tahu Kode Produk) ke SKU. Import berkala; menambah/memperbarui per
+// (produk, variasi) dan TIDAK menghapus yang tidak ada di file baru.
+// =========================================================
+export async function parseMassUpdate(buffer) {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(buffer, { type: "array" });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
+  const idxHeader = rows.findIndex((r) => r.some((c) => String(c).trim() === "et_title_product_id"));
+  const kol = {};
+  if (idxHeader >= 0) rows[idxHeader].forEach((c, i) => { const k = String(c).trim(); if (k && !(k in kol)) kol[k] = i; });
+  if (idxHeader < 0 || ["et_title_product_id", "et_title_product_name", "et_title_variation_id", "et_title_variation_sku"].some((k) => !(k in kol))) {
+    throw new Error("Ini bukan file Mass Update Shopee (kolom et_title_product_id / et_title_variation_sku tidak ditemukan). Unduh dari Seller Centre > Produk Saya > Ubah Massal > Info Penjualan.");
+  }
+  let filter = null, idToko = "";
+  for (const r of rows.slice(idxHeader + 1, idxHeader + 4)) {
+    const j = r.find((c) => String(c).startsWith("{\"search_condition\""));
+    if (j) { try { filter = JSON.parse(j).search_condition || null; } catch { /* abaikan */ } }
+    if (String(r[0]) === "sales_info") idToko = String(r[3] ?? "").trim();
+  }
+  const teks = (r, nama) => (nama in kol ? String(r[kol[nama]] ?? "").trim() : "");
+  const peta = new Map();
+  for (const r of rows.slice(idxHeader + 1)) {
+    const kode = teks(r, "et_title_product_id");
+    if (!/^\d+$/.test(kode)) continue; // lewati baris petunjuk / info
+    const variasi = teks(r, "et_title_variation_id");
+    peta.set(`${kode}|${variasi}`, {
+      kode_produk: kode, kode_variasi: variasi,
+      nama_produk: teks(r, "et_title_product_name") || null,
+      nama_variasi: teks(r, "et_title_variation_name") || null,
+      sku_induk: teks(r, "et_title_parent_sku") || null,
+      sku_variasi: teks(r, "et_title_variation_sku") || null,
+    });
+  }
+  const baris = [...peta.values()];
+  return {
+    baris, idToko, filter,
+    difilter: !!(filter && (filter.product_status || filter.stock_condition)),
+    jumlahProduk: new Set(baris.map((b) => b.kode_produk)).size,
+    tanpaSku: baris.filter((b) => !b.sku_variasi).length,
+  };
+}
+
+// =========================================================
+// PEMBAGIAN BIAYA IKLAN KE SKU
+// Iklan hanya tahu Kode Produk (induk). Pesanan hanya tahu judul produk + SKU variasi.
+// SKU yang sama bisa dipakai di beberapa listing, jadi pesanan dicocokkan ke produk lewat
+// JUDUL dulu (hampir unik), baru SKU (hanya kalau SKU itu milik tepat satu produk).
+// Biaya satu produk dibagi ke SKU-SKU-nya sesuai porsi harga jual (omzet) di periode itu.
+// =========================================================
+const normJudul = (s) => String(s ?? "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+
+export function bangunIndeksProduk(petaRows) {
+  const produk = new Map(); // kode -> { kode, nama, skuSet }
+  for (const r of petaRows || []) {
+    if (!produk.has(r.kode_produk)) produk.set(r.kode_produk, { kode: r.kode_produk, nama: r.nama_produk || "", skuSet: new Set() });
+    const p = produk.get(r.kode_produk);
+    if (!p.nama && r.nama_produk) p.nama = r.nama_produk;
+    if (r.sku_variasi) p.skuSet.add(normSku(r.sku_variasi));
+  }
+  const byJudul = new Map(), bySku = new Map();
+  for (const p of produk.values()) {
+    const j = normJudul(p.nama);
+    if (j) byJudul.set(j, [...(byJudul.get(j) || []), p.kode]);
+    for (const k of p.skuSet) bySku.set(k, [...(bySku.get(k) || []), p.kode]);
+  }
+  return { produk, byJudul, bySku };
+}
+
+function produkDariBaris(b, idx) {
+  const kand = idx.byJudul.get(normJudul(b.nama_produk)) || [];
+  const ref = normSku(b.sku_referensi);
+  if (kand.length === 1) return kand[0];
+  if (kand.length > 1) {
+    const cocok = ref ? kand.filter((k) => idx.produk.get(k).skuSet.has(ref)) : [];
+    return cocok.length === 1 ? cocok[0] : null;
+  }
+  const dariSku = ref ? idx.bySku.get(ref) || [] : [];
+  return dariSku.length === 1 ? dariSku[0] : null;
+}
+
+// Pecahan (0..1) dari periode iklan yang jatuh di rentang tampilan
+function faktorRentang(pDari, pSampai, dari, sampai) {
+  const hari = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86400000;
+  const a = Math.max(hari(pDari), hari(dari)), b = Math.min(hari(pSampai), hari(sampai));
+  if (b < a) return 0;
+  return (b - a + 1) / (hari(pSampai) - hari(pDari) + 1);
+}
+
+// iklanRows: baris marketplace_iklan; lines: baris marketplace_penjualan di rentang; kunciBaris(b) -> kunci SKU di tabel Per SKU
+export function bagiIklanKeSku({ iklanRows, dari, sampai, lines, idx, kunciBaris }) {
+  const perKunci = new Map();
+  const tidakTerbagi = [];
+  const biayaProduk = new Map(); // kode -> { nama, biaya }
+  for (const x of iklanRows || []) {
+    const biaya = Number(x.biaya) * faktorRentang(x.periode_dari, x.periode_sampai, dari, sampai);
+    if (!biaya) continue;
+    if (!x.kode_produk) { tidakTerbagi.push({ kode: "", nama: x.nama_iklan, biaya, alasan: "tanpa kode produk" }); continue; }
+    if (!biayaProduk.has(x.kode_produk)) biayaProduk.set(x.kode_produk, { nama: x.nama_iklan, biaya: 0 });
+    biayaProduk.get(x.kode_produk).biaya += biaya;
+  }
+  // porsi omzet tiap SKU di tiap produk beriklan
+  const bobot = new Map(); // kode -> Map(kunci -> omzet)
+  if (idx?.produk?.size) {
+    const cache = new Map();
+    for (const b of lines || []) {
+      const ck = `${b.nama_produk || ""}|${b.sku_referensi || ""}`;
+      if (!cache.has(ck)) cache.set(ck, produkDariBaris(b, idx));
+      const kode = cache.get(ck);
+      if (!kode || !biayaProduk.has(kode)) continue;
+      if (!bobot.has(kode)) bobot.set(kode, new Map());
+      const m = bobot.get(kode), kunci = kunciBaris(b);
+      m.set(kunci, (m.get(kunci) || 0) + Math.max(0, Number(b.harga_produk) || 0));
+    }
+  }
+  let terbagi = 0;
+  for (const [kode, { nama, biaya }] of biayaProduk) {
+    const m = bobot.get(kode);
+    const total = m ? [...m.values()].reduce((a, v) => a + v, 0) : 0;
+    if (!m || total <= 0) {
+      const namaPeta = idx?.produk?.get(kode)?.nama;
+      tidakTerbagi.push({ kode, nama: namaPeta || nama, biaya, alasan: idx?.produk?.has(kode) ? "tidak ada penjualan produk ini di periode ini" : "produk belum ada di pemetaan (import Mass Update)" });
+      continue;
+    }
+    const kunci = [...m.keys()];
+    const bagi = alokasi(biaya, kunci.map((k) => m.get(k)));
+    kunci.forEach((k, i) => perKunci.set(k, (perKunci.get(k) || 0) + bagi[i]));
+    terbagi += Math.round(biaya);
+  }
+  return { perKunci, terbagi, tidakTerbagi, totalTidakTerbagi: tidakTerbagi.reduce((a, x) => a + x.biaya, 0) };
+}
+
+// Biaya iklan yang jatuh di rentang [dari, sampai] (ISO). Laporan iklan hanya
+// punya total per periode (tidak per hari), jadi kalau rentang tampilan hanya
+// memotong sebagian periode, biayanya dibagi rata per hari (perkiraan).
+export function biayaIklanDiRentang(daftarPeriode, dari, sampai) {
+  const hari = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / 86400000;
+  let biaya = 0, perkiraan = false;
+  for (const p of daftarPeriode || []) {
+    const a = Math.max(hari(p.periode_dari), hari(dari));
+    const b = Math.min(hari(p.periode_sampai), hari(sampai));
+    if (b < a) continue;
+    const panjang = hari(p.periode_sampai) - hari(p.periode_dari) + 1;
+    const irisan = b - a + 1;
+    biaya += Number(p.biaya) * (irisan / panjang);
+    if (irisan < panjang) perkiraan = true;
+  }
+  return { biaya: Math.round(biaya), perkiraan };
+}
+
 // Bagi `total` ke beberapa baris sesuai bobot; selisih pembulatan -> baris terakhir
 function alokasi(total, bobot) {
   const jumlah = bobot.reduce((a, b) => a + b, 0);

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Upload, ChevronDown, ChevronRight, Search, AlertTriangle, RefreshCw, Link2,
-  TrendingUp, Receipt, Package, Wallet, Download,
+  TrendingUp, Receipt, Package, Wallet, Download, Megaphone,
 } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
 import { sb, sbAll, fmtRp, downloadCsv } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
-import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
+import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
 
 // =========================================================
 // RINCIAN PENJUALAN MARKETPLACE (per toko) — SKU, HPP, biaya dari marketplace,
@@ -20,6 +20,12 @@ import { parseLaporanPenghasilan, parseExportPesanan, bangunBaris, normSku, cari
 //   Laba Bersih    = Dana Dilepas - HPP
 // Pesanan yang SKU-nya belum cocok / belum ada datanya TIDAK ikut dihitung ke
 // Laba & HPP (supaya laba tidak kelihatan semu besar) — jumlahnya ditampilkan.
+//
+// Biaya iklan (import CSV "Data Keseluruhan Iklan" -> tabel marketplace_iklan) dikurangkan
+// SEKALI di level total periode: Laba Bersih Setelah Iklan = Laba Bersih - Biaya Iklan.
+// Di tab Per SKU, biaya iklan tiap produk dibagi ke SKU-nya sesuai porsi omzet (perkiraan) lewat
+// pemetaan Kode Produk -> judul/SKU dari import Mass Update (tabel marketplace_produk_map).
+// Yang tidak bisa dibagi tetap ikut di total dan ditampilkan sebagai "iklan tidak terbagi".
 //
 // TIDAK menyentuh saldo toko (marketplace_transaksi) maupun Keuangan.
 // =========================================================
@@ -43,6 +49,8 @@ const isoAwalBulan = () => { const d = new Date(); return `${d.getFullYear()}-${
 const isoAwalBulanLalu = () => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-01`; };
 const isoAkhirBulanLalu = () => { const d = new Date(); const x = new Date(d.getFullYear(), d.getMonth(), 0); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
 const n0 = (v) => Number(v) || 0;
+// kunci baris di tabel Per SKU (dipakai juga untuk membagi biaya iklan)
+const kunciSku = (b) => b.sku || b.sku_referensi || b.nama_produk || "(tanpa SKU)";
 const qtyBersih = (b) => (b.qty == null ? null : Math.max(0, n0(b.qty) - n0(b.qty_retur)));
 // HPP baris: null kalau belum bisa dihitung (SKU belum cocok / qty tidak diketahui)
 const hppBaris = (b) => (b.hpp_satuan == null || b.qty == null ? null : n0(b.hpp_satuan) * qtyBersih(b));
@@ -77,6 +85,8 @@ const AKSES_SKU = {
   hpp: (s) => (adaHpp(s) ? s.hpp : null),
   laba: (s) => (adaHpp(s) ? s.laba : null),
   margin: (s) => (s.danaLengkap > 0 ? s.laba / s.danaLengkap : null),
+  iklan: (s) => (s.iklan > 0 ? s.iklan : null),
+  labaSetelah: (s) => (adaHpp(s) ? s.laba - s.iklan : null),
 };
 // klik judul kolom: kolom baru -> teks naik (A-Z) / angka turun (terbesar dulu); klik lagi membalik arah
 function ubahUrut(set, k) {
@@ -125,6 +135,12 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [hanyaRefund, setHanyaRefund] = useState(false);
   const [urutPesanan, setUrutPesanan] = useState(null); // null = urutan asli (tanggal dana dilepas terbaru)
   const [urutSku, setUrutSku] = useState({ k: "laba", d: "desc" });
+  const [iklanOpen, setIklanOpen] = useState(false);
+  const [iklanRows, setIklanRows] = useState([]); // baris marketplace_iklan yang periodenya menyentuh rentang tampilan
+  const [petaOpen, setPetaOpen] = useState(false);
+  const [petaProduk, setPetaProduk] = useState([]); // pemetaan Kode Produk -> judul/SKU (marketplace_produk_map)
+  const [petaAda, setPetaAda] = useState(true);
+  const [iklanTabelAda, setIklanTabelAda] = useState(true);
   const [rentangImport, setRentangImport] = useState(null); // periode data yang baru diimport (tidak memindahkan filter otomatis)
 
   const skuMap = useMemo(() => {
@@ -146,6 +162,16 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       ]);
       setData(rows || []);
       setAliasList(alias || []);
+      // Biaya iklan dimuat terpisah: kalau tabel marketplace_iklan belum dibuat (SQL belum dijalankan),
+      // halaman tetap jalan seperti biasa — hanya bagian iklan yang dimatikan.
+      try {
+        const ik = await sbAll(`marketplace_iklan?select=periode_dari,periode_sampai,kode_produk,nama_iklan,biaya&${filterToko}&periode_dari=lte.${sampai}&periode_sampai=gte.${dari}`);
+        setIklanRows(ik || []);
+        setIklanTabelAda(true);
+      } catch {
+        setIklanRows([]);
+        setIklanTabelAda(false);
+      }
     } catch (e) {
       setErr(e.message || "Gagal memuat data");
     } finally {
@@ -154,6 +180,18 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   }, [filterToko, dari, sampai, platform]);
 
   useEffect(() => { muat(); }, [muat]);
+
+  // Pemetaan produk (Mass Update) dimuat terpisah & sekali per toko (tidak tergantung filter tanggal)
+  const muatPeta = useCallback(async () => {
+    try {
+      setPetaProduk((await sbAll(`marketplace_produk_map?select=kode_produk,nama_produk,sku_variasi&platform=eq.${platform}&toko=eq.${encodeURIComponent(tokoKode)}`)) || []);
+      setPetaAda(true);
+    } catch {
+      setPetaProduk([]);
+      setPetaAda(false);
+    }
+  }, [platform, tokoKode]);
+  useEffect(() => { muatPeta(); }, [muatPeta]);
   useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku, hanyaRefund]);
 
   // ---- olah data ----
@@ -179,6 +217,23 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     };
   }, [pesananList, data]);
 
+  const iklanPeriode = useMemo(() => {
+    const gab = new Map();
+    for (const x of iklanRows) {
+      const k = `${x.periode_dari}|${x.periode_sampai}`;
+      if (!gab.has(k)) gab.set(k, { periode_dari: x.periode_dari, periode_sampai: x.periode_sampai, biaya: 0 });
+      gab.get(k).biaya += Number(x.biaya) || 0;
+    }
+    return [...gab.values()];
+  }, [iklanRows]);
+  const iklan = useMemo(() => biayaIklanDiRentang(iklanPeriode, dari, sampai), [iklanPeriode, dari, sampai]);
+  const labaSetelahIklan = total.laba - iklan.biaya;
+  const idxProduk = useMemo(() => bangunIndeksProduk(petaProduk), [petaProduk]);
+  const bagiIklan = useMemo(
+    () => bagiIklanKeSku({ iklanRows, dari, sampai, lines: data, idx: idxProduk, kunciBaris: kunciSku }),
+    [iklanRows, dari, sampai, data, idxProduk]
+  );
+
   const q = cari.trim().toLowerCase();
   const pesananFiltered = useMemo(() => {
     const dasar = hanyaRefund ? pesananList.filter((p) => n0(p.r.refund) !== 0 || p.lines.some((l) => n0(l.qty_retur) > 0)) : pesananList;
@@ -190,7 +245,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const skuList = useMemo(() => {
     const m = new Map();
     for (const b of data) {
-      const kunci = b.sku || b.sku_referensi || b.nama_produk || "(tanpa SKU)";
+      const kunci = kunciSku(b);
       if (!m.has(kunci)) m.set(kunci, { kunci, cocok: !!b.sku, nama: b.nama_produk, lines: [] });
       m.get(kunci).lines.push(b);
     }
@@ -199,11 +254,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         const lengkap = s.lines.filter((l) => hppBaris(l) != null);
         const r = ringkasBaris(s.lines);
         const rl = ringkasBaris(lengkap);
-        return { ...s, r, laba: rl.laba, hpp: rl.hpp, danaLengkap: rl.dana, qty: r.qty };
+        return { ...s, r, laba: rl.laba, hpp: rl.hpp, danaLengkap: rl.dana, qty: r.qty, iklan: Math.round(bagiIklan.perKunci.get(s.kunci) || 0) };
       })
       .filter((s) => !q || `${s.kunci} ${s.nama || ""}`.toLowerCase().includes(q))
       .sort((a, b) => b.laba - a.laba);
-  }, [data, q]);
+  }, [data, q, bagiIklan]);
 
   const pesananUrut = useMemo(() => {
     if (!urutPesanan) return pesananFiltered;
@@ -427,9 +482,29 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           Perbarui HPP
         </button>
         {platform === "shopee" && (
+          <button onClick={() => setPetaOpen((v) => !v)} className={btnOutlined} title="Import file Mass Update produk Shopee (Kode Produk ↔ judul ↔ SKU) untuk membagi biaya iklan ke SKU"><Link2 size={14} /> Import Mass Update</button>
+        )}
+        {platform === "shopee" && (
+          <button onClick={() => setIklanOpen((v) => !v)} className={btnOutlined} title="Import laporan iklan Shopee (CSV) supaya biaya iklan ikut mengurangi laba bersih"><Megaphone size={14} /> Import Iklan</button>
+        )}
+        {platform === "shopee" && (
           <button onClick={() => setImportOpen((v) => !v)} className={btnFilled}><Upload size={14} /> Import Laporan Shopee</button>
         )}
       </div>
+
+      {petaOpen && (
+        <PanelImportMassUpdate
+          platform={platform} tokoKode={tokoKode} tabelAda={petaAda} jumlahTersimpan={petaProduk.length}
+          showToast={showToast} onSelesai={() => { setPetaOpen(false); muatPeta(); }}
+        />
+      )}
+
+      {iklanOpen && (
+        <PanelImportIklan
+          platform={platform} tokoKode={tokoKode} tokoLabel={toko.label || ""} filterToko={filterToko} tabelAda={iklanTabelAda}
+          showToast={showToast} onSelesai={() => { setIklanOpen(false); muat(); }}
+        />
+      )}
 
       {importOpen && (
         <PanelImport
@@ -464,6 +539,37 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         <StatCard label="HPP barang terjual" value={fmtRp(total.hpp)} icon={Package} />
         <StatCard label={`Laba bersih (${total.margin.toFixed(1)}% dari dana)`} value={fmtRp(total.laba)} accent={total.laba >= 0 ? "text-emerald-400" : "text-red-400"} icon={TrendingUp} iconColor="text-emerald-400" />
       </div>
+      {iklanTabelAda && (
+        <>
+          <div className="text-[11px] text-md-on-surface-variant mb-1">Setelah biaya iklan</div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+            <StatCard label={iklan.perkiraan ? "Biaya iklan (perkiraan, dibagi per hari)" : "Biaya iklan"} value={iklanPeriode.length ? fmtRp(iklan.biaya) : "Belum diimport"} icon={Megaphone} iconColor="text-amber-400" />
+            <StatCard label="Laba bersih setelah iklan" value={iklanPeriode.length ? fmtRp(labaSetelahIklan) : "—"} accent={iklanPeriode.length ? (labaSetelahIklan >= 0 ? "text-emerald-400" : "text-red-400") : undefined} icon={TrendingUp} iconColor="text-emerald-400" />
+            <StatCard label="Iklan % dari dana dilepas" value={iklanPeriode.length && total.dana > 0 ? `${((iklan.biaya / total.dana) * 100).toFixed(1)}%` : "—"} icon={Receipt} iconColor="text-amber-400" />
+          </div>
+          {iklanPeriode.length > 0 && (
+            <div className="mb-4 text-[11px] text-md-on-surface-variant max-w-3xl">
+              Biaya iklan dihitung untuk seluruh periode; laba bersih di atas hanya dari pesanan dengan SKU lengkap{total.pesananTanpaHpp > 0 ? ` (${total.pesananTanpaHpp} pesanan belum masuk)` : ""}.
+              {!petaProduk.length
+                ? " Iklan belum dibagi per SKU — import file Mass Update dulu (tombol Import Mass Update)."
+                : <> Dibagi ke SKU (tab Per SKU): <b className="text-md-on-surface">{fmtRp(Math.round(bagiIklan.terbagi))}</b> · tidak terbagi: <b className={bagiIklan.totalTidakTerbagi > 0 ? "text-amber-400" : "text-md-on-surface"}>{fmtRp(Math.round(bagiIklan.totalTidakTerbagi))}</b> ({bagiIklan.tidakTerbagi.length} baris iklan).</>}
+              {petaProduk.length > 0 && bagiIklan.tidakTerbagi.length > 0 && (
+                <details className="mt-1">
+                  <summary className="cursor-pointer underline decoration-dotted">Lihat iklan yang tidak terbagi</summary>
+                  <div className="mt-1 max-h-56 overflow-y-auto rounded-md-lg bg-md-container-low p-2 space-y-1">
+                    {[...bagiIklan.tidakTerbagi].sort((x, y) => y.biaya - x.biaya).slice(0, 40).map((x, i) => (
+                      <div key={i} className="flex justify-between gap-3">
+                        <span className="min-w-0"><span className="block truncate text-md-on-surface">{x.nama}</span>{x.kode ? `${x.kode} · ` : ""}{x.alasan}</span>
+                        <span className="whitespace-nowrap">{fmtRp(Math.round(x.biaya))}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
+        </>
+      )}
       {(total.pesananTanpaHpp > 0 || tanpaDataSku > 0) && (
         <div className="mb-4 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
           <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
@@ -504,7 +610,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       ) : tampil === "biaya" ? (
         <TabelBiaya list={pesananFiltered} />
       ) : (
-        <TabelSku list={potong} urut={urutSku} onUrut={(k) => ubahUrut(setUrutSku, k)} />
+        <TabelSku list={potong} urut={urutSku} onUrut={(k) => ubahUrut(setUrutSku, k)} adaIklan={petaProduk.length > 0 && iklanPeriode.length > 0} />
       )}
 
       {jumlahHal > 1 && (
@@ -738,7 +844,7 @@ function DetailBiayaSku({ s }) {
   );
 }
 
-function TabelSku({ list, urut, onUrut }) {
+function TabelSku({ list, urut, onUrut, adaIklan }) {
   const [terbuka, setTerbuka] = useState({});
   return (
     <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
@@ -753,6 +859,8 @@ function TabelSku({ list, urut, onUrut }) {
             <ThUrut label="Dana Dilepas" k="dana" urut={urut} onUrut={onUrut} />
             <ThUrut label="HPP" k="hpp" urut={urut} onUrut={onUrut} />
             <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
+            {adaIklan && <ThUrut label="Biaya Iklan" k="iklan" urut={urut} onUrut={onUrut}><span className="font-normal">(perkiraan)</span></ThUrut>}
+            {adaIklan && <ThUrut label="Laba − Iklan" k="labaSetelah" urut={urut} onUrut={onUrut} />}
             <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut} />
           </tr>
         </thead>
@@ -776,11 +884,17 @@ function TabelSku({ list, urut, onUrut }) {
                   <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${s.hpp > 0 || s.danaLengkap > 0 ? (s.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
                     {s.hpp > 0 || s.danaLengkap > 0 ? fmtRp(s.laba) : "—"}
                   </td>
+                  {adaIklan && <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{s.iklan > 0 ? fmtRp(s.iklan) : "—"}</td>}
+                  {adaIklan && (
+                    <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${adaHpp(s) ? (s.laba - s.iklan >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
+                      {adaHpp(s) ? fmtRp(s.laba - s.iklan) : "—"}
+                    </td>
+                  )}
                   <td className="px-3 py-2.5 text-right whitespace-nowrap text-md-on-surface-variant">{dapat == null ? "—" : `${dapat.toFixed(1)}%`}</td>
                 </tr>
                 {buka && (
                   <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
-                    <td colSpan={9}><DetailBiayaSku s={s} /></td>
+                    <td colSpan={adaIklan ? 11 : 9}><DetailBiayaSku s={s} /></td>
                   </tr>
                 )}
               </FragmenSku>
@@ -861,6 +975,179 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
         ))}
       </div>
       {list.length > tampil.length && <div className="text-[11px] text-md-on-surface-variant mt-2">Menampilkan 40 teratas (paling banyak muncul) — sisanya muncul setelah ini diselesaikan.</div>}
+    </div>
+  );
+}
+
+function PanelImportIklan({ platform, tokoKode, tokoLabel, filterToko, tabelAda, showToast, onSelesai }) {
+  const [file, setFile] = useState(null);
+  const [fileRincian, setFileRincian] = useState(null);
+  const [status, setStatus] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [sibuk, setSibuk] = useState(false);
+
+  const baca = async () => {
+    setSibuk(true); setStatus("Membaca file…"); setPreview(null);
+    try {
+      const utama = await parseLaporanIklan(await file.arrayBuffer());
+      const rincian = fileRincian ? await parseRincianIklanOtomatis(await fileRincian.arrayBuffer()) : null;
+      const hasil = gabungIklan(utama, rincian);
+      // import iklan lain yang periodenya tumpang tindih -> akan digantikan (supaya biaya tidak dobel)
+      const lama = await sbAll(`marketplace_iklan?select=periode_dari,periode_sampai,biaya&${filterToko}&periode_dari=lte.${hasil.sampai}&periode_sampai=gte.${hasil.dari}`);
+      const gab = new Map();
+      for (const x of lama || []) {
+        const k = `${x.periode_dari}|${x.periode_sampai}`;
+        if (!gab.has(k)) gab.set(k, { dari: x.periode_dari, sampai: x.periode_sampai, biaya: 0 });
+        gab.get(k).biaya += Number(x.biaya) || 0;
+      }
+      setPreview({ ...hasil, tumpang: [...gab.values()] });
+      setStatus("");
+    } catch (e) {
+      setStatus(e.message || "Gagal membaca file");
+    } finally {
+      setSibuk(false);
+    }
+  };
+
+  const simpan = async () => {
+    setSibuk(true);
+    try {
+      setStatus("Menyimpan…");
+      if (preview.tumpang.length) {
+        await sbTulis(`marketplace_iklan?${filterToko}&periode_dari=lte.${preview.sampai}&periode_sampai=gte.${preview.dari}`, { method: "DELETE", prefer: "return=minimal" });
+      }
+      const baris = preview.iklan.map((x) => ({ platform, toko: tokoKode, periode_dari: preview.dari, periode_sampai: preview.sampai, ...x }));
+      for (let i = 0; i < baris.length; i += 200) {
+        await sbTulis("marketplace_iklan", { method: "POST", prefer: "return=minimal", body: JSON.stringify(baris.slice(i, i + 200)) });
+      }
+      showToast?.(`Biaya iklan ${fmtRp(preview.totalBiaya)} (${baris.length} baris) tersimpan`);
+      onSelesai();
+    } catch (e) {
+      setStatus(e.message || "Gagal menyimpan");
+      setSibuk(false);
+    }
+  };
+
+  const denganKode = preview ? preview.iklan.filter((x) => x.kode_produk).reduce((a, x) => a + x.biaya, 0) : 0;
+  return (
+    <div className="mb-5 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4">
+      <div className="text-sm font-medium mb-1">Import Biaya Iklan Shopee</div>
+      <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
+        Seller Centre → Iklan Shopee → Data Keseluruhan → pilih periode → Unduh (CSV). Untuk total laba cukup file ke-1.
+        File ke-2 (Rincian Data Iklan Produk Otomatis, periode yang sama) diperlukan supaya biaya Iklan Produk Otomatis ikut dibagi per SKU.
+      </p>
+      {!tabelAda && (
+        <div className="mb-3 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>Tabel <b>marketplace_iklan</b> belum ada di database — jalankan dulu file SQL <b>marketplace_iklan.sql</b>, lalu muat ulang halaman ini.</div>
+        </div>
+      )}
+      <div className="grid sm:grid-cols-2 gap-4 mb-3">
+        <label className="block text-xs text-md-on-surface-variant">
+          <span className="block mb-1 text-md-on-surface">1. Data Keseluruhan Iklan (wajib)</span>
+          <input type="file" accept=".csv" onChange={(e) => { setFile(e.target.files?.[0] || null); setPreview(null); setStatus(""); }} className="block mt-1 text-xs" />
+        </label>
+        <label className="block text-xs text-md-on-surface-variant">
+          <span className="block mb-1 text-md-on-surface">2. Rincian Data Iklan Produk Otomatis (disarankan)</span>
+          <input type="file" accept=".csv" onChange={(e) => { setFileRincian(e.target.files?.[0] || null); setPreview(null); setStatus(""); }} className="block mt-1 text-xs" />
+        </label>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button className={btnTonal} disabled={!file || sibuk || !tabelAda} onClick={baca}>Baca file</button>
+        {preview && <button className={btnFilled} disabled={sibuk} onClick={simpan}>Simpan biaya iklan</button>}
+        <button className={btnText} onClick={onSelesai} disabled={sibuk}>Tutup</button>
+        {status && <span className="text-xs text-md-on-surface-variant">{status}</span>}
+      </div>
+      {preview && (
+        <div className="mt-3 text-xs text-md-on-surface-variant space-y-1">
+          <div>Toko di file: <b className="text-md-on-surface">{preview.namaToko || preview.username || "?"}</b> → disimpan ke toko: <b className="text-md-on-surface">{tokoLabel || tokoKode}</b></div>
+          <div>Periode: <b className="text-md-on-surface">{formatTanggalID(preview.dari)} – {formatTanggalID(preview.sampai)}</b> · {preview.iklan.length} baris</div>
+          <div>Total biaya iklan: <b className="text-md-on-surface">{fmtRp(preview.totalBiaya)}</b> · omzet dari iklan: {fmtRp(preview.totalOmzet)}</div>
+          <div>
+            Yang punya Kode Produk (bisa dibagi ke SKU): <b className="text-md-on-surface">{fmtRp(denganKode)}</b>
+            {preview.totalBiaya - denganKode > 0.5 && <span className="text-amber-400"> · tanpa kode produk: {fmtRp(Math.round(preview.totalBiaya - denganKode))}{!preview.rincianDipakai ? " (file ke-2 belum diisi: Iklan Produk Otomatis belum terpecah per produk)" : ""}</span>}
+            {preview.rincianDipakai && Math.abs(preview.selisihBulat) >= 0.5 && <> · selisih pembulatan {fmtRp(preview.selisihBulat)} dicatat terpisah supaya total tetap sama dengan Shopee</>}
+          </div>
+          {preview.tumpang.length > 0 && (
+            <div className="text-amber-400">
+              Sudah ada import iklan di periode yang tumpang tindih ({preview.tumpang.map((t) => `${formatTanggalID(t.dari)}–${formatTanggalID(t.sampai)}: ${fmtRp(t.biaya)}`).join("; ")}) — akan digantikan oleh file ini supaya biaya tidak dobel.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PanelImportMassUpdate({ platform, tokoKode, tabelAda, jumlahTersimpan, showToast, onSelesai }) {
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [sibuk, setSibuk] = useState(false);
+
+  const baca = async () => {
+    setSibuk(true); setStatus("Membaca file…"); setPreview(null);
+    try {
+      setPreview(await parseMassUpdate(await file.arrayBuffer()));
+      setStatus("");
+    } catch (e) {
+      setStatus(e.message || "Gagal membaca file");
+    } finally {
+      setSibuk(false);
+    }
+  };
+
+  const simpan = async () => {
+    setSibuk(true);
+    try {
+      const sekarang = new Date().toISOString();
+      const baris = preview.baris.map((b) => ({ platform, toko: tokoKode, ...b, diperbarui: sekarang }));
+      for (let i = 0; i < baris.length; i += 500) {
+        setStatus(`Menyimpan… ${Math.min(i + 500, baris.length)}/${baris.length}`);
+        await sbTulis("marketplace_produk_map?on_conflict=platform,toko,kode_produk,kode_variasi", {
+          method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baris.slice(i, i + 500)),
+        });
+      }
+      showToast?.(`Pemetaan ${preview.jumlahProduk} produk (${baris.length} variasi) tersimpan`);
+      onSelesai();
+    } catch (e) {
+      setStatus(e.message || "Gagal menyimpan");
+      setSibuk(false);
+    }
+  };
+
+  return (
+    <div className="mb-5 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4">
+      <div className="text-sm font-medium mb-1">Import Mass Update Produk Shopee</div>
+      <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
+        Seller Centre → Produk Saya → Ubah Massal → Info Penjualan → unduh <b>semua produk</b> (jangan difilter stok/status — produk habis stok tetap bisa diiklankan).
+        Dipakai untuk menghubungkan Kode Produk di laporan iklan ke SKU. Boleh diimport berkala: produk baru ditambah, yang berubah diperbarui, yang tidak ada di file baru tidak dihapus.
+        {jumlahTersimpan > 0 && <> Saat ini tersimpan {jumlahTersimpan} variasi.</>}
+      </p>
+      {!tabelAda && (
+        <div className="mb-3 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>Tabel <b>marketplace_produk_map</b> belum ada di database — jalankan dulu file SQL <b>marketplace_iklan.sql</b>, lalu muat ulang halaman ini.</div>
+        </div>
+      )}
+      <input type="file" accept=".xlsx" onChange={(e) => { setFile(e.target.files?.[0] || null); setPreview(null); setStatus(""); }} className="block text-xs mb-3" />
+      <div className="flex flex-wrap items-center gap-3">
+        <button className={btnTonal} disabled={!file || sibuk || !tabelAda} onClick={baca}>Baca file</button>
+        {preview && <button className={btnFilled} disabled={sibuk} onClick={simpan}>Simpan {preview.jumlahProduk} produk</button>}
+        <button className={btnText} onClick={onSelesai} disabled={sibuk}>Tutup</button>
+        {status && <span className="text-xs text-md-on-surface-variant">{status}</span>}
+      </div>
+      {preview && (
+        <div className="mt-3 text-xs text-md-on-surface-variant space-y-1">
+          <div><b className="text-md-on-surface">{preview.jumlahProduk}</b> produk · <b className="text-md-on-surface">{preview.baris.length}</b> variasi{preview.idToko ? ` · ID toko Shopee ${preview.idToko}` : ""} → disimpan ke toko ini</div>
+          {preview.tanpaSku > 0 && <div>{preview.tanpaSku} variasi tidak punya SKU di Shopee (tetap disimpan, tapi tidak bisa dicocokkan lewat SKU).</div>}
+          {preview.difilter && (
+            <div className="text-amber-400">
+              File ini diekspor dengan filter ({preview.filter?.product_status ? "hanya produk aktif" : ""}{preview.filter?.stock_condition ? `${preview.filter?.product_status ? ", " : ""}stok minimal ${preview.filter.stock_condition.stock_min ?? 1}` : ""}) — produk habis stok/nonaktif tidak ikut, jadi iklannya bisa tidak terbagi. Produk yang sudah tersimpan sebelumnya tetap dipertahankan.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
