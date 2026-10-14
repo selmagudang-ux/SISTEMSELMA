@@ -704,9 +704,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <div className="mb-2 text-[11px] text-md-on-surface-variant max-w-3xl space-y-1">
             <div>Satu baris = satu etalase (produk/listing Shopee). Biaya iklan di sini angka asli per etalase, tidak dibagi ke SKU. Klik baris untuk melihat SKU di dalamnya.</div>
             {!petaProduk.length && <div className="text-amber-400">Etalase belum dikenali — import file Mass Update (tombol Import Mass Update) supaya biaya iklan bisa dicocokkan ke etalase. Sementara ini baris dikelompokkan per judul produk, tanpa biaya iklan.</div>}
+            {iklanTabelAda && iklanPeriode.length === 0 && <div className="text-amber-400">Belum ada data biaya iklan yang periodenya masuk ke rentang tanggal ini, jadi kolom Biaya Iklan masih kosong. Klik Import Iklan, atau ubah rentang tanggal ke periode iklan yang sudah diimport.</div>}
+            {!iklanTabelAda && <div className="text-amber-400">Tabel marketplace_iklan belum ada di database — jalankan dulu file SQL marketplace_iklan.sql, lalu muat ulang halaman.</div>}
             {iklanTanpaKode > 0 && <div className="text-amber-400">Iklan tanpa kode produk {fmtRp(iklanTanpaKode)} tidak bisa dimasukkan ke etalase mana pun, tapi tetap dihitung di kartu total.</div>}
           </div>
-          <TabelEtalase list={potong} urut={urutEtalase} onUrut={(k) => ubahUrut(setUrutEtalase, k)} adaIklan={iklanPeriode.length > 0} />
+          <TabelEtalase list={potong} urut={urutEtalase} onUrut={(k) => ubahUrut(setUrutEtalase, k)} adaIklan={iklanTabelAda} iklanTerisi={iklanPeriode.length > 0} />
         </>
       ) : (
         <TabelSku list={potong} urut={urutSku} onUrut={(k) => ubahUrut(setUrutSku, k)} adaIklan={petaProduk.length > 0 && iklanPeriode.length > 0} />
@@ -1053,7 +1055,7 @@ function DetailEtalase({ e }) {
   );
 }
 
-function TabelEtalase({ list, urut, onUrut, adaIklan }) {
+function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
   const [terbuka, setTerbuka] = useState({});
   return (
     <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
@@ -1069,14 +1071,14 @@ function TabelEtalase({ list, urut, onUrut, adaIklan }) {
             <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
             {adaIklan && <ThUrut label="Biaya Iklan" k="iklan" urut={urut} onUrut={onUrut} />}
             {adaIklan && <ThUrut label="Laba − Iklan" k="labaSetelah" urut={urut} onUrut={onUrut} />}
-            <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut}><span className="font-normal">(setelah iklan)</span></ThUrut>
+            <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut}>{iklanTerisi && <span className="font-normal">(setelah iklan)</span>}</ThUrut>
           </tr>
         </thead>
         <tbody>
           {list.map((e) => {
             const buka = !!terbuka[e.kunci];
             const bisaLaba = bisaLabaEtalase(e);
-            const margin = e.danaLengkap > 0 ? ((adaIklan ? e.labaSetelah : e.laba) / e.danaLengkap) * 100 : null;
+            const margin = e.danaLengkap > 0 ? ((iklanTerisi ? e.labaSetelah : e.laba) / e.danaLengkap) * 100 : null;
             return (
               <FragmenSku key={e.kunci}>
                 <tr className="border-b border-md-outline-variant cursor-pointer hover:bg-md-on-surface/[0.04]" onClick={() => setTerbuka((m) => ({ ...m, [e.kunci]: !m[e.kunci] }))}>
@@ -1097,7 +1099,8 @@ function TabelEtalase({ list, urut, onUrut, adaIklan }) {
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{e.adaHpp ? fmtRp(e.hpp) : "—"}</td>
                   <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${e.adaHpp ? (e.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>{e.adaHpp ? fmtRp(e.laba) : "—"}</td>
                   {adaIklan && <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{e.iklan > 0 ? fmtRp(e.iklan) : "—"}</td>}
-                  {adaIklan && (
+                  {adaIklan && !iklanTerisi && <td className="px-3 py-2.5 text-right text-md-on-surface-variant">—</td>}
+                  {adaIklan && iklanTerisi && (
                     <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${bisaLaba ? (e.labaSetelah >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
                       {bisaLaba ? fmtRp(e.labaSetelah) : "—"}
                     </td>
