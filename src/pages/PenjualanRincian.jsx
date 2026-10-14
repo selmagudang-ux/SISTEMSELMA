@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Upload, ChevronDown, ChevronRight, Search, AlertTriangle, RefreshCw, Link2,
   TrendingUp, Receipt, Package, Wallet, Download, Megaphone,
@@ -152,7 +152,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
 
   const filterToko = `platform=eq.${platform}&toko=eq.${encodeURIComponent(tokoKode)}`;
 
+  // Penjaga urutan: kalau filter diganti cepat, hanya respons dari permintaan TERAKHIR yang dipakai
+  const urutanMuat = useRef(0);
   const muat = useCallback(async () => {
+    const id = ++urutanMuat.current;
+    const terbaru = () => id === urutanMuat.current;
     setLoading(true);
     setErr("");
     try {
@@ -160,22 +164,25 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         sbAll(`marketplace_penjualan?select=*&${filterToko}&tanggal_dilepas=gte.${dari}&tanggal_dilepas=lte.${sampai}&order=tanggal_dilepas.desc,no_pesanan.asc,no_baris.asc`),
         sb(`marketplace_sku_alias?select=referensi,sku&platform=eq.${platform}`),
       ]);
+      if (!terbaru()) return;
       setData(rows || []);
       setAliasList(alias || []);
       // Biaya iklan dimuat terpisah: kalau tabel marketplace_iklan belum dibuat (SQL belum dijalankan),
       // halaman tetap jalan seperti biasa — hanya bagian iklan yang dimatikan.
       try {
         const ik = await sbAll(`marketplace_iklan?select=periode_dari,periode_sampai,kode_produk,nama_iklan,biaya&${filterToko}&periode_dari=lte.${sampai}&periode_sampai=gte.${dari}`);
+        if (!terbaru()) return;
         setIklanRows(ik || []);
         setIklanTabelAda(true);
       } catch {
+        if (!terbaru()) return;
         setIklanRows([]);
         setIklanTabelAda(false);
       }
     } catch (e) {
-      setErr(e.message || "Gagal memuat data");
+      if (terbaru()) setErr(e.message || "Gagal memuat data");
     } finally {
-      setLoading(false);
+      if (terbaru()) setLoading(false);
     }
   }, [filterToko, dari, sampai, platform]);
 
@@ -210,7 +217,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     const acuan = ringkasBaris(lengkap.flatMap((p) => p.lines));
     const semua = ringkasBaris(data);
     return {
-      penjualan: semua.penjualan, potongan: semua.potongan, dana: semua.dana,
+      penjualan: semua.penjualan, refund: semua.refund, potongan: semua.potongan, dana: semua.dana,
       hpp: acuan.hpp, laba: acuan.laba, danaLengkap: acuan.dana,
       margin: acuan.dana > 0 ? (acuan.laba / acuan.dana) * 100 : 0,
       pesananLengkap: lengkap.length, pesananTanpaHpp: tanpa,
@@ -227,7 +234,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     return [...gab.values()];
   }, [iklanRows]);
   const iklan = useMemo(() => biayaIklanDiRentang(iklanPeriode, dari, sampai), [iklanPeriode, dari, sampai]);
-  const labaSetelahIklan = total.laba - iklan.biaya;
+  // Laba hanya dari pesanan dengan SKU lengkap, jadi iklan yang dikurangkan juga hanya porsi pesanan itu
+  // (proporsional terhadap dana dilepas). Kalau semua pesanan lengkap, rasionya 1 = iklan penuh.
+  const rasioLengkap = total.dana > 0 ? Math.min(1, Math.max(0, total.danaLengkap / total.dana)) : 1;
+  const iklanUntukLaba = Math.round(iklan.biaya * rasioLengkap);
+  const labaSetelahIklan = total.laba - iklanUntukLaba;
   const idxProduk = useMemo(() => bangunIndeksProduk(petaProduk), [petaProduk]);
   const bagiIklan = useMemo(
     () => bagiIklanKeSku({ iklanRows, dari, sampai, lines: data, idx: idxProduk, kunciBaris: kunciSku }),
@@ -526,8 +537,9 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       )}
 
       <div className="text-[11px] text-md-on-surface-variant mb-1">Semua pesanan di periode ({pesananList.length})</div>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+      <div className={`grid grid-cols-2 ${total.refund !== 0 ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-3 mb-4`}>
         <StatCard label="Penjualan (harga produk)" value={fmtRp(total.penjualan)} icon={TrendingUp} iconColor="text-emerald-400" />
+        {total.refund !== 0 && <StatCard label="Refund ke pembeli" value={fmtRp(total.refund)} accent="text-red-400" icon={Receipt} iconColor="text-red-400" />}
         <StatCard label="Biaya & potongan marketplace" value={fmtRp(total.potongan)} icon={Receipt} iconColor="text-amber-400" />
         <StatCard label="Dana dilepas ke saldo" value={fmtRp(total.dana)} icon={Wallet} iconColor="text-sky-400" />
       </div>
@@ -544,12 +556,13 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <div className="text-[11px] text-md-on-surface-variant mb-1">Setelah biaya iklan</div>
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
             <StatCard label={iklan.perkiraan ? "Biaya iklan (perkiraan, dibagi per hari)" : "Biaya iklan"} value={iklanPeriode.length ? fmtRp(iklan.biaya) : "Belum diimport"} icon={Megaphone} iconColor="text-amber-400" />
-            <StatCard label="Laba bersih setelah iklan" value={iklanPeriode.length ? fmtRp(labaSetelahIklan) : "—"} accent={iklanPeriode.length ? (labaSetelahIklan >= 0 ? "text-emerald-400" : "text-red-400") : undefined} icon={TrendingUp} iconColor="text-emerald-400" />
+            <StatCard label={rasioLengkap < 1 ? "Laba bersih setelah iklan (porsi SKU lengkap)" : "Laba bersih setelah iklan"} value={iklanPeriode.length ? fmtRp(labaSetelahIklan) : "—"} accent={iklanPeriode.length ? (labaSetelahIklan >= 0 ? "text-emerald-400" : "text-red-400") : undefined} icon={TrendingUp} iconColor="text-emerald-400" />
             <StatCard label="Iklan % dari dana dilepas" value={iklanPeriode.length && total.dana > 0 ? `${((iklan.biaya / total.dana) * 100).toFixed(1)}%` : "—"} icon={Receipt} iconColor="text-amber-400" />
           </div>
           {iklanPeriode.length > 0 && (
             <div className="mb-4 text-[11px] text-md-on-surface-variant max-w-3xl">
-              Biaya iklan dihitung untuk seluruh periode; laba bersih di atas hanya dari pesanan dengan SKU lengkap{total.pesananTanpaHpp > 0 ? ` (${total.pesananTanpaHpp} pesanan belum masuk)` : ""}.
+              Biaya iklan dihitung untuk seluruh periode. Laba bersih di atas hanya dari pesanan dengan SKU lengkap{total.pesananTanpaHpp > 0 ? ` (${total.pesananTanpaHpp} pesanan belum masuk)` : ""}
+              {rasioLengkap < 1 ? <>, jadi iklan yang dikurangkan hanya porsinya: <b className="text-md-on-surface">{fmtRp(iklanUntukLaba)}</b> ({(rasioLengkap * 100).toFixed(1)}% dari biaya iklan, sesuai porsi dana dilepas)</> : null}.
               {!petaProduk.length
                 ? " Iklan belum dibagi per SKU — import file Mass Update dulu (tombol Import Mass Update)."
                 : <> Dibagi ke SKU (tab Per SKU): <b className="text-md-on-surface">{fmtRp(Math.round(bagiIklan.terbagi))}</b> · tidak terbagi: <b className={bagiIklan.totalTidakTerbagi > 0 ? "text-amber-400" : "text-md-on-surface"}>{fmtRp(Math.round(bagiIklan.totalTidakTerbagi))}</b> ({bagiIklan.tidakTerbagi.length} baris iklan).</>}
@@ -879,7 +892,10 @@ function TabelSku({ list, urut, onUrut, adaIklan }) {
                   <td className="px-3 py-2.5 text-right">{s.qty || "—"}</td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.penjualan)}</td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400 underline decoration-dotted underline-offset-4">{fmtRp(s.r.potongan)}</td>
-                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(s.r.dana)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    {fmtRp(s.r.dana)}
+                    {Math.abs(s.danaLengkap - s.r.dana) > 0.5 && <div className="text-[10px] text-amber-400" title="Laba & HPP hanya dihitung dari baris yang HPP-nya lengkap">dasar laba: {fmtRp(s.danaLengkap)}</div>}
+                  </td>
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{s.danaLengkap > 0 || s.hpp > 0 ? fmtRp(s.hpp) : "—"}</td>
                   <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${s.hpp > 0 || s.danaLengkap > 0 ? (s.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
                     {s.hpp > 0 || s.danaLengkap > 0 ? fmtRp(s.laba) : "—"}
