@@ -396,7 +396,7 @@ export async function parseMassUpdate(buffer) {
 // JUDUL dulu (hampir unik), baru SKU (hanya kalau SKU itu milik tepat satu produk).
 // Biaya satu produk dibagi ke SKU-SKU-nya sesuai porsi harga jual (omzet) di periode itu.
 // =========================================================
-const normJudul = (s) => String(s ?? "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+export const normJudul = (s) => String(s ?? "").normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
 
 export function bangunIndeksProduk(petaRows) {
   const produk = new Map(); // kode -> { kode, nama, skuSet }
@@ -415,7 +415,7 @@ export function bangunIndeksProduk(petaRows) {
   return { produk, byJudul, bySku };
 }
 
-function produkDariBaris(b, idx) {
+export function produkDariBaris(b, idx) {
   const kand = idx.byJudul.get(normJudul(b.nama_produk)) || [];
   const ref = buangKodeRak(b.sku_referensi);
   if (kand.length === 1) return kand[0];
@@ -475,7 +475,8 @@ export function bagiIklanKeSku({ iklanRows, dari, sampai, lines, idx, kunciBaris
     kunci.forEach((k, i) => perKunci.set(k, (perKunci.get(k) || 0) + bagi[i]));
     terbagi += Math.round(biaya);
   }
-  return { perKunci, terbagi, tidakTerbagi, totalTidakTerbagi: tidakTerbagi.reduce((a, x) => a + x.biaya, 0) };
+  // biayaProduk: Map kode produk (etalase) -> { nama, biaya } — biaya iklan ASLI per etalase di rentang tampilan (dipakai tab Per Etalase)
+  return { perKunci, terbagi, tidakTerbagi, totalTidakTerbagi: tidakTerbagi.reduce((a, x) => a + x.biaya, 0), biayaProduk };
 }
 
 // Biaya iklan yang jatuh di rentang [dari, sampai] (ISO). Laporan iklan hanya

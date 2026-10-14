@@ -6,7 +6,7 @@ import {
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
 import { sb, sbAll, fmtRp, downloadCsv } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
-import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, buangKodeRak, cariMaster, sbTulis, FIELD_BIAYA } from "../lib/marketplaceImport";
+import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, buangKodeRak, cariMaster, sbTulis, FIELD_BIAYA, produkDariBaris, normJudul } from "../lib/marketplaceImport";
 
 // =========================================================
 // RINCIAN PENJUALAN MARKETPLACE (per toko) — SKU, HPP, biaya dari marketplace,
@@ -88,6 +88,20 @@ const AKSES_SKU = {
   iklan: (s) => (s.iklan > 0 ? s.iklan : null),
   labaSetelah: (s) => (adaHpp(s) ? s.laba - s.iklan : null),
 };
+// Per Etalase: satu baris = satu produk/listing Shopee (Kode Produk). Iklan Shopee berjalan per etalase,
+// jadi biaya iklan di sini angka asli, tidak dibagi-bagi ke SKU.
+const bisaLabaEtalase = (e) => e.adaHpp || (e.lines.length === 0 && e.iklan > 0);
+const AKSES_ETALASE = {
+  kunci: (e) => e.nama || e.kunci,
+  qty: (e) => e.qty,
+  penjualan: (e) => e.r.penjualan,
+  dana: (e) => e.r.dana,
+  hpp: (e) => (e.adaHpp ? e.hpp : null),
+  laba: (e) => (e.adaHpp ? e.laba : null),
+  iklan: (e) => (e.iklan > 0 ? e.iklan : null),
+  labaSetelah: (e) => (bisaLabaEtalase(e) ? e.labaSetelah : null),
+  margin: (e) => (e.danaLengkap > 0 ? e.labaSetelah / e.danaLengkap : null),
+};
 // klik judul kolom: kolom baru -> teks naik (A-Z) / angka turun (terbesar dulu); klik lagi membalik arah
 function ubahUrut(set, k) {
   set((u) => (u && u.k === k ? { k, d: u.d === "asc" ? "desc" : "asc" } : { k, d: k === "kunci" || k === "sku" ? "asc" : "desc" }));
@@ -135,6 +149,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [hanyaRefund, setHanyaRefund] = useState(false);
   const [urutPesanan, setUrutPesanan] = useState(null); // null = urutan asli (tanggal dana dilepas terbaru)
   const [urutSku, setUrutSku] = useState({ k: "laba", d: "desc" });
+  const [urutEtalase, setUrutEtalase] = useState({ k: "labaSetelah", d: "desc" });
   const [iklanOpen, setIklanOpen] = useState(false);
   const [iklanRows, setIklanRows] = useState([]); // baris marketplace_iklan yang periodenya menyentuh rentang tampilan
   const [petaOpen, setPetaOpen] = useState(false);
@@ -209,7 +224,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     }
   }, [platform, tokoKode]);
   useEffect(() => { muatPeta(); }, [muatPeta]);
-  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku, hanyaRefund]);
+  useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku, urutEtalase, hanyaRefund]);
 
   // ---- olah data ----
   const pesananList = useMemo(() => {
@@ -281,6 +296,50 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       .sort((a, b) => b.laba - a.laba);
   }, [data, q, bagiIklan]);
 
+  // ---- Per Etalase ----
+  // Baris pesanan dicocokkan ke etalase lewat judul/SKU (pemetaan Mass Update). Yang belum terpetakan
+  // dikelompokkan per judul produk (tanpa biaya iklan). Etalase yang beriklan tapi tidak laku di periode
+  // ini tetap ditampilkan (biaya iklan tanpa penjualan).
+  const etalaseSemua = useMemo(() => {
+    const m = new Map();
+    const cache = new Map();
+    const ambil = (kunci, nama, kode) => {
+      if (!m.has(kunci)) m.set(kunci, { kunci, kode, nama, lines: [] });
+      return m.get(kunci);
+    };
+    for (const b of data) {
+      const ck = `${b.nama_produk || ""}|${b.sku_referensi || ""}`;
+      if (!cache.has(ck)) cache.set(ck, produkDariBaris(b, idxProduk));
+      const kode = cache.get(ck);
+      const kunci = kode ? `kode:${kode}` : `judul:${normJudul(b.nama_produk) || "(tanpa nama)"}`;
+      ambil(kunci, kode ? (idxProduk.produk.get(kode)?.nama || b.nama_produk) : b.nama_produk, kode).lines.push(b);
+    }
+    for (const [kode, v] of bagiIklan.biayaProduk) {
+      if (!m.has(`kode:${kode}`)) ambil(`kode:${kode}`, idxProduk.produk.get(kode)?.nama || v.nama, kode);
+    }
+    return [...m.values()].map((e) => {
+      const r = ringkasBaris(e.lines);
+      const rl = ringkasBaris(e.lines.filter((l) => hppBaris(l) != null));
+      const iklanE = Math.round(e.kode ? (bagiIklan.biayaProduk.get(e.kode)?.biaya || 0) : 0);
+      // sama seperti kartu total: laba hanya dari baris HPP-lengkap, jadi iklan yang dikurangkan hanya porsinya
+      const rasio = r.dana > 0 ? Math.min(1, Math.max(0, rl.dana / r.dana)) : 1;
+      return {
+        ...e, r, qty: r.qty, hpp: rl.hpp, laba: rl.laba, danaLengkap: rl.dana,
+        adaHpp: rl.dana > 0 || rl.hpp > 0,
+        iklan: iklanE, labaSetelah: rl.laba - Math.round(iklanE * rasio),
+      };
+    });
+  }, [data, idxProduk, bagiIklan]);
+  const etalaseList = useMemo(() => etalaseSemua.filter((e) => !q
+    || `${e.nama || ""} ${e.kode || ""}`.toLowerCase().includes(q)
+    || e.lines.some((l) => `${l.sku || ""} ${l.sku_referensi || ""}`.toLowerCase().includes(q))), [etalaseSemua, q]);
+  const etalaseUrut = useMemo(() => {
+    if (!urutEtalase) return etalaseList;
+    const ak = AKSES_ETALASE[urutEtalase.k];
+    return [...etalaseList].sort((a, b) => bandingkan(ak(a), ak(b), urutEtalase.d));
+  }, [etalaseList, urutEtalase]);
+  const iklanTanpaKode = useMemo(() => Math.round(bagiIklan.tidakTerbagi.filter((x) => !x.kode).reduce((a, x) => a + x.biaya, 0)), [bagiIklan]);
+
   const pesananUrut = useMemo(() => {
     if (!urutPesanan) return pesananFiltered;
     const ak = AKSES_PESANAN[urutPesanan.k];
@@ -291,7 +350,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     const ak = AKSES_SKU[urutSku.k];
     return [...skuList].sort((a, b) => bandingkan(ak(a), ak(b), urutSku.d));
   }, [skuList, urutSku]);
-  const daftar = tampil === "sku" ? skuUrut : pesananUrut;
+  const daftar = tampil === "sku" ? skuUrut : tampil === "etalase" ? etalaseUrut : pesananUrut;
   const jumlahHal = tampil === "biaya" ? 1 : Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
   const potong = daftar.slice((halaman - 1) * PER_HALAMAN, halaman * PER_HALAMAN);
 
@@ -376,6 +435,14 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         await downloadXlsx(`${nama}.xlsx`, [
           { name: "Rincian per SKU", columns: kolomRincian, rows: barisUnduh },
           { name: "Ringkasan per Pesanan", columns: kolomPesanan, rows: barisPesanan },
+          { name: "Per Etalase", columns: [
+            { key: "nama", label: "Etalase" }, { key: "kode", label: "Kode Produk" }, { key: "qty", label: "Qty" },
+            { key: "penjualan", label: "Harga Produk" }, { key: "dana", label: "Dana Dilepas" }, { key: "hpp", label: "HPP Total" },
+            { key: "laba", label: "Laba Bersih" }, { key: "iklan", label: "Biaya Iklan" }, { key: "labaSetelah", label: "Laba setelah Iklan" },
+          ], rows: etalaseSemua.map((e) => ({
+            nama: e.nama, kode: e.kode || "", qty: e.qty, penjualan: e.r.penjualan, dana: e.r.dana,
+            hpp: e.adaHpp ? e.hpp : null, laba: e.adaHpp ? e.laba : null, iklan: e.iklan, labaSetelah: bisaLabaEtalase(e) ? e.labaSetelah : null,
+          })) },
         ]);
       }
       showToast?.(`${barisUnduh.length} baris diunduh (${format === "csv" ? "CSV" : "Excel"})`);
@@ -607,7 +674,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex rounded-full border border-md-outline-variant overflow-hidden text-xs">
-          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ["biaya", "Rincian Biaya"]].map(([k, l]) => (
+          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ["etalase", "Per Etalase"], ["biaya", "Rincian Biaya"]].map(([k, l]) => (
             <button key={k} onClick={() => setTampil(k)} className={`px-4 py-2 ${tampil === k ? "bg-md-primary-container text-md-on-primary-container font-medium" : "text-md-on-surface-variant"}`}>{l}</button>
           ))}
         </div>
@@ -615,13 +682,13 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
           <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. pesanan / SKU / nama produk" className={`${inputClass} !pl-9`} />
         </div>
-        {tampil !== "sku" && (
+        {(tampil === "pesanan" || tampil === "biaya") && (
           <label className="flex items-center gap-1.5 text-xs text-md-on-surface-variant cursor-pointer select-none">
             <input type="checkbox" checked={hanyaRefund} onChange={(e) => setHanyaRefund(e.target.checked)} />
             Hanya refund/retur ({pesananList.filter((p) => n0(p.r.refund) !== 0 || p.lines.some((l) => n0(l.qty_retur) > 0)).length})
           </label>
         )}
-        <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "sku" ? "SKU" : "pesanan"}</div>
+        <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "sku" ? "SKU" : tampil === "etalase" ? "etalase" : "pesanan"}</div>
       </div>
 
       {loading && data.length === 0 ? (
@@ -632,6 +699,15 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         <TabelPesanan list={potong} buka={buka} setBuka={setBuka} urut={urutPesanan} onUrut={(k) => ubahUrut(setUrutPesanan, k)} />
       ) : tampil === "biaya" ? (
         <TabelBiaya list={pesananFiltered} />
+      ) : tampil === "etalase" ? (
+        <>
+          <div className="mb-2 text-[11px] text-md-on-surface-variant max-w-3xl space-y-1">
+            <div>Satu baris = satu etalase (produk/listing Shopee). Biaya iklan di sini angka asli per etalase, tidak dibagi ke SKU. Klik baris untuk melihat SKU di dalamnya.</div>
+            {!petaProduk.length && <div className="text-amber-400">Etalase belum dikenali — import file Mass Update (tombol Import Mass Update) supaya biaya iklan bisa dicocokkan ke etalase. Sementara ini baris dikelompokkan per judul produk, tanpa biaya iklan.</div>}
+            {iklanTanpaKode > 0 && <div className="text-amber-400">Iklan tanpa kode produk {fmtRp(iklanTanpaKode)} tidak bisa dimasukkan ke etalase mana pun, tapi tetap dihitung di kartu total.</div>}
+          </div>
+          <TabelEtalase list={potong} urut={urutEtalase} onUrut={(k) => ubahUrut(setUrutEtalase, k)} adaIklan={iklanPeriode.length > 0} />
+        </>
       ) : (
         <TabelSku list={potong} urut={urutSku} onUrut={(k) => ubahUrut(setUrutSku, k)} adaIklan={petaProduk.length > 0 && iklanPeriode.length > 0} />
       )}
@@ -882,7 +958,7 @@ function TabelSku({ list, urut, onUrut, adaIklan }) {
             <ThUrut label="Dana Dilepas" k="dana" urut={urut} onUrut={onUrut} />
             <ThUrut label="HPP" k="hpp" urut={urut} onUrut={onUrut} />
             <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
-            {adaIklan && <ThUrut label="Biaya Iklan" k="iklan" urut={urut} onUrut={onUrut}><span className="font-normal">(perkiraan)</span></ThUrut>}
+            {adaIklan && <ThUrut label="Biaya Iklan" k="iklan" urut={urut} onUrut={onUrut}><span className="font-normal">(dibagi dari etalase)</span></ThUrut>}
             {adaIklan && <ThUrut label="Laba − Iklan" k="labaSetelah" urut={urut} onUrut={onUrut} />}
             <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut} />
           </tr>
@@ -934,6 +1010,112 @@ function TabelSku({ list, urut, onUrut, adaIklan }) {
 
 function FragmenSku({ children }) {
   return <>{children}</>;
+}
+
+// SKU-SKU di dalam satu etalase
+function DetailEtalase({ e }) {
+  const m = new Map();
+  for (const b of e.lines) { const k = kunciSku(b); if (!m.has(k)) m.set(k, []); m.get(k).push(b); }
+  const baris = [...m.entries()].map(([kunci, lines]) => {
+    const r = ringkasBaris(lines);
+    const rl = ringkasBaris(lines.filter((l) => hppBaris(l) != null));
+    return { kunci, qty: r.qty, penjualan: r.penjualan, dana: r.dana, hpp: rl.hpp, laba: rl.laba, ada: rl.dana > 0 || rl.hpp > 0 };
+  }).sort((a, b) => b.penjualan - a.penjualan);
+  if (!baris.length) return <div className="px-4 py-3 text-xs text-md-on-surface-variant">Tidak ada penjualan etalase ini di periode ini — biaya iklan tetap berjalan.</div>;
+  return (
+    <div className="px-4 py-3 overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-md-on-surface-variant">
+            <th className="py-1 pr-3 font-medium">SKU</th>
+            <th className="py-1 pr-3 font-medium text-right">Qty</th>
+            <th className="py-1 pr-3 font-medium text-right">Harga Jual</th>
+            <th className="py-1 pr-3 font-medium text-right">Dana</th>
+            <th className="py-1 pr-3 font-medium text-right">HPP</th>
+            <th className="py-1 font-medium text-right">Laba</th>
+          </tr>
+        </thead>
+        <tbody>
+          {baris.map((b) => (
+            <tr key={b.kunci} className="border-t border-md-outline-variant/60">
+              <td className="py-1.5 pr-3 whitespace-nowrap">{b.kunci}</td>
+              <td className="py-1.5 pr-3 text-right">{b.qty || "—"}</td>
+              <td className="py-1.5 pr-3 text-right whitespace-nowrap">{fmtRp(b.penjualan)}</td>
+              <td className="py-1.5 pr-3 text-right whitespace-nowrap">{fmtRp(b.dana)}</td>
+              <td className="py-1.5 pr-3 text-right whitespace-nowrap">{b.ada ? fmtRp(b.hpp) : "—"}</td>
+              <td className={`py-1.5 text-right whitespace-nowrap font-medium ${b.ada ? (b.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>{b.ada ? fmtRp(b.laba) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="text-[11px] text-md-on-surface-variant mt-2">Biaya iklan tidak dipecah ke SKU di sini — iklan berjalan untuk etalase secara keseluruhan.</div>
+    </div>
+  );
+}
+
+function TabelEtalase({ list, urut, onUrut, adaIklan }) {
+  const [terbuka, setTerbuka] = useState({});
+  return (
+    <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-md-container-low">
+          <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
+            <th className="px-3 py-2.5 w-8" />
+            <ThUrut label="Etalase" k="kunci" urut={urut} onUrut={onUrut} kanan={false} />
+            <ThUrut label="Qty" k="qty" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Harga Jual" k="penjualan" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Dana Dilepas" k="dana" urut={urut} onUrut={onUrut} />
+            <ThUrut label="HPP" k="hpp" urut={urut} onUrut={onUrut} />
+            <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
+            {adaIklan && <ThUrut label="Biaya Iklan" k="iklan" urut={urut} onUrut={onUrut} />}
+            {adaIklan && <ThUrut label="Laba − Iklan" k="labaSetelah" urut={urut} onUrut={onUrut} />}
+            <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut}><span className="font-normal">(setelah iklan)</span></ThUrut>
+          </tr>
+        </thead>
+        <tbody>
+          {list.map((e) => {
+            const buka = !!terbuka[e.kunci];
+            const bisaLaba = bisaLabaEtalase(e);
+            const margin = e.danaLengkap > 0 ? ((adaIklan ? e.labaSetelah : e.laba) / e.danaLengkap) * 100 : null;
+            return (
+              <FragmenSku key={e.kunci}>
+                <tr className="border-b border-md-outline-variant cursor-pointer hover:bg-md-on-surface/[0.04]" onClick={() => setTerbuka((m) => ({ ...m, [e.kunci]: !m[e.kunci] }))}>
+                  <td className="px-3 py-2.5 text-md-on-surface-variant">{buka ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="font-medium truncate max-w-[340px]">{e.nama || "(tanpa nama)"}</div>
+                    <div className="text-[11px] text-md-on-surface-variant">
+                      {e.kode ? `Kode ${e.kode} · ` : ""}{new Set(e.lines.map(kunciSku)).size} SKU
+                      {!e.kode && <span className="ml-2"><Badge color="amber">belum terpetakan</Badge></span>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right">{e.qty || "—"}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{fmtRp(e.r.penjualan)}</td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                    {fmtRp(e.r.dana)}
+                    {Math.abs(e.danaLengkap - e.r.dana) > 0.5 && <div className="text-[10px] text-amber-400" title="Laba & HPP hanya dihitung dari baris yang HPP-nya lengkap">dasar laba: {fmtRp(e.danaLengkap)}</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap">{e.adaHpp ? fmtRp(e.hpp) : "—"}</td>
+                  <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${e.adaHpp ? (e.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>{e.adaHpp ? fmtRp(e.laba) : "—"}</td>
+                  {adaIklan && <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{e.iklan > 0 ? fmtRp(e.iklan) : "—"}</td>}
+                  {adaIklan && (
+                    <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${bisaLaba ? (e.labaSetelah >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
+                      {bisaLaba ? fmtRp(e.labaSetelah) : "—"}
+                    </td>
+                  )}
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap text-md-on-surface-variant">{margin == null || !bisaLaba ? "—" : `${margin.toFixed(1)}%`}</td>
+                </tr>
+                {buka && (
+                  <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
+                    <td colSpan={adaIklan ? 10 : 8}><DetailEtalase e={e} /></td>
+                  </tr>
+                )}
+              </FragmenSku>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 // Petunjuk kenapa satu kode tidak cocok: karakter tak biasa + kandidat Master yang "mirip"
