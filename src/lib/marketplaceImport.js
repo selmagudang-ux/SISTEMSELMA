@@ -125,14 +125,18 @@ function kelompokBiaya(namaKolom) {
   if (n === "Biaya Proses Pesanan") return "biaya_proses";
   if (/^Biaya Gratis Ongkir XTRA/.test(n)) return "biaya_ongkir_xtra";
   if (n === "Biaya Transaksi" || n === "Biaya Layanan Promo XTRA") return "biaya_layanan";
-  if (n === "Biaya Kampanye" || n === "Biaya Komisi AMS" || /^Biaya Isi Saldo/.test(n)) return "biaya_promosi";
+  // Tiga biaya promosi dipisah supaya kelihatan sendiri-sendiri. biaya_promosi (gabungan) hanya tersisa
+  // untuk data lama yang diimport sebelum dipisah; import baru selalu mengisi 0 di sana.
+  if (/^Biaya Komisi AMS/.test(n)) return "biaya_ams";
+  if (n === "Biaya Kampanye") return "biaya_kampanye";
+  if (/^Biaya Isi Saldo/.test(n)) return "biaya_isi_saldo";
   if (n === "PPh 22") return "pajak";
   return "biaya_lain";
 }
 
 export const FIELD_BIAYA = [
   "ongkir_net", "voucher_penjual", "biaya_admin", "biaya_proses",
-  "biaya_ongkir_xtra", "biaya_layanan", "biaya_promosi", "biaya_lain", "pajak",
+  "biaya_ongkir_xtra", "biaya_layanan", "biaya_ams", "biaya_kampanye", "biaya_isi_saldo", "biaya_promosi", "biaya_lain", "pajak",
 ];
 
 export async function parseLaporanPenghasilan(buffer) {

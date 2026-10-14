@@ -37,7 +37,10 @@ const LABEL_BIAYA = {
   biaya_proses: "Biaya proses pesanan",
   biaya_ongkir_xtra: "Gratis Ongkir XTRA",
   biaya_layanan: "Layanan Promo XTRA / transaksi",
-  biaya_promosi: "Komisi AMS / kampanye / isi saldo",
+  biaya_ams: "Komisi AMS",
+  biaya_kampanye: "Biaya kampanye",
+  biaya_isi_saldo: "Isi saldo iklan (otomatis)",
+  biaya_promosi: "Promosi (data lama, belum dipisah)",
   biaya_lain: "Biaya lainnya",
   pajak: "PPh 22",
   ongkir_net: "Selisih ongkir",
@@ -891,7 +894,7 @@ function TabelBiaya({ list }) {
 
 const KOLOM_BIAYA = [
   ["biaya_admin", "Admin"], ["biaya_proses", "Proses"], ["biaya_ongkir_xtra", "XTRA"], ["biaya_layanan", "Layanan"],
-  ["biaya_promosi", "AMS/Promo"], ["biaya_lain", "Lainnya"], ["pajak", "PPh 22"], ["voucher_penjual", "Voucher"], ["ongkir_net", "Ongkir"],
+  ["biaya_ams", "AMS"], ["biaya_kampanye", "Kampanye"], ["biaya_isi_saldo", "Isi Saldo"], ["biaya_promosi", "Promo (lama)"], ["biaya_lain", "Lainnya"], ["pajak", "PPh 22"], ["voucher_penjual", "Voucher"], ["ongkir_net", "Ongkir"],
 ];
 const MAKS_BARIS_DETAIL = 100;
 
