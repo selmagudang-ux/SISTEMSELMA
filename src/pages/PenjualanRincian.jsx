@@ -123,7 +123,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const tokoKode = toko.kode || "";
   const [dari, setDari] = useState(isoAwalBulan());
   const [sampai, setSampai] = useState(isoHariIni());
-  const [data, setData] = useState([]);
+  const [dataDb, setData] = useState([]); // baris apa adanya dari database
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [tampil, setTampil] = useState("pesanan"); // pesanan | sku
@@ -149,6 +149,16 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     return m;
   }, [skuMaster]);
   const aliasMap = useMemo(() => new Map(aliasList.map((a) => [normSku(a.referensi), a.sku])), [aliasList]);
+
+  // Baris yang di database masih "belum cocok" dicocokkan lagi di layar dengan Master Barang TERBARU,
+  // jadi SKU yang baru ditambahkan ke Master langsung terbaca tanpa menunggu tombol "Cocokkan ulang SKU".
+  // Penanda _live = cocok di layar tapi belum tersimpan ke database (tombol Cocokkan ulang yang menyimpannya).
+  const data = useMemo(() => dataDb.map((b) => {
+    if (b.sku || !b.sku_referensi) return b;
+    const m = cariMaster(b.sku_referensi, aliasMap, skuMap);
+    return m ? { ...b, sku: m.sku, hpp_satuan: m.hpp != null ? Number(m.hpp) : null, _live: true } : b;
+  }), [dataDb, aliasMap, skuMap]);
+  const adaBelumTersimpan = useMemo(() => data.some((b) => b._live), [data]);
 
   const filterToko = `platform=eq.${platform}&toko=eq.${encodeURIComponent(tokoKode)}`;
 
@@ -382,7 +392,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     setSibukCocok(true);
     try {
       const refs = new Map(); // referensi mentah -> baris Master
-      for (const b of data) {
+      for (const b of dataDb) {
         if (b.sku || !b.sku_referensi || refs.has(b.sku_referensi)) continue;
         const m = cariMaster(b.sku_referensi, aliasMap, skuMap);
         if (m) refs.set(b.sku_referensi, m);
@@ -478,8 +488,8 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           ))}
         </div>
         <div className="flex-1" />
-        {belumCocok.length > 0 && (
-          <button onClick={cocokkanUlang} className={btnOutlined} disabled={sibukCocok} title="Cocokkan ulang SKU yang belum cocok dengan Master Barang terbaru">
+        {(belumCocok.length > 0 || adaBelumTersimpan) && (
+          <button onClick={cocokkanUlang} className={btnOutlined} disabled={sibukCocok} title="Simpan hasil pencocokan SKU dengan Master Barang terbaru ke database">
             <Link2 size={14} /> Cocokkan ulang SKU
           </button>
         )}
