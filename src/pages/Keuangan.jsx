@@ -145,7 +145,8 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   };
   // Akun Pemilik & Pemegang Saham hanya melihat (pagar sebenarnya ada di sb() di lib/api.js;
   // di sini cuma supaya tombol tambah/ubah tidak membuka form yang akan ditolak).
-  const bacaSaja = ["owner", "pemegang_saham"].includes(session?.role);
+  // Pemilik: read-only di SELMA, tapi bisa membukukan entitas Holding (akun kas, transaksi).
+  const bacaSaja = session?.role === "pemegang_saham" || (session?.role === "owner" && kodeAktif !== kodeHolding);
   // Pengecualian: di Holding → Antar Entitas, Pemilik boleh mengubah/menghapus transfer
   // arah Holding → perusahaan (tombolnya sendiri disaring per arah di pages/Holding.jsx).
   const adaPengecualianOwner = holding && sub === "antar-entitas" && session?.role === "owner";
