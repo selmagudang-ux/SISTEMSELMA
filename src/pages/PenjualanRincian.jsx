@@ -1275,14 +1275,20 @@ function PanelImportMassUpdate({ platform, tokoKode, tabelAda, jumlahTersimpan, 
 // Import Shopee SATU KESATUAN: empat file diimport sekaligus dan disimpan sekaligus (penjualan + iklan),
 // supaya data penjualan, SKU/qty, dan biaya iklan selalu satu periode dan tidak ada yang tertinggal.
 // Mass Update sengaja terpisah (cukup sesekali kalau ada produk baru).
-function SlotFile({ no, judul, petunjuk, accept, file, onPilih, multiple = false }) {
+function SlotFile({ no, judul, petunjuk, accept, file, onPilih, multiple = false, onHapus }) {
   const daftar = Array.isArray(file) ? file : file ? [file] : [];
   return (
     <label className="block text-xs text-md-on-surface-variant rounded-md-lg border border-md-outline-variant p-3">
       <span className="block mb-1 text-md-on-surface text-sm">{no}. {judul} {daftar.length ? <span className="text-emerald-400">✓{multiple ? ` ${daftar.length} file` : ""}</span> : <span className="text-amber-400">(wajib)</span>}</span>
       <span className="block mb-2">{petunjuk}</span>
       <input type="file" accept={accept} multiple={multiple} onChange={onPilih} className="block text-xs" />
-      {daftar.map((f) => <span key={f.name} className="block mt-1 truncate text-[11px]">{f.name}</span>)}
+      {daftar.map((f, i) => (
+        <span key={`${f.name}-${i}`} className="mt-1 flex items-center gap-2 text-[11px]">
+          <span className="truncate">{f.name}</span>
+          {multiple && onHapus && <button type="button" className="text-red-400 underline flex-shrink-0" onClick={(e) => { e.preventDefault(); onHapus(i); }}>hapus</button>}
+        </span>
+      ))}
+      {multiple && daftar.length > 0 && <span className="block mt-1 text-[11px] text-sky-300">Mau tambah file lagi? Klik "Choose File" lagi dan pilih file berikutnya — file yang sudah dipilih tetap ada.</span>}
     </label>
   );
 }
@@ -1298,7 +1304,16 @@ function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasM
 
   const lengkap = !!(fPenghasilan && fPesanan.length && fIklan && fRincian);
   const pilih = (set) => (e) => { set(e.target.files?.[0] || null); setPreview(null); setStatus(""); };
-  const pilihBanyak = (set) => (e) => { set([...(e.target.files || [])]); setPreview(null); setStatus(""); };
+  // Pilihan bersifat MENAMBAH (bukan mengganti), supaya bisa memilih file satu per satu — termasuk di HP
+  // yang tidak bisa memilih banyak file sekaligus. File yang sama (nama+ukuran) tidak dimasukkan dua kali.
+  const tambahBanyak = (set) => (e) => {
+    const baru = [...(e.target.files || [])];
+    const kunci = (f) => `${f.name}|${f.size}|${f.lastModified}`;
+    set((lama) => { const ada = new Set(lama.map(kunci)); return [...lama, ...baru.filter((f) => !ada.has(kunci(f)))]; });
+    e.target.value = "";
+    setPreview(null); setStatus("");
+  };
+  const hapusDariDaftar = (set) => (i) => { set((lama) => lama.filter((_, j) => j !== i)); setPreview(null); setStatus(""); };
 
   const baca = async () => {
     setSibuk(true); setStatus("Membaca file…"); setPreview(null);
@@ -1410,8 +1425,8 @@ function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasM
       <div className="grid sm:grid-cols-2 gap-3 mb-3">
         <SlotFile no={1} judul="Laporan Penghasilan" accept=".xlsx" file={fPenghasilan} onPilih={pilih(setFPenghasilan)}
           petunjuk="Seller Centre → Penghasilan Saya → Sudah Dilepas → Unduh Laporan Penghasilan (.xlsx)" />
-        <SlotFile no={2} judul="Export Pesanan (boleh lebih dari satu file)" accept=".xlsx" multiple file={fPesanan} onPilih={pilihBanyak(setFPesanan)}
-          petunjuk="Pesanan Saya → Export (.xlsx), berisi SKU variasi & qty. Shopee membatasi satu file maksimal satu bulan, jadi unduh beberapa file (mis. Agustus dan September) lalu pilih semuanya sekaligus (tahan Ctrl / Shift saat memilih). Rentang gabungannya harus mencakup pesanan tertua di laporan nomor 1, tanpa filter status." />
+        <SlotFile no={2} judul="Export Pesanan (boleh lebih dari satu file)" accept=".xlsx" multiple file={fPesanan} onPilih={tambahBanyak(setFPesanan)} onHapus={hapusDariDaftar(setFPesanan)}
+          petunjuk="Pesanan Saya → Export (.xlsx), berisi SKU variasi & qty. Shopee membatasi satu file maksimal satu bulan, jadi unduh beberapa file (mis. Agustus dan September). Pilih satu per satu (klik lagi untuk menambah file berikutnya) atau sekaligus. Rentang gabungannya harus mencakup pesanan tertua di laporan nomor 1, tanpa filter status." />
         <SlotFile no={3} judul="Data Keseluruhan Iklan" accept=".csv" file={fIklan} onPilih={pilih(setFIklan)}
           petunjuk="Seller Centre → Iklan Shopee → Data Keseluruhan → pilih periode → Unduh (.csv)" />
         <SlotFile no={4} judul="Rincian Data Iklan Produk Otomatis" accept=".csv" file={fRincian} onPilih={pilih(setFRincian)}
