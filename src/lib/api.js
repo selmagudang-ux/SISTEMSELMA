@@ -1698,18 +1698,23 @@ export async function downloadFotos(fotos, opts = {}) {
 // =========================================================
 export const KAS_BESAR = "besar";
 export const KAS_KECIL = "kecil";
-export const LABEL_KAS = { besar: "Kas Besar", kecil: "Kas Kecil" };
+export const KAS_BANK = "bank";
+export const LABEL_KAS = { besar: "Kas Besar", kecil: "Kas Kecil", bank: "Bank" };
+// Urutan tampil: Kas Besar (holding), Bank, Kas Kecil
+export const URUTAN_KAS = [KAS_BESAR, KAS_BANK, KAS_KECIL];
 
 export function petaKasRekening(kasGrupList) {
   const peta = {};
   (kasGrupList || []).forEach((m) => {
-    peta[m.kode] = m.label === KAS_BESAR ? KAS_BESAR : KAS_KECIL;
+    // Tanpa penanda = Kas Kecil (rekening lama otomatis Kas Kecil). Label "besar" = Kas Besar (holding), "bank" = Bank.
+    peta[m.kode] = m.label === KAS_BESAR ? KAS_BESAR : m.label === KAS_BANK ? KAS_BANK : KAS_KECIL;
   });
   return peta;
 }
 
 export function kasDariRekening(peta, kodeRekening) {
-  return peta && peta[kodeRekening] === KAS_BESAR ? KAS_BESAR : KAS_KECIL;
+  const k = peta ? peta[kodeRekening] : null;
+  return k === KAS_BESAR || k === KAS_BANK ? k : KAS_KECIL;
 }
 
 // Kas mana saja yang tersentuh satu transaksi (transfer antar kas = dua kas).
@@ -1745,7 +1750,7 @@ export function ringkasanPerKas(list, peta, kas) {
 // Saldo per kas = jumlah saldo rekening-rekening di dalamnya.
 // saldoRekening = hasil saldoPerRekening().
 export function saldoPerKas(saldoRekening, peta) {
-  const hasil = { besar: 0, kecil: 0 };
+  const hasil = { besar: 0, kecil: 0, bank: 0 };
   (saldoRekening || []).forEach((r) => {
     hasil[kasDariRekening(peta, r.kode)] += Number(r.saldo) || 0;
   });

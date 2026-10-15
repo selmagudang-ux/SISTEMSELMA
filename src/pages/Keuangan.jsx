@@ -13,6 +13,8 @@ import {
   LABEL_KAS,
   KAS_BESAR,
   KAS_KECIL,
+  KAS_BANK,
+  URUTAN_KAS,
   saldoAwalBulan,
   kodeSaldoAwal,
   arusKasPerPeriode,
@@ -773,6 +775,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
         {[
           { key: "semua", label: "Semua" },
           { key: KAS_BESAR, label: "Kas Besar (Holding)" },
+          { key: KAS_BANK, label: "Bank" },
           { key: KAS_KECIL, label: "Kas Kecil" },
         ].map((t) => (
           <button
@@ -788,8 +791,8 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
       </div>
 
       {kasTab === "semua" ? (
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          {[KAS_BESAR, KAS_KECIL].map((k) => (
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          {URUTAN_KAS.map((k) => (
             <div key={k} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
               <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
                 <Landmark size={12} /> Saldo {LABEL_KAS[k]}
@@ -1357,8 +1360,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
       {rekeningList.length > 0 && (
         <div className="mb-5">
           <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            {[KAS_BESAR, KAS_KECIL].map((k) => (
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {URUTAN_KAS.map((k) => (
               <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-amber-500/5">
                 <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
                 <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(saldoKas[k])}</div>
@@ -1974,9 +1977,9 @@ function RekeningKategori({ master, reload, showToast }) {
     const ada = kasGrupList.find((x) => x.kode === m.kode);
     setKasSaving(m.id);
     try {
-      if (kas === KAS_BESAR) {
-        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: KAS_BESAR }) });
-        else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: m.kode, label: KAS_BESAR }) });
+      if (kas === KAS_BESAR || kas === KAS_BANK) {
+        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kas }) });
+        else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: m.kode, label: kas }) });
       } else if (ada) {
         await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
       }
@@ -2211,7 +2214,7 @@ function RekeningKategori({ master, reload, showToast }) {
                       <span className="text-sm text-slate-200">{m.label}</span>
                       {activeTab === "rekening" && (
                         <div className="flex rounded-md border border-slate-800 overflow-hidden ml-1">
-                          {[KAS_BESAR, KAS_KECIL].map((k) => (
+                          {URUTAN_KAS.map((k) => (
                             <button
                               key={k}
                               disabled={kasSaving === m.id}

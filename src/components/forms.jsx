@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_BESAR, KAS_KECIL } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_BESAR, KAS_KECIL, KAS_BANK, URUTAN_KAS } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { isSuperadminLike, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
@@ -4634,8 +4634,8 @@ function PilihKasBaru({ value, onChange }) {
   return (
     <div className="mt-2">
       <div className="text-[11px] text-slate-500 mb-1">Rekening baru ini masuk ke:</div>
-      <div className="grid grid-cols-2 gap-1.5">
-        {[KAS_BESAR, KAS_KECIL].map((k) => (
+      <div className="grid grid-cols-3 gap-1.5">
+        {URUTAN_KAS.map((k) => (
           <button
             key={k}
             type="button"
@@ -4683,7 +4683,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   const petaKas = petaKasRekening(master?.kas_grup);
   const rekeningOptions = daftarRekening
     .map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})`, group: LABEL_KAS[kasDariRekening(petaKas, r.kode)] }))
-    .sort((a, b) => (a.group === b.group ? 0 : a.group === LABEL_KAS[KAS_BESAR] ? -1 : 1));
+    .sort((a, b) => URUTAN_KAS.findIndex((k) => LABEL_KAS[k] === a.group) - URUTAN_KAS.findIndex((k) => LABEL_KAS[k] === b.group));
   const kategoriOptions = daftarKategori.map((k) => ({ value: k.kode, label: `${k.label} (${k.kode})` }));
   const isTransfer = tipe === "transfer";
   const isKeluarSaldo = tipe === "keluar" || isTransfer; // dua-duanya narik dari saldo rekening asal

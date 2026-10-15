@@ -20,6 +20,8 @@ import {
   LABEL_KAS,
   KAS_BESAR,
   KAS_KECIL,
+  KAS_BANK,
+  URUTAN_KAS,
   breakdownPengeluaranKategori,
   breakdownPemasukanKategori,
   laporanLabaRugi,
@@ -328,6 +330,16 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   // kartu ringkasan "Kas Masuk/Keluar (bulan terpilih)" di bawahnya.
   const arusKas = arusKasPerPeriode(ringkasanBulanIni.list);
 
+  // Panel "Riwayat Transaksi Terakhir" & "Pengisian Kas Kecil" (tab Ringkasan) — dari data yang sama, tanpa query baru.
+  const labelRek = (kode) => (master.rekening || []).find((r) => r.kode === kode)?.label || kode || "—";
+  const urutTerbaru = (a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""));
+  const riwayatTerakhir = [...(ringkasanBulanIni.list || [])].sort(urutTerbaru).slice(0, 6);
+  // Pengisian kas kecil = transfer dari Kas Besar / Bank ke rekening Kas Kecil. Bukan pemasukan/pengeluaran.
+  const pengisianKasKecil = (ringkasanBulanIni.list || [])
+    .filter((t) => t.tipe === "transfer" && kasDariRekening(petaKas, t.rekening) !== KAS_KECIL && kasDariRekening(petaKas, t.rekening_tujuan) === KAS_KECIL)
+    .sort(urutTerbaru);
+  const totalPengisianKasKecil = pengisianKasKecil.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+
   const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
   const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
   // Sama seperti di Laporan Keuangan: kategori yang dipetakan ke kelompok yang
@@ -351,6 +363,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         {[
           { key: "semua", label: "Semua Kas" },
           { key: KAS_BESAR, label: "Kas Besar (Holding)" },
+          { key: KAS_BANK, label: "Bank" },
           { key: KAS_KECIL, label: "Kas Kecil" },
         ].map((t) => (
           <button
@@ -435,6 +448,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
       </div>
 
       {panelAktif === "ringkasan" && (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label={kasTab === "semua" ? "Saldo Kas Saat Ini" : `Saldo ${LABEL_KAS[kasTab]} Saat Ini`} value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
         <StatCard label={`Kas Masuk (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
@@ -449,6 +463,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         {kasTab === "semua" ? (
           <>
             <StatCard label="Saldo Kas Besar (Holding)" value={fmtRp(saldoKas[KAS_BESAR])} icon={Landmark} accent={saldoKas[KAS_BESAR] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
+            <StatCard label="Saldo Bank" value={fmtRp(saldoKas[KAS_BANK])} icon={Landmark} accent={saldoKas[KAS_BANK] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
             <StatCard label="Saldo Kas Kecil" value={fmtRp(saldoKas[KAS_KECIL])} icon={Landmark} accent={saldoKas[KAS_KECIL] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
           </>
         ) : (
@@ -458,6 +473,87 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
           </>
         )}
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Riwayat Transaksi Terakhir</div>
+          {riwayatTerakhir.length === 0 ? (
+            <div className="p-6"><EmptyState label="Belum ada transaksi di periode ini." /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
+                    <th className="px-4 py-2 font-medium">Tanggal</th>
+                    <th className="px-2 py-2 font-medium">Jenis</th>
+                    <th className="px-2 py-2 font-medium">Keterangan</th>
+                    <th className="px-4 py-2 font-medium text-right">Nominal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {riwayatTerakhir.map((t, i) => {
+                    const jenis = t.tipe === "masuk" ? { teks: "Pemasukan", cls: "bg-emerald-500/15 text-emerald-400", nominal: "text-emerald-400", tanda: "+ " }
+                      : t.tipe === "keluar" ? { teks: "Pengeluaran", cls: "bg-red-500/15 text-red-400", nominal: "text-red-400", tanda: "− " }
+                      : { teks: "Transfer", cls: "bg-sky-500/15 text-sky-400", nominal: "text-sky-400", tanda: "" };
+                    return (
+                      <tr key={t.id || i} className="border-b border-slate-800/60 last:border-0">
+                        <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{formatTanggalID(t.tanggal)}</td>
+                        <td className="px-2 py-2.5"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${jenis.cls}`}>{jenis.teks}</span></td>
+                        <td className="px-2 py-2.5 text-slate-300">
+                          <div className="line-clamp-1">{t.keterangan || "—"}</div>
+                          <div className="text-[11px] text-slate-500">{t.tipe === "transfer" ? `${labelRek(t.rekening)} → ${labelRek(t.rekening_tujuan)}` : labelRek(t.rekening)}</div>
+                        </td>
+                        <td className={`px-4 py-2.5 text-right whitespace-nowrap font-semibold ${jenis.nominal}`}>{jenis.tanda}{fmtRp(Number(t.jumlah) || 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {onNavigate && (
+            <button type="button" onClick={() => onNavigate("keuangan")} className="w-full px-4 py-2.5 text-xs text-sky-400 hover:bg-slate-900/60 border-t border-slate-800 text-left">
+              Lihat semua transaksi
+            </button>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-baseline justify-between gap-3">
+            <span className="text-sm font-semibold">Pengisian Kas Kecil, {periodeLabel}</span>
+            <span className="text-xs text-slate-400">Total <b className="text-slate-100">{fmtRp(totalPengisianKasKecil)}</b></span>
+          </div>
+          {pengisianKasKecil.length === 0 ? (
+            <div className="p-6"><EmptyState label="Belum ada pengisian kas kecil di periode ini." /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
+                    <th className="px-4 py-2 font-medium">Tanggal</th>
+                    <th className="px-2 py-2 font-medium">Dari → Ke</th>
+                    <th className="px-4 py-2 font-medium text-right">Nominal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pengisianKasKecil.slice(0, 8).map((t, i) => (
+                    <tr key={t.id || i} className="border-b border-slate-800/60 last:border-0">
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{formatTanggalID(t.tanggal)}</td>
+                      <td className="px-2 py-2.5 text-slate-300">
+                        <div>{labelRek(t.rekening)} → {labelRek(t.rekening_tujuan)}</div>
+                        {t.keterangan ? <div className="text-[11px] text-slate-500 line-clamp-1">{t.keterangan}</div> : null}
+                      </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap font-semibold text-sky-400">{fmtRp(Number(t.jumlah) || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-800">Perpindahan kas, bukan pemasukan atau pengeluaran, jadi tidak mengubah laba rugi.</div>
+        </div>
+      </div>
+      </>
       )}
 
       {panelAktif === "labarugi" && (
@@ -530,7 +626,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         ) : (
           <table className="w-full text-sm">
             <tbody>
-              {[KAS_BESAR, KAS_KECIL].map((k) => {
+              {URUTAN_KAS.map((k) => {
                 const baris = saldoRekening.filter((r) => kasDariRekening(petaKas, r.kode) === k);
                 if (baris.length === 0) return null;
                 const subtotal = baris.reduce((a, r) => a + r.saldo, 0);
