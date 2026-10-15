@@ -37,10 +37,11 @@ export function useKeuanganRentang(dimuat, dari) {
     };
   }, [perluLama, dimuat]);
 
-  const data = useMemo(
-    () => (perluLama && lama ? [...(dimuat || []), ...lama] : dimuat || []),
-    [dimuat, lama, perluLama]
-  );
+  const data = useMemo(() => {
+    if (!(perluLama && lama)) return dimuat || [];
+    const saring = dimuat?.__saring; // diisi lingkupEntitas() (lib/api.js)
+    return [...(dimuat || []), ...(saring ? lama.filter(saring) : lama)];
+  }, [dimuat, lama, perluLama]);
   const status =
     perluLama && !lama
       ? err

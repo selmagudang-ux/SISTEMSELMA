@@ -8,6 +8,10 @@ import {
   petaKasRekening,
   petaLokasiRekening,
   lokasiDariRekening,
+  lingkupEntitas,
+  petaEntitasRekening,
+  entitasDariRekening,
+  ENTITAS_DEFAULT,
   LOKASI_TANPA,
   kasDariRekening,
   kasTerkait,
@@ -33,6 +37,7 @@ import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
+import { AntarEntitas, Konsolidasi } from "./Holding";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -104,7 +109,59 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
-export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session }) {
+export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session }) {
+  // Pemegang Saham hanya boleh melihat Konsolidasi (menu lain tidak ada di sidebar,
+  // ini pengaman kalau sub tersimpan lama di sessionStorage).
+  const sub = session?.role === "pemegang_saham" ? "konsolidasi" : subProp;
+
+  // Entitas pembukuan aktif (Fase 4 — Holding). Halaman Transaksi, Laporan, Log,
+  // Buku Kas, dan Rekonsiliasi hanya menampilkan rekening & transaksi entitas ini.
+  // Tanpa entitas (SQL fase 4 belum dijalankan) semuanya tampil seperti biasa.
+  const entitasList = master.entitas || [];
+  const [entitasPilih, setEntitasPilih] = useState(() => {
+    try {
+      return sessionStorage.getItem("selma-entitas") || "";
+    } catch {
+      return "";
+    }
+  });
+  const kodeAktif = entitasList.some((e) => e.kode === entitasPilih)
+    ? entitasPilih
+    : entitasList.find((e) => e.kode === ENTITAS_DEFAULT)?.kode || entitasList[0]?.kode || "";
+  const gantiEntitas = (kode) => {
+    setEntitasPilih(kode);
+    try {
+      sessionStorage.setItem("selma-entitas", kode);
+    } catch {}
+  };
+  const lingkup = useMemo(
+    () => lingkupEntitas(keuanganTransaksi, master, kodeAktif),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [keuanganTransaksi, master.rekening, master.rekening_entitas, master.entitas, kodeAktif]
+  );
+  const bungkus = (node) => (
+    <div>
+      {entitasList.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-[11px] text-slate-500">Pembukuan:</span>
+          <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+            {entitasList.map((e) => (
+              <button
+                key={e.kode}
+                type="button"
+                onClick={() => gantiEntitas(e.kode)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${kodeAktif === e.kode ? "bg-amber-500/15 text-amber-400" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {node}
+    </div>
+  );
+
   if (sub === "riwayat") {
     return <RiwayatPerubahan master={master} session={session} />;
   }
@@ -117,29 +174,35 @@ export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [
   if (sub === "transaksi-kas") {
     return <TransaksiKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModal} />;
   }
+  if (sub === "antar-entitas") {
+    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModal} />;
+  }
+  if (sub === "konsolidasi") {
+    return <Konsolidasi keuanganTransaksi={keuanganTransaksi} master={master} />;
+  }
   if (sub === "buku-kas") {
-    return <BukuKas keuanganTransaksi={keuanganTransaksi} master={master} showToast={showToast} />;
+    return bungkus(<BukuKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} showToast={showToast} />);
   }
   if (sub === "rekonsiliasi") {
-    return <RekonsiliasiKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} session={session} />;
+    return bungkus(<RekonsiliasiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} session={session} />);
   }
   if (sub === "laporan") {
-    return (
+    return bungkus(
       <LaporanKeuangan
-        keuanganTransaksi={keuanganTransaksi}
+        keuanganTransaksi={lingkup.transaksi}
         marketplaceTransaksi={marketplaceTransaksi}
         pesananMasuk={pesananMasuk}
-        master={master}
+        master={lingkup.master}
         reload={reload}
         showToast={showToast}
       />
     );
   }
   if (sub === "log") {
-    return <LogKeterangan keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
+    return bungkus(<LogKeterangan keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} />);
   }
-  return (
-    <Transaksi keuanganTransaksi={keuanganTransaksi} pesananMasuk={pesananMasuk} master={master} setModal={setModal} showToast={showToast} />
+  return bungkus(
+    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModal} showToast={showToast} />
   );
 }
 
@@ -1986,6 +2049,9 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
   const lokasiList = master.lokasi || [];
   const kasGrupList = master.kas_grup || [];
   const mapLokasiList = master.rekening_lokasi || [];
+  const entitasList = master.entitas || [];
+  const mapEntitasList = master.rekening_entitas || [];
+  const petaEnt = useMemo(() => petaEntitasRekening(mapEntitasList), [mapEntitasList]);
   const petaKas = useMemo(() => petaKasRekening(kasGrupList), [kasGrupList]);
   const petaLok = useMemo(() => petaLokasiRekening(mapLokasiList), [mapLokasiList]);
   const saldoMap = useMemo(
@@ -2001,6 +2067,7 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
     ...r,
     kas: kasDariRekening(petaKas, r.kode),
     lokasi: lokasiDariRekening(petaLok, lokasiList, r.kode),
+    entitas: entitasDariRekening(petaEnt, entitasList, r.kode),
     saldo: saldoMap.get(r.kode) || 0,
   }));
   const total = (kas) => semuaBaris.filter((r) => r.kas === kas).reduce((a, r) => a + r.saldo, 0);
@@ -2044,6 +2111,20 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
         await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
       }
       showToast(`${r.label} → ${kodeLokasi ? labelDari(lokasiList, kodeLokasi) : "Tanpa lokasi"}`);
+    });
+
+  // Entitas pemilik rekening (master_data tipe "rekening_entitas"). Entitas default
+  // (OPS) = tanpa penanda, jadi rekening lama tidak perlu dimigrasi.
+  const ubahEntitas = (r, kodeEntitas) =>
+    simpan(r, async () => {
+      const ada = mapEntitasList.find((x) => x.kode === r.kode);
+      if (kodeEntitas && kodeEntitas !== ENTITAS_DEFAULT) {
+        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kodeEntitas }) });
+        else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_entitas", kode: r.kode, label: kodeEntitas }) });
+      } else if (ada) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      }
+      showToast(`${r.label} → ${labelDari(entitasList, kodeEntitas)}`);
     });
 
   const selectCls = "bg-slate-900 border border-slate-700 rounded-md px-2 py-1 text-xs text-slate-200 disabled:opacity-40";
@@ -2106,6 +2187,7 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
                 <th className="px-2 py-2.5 font-medium">Nama Akun</th>
                 <th className="px-2 py-2.5 font-medium">Jenis</th>
                 <th className="px-2 py-2.5 font-medium">Lokasi</th>
+                {entitasList.length > 1 && <th className="px-2 py-2.5 font-medium">Entitas</th>}
                 <th className="px-4 py-2.5 font-medium text-right">Saldo Terkini</th>
               </tr>
             </thead>
@@ -2135,6 +2217,15 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
                       ))}
                     </select>
                   </td>
+                  {entitasList.length > 1 && (
+                    <td className="px-2 py-2.5">
+                      <select className={selectCls} value={r.entitas} disabled={saving === r.id} onChange={(e) => ubahEntitas(r, e.target.value)} aria-label={`Entitas ${r.label}`}>
+                        {entitasList.map((e) => (
+                          <option key={e.kode} value={e.kode}>{e.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                  )}
                   <td className={`px-4 py-2.5 text-right whitespace-nowrap font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>{fmtRp(r.saldo)}</td>
                 </tr>
               ))}

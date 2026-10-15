@@ -372,6 +372,9 @@ export const NAV = [
           { key: "transaksi-kas", label: "Transaksi Kas" },
           { key: "buku-kas", label: "Buku Kas" },
           { key: "rekonsiliasi", label: "Rekonsiliasi Kas" },
+          { key: "antar-entitas", label: "Antar Entitas" },
+          // Hanya baca; dilihat Pemilik, Pemegang Saham, dan Super Admin (lihat allowedSubMenus).
+          { key: "konsolidasi", label: "Konsolidasi" },
           { key: "laporan", label: "Laporan Keuangan" },
           { key: "log", label: "Log Keterangan" },
           { key: "rekening", label: "Rekening & Kategori" },
@@ -529,7 +532,8 @@ export function withParentBadges(nav, rawBadges) {
 // editor), bukan lewat form "Tambah User".
 export const ROLES = [
   { key: "superadmin", label: "Super Admin" },
-  { key: "owner", label: "Owner" },
+  { key: "owner", label: "Pemilik" },
+  { key: "pemegang_saham", label: "Pemegang Saham" },
   { key: "gudang", label: "Gudang" },
   { key: "pemotretan", label: "Pemotretan" },
   { key: "marketplace", label: "Admin Marketplace" },
@@ -578,6 +582,9 @@ export const ROLE_MENUS = {
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
   // karena tidak didaftarkan di ROLE_SUBMENUS.
   keuangan: ["keuangan", "chat", "panduan"],
+  // Pemegang Saham: hanya melihat tab Konsolidasi di menu Keuangan (read-only,
+  // lihat ROLE_READONLY di lib/api.js & allowedSubMenus di bawah).
+  pemegang_saham: ["keuangan"],
 };
 
 export function allowedMenus(role) {
@@ -604,7 +611,10 @@ export const ROLE_SUBMENUS = {
 export function allowedSubMenus(role, menuKey) {
   // "Riwayat Perubahan" Keuangan: hanya superappa (guard navigasi & halaman).
   if (menuKey === "keuangan" && role !== "superappa") {
-    return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "akun-kas", "transaksi-kas", "buku-kas", "rekonsiliasi", "laporan", "log", "rekening"];
+    if (role === "pemegang_saham") return ["konsolidasi"];
+    const dasar = ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "akun-kas", "transaksi-kas", "buku-kas", "rekonsiliasi", "antar-entitas", "laporan", "log", "rekening"];
+    // Konsolidasi hanya untuk Pemilik & Super Admin (Admin Keuangan tidak).
+    return ["owner", "superadmin"].includes(role) ? [...dasar, "konsolidasi"] : dasar;
   }
   return ROLE_SUBMENUS[role]?.[menuKey] || null;
 }

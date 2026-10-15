@@ -1235,6 +1235,18 @@ export default function ModalRouter({
               return kode;
             };
 
+            // Rekening baru ikut entitas pembukuan yang sedang aktif (Keuangan > Pembukuan);
+            // entitas default (OPS) tidak perlu penanda.
+            const petakanEntitasBaru = async (kodeRek) => {
+              let e = "";
+              try {
+                e = sessionStorage.getItem("selma-entitas") || "";
+              } catch {}
+              if (e && e !== "OPS" && (master.entitas || []).some((x) => x.kode === e)) {
+                await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_entitas", kode: kodeRek, label: e }) });
+              }
+            };
+
             let rekening = data.rekening;
             if (!rekening && data.rekeningBaru) {
               rekening = await buatEntriBaru("rekening", data.rekeningBaruKode || suggestKode(data.rekeningBaru), data.rekeningBaru);
@@ -1243,6 +1255,7 @@ export default function ModalRouter({
               if (data.kasBaru === "besar" || data.kasBaru === "bank") {
                 await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: rekening, label: data.kasBaru }) });
               }
+              await petakanEntitasBaru(rekening);
             }
 
             let rekeningTujuan = data.rekening_tujuan;
@@ -1255,6 +1268,7 @@ export default function ModalRouter({
               if (data.kasTujuanBaru === "besar" || data.kasTujuanBaru === "bank") {
                 await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: rekeningTujuan, label: data.kasTujuanBaru }) });
               }
+              await petakanEntitasBaru(rekeningTujuan);
             }
 
             const tipeKategori = data.tipe === "masuk" ? "kategori_masuk" : "kategori_keluar";

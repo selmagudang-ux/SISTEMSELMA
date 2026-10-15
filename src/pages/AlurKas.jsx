@@ -45,6 +45,9 @@ import {
   KAS_KECIL,
   URUTAN_KAS,
   saldoSebelumTanggal,
+  petaEntitasRekening,
+  entitasDariRekening,
+  PENANDA_ANTAR_ENTITAS,
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 
@@ -60,28 +63,28 @@ import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 // =========================================================
 
 const pad2 = (n) => String(n).padStart(2, "0");
-function hariIniLokal() {
+export function hariIniLokal() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-function awalBulanIni() {
+export function awalBulanIni() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`;
 }
 
-const selectCls = "bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-200 disabled:opacity-40";
-const fileCls =
+export const selectCls = "bg-slate-900 border border-slate-700 rounded-md px-2 py-1.5 text-xs text-slate-200 disabled:opacity-40";
+export const fileCls =
   "block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700";
 
 // Foto bukti transfer: diperkecil sedikit (tetap tajam supaya nominal/nama
 // terbaca), lalu diupload ke bucket yang sama dengan bukti lain.
-async function unggahBukti(file, tanda) {
+export async function unggahBukti(file, tanda) {
   const kecil = await kompresFotoProduk(file, { maxDim: 1600, quality: 0.88 });
   return sbUploadFoto(kecil, `bukti-kas-${Date.now()}-${tanda}.jpg`);
 }
 
 // Data turunan yang dipakai ketiga halaman: peta kas/lokasi, saldo per akun.
-function useDataKas(master, keuanganTransaksi) {
+export function useDataKas(master, keuanganTransaksi) {
   const rekeningList = master.rekening || [];
   const lokasiList = master.lokasi || [];
   const petaKas = useMemo(() => petaKasRekening(master.kas_grup), [master.kas_grup]);
@@ -94,6 +97,10 @@ function useDataKas(master, keuanganTransaksi) {
     () => saldoPerKas(saldoPerRekening(keuanganTransaksi, rekeningList, true), petaKas),
     [keuanganTransaksi, rekeningList, petaKas]
   );
+  const entitasList = master.entitas || [];
+  const petaEnt = useMemo(() => petaEntitasRekening(master.rekening_entitas), [master.rekening_entitas]);
+  const entDari = (kode) => entitasDariRekening(petaEnt, entitasList, kode);
+  const entNama = (kode) => entitasList.find((e) => e.kode === kode)?.label || kode;
   const labelRek = (kode) => rekeningList.find((r) => r.kode === kode)?.label || kode || "";
   const kasDari = (kode) => kasDariRekening(petaKas, kode);
   const lokasiNama = (kode) => {
@@ -101,7 +108,7 @@ function useDataKas(master, keuanganTransaksi) {
     return lk === LOKASI_TANPA ? "" : lokasiList.find((l) => l.kode === lk)?.label || "";
   };
   const urutKas = (a, b) => URUTAN_KAS.indexOf(kasDari(a.kode)) - URUTAN_KAS.indexOf(kasDari(b.kode)) || (a.label || "").localeCompare(b.label || "");
-  return { rekeningList, lokasiList, petaKas, petaLok, saldoMap, saldoKas, labelRek, kasDari, lokasiNama, urutKas };
+  return { rekeningList, lokasiList, petaKas, petaLok, saldoMap, saldoKas, labelRek, kasDari, lokasiNama, urutKas, entitasList, entDari, entNama };
 }
 
 // Jenis transfer antar kas (null = transfer di dalam kas yang sama, bukan "antar kas").
@@ -361,7 +368,12 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
   const [jumlah, setJumlah] = useState("");
   const [keterangan, setKeterangan] = useState("Pengisian kas kecil");
   const [foto, setFoto] = useState(null);
+  const [penanda, setPenanda] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Sumber & tujuan beda entitas (mis. Kas Besar holding -> Kas Kecil usaha)
+  // = pendanaan antar-entitas; boleh diberi penanda modal / pinjaman.
+  const antarEntitas = !!(sumber && tujuan && k.entDari(sumber) !== k.entDari(tujuan));
 
   const jumlahNum = Number(jumlah) || 0;
   const saldoSumber = sumber ? k.saldoMap.get(sumber) ?? 0 : null;
@@ -384,6 +396,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
           jumlah: jumlahNum,
           keterangan: keterangan.trim() || "Pengisian kas kecil",
           ...(buktiUrl ? { bukti_url: buktiUrl } : {}),
+          ...(antarEntitas && penanda ? { penanda } : {}),
         }),
       });
       showToast?.(buktiUrl ? "Kas kecil terisi — bukti tersimpan" : "Kas kecil terisi (belum ada bukti)");
@@ -435,6 +448,17 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>Saldo {k.labelRek(sumber)} hanya {fmtRp(saldoSumber ?? 0)}, kurang dari {fmtRp(jumlahNum)}.</div>
         </div>
+      )}
+      {antarEntitas && (
+        <Field label={`Penanda antar entitas (${k.entNama(k.entDari(sumber))} → ${k.entNama(k.entDari(tujuan))})`}>
+          <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)}>
+            <option value="">Belum ditandai</option>
+            {["modal", "pinjaman", "pelunasan_pinjaman", "dividen"].map((v) => (
+              <option key={v} value={v}>{PENANDA_ANTAR_ENTITAS[v]}</option>
+            ))}
+          </select>
+          <div className="text-[11px] text-slate-500 mt-1">Uang pindah antar perusahaan. Penanda dipakai tab Konsolidasi; bisa diisi nanti di Antar Entitas.</div>
+        </Field>
       )}
       <Field label="Keterangan">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Pengisian kas kecil" />

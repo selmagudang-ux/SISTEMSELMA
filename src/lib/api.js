@@ -49,7 +49,7 @@ function friendlyDbError(parsed, status) {
 // untuk semua role, jadi enforcement yang benar-benar tidak bisa ditembus
 // tetap harus lewat RLS/policy di database kalau suatu saat dibutuhkan.
 const SESSION_KEY_LOKAL = "selma_session";
-const ROLE_READONLY = ["owner"];
+const ROLE_READONLY = ["owner", "pemegang_saham"];
 
 // Identitas user yang sedang login, dikirim sebagai header di SETIAP request
 // tulis (POST/PATCH/DELETE) supaya trigger audit di database
@@ -1195,6 +1195,13 @@ export function saldoPerRekening(transaksi, rekeningList, pakaiDasar = false) {
       if (r) r.saldo += Number(nilai) || 0;
     });
   }
+  // Daftar rekening hasil lingkupEntitas() ditandai __batasi: hanya rekening di
+  // daftar itu yang dikembalikan (rekening entitas lain, termasuk dari saldo
+  // dasar, tidak ikut). Daftar biasa tetap berperilaku seperti dulu.
+  if (rekeningList && rekeningList.__batasi) {
+    const boleh = new Set(rekeningList.map((r) => r.kode));
+    return Object.values(map).filter((r) => boleh.has(r.kode));
+  }
   return Object.values(map);
 }
 
@@ -1803,6 +1810,58 @@ export function saldoSebelumTanggal(transaksi, kodeList, tanggalIso) {
   return saldoPerRekening(sebelum, (kodeList || []).map((k) => ({ kode: k, label: k })), pakaiDasar)
     .filter((r) => kodeSet.has(r.kode))
     .reduce((a, r) => a + (Number(r.saldo) || 0), 0);
+}
+
+// =========================================================
+// ENTITAS (Fase 4 — Holding)
+// master_data tipe "entitas": kode + nama (mis. OPS = SELMA Operasional,
+// HOLD = Holding). master_data tipe "rekening_entitas": kode = kode rekening,
+// label = kode entitas. Rekening tanpa penanda = entitas default (OPS), jadi
+// data lama tidak perlu dimigrasi. Transaksi tidak punya kolom entitas — milik
+// entitas mana ditentukan dari rekeningnya. Transfer antar rekening beda
+// entitas = transaksi antar-entitas (kolom penanda: modal/dividen/pinjaman).
+// =========================================================
+export const ENTITAS_DEFAULT = "OPS";
+export const PENANDA_ANTAR_ENTITAS = {
+  modal: "Modal",
+  dividen: "Dividen",
+  pinjaman: "Pinjaman",
+  pelunasan_pinjaman: "Pelunasan Pinjaman",
+};
+
+export function petaEntitasRekening(list) {
+  const peta = {};
+  (list || []).forEach((m) => {
+    peta[m.kode] = m.label;
+  });
+  return peta;
+}
+
+// Kode entitas pemilik rekening; rekening tanpa penanda (atau menunjuk entitas
+// yang sudah tidak ada) = entitas default.
+export function entitasDariRekening(peta, entitasList, kodeRekening) {
+  const e = peta ? peta[kodeRekening] : null;
+  if (e && (entitasList || []).some((x) => x.kode === e)) return e;
+  return ENTITAS_DEFAULT;
+}
+
+// Batasi data Keuangan ke SATU entitas: rekening milik entitas itu, dan semua
+// transaksi yang menyentuh rekeningnya (termasuk transfer antar-entitas, yang
+// netral untuk laporan pemasukan/pengeluaran). Tanpa entitas (atau cuma ada
+// satu) data dikembalikan apa adanya.
+export function lingkupEntitas(transaksi, master, kodeEntitas) {
+  const entitasList = master?.entitas || [];
+  if (!kodeEntitas || entitasList.length < 2) return { transaksi, master };
+  const peta = petaEntitasRekening(master.rekening_entitas);
+  const entDari = (kode) => entitasDariRekening(peta, entitasList, kode);
+  const rekening = (master.rekening || []).filter((r) => entDari(r.kode) === kodeEntitas);
+  rekening.__batasi = true;
+  const sentuh = (t) => entDari(t.rekening) === kodeEntitas || (t.tipe === "transfer" && entDari(t.rekening_tujuan) === kodeEntitas);
+  const trx = (transaksi || []).filter(sentuh);
+  // useKeuanganRentang menggabungkan data bulan lama (semua entitas) ke daftar ini;
+  // __saring dipakai di sana supaya data lama ikut tersaring ke entitas yang sama.
+  trx.__saring = sentuh;
+  return { transaksi: trx, master: { ...master, rekening } };
 }
 
 // =========================================================
