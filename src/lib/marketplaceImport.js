@@ -312,6 +312,7 @@ function barisIklan(csv, kolNama, modeTetap) {
       kode_produk: String(ambil(r, "Kode Produk")).trim().replace(/^-$/, "") || null,
       dilihat: num(ambil(r, "Dilihat")),
       klik: num(ambil(r, "Jumlah Klik")),
+      konversi: num(ambil(r, "Konversi")), // jumlah pesanan yang berasal dari iklan
       produk_terjual: num(ambil(r, "Produk Terjual")),
       omzet: num(ambil(r, "Omzet Penjualan")),
       biaya: num(ambil(r, "Biaya")),
@@ -374,7 +375,7 @@ export function gabungIklan(utama, rincian) {
   const sisa = utama.iklan.filter((x) => x !== ringkas);
   const selisih = Math.round((ringkas.biaya - jumlahBiaya(rincian.iklan)) * 100) / 100;
   const tambahan = Math.abs(selisih) >= 0.5
-    ? [{ ...ringkas, nama_iklan: "Selisih pembulatan Iklan Produk Otomatis", biaya: selisih, dilihat: 0, klik: 0, produk_terjual: 0, omzet: 0 }]
+    ? [{ ...ringkas, nama_iklan: "Selisih pembulatan Iklan Produk Otomatis", biaya: selisih, dilihat: 0, klik: 0, konversi: 0, produk_terjual: 0, omzet: 0 }]
     : [];
   const iklan = [...sisa, ...rincian.iklan, ...tambahan];
   return { ...utama, iklan, totalBiaya: jumlahBiaya(iklan), totalOmzet: jumlahOmzet(iklan), selisihBulat: selisih, rincianDipakai: true };
@@ -480,11 +481,15 @@ export function bagiIklanKeSku({ iklanRows, dari, sampai, lines, idx, kunciBaris
   const tidakTerbagi = [];
   const biayaProduk = new Map(); // kode -> { nama, biaya }
   for (const x of iklanRows || []) {
-    const biaya = Number(x.biaya) * faktorRentang(x.periode_dari, x.periode_sampai, dari, sampai);
+    const f = faktorRentang(x.periode_dari, x.periode_sampai, dari, sampai);
+    const biaya = Number(x.biaya) * f;
     if (!biaya) continue;
     if (!x.kode_produk) { tidakTerbagi.push({ kode: "", nama: x.nama_iklan, biaya, alasan: "tanpa kode produk" }); continue; }
-    if (!biayaProduk.has(x.kode_produk)) biayaProduk.set(x.kode_produk, { nama: x.nama_iklan, biaya: 0 });
-    biayaProduk.get(x.kode_produk).biaya += biaya;
+    if (!biayaProduk.has(x.kode_produk)) biayaProduk.set(x.kode_produk, { nama: x.nama_iklan, biaya: 0, dilihat: 0, klik: 0, konversi: 0, produk_terjual: 0, omzet: 0 });
+    const bp = biayaProduk.get(x.kode_produk);
+    bp.biaya += biaya;
+    // metrik performa iklan ikut dipotong per hari seperti biaya (laporan iklan hanya punya total per periode)
+    for (const k of ["dilihat", "klik", "konversi", "produk_terjual", "omzet"]) bp[k] += (Number(x[k]) || 0) * f;
   }
   // porsi omzet tiap SKU di tiap produk beriklan
   const bobot = new Map(); // kode -> Map(kunci -> omzet)
@@ -514,7 +519,7 @@ export function bagiIklanKeSku({ iklanRows, dari, sampai, lines, idx, kunciBaris
     kunci.forEach((k, i) => perKunci.set(k, (perKunci.get(k) || 0) + bagi[i]));
     terbagi += Math.round(biaya);
   }
-  // biayaProduk: Map kode produk (etalase) -> { nama, biaya } — biaya iklan ASLI per etalase di rentang tampilan (dipakai tab Per Etalase)
+  // biayaProduk: Map kode produk (etalase) -> { nama, biaya, dilihat, klik, konversi, produk_terjual, omzet } — biaya iklan ASLI per etalase di rentang tampilan (dipakai tab Per Etalase)
   return { perKunci, terbagi, tidakTerbagi, totalTidakTerbagi: tidakTerbagi.reduce((a, x) => a + x.biaya, 0), biayaProduk };
 }
 

@@ -87,6 +87,19 @@ const AKSES_PESANAN = {
   laba: (p) => (p.r.hppLengkap ? p.r.laba : null),
 };
 const adaHpp = (s) => s.danaLengkap > 0 || s.hpp > 0;
+// Batas biaya iklan = % dari OMZET (Harga Produk). Bisa diubah di kartu iklan; tersimpan per perangkat.
+const BATAS_IKLAN_DEFAULT = 7;
+const KUNCI_BATAS_IKLAN = "penjualanRincian.batasIklanPct";
+const bacaBatasIklan = () => {
+  try { const v = Number(localStorage.getItem(KUNCI_BATAS_IKLAN)); return v > 0 && v <= 100 ? v : BATAS_IKLAN_DEFAULT; } catch { return BATAS_IKLAN_DEFAULT; }
+};
+// urutan percobaan select iklan: lengkap -> tanpa kolom konversi (SQL konversi belum dijalankan) -> kolom lama
+const KOLOM_IKLAN_DASAR = "periode_dari,periode_sampai,kode_produk,nama_iklan,biaya";
+const SELECT_IKLAN = [
+  `${KOLOM_IKLAN_DASAR},dilihat,klik,konversi,produk_terjual,omzet`,
+  `${KOLOM_IKLAN_DASAR},dilihat,klik,produk_terjual,omzet`,
+  KOLOM_IKLAN_DASAR,
+];
 const AKSES_SKU = {
   kunci: (s) => s.kunci,
   qty: (s) => s.qty,
@@ -112,6 +125,8 @@ const AKSES_ETALASE = {
   iklan: (e) => (e.iklan > 0 ? e.iklan : null),
   labaSetelah: (e) => (bisaLabaEtalase(e) ? e.labaSetelah : null),
   margin: (e) => (e.danaLengkap > 0 ? e.labaSetelah / e.danaLengkap : null),
+  iklanPct: (e) => e.iklanPct,
+  roas: (e) => e.roas,
 };
 // klik judul kolom: kolom baru -> teks naik (A-Z) / angka turun (terbesar dulu); klik lagi membalik arah
 function ubahUrut(set, k) {
@@ -166,6 +181,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [petaProduk, setPetaProduk] = useState([]); // pemetaan Kode Produk -> judul/SKU (marketplace_produk_map)
   const [petaAda, setPetaAda] = useState(true);
   const [iklanTabelAda, setIklanTabelAda] = useState(true);
+  const [batasIklan, setBatasIklan] = useState(bacaBatasIklan); // % dari omzet
   const [rentangImport, setRentangImport] = useState(null); // periode data yang baru diimport (tidak memindahkan filter otomatis)
 
   const skuMap = useMemo(() => {
@@ -205,7 +221,11 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       // Biaya iklan dimuat terpisah: kalau tabel marketplace_iklan belum dibuat (SQL belum dijalankan),
       // halaman tetap jalan seperti biasa — hanya bagian iklan yang dimatikan.
       try {
-        const ik = await sbAll(`marketplace_iklan?select=periode_dari,periode_sampai,kode_produk,nama_iklan,biaya&${filterToko}&periode_dari=lte.${sampai}&periode_sampai=gte.${dari}`);
+        let ik, galat;
+        for (const kolom of SELECT_IKLAN) {
+          try { ik = await sbAll(`marketplace_iklan?select=${kolom}&${filterToko}&periode_dari=lte.${sampai}&periode_sampai=gte.${dari}`); galat = null; break; } catch (e2) { galat = e2; }
+        }
+        if (galat) throw galat;
         if (!terbaru()) return;
         setIklanRows(ik || []);
         setIklanTabelAda(true);
@@ -269,6 +289,14 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     return [...gab.values()];
   }, [iklanRows]);
   const iklan = useMemo(() => biayaIklanDiRentang(iklanPeriode, dari, sampai), [iklanPeriode, dari, sampai]);
+  // metrik performa iklan (dilihat/klik/konversi) hanya ada di baris yang diimport setelah kolomnya ada
+  const perfAda = useMemo(() => iklanRows.some((x) => Number(x.dilihat) > 0 || Number(x.klik) > 0), [iklanRows]);
+  const konversiAda = useMemo(() => iklanRows.some((x) => Number(x.konversi) > 0), [iklanRows]);
+  const ubahBatasIklan = (v) => {
+    const n = Number(v);
+    setBatasIklan(n > 0 && n <= 100 ? n : BATAS_IKLAN_DEFAULT);
+    try { if (n > 0 && n <= 100) localStorage.setItem(KUNCI_BATAS_IKLAN, String(n)); } catch { /* abaikan */ }
+  };
   // Laba hanya dari pesanan dengan SKU lengkap, jadi iklan yang dikurangkan juga hanya porsi pesanan itu
   // (proporsional terhadap dana dilepas). Kalau semua pesanan lengkap, rasionya 1 = iklan penuh.
   const rasioLengkap = total.dana > 0 ? Math.min(1, Math.max(0, total.danaLengkap / total.dana)) : 1;
@@ -333,10 +361,24 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       const iklanE = Math.round(e.kode ? (bagiIklan.biayaProduk.get(e.kode)?.biaya || 0) : 0);
       // sama seperti kartu total: laba hanya dari baris HPP-lengkap, jadi iklan yang dikurangkan hanya porsinya
       const rasio = r.dana > 0 ? Math.min(1, Math.max(0, rl.dana / r.dana)) : 1;
+      // performa iklan (angka Shopee, sudah dipotong per hari bila rentang tampilan memotong periode iklan)
+      const pf = e.kode ? bagiIklan.biayaProduk.get(e.kode) : null;
+      const dilihat = Math.round(pf?.dilihat || 0), klik = Math.round(pf?.klik || 0), konversi = Math.round(pf?.konversi || 0);
+      const terjualIklan = Math.round(pf?.produk_terjual || 0), omzetIklan = Math.round(pf?.omzet || 0);
       return {
         ...e, r, qty: r.qty, hpp: rl.hpp, laba: rl.laba, danaLengkap: rl.dana,
         adaHpp: rl.dana > 0 || rl.hpp > 0,
         iklan: iklanE, labaSetelah: rl.laba - Math.round(iklanE * rasio),
+        perf: { dilihat, klik, konversi, terjualIklan, omzetIklan },
+        ctr: dilihat > 0 ? (klik / dilihat) * 100 : null,
+        tingkatKonversi: klik > 0 && konversi > 0 ? (konversi / klik) * 100 : null,
+        biayaPerKonversi: konversi > 0 && iklanE > 0 ? iklanE / konversi : null,
+        roas: iklanE > 0 && omzetIklan > 0 ? omzetIklan / iklanE : null,
+        acos: iklanE > 0 && omzetIklan > 0 ? (iklanE / omzetIklan) * 100 : null,
+        // batas iklan dibaca dari OMZET etalase (Harga Produk semua penjualan), bukan hanya omzet dari iklan
+        iklanPct: iklanE > 0 && r.penjualan > 0 ? (iklanE / r.penjualan) * 100 : null,
+        // ACOS impas = laba sebelum iklan / harga jual (baris HPP-lengkap): di atas angka ini iklan memakan seluruh laba
+        acosImpas: rl.penjualan > 0 && (rl.dana > 0 || rl.hpp > 0) ? (rl.laba / rl.penjualan) * 100 : null,
       };
     });
   }, [data, idxProduk, bagiIklan]);
@@ -450,9 +492,20 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
             { key: "nama", label: "Etalase" }, { key: "kode", label: "Kode Produk" }, { key: "qty", label: "Qty" },
             { key: "penjualan", label: "Harga Produk" }, { key: "dana", label: "Dana Dilepas" }, { key: "hpp", label: "HPP Total" },
             { key: "laba", label: "Laba Bersih" }, { key: "iklan", label: "Biaya Iklan" }, { key: "labaSetelah", label: "Laba setelah Iklan" },
+            { key: "iklanPct", label: `Iklan % Omzet (batas ${batasIklan}%)` }, { key: "dilihat", label: "Iklan Dilihat" }, { key: "klik", label: "Jumlah Klik" },
+            { key: "ctr", label: "Persentase Klik (%)" }, { key: "konversi", label: "Konversi (pesanan)" }, { key: "tingkatKonversi", label: "Tingkat Konversi (%)" },
+            { key: "biayaPerKonversi", label: "Biaya per Konversi" }, { key: "terjualIklan", label: "Produk Terjual (iklan)" }, { key: "omzetIklan", label: "Penjualan dari Iklan" },
+            { key: "roas", label: "ROAS" }, { key: "acos", label: "ACOS (%)" }, { key: "acosImpas", label: "ACOS Impas (%)" },
           ], rows: etalaseSemua.map((e) => ({
             nama: e.nama, kode: e.kode || "", qty: e.qty, penjualan: e.r.penjualan, dana: e.r.dana,
             hpp: e.adaHpp ? e.hpp : null, laba: e.adaHpp ? e.laba : null, iklan: e.iklan, labaSetelah: bisaLabaEtalase(e) ? e.labaSetelah : null,
+            iklanPct: e.iklanPct == null ? null : Math.round(e.iklanPct * 100) / 100,
+            dilihat: e.perf.dilihat || null, klik: e.perf.klik || null, ctr: e.ctr == null ? null : Math.round(e.ctr * 100) / 100,
+            konversi: e.perf.konversi || null, tingkatKonversi: e.tingkatKonversi == null ? null : Math.round(e.tingkatKonversi * 100) / 100,
+            biayaPerKonversi: e.biayaPerKonversi == null ? null : Math.round(e.biayaPerKonversi),
+            terjualIklan: e.perf.terjualIklan || null, omzetIklan: e.perf.omzetIklan || null,
+            roas: e.roas == null ? null : Math.round(e.roas * 100) / 100, acos: e.acos == null ? null : Math.round(e.acos * 100) / 100,
+            acosImpas: e.acosImpas == null ? null : Math.round(e.acosImpas * 100) / 100,
           })) },
         ]);
       }
@@ -632,11 +685,24 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       {iklanTabelAda && (
         <>
           <div className="text-[11px] text-md-on-surface-variant mb-1">Setelah biaya iklan</div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
             <StatCard label={iklan.perkiraan ? "Biaya iklan (perkiraan, dibagi per hari)" : "Biaya iklan"} value={iklanPeriode.length ? fmtRp(iklan.biaya) : "Belum diimport"} icon={Megaphone} iconColor="text-amber-400" />
             <StatCard label={rasioLengkap < 1 ? "Laba bersih setelah iklan (porsi SKU lengkap)" : "Laba bersih setelah iklan"} value={iklanPeriode.length ? fmtRp(labaSetelahIklan) : "—"} accent={iklanPeriode.length ? (labaSetelahIklan >= 0 ? "text-emerald-400" : "text-red-400") : undefined} icon={TrendingUp} iconColor="text-emerald-400" />
             <StatCard label="Iklan % dari dana dilepas" value={iklanPeriode.length && total.dana > 0 ? `${((iklan.biaya / total.dana) * 100).toFixed(1)}%` : "—"} icon={Receipt} iconColor="text-amber-400" />
+            <StatCard label={`Iklan % dari omzet (batas ${batasIklan}%)`} value={iklanPeriode.length && total.penjualan > 0 ? `${((iklan.biaya / total.penjualan) * 100).toFixed(1)}%` : "—"}
+              accent={iklanPeriode.length && total.penjualan > 0 ? ((iklan.biaya / total.penjualan) * 100 > batasIklan ? "text-red-400" : "text-emerald-400") : undefined} icon={Megaphone} iconColor="text-amber-400" />
           </div>
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-md-on-surface-variant">
+            Batas biaya iklan
+            <input type="number" min="1" max="100" step="0.5" value={batasIklan} onChange={(ev) => ubahBatasIklan(ev.target.value)} className={`${inputClass} !w-16 !py-1 text-center`} />
+            % dari omzet (Harga Produk). Etalase yang biaya iklannya melewati batas ditandai merah di tab Per Etalase.
+          </div>
+          {iklanPeriode.length > 0 && !perfAda && (
+            <div className="mb-3 text-[11px] text-amber-400 max-w-3xl">Data performa iklan (dilihat, klik, konversi) belum tersimpan di database. Jalankan file SQL <b>marketplace_iklan_konversi.sql</b>, lalu import ulang file iklan lewat Import Laporan Shopee.</div>
+          )}
+          {iklanPeriode.length > 0 && perfAda && !konversiAda && (
+            <div className="mb-3 text-[11px] text-amber-400 max-w-3xl">Kolom Konversi masih kosong. Jalankan file SQL <b>marketplace_iklan_konversi.sql</b> (sekali saja), lalu import ulang file iklan supaya Konversi, Tingkat Konversi, dan Biaya per Konversi terisi.</div>
+          )}
           {iklanPeriode.length > 0 && (
             <div className="mb-4 text-[11px] text-md-on-surface-variant max-w-3xl">
               Biaya iklan dihitung untuk seluruh periode. Laba bersih di atas hanya dari pesanan dengan SKU lengkap{total.pesananTanpaHpp > 0 ? ` (${total.pesananTanpaHpp} pesanan belum masuk)` : ""}
@@ -709,7 +775,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
             {!iklanTabelAda && <div className="text-amber-400">Tabel marketplace_iklan belum ada di database — jalankan dulu file SQL marketplace_iklan.sql, lalu muat ulang halaman.</div>}
             {iklanTanpaKode > 0 && <div className="text-amber-400">Iklan tanpa kode produk {fmtRp(iklanTanpaKode)} tidak bisa dimasukkan ke etalase mana pun, tapi tetap dihitung di kartu total.</div>}
           </div>
-          <TabelEtalase list={potong} urut={urutEtalase} onUrut={(k) => ubahUrut(setUrutEtalase, k)} adaIklan={iklanTabelAda} iklanTerisi={iklanPeriode.length > 0} />
+          <TabelEtalase list={potong} urut={urutEtalase} onUrut={(k) => ubahUrut(setUrutEtalase, k)} adaIklan={iklanTabelAda} iklanTerisi={iklanPeriode.length > 0} batas={batasIklan} perfAda={perfAda} konversiAda={konversiAda} />
         </>
       ) : (
         <TabelSku list={potong} urut={urutSku} onUrut={(k) => ubahUrut(setUrutSku, k)} adaIklan={petaProduk.length > 0 && iklanPeriode.length > 0} />
@@ -1024,7 +1090,44 @@ function FragmenSku({ children }) {
 }
 
 // SKU-SKU di dalam satu etalase
-function DetailEtalase({ e }) {
+function PanelPerformaIklan({ e, batas, konversiAda }) {
+  const p = e.perf;
+  const adaPerf = p.dilihat > 0 || p.klik > 0 || p.omzetIklan > 0;
+  if (!(e.iklan > 0) || !adaPerf) return null;
+  const angka = (v) => Number(v).toLocaleString("id-ID");
+  const rugi = e.acos != null && e.acosImpas != null && e.acos > e.acosImpas;
+  const item = (label, nilai, warna) => (
+    <div className="rounded-md-lg bg-md-container-low px-3 py-2 min-w-[110px]">
+      <div className="text-[10px] text-md-on-surface-variant">{label}</div>
+      <div className={`text-sm font-medium ${warna || ""}`}>{nilai ?? "—"}</div>
+    </div>
+  );
+  return (
+    <div className="px-4 pt-3">
+      <div className="text-[11px] text-md-on-surface-variant mb-1.5">Performa iklan etalase ini (angka Shopee)</div>
+      <div className="flex flex-wrap gap-2">
+        {item("Iklan dilihat", angka(p.dilihat))}
+        {item("Jumlah klik", angka(p.klik))}
+        {item("Persentase klik", e.ctr == null ? null : `${e.ctr.toFixed(2)}%`)}
+        {item("Konversi (pesanan)", konversiAda ? angka(p.konversi) : null)}
+        {item("Tingkat konversi", konversiAda && e.tingkatKonversi != null ? `${e.tingkatKonversi.toFixed(2)}%` : null)}
+        {item("Biaya per konversi", konversiAda && e.biayaPerKonversi != null ? fmtRp(Math.round(e.biayaPerKonversi)) : null)}
+        {item("Produk terjual (iklan)", angka(p.terjualIklan))}
+        {item("Penjualan dari iklan", fmtRp(p.omzetIklan))}
+        {item("ROAS", e.roas == null ? null : `${e.roas.toFixed(1)}x`, rugi ? "text-red-400" : "")}
+        {item("ACOS", e.acos == null ? null : `${e.acos.toFixed(1)}%`, rugi ? "text-red-400" : "")}
+        {item("ACOS impas", e.acosImpas == null ? null : `${e.acosImpas.toFixed(1)}%`)}
+        {item(`Iklan % omzet (batas ${batas}%)`, e.iklanPct == null ? null : `${e.iklanPct.toFixed(1)}%`, e.iklanPct != null && e.iklanPct > batas ? "text-red-400" : "text-emerald-400")}
+      </div>
+      <div className="text-[10px] text-md-on-surface-variant mt-1.5 max-w-3xl">
+        ACOS impas = laba etalase sebelum iklan ÷ harga jual. Kalau ACOS iklan di atas angka itu, penjualan yang datang dari iklan tidak menutup biayanya (anggapan: margin penjualan dari iklan sama dengan margin etalase).
+      </div>
+    </div>
+  );
+}
+
+function DetailEtalase({ e, batas, perfAda, konversiAda }) {
+  const panel = perfAda ? <PanelPerformaIklan e={e} batas={batas} konversiAda={konversiAda} /> : null;
   const m = new Map();
   for (const b of e.lines) { const k = kunciSku(b); if (!m.has(k)) m.set(k, []); m.get(k).push(b); }
   const baris = [...m.entries()].map(([kunci, lines]) => {
@@ -1032,8 +1135,10 @@ function DetailEtalase({ e }) {
     const rl = ringkasBaris(lines.filter((l) => hppBaris(l) != null));
     return { kunci, qty: r.qty, penjualan: r.penjualan, dana: r.dana, hpp: rl.hpp, laba: rl.laba, ada: rl.dana > 0 || rl.hpp > 0 };
   }).sort((a, b) => b.penjualan - a.penjualan);
-  if (!baris.length) return <div className="px-4 py-3 text-xs text-md-on-surface-variant">Tidak ada penjualan etalase ini di periode ini — biaya iklan tetap berjalan.</div>;
+  if (!baris.length) return <>{panel}<div className="px-4 py-3 text-xs text-md-on-surface-variant">Tidak ada penjualan etalase ini di periode ini — biaya iklan tetap berjalan.</div></>;
   return (
+    <>
+    {panel}
     <div className="px-4 py-3 overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
@@ -1061,10 +1166,11 @@ function DetailEtalase({ e }) {
       </table>
       <div className="text-[11px] text-md-on-surface-variant mt-2">Biaya iklan tidak dipecah ke SKU di sini — iklan berjalan untuk etalase secara keseluruhan.</div>
     </div>
+    </>
   );
 }
 
-function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
+function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi, batas, perfAda, konversiAda }) {
   const [terbuka, setTerbuka] = useState({});
   return (
     <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-auto max-h-[60vh]">
@@ -1079,6 +1185,8 @@ function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
             <ThUrut label="HPP" k="hpp" urut={urut} onUrut={onUrut} />
             <ThUrut label="Laba Bersih" k="laba" urut={urut} onUrut={onUrut} />
             {adaIklan && <ThUrut label="Biaya Iklan" k="iklan" urut={urut} onUrut={onUrut} />}
+            {adaIklan && <ThUrut label="Iklan % Omzet" k="iklanPct" urut={urut} onUrut={onUrut}><span className="font-normal">(batas {batas}%)</span></ThUrut>}
+            {adaIklan && perfAda && <ThUrut label="ROAS" k="roas" urut={urut} onUrut={onUrut} />}
             {adaIklan && <ThUrut label="Laba − Iklan" k="labaSetelah" urut={urut} onUrut={onUrut} />}
             <ThUrut label="Margin" k="margin" urut={urut} onUrut={onUrut}>{iklanTerisi && <span className="font-normal">(setelah iklan)</span>}</ThUrut>
           </tr>
@@ -1108,6 +1216,17 @@ function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
                   <td className="px-3 py-2.5 text-right whitespace-nowrap">{e.adaHpp ? fmtRp(e.hpp) : "—"}</td>
                   <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${e.adaHpp ? (e.laba >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>{e.adaHpp ? fmtRp(e.laba) : "—"}</td>
                   {adaIklan && <td className="px-3 py-2.5 text-right whitespace-nowrap text-amber-400">{e.iklan > 0 ? fmtRp(e.iklan) : "—"}</td>}
+                  {adaIklan && (
+                    <td className={`px-3 py-2.5 text-right whitespace-nowrap ${e.iklanPct != null ? (e.iklanPct > batas ? "text-red-400 font-medium" : "text-emerald-400") : (e.iklan > 0 ? "text-red-400 font-medium" : "text-md-on-surface-variant")}`}>
+                      {e.iklanPct != null ? `${e.iklanPct.toFixed(1)}%` : (e.iklan > 0 ? "tanpa jual" : "—")}
+                    </td>
+                  )}
+                  {adaIklan && perfAda && (
+                    <td className={`px-3 py-2.5 text-right whitespace-nowrap ${e.roas != null && e.acos != null && e.acosImpas != null && e.acos > e.acosImpas ? "text-red-400 font-medium" : ""}`}
+                      title={e.roas != null && e.acosImpas != null && e.acos > e.acosImpas ? "ACOS di atas ACOS impas: iklan ini memakan lebih dari laba etalase" : undefined}>
+                      {e.roas != null ? `${e.roas.toFixed(1)}x` : "—"}
+                    </td>
+                  )}
                   {adaIklan && !iklanTerisi && <td className="px-3 py-2.5 text-right text-md-on-surface-variant">—</td>}
                   {adaIklan && iklanTerisi && (
                     <td className={`px-3 py-2.5 text-right whitespace-nowrap font-medium ${bisaLaba ? (e.labaSetelah >= 0 ? "text-emerald-400" : "text-red-400") : "text-md-on-surface-variant"}`}>
@@ -1118,7 +1237,7 @@ function TabelEtalase({ list, urut, onUrut, adaIklan, iklanTerisi }) {
                 </tr>
                 {buka && (
                   <tr className="border-b border-md-outline-variant bg-md-on-surface/[0.03]">
-                    <td colSpan={adaIklan ? 10 : 8}><DetailEtalase e={e} /></td>
+                    <td colSpan={adaIklan ? 11 + (perfAda ? 1 : 0) : 8}><DetailEtalase e={e} batas={batas} perfAda={perfAda && adaIklan} konversiAda={konversiAda} /></td>
                   </tr>
                 )}
               </FragmenSku>
