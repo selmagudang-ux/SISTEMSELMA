@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_BESAR, KAS_KECIL, KAS_BANK, URUTAN_KAS } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { isSuperadminLike, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
@@ -4629,12 +4629,12 @@ export function CairkanDepositForm({
 // langsung di input polos di bawahnya. Kode untuk entri baru (rekening/
 // kategori) baru dibuat otomatis dari nama yang diketik saat form ini
 // disimpan — lihat penanganannya di ModalRouter.
-// Pilihan Kas Besar/Kas Kecil untuk rekening yang baru diketik di form transaksi.
+// Pilihan Bank/Kas Kecil untuk rekening yang baru diketik di form transaksi.
 function PilihKasBaru({ value, onChange }) {
   return (
     <div className="mt-2">
       <div className="text-[11px] text-slate-500 mb-1">Rekening baru ini masuk ke:</div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         {URUTAN_KAS.map((k) => (
           <button
             key={k}
@@ -4662,7 +4662,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   const [rekeningTujuan, setRekeningTujuan] = useState(transaksi?.rekening_tujuan || "");
   const [rekeningTujuanBaruKode, setRekeningTujuanBaruKode] = useState("");
   const [rekeningTujuanBaru, setRekeningTujuanBaru] = useState("");
-  // Kas (Besar/Kecil) untuk rekening yang baru diketik — default Kas Kecil,
+  // Kas (Bank/Kecil) untuk rekening yang baru diketik — default Kas Kecil,
   // sama seperti rekening yang belum ditandai (lihat petaKasRekening di lib/api.js).
   const [kasBaru, setKasBaru] = useState(KAS_KECIL);
   const [kasTujuanBaru, setKasTujuanBaru] = useState(KAS_KECIL);
@@ -4679,7 +4679,7 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
 
   const daftarRekening = master?.rekening || [];
   const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
-  // Pilihan rekening dikelompokkan per kas: Kas Besar (holding) dulu, baru Kas Kecil.
+  // Pilihan rekening dikelompokkan per kas: Bank dulu, baru Kas Kecil.
   const petaKas = petaKasRekening(master?.kas_grup);
   const rekeningOptions = daftarRekening
     .map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})`, group: LABEL_KAS[kasDariRekening(petaKas, r.kode)] }))

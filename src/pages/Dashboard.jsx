@@ -18,7 +18,6 @@ import {
   ringkasanPerKas,
   saldoPerKas,
   LABEL_KAS,
-  KAS_BESAR,
   KAS_KECIL,
   KAS_BANK,
   URUTAN_KAS,
@@ -311,7 +310,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   const dari = periodeDari || awalBulanIni();
   const sampai = periodeSampai || hariIniIso();
 
-  // Kas Besar (holding) / Kas Kecil — lihat petaKasRekening() di lib/api.js.
+  // Bank / Kas Kecil — lihat petaKasRekening() di lib/api.js.
   // "semua" = gabungan keduanya (perilaku lama). Pilihan kas menyaring SEMUA
   // panel di bawah (ringkasan, laba rugi, arus kas, breakdown, saldo rekening).
   const [kasTab, setKasTab] = useState("semua");
@@ -350,7 +349,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   const labelRek = (kode) => (master.rekening || []).find((r) => r.kode === kode)?.label || kode || "—";
   const urutTerbaru = (a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""));
   const riwayatTerakhir = [...(ringkasanBulanIni.list || [])].sort(urutTerbaru).slice(0, 6);
-  // Pengisian kas kecil = transfer dari Kas Besar / Bank ke rekening Kas Kecil. Bukan pemasukan/pengeluaran.
+  // Pengisian kas kecil = transfer dari Bank ke rekening Kas Kecil. Bukan pemasukan/pengeluaran.
   const pengisianKasKecil = (ringkasanBulanIni.list || [])
     .filter((t) => t.tipe === "transfer" && kasDariRekening(petaKas, t.rekening) !== KAS_KECIL && kasDariRekening(petaKas, t.rekening_tujuan) === KAS_KECIL)
     .sort(urutTerbaru);
@@ -379,7 +378,6 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
       <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
         {[
           { key: "semua", label: "Semua Kas" },
-          { key: KAS_BESAR, label: "Kas Besar (Holding)" },
           { key: KAS_BANK, label: "Bank" },
           { key: KAS_KECIL, label: "Kas Kecil" },
         ].map((t) => (
@@ -495,7 +493,6 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         />
         {kasTab === "semua" ? (
           <>
-            <StatCard label="Saldo Kas Besar (Holding)" value={fmtRp(saldoKas[KAS_BESAR])} icon={Landmark} accent={saldoKas[KAS_BESAR] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
             <StatCard label="Saldo Bank" value={fmtRp(saldoKas[KAS_BANK])} icon={Landmark} accent={saldoKas[KAS_BANK] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
             <StatCard label="Saldo Kas Kecil" value={fmtRp(saldoKas[KAS_KECIL])} icon={Landmark} accent={saldoKas[KAS_KECIL] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
           </>
@@ -597,7 +594,6 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
               <thead>
                 <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
                   <th className="px-4 py-2 font-medium">Lokasi</th>
-                  <th className="px-2 py-2 font-medium text-right">Kas Besar</th>
                   <th className="px-2 py-2 font-medium text-right">Bank</th>
                   <th className="px-2 py-2 font-medium text-right">Kas Kecil</th>
                   <th className="px-4 py-2 font-medium text-right">Total</th>
@@ -607,7 +603,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
                 {saldoPerLokasiRows.map((b) => (
                   <tr key={b.kode} className="border-b border-slate-800/60">
                     <td className="px-4 py-2.5 text-slate-200">{b.label}</td>
-                    {[b.besar, b.bank, b.kecil].map((v, i) => (
+                    {[b.bank, b.kecil].map((v, i) => (
                       <td key={i} className={`px-2 py-2.5 text-right whitespace-nowrap ${v < 0 ? "text-red-400" : "text-slate-300"}`}>{fmtRp(v)}</td>
                     ))}
                     <td className={`px-4 py-2.5 text-right whitespace-nowrap font-semibold ${b.total < 0 ? "text-red-400" : ""}`}>{fmtRp(b.total)}</td>
@@ -617,9 +613,9 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
               <tfoot>
                 <tr className="bg-slate-900/70 font-semibold">
                   <td className="px-4 py-2.5">Total Perusahaan</td>
-                  {["besar", "bank", "kecil", "total"].map((k, i) => {
+                  {["bank", "kecil", "total"].map((k, i) => {
                     const v = saldoPerLokasiRows.reduce((a, b) => a + b[k], 0);
-                    return <td key={k} className={`${i === 3 ? "px-4" : "px-2"} py-2.5 text-right whitespace-nowrap ${v < 0 ? "text-red-400" : ""}`}>{fmtRp(v)}</td>;
+                    return <td key={k} className={`${i === 2 ? "px-4" : "px-2"} py-2.5 text-right whitespace-nowrap ${v < 0 ? "text-red-400" : ""}`}>{fmtRp(v)}</td>;
                   })}
                 </tr>
               </tfoot>

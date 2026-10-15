@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_BESAR, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding } from "../lib/api";
+import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
@@ -565,7 +565,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     const periode = semua.filter((t) => (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai));
     const perEnt = {};
     ents.forEach((e) => {
-      perEnt[e.kode] = { kas: { [KAS_BESAR]: 0, [KAS_BANK]: 0, [KAS_KECIL]: 0 }, masuk: 0, keluar: 0, modal: 0, dividen: 0, pinjaman: 0, tanpa: 0 };
+      perEnt[e.kode] = { kas: { [KAS_BANK]: 0, [KAS_KECIL]: 0 }, masuk: 0, keluar: 0, modal: 0, dividen: 0, pinjaman: 0, tanpa: 0 };
     });
     k.rekeningList.forEach((r) => {
       const e = perEnt[k.entDari(r.kode)];
@@ -594,7 +594,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
   if (ents.length < 2) return <PesanSetup />;
 
   const jumlahSemua = (fn) => ents.reduce((a, e) => a + fn(data.perEnt[e.kode], e.kode), 0);
-  const totalKas = (p) => p.kas[KAS_BESAR] + p.kas[KAS_BANK] + p.kas[KAS_KECIL];
+  const totalKas = (p) => p.kas[KAS_BANK] + p.kas[KAS_KECIL];
 
   const baris = [
     { judul: "Saldo kas saat ini" },

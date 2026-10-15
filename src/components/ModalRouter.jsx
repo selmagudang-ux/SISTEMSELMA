@@ -1261,9 +1261,9 @@ export default function ModalRouter({
             let rekening = data.rekening;
             if (!rekening && data.rekeningBaru) {
               rekening = await buatEntriBaru("rekening", data.rekeningBaruKode || suggestKode(data.rekeningBaru), data.rekeningBaru);
-              // Rekening baru yang dipilih sebagai Kas Besar (holding) ditandai di master_data
+              // Rekening baru yang dipilih sebagai Bank ditandai di master_data
               // tipe "kas_grup". Tanpa penanda = Kas Kecil (lihat petaKasRekening di lib/api.js).
-              if (data.kasBaru === "besar" || data.kasBaru === "bank") {
+              if (data.kasBaru === "bank") {
                 await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: rekening, label: data.kasBaru }) });
               }
               await petakanEntitasBaru(rekening);
@@ -1276,7 +1276,7 @@ export default function ModalRouter({
                 data.rekeningTujuanBaruKode || suggestKode(data.rekeningTujuanBaru),
                 data.rekeningTujuanBaru
               );
-              if (data.kasTujuanBaru === "besar" || data.kasTujuanBaru === "bank") {
+              if (data.kasTujuanBaru === "bank") {
                 await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: rekeningTujuan, label: data.kasTujuanBaru }) });
               }
               await petakanEntitasBaru(rekeningTujuan);

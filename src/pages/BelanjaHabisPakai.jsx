@@ -14,7 +14,7 @@ import {
   formatTanggalID,
   suggestKode,
 } from "../components/ui";
-import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_BESAR, KAS_KECIL, KAS_BANK } from "../lib/api";
+import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK } from "../lib/api";
 import { isSuperadminLike } from "../lib/constants";
 
 // =========================================================
@@ -1144,7 +1144,7 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
       <Field label="Dibayar dari rekening">
         <select className={inputClass} value={rekening} onChange={(e) => setRekening(e.target.value)}>
           <option value="">Pilih rekening…</option>
-          {[KAS_KECIL, KAS_BESAR, KAS_BANK].map(
+          {[KAS_KECIL, KAS_BANK].map(
             (k) =>
               grup(k).length > 0 && (
                 <optgroup key={k} label={LABEL_KAS[k]}>

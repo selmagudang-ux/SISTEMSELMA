@@ -19,7 +19,6 @@ import {
   ringkasanPerKas,
   saldoPerKas,
   LABEL_KAS,
-  KAS_BESAR,
   KAS_KECIL,
   KAS_BANK,
   URUTAN_KAS,
@@ -858,7 +857,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
   const { data: dataRentang, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   const { list } = ringkasanKeuangan(dataRentang, dari || null, sampai || null);
 
-  // Kas Besar (holding) / Kas Kecil — lihat petaKasRekening() di lib/api.js.
+  // Bank / Kas Kecil — lihat petaKasRekening() di lib/api.js.
   const [kasTab, setKasTab] = useState("semua");
   const petaKas = useMemo(() => petaKasRekening(master.kas_grup), [master.kas_grup]);
   const saldoKas = useMemo(
@@ -905,7 +904,6 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
       <div className="flex flex-wrap gap-1.5 mb-3 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
         {[
           { key: "semua", label: "Semua" },
-          { key: KAS_BESAR, label: "Kas Besar (Holding)" },
           { key: KAS_BANK, label: "Bank" },
           { key: KAS_KECIL, label: "Kas Kecil" },
         ].map((t) => (
@@ -922,7 +920,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
       </div>
 
       {kasTab === "semua" ? (
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           {URUTAN_KAS.map((k) => (
             <div key={k} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
               <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
@@ -1506,7 +1504,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
       {rekeningList.length > 0 && (
         <div className="mb-5">
           <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
-          <div className="grid grid-cols-3 gap-3 mb-3">
+          <div className="grid grid-cols-2 gap-3 mb-3">
             {URUTAN_KAS.map((k) => (
               <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-amber-500/5">
                 <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
@@ -2097,7 +2095,7 @@ const TAB_KEUANGAN = [
 ];
 
 
-// Halaman "Akun Kas": daftar rekening dengan jenis (Kas Besar / Bank / Kas Kecil), lokasi, dan saldo terkini.
+// Halaman "Akun Kas": daftar rekening dengan jenis (Bank / Kas Kecil), lokasi, dan saldo terkini.
 // Jenis disimpan di master_data tipe "kas_grup", lokasi di tipe "rekening_lokasi" (lihat lib/api.js).
 // Daftar lokasi diatur di Rekening & Kategori > tab Lokasi.
 function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
@@ -2149,7 +2147,7 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
   const ubahJenis = (r, kas) =>
     simpan(r, async () => {
       const ada = kasGrupList.find((x) => x.kode === r.kode);
-      if (kas === KAS_BESAR || kas === KAS_BANK) {
+      if (kas === KAS_BANK) {
         if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kas }) });
         else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: r.kode, label: kas }) });
       } else if (ada) {
@@ -2188,9 +2186,9 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
     <div>
       <PageHeader
         title="Akun Kas"
-        description="Daftar rekening beserta jenis (Kas Besar, Bank, Kas Kecil), lokasi, dan saldo terkini. Rekening baru dan daftar lokasi diatur di Rekening & Kategori."
+        description="Daftar rekening beserta jenis (Bank, Kas Kecil), lokasi, dan saldo terkini. Rekening baru dan daftar lokasi diatur di Rekening & Kategori."
       />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         {URUTAN_KAS.map((k) => (
           <div key={k} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
@@ -2312,7 +2310,7 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
   const tabInfo = TAB_KEUANGAN.find((t) => t.key === activeTab) || TAB_KEUANGAN[0];
   const list = master[activeTab] || [];
 
-  // Penanda Kas Besar/Kas Kecil per rekening (master_data tipe "kas_grup").
+  // Penanda Bank/Kas Kecil per rekening (master_data tipe "kas_grup").
   // Tanpa penanda = Kas Kecil, jadi rekening lama otomatis Kas Kecil.
   const kasGrupList = master.kas_grup || [];
   const petaKas = petaKasRekening(kasGrupList);
@@ -2322,7 +2320,7 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
     const ada = kasGrupList.find((x) => x.kode === m.kode);
     setKasSaving(m.id);
     try {
-      if (kas === KAS_BESAR || kas === KAS_BANK) {
+      if (kas === KAS_BANK) {
         if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kas }) });
         else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: m.kode, label: kas }) });
       } else if (ada) {
@@ -2486,7 +2484,7 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
 
       {activeTab === "rekening" && (
         <div className="text-[11px] text-slate-500 mb-3 max-w-lg">
-          Tandai tiap rekening sebagai Kas Besar (holding) atau Kas Kecil. Rekening yang belum ditandai otomatis masuk Kas Kecil.
+          Tandai tiap rekening sebagai Bank atau Kas Kecil. Rekening yang belum ditandai otomatis masuk Kas Kecil.
         </div>
       )}
 

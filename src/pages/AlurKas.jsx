@@ -41,7 +41,7 @@ import {
   LOKASI_TANPA,
   kasDariRekening,
   LABEL_KAS,
-  KAS_BESAR,
+  KAS_BANK,
   KAS_KECIL,
   URUTAN_KAS,
   saldoSebelumTanggal,
@@ -119,14 +119,13 @@ function jenisTransferKas(t, kasDari) {
   if (asal === tujuan) return null;
   if (tujuan === KAS_KECIL) return "pengisian";
   if (asal === KAS_KECIL) return "setoran";
-  return "besar-bank";
+  return null;
 }
 const LABEL_JENIS_TRANSFER = {
   pengisian: "Pengisian Kas Kecil",
   setoran: "Setoran dari Kas Kecil",
-  "besar-bank": "Kas Besar ↔ Bank",
 };
-const WARNA_JENIS_TRANSFER = { pengisian: "emerald", setoran: "amber", "besar-bank": "sky" };
+const WARNA_JENIS_TRANSFER = { pengisian: "emerald", setoran: "amber" };
 
 // =========================================================
 // 1. TRANSAKSI KAS
@@ -182,7 +181,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
     }
   };
 
-  const adaKasBesarAtauBank = k.rekeningList.some((r) => k.kasDari(r.kode) !== KAS_KECIL);
+  const adaBank = k.rekeningList.some((r) => k.kasDari(r.kode) === KAS_BANK);
   const adaKasKecil = k.rekeningList.some((r) => k.kasDari(r.kode) === KAS_KECIL);
 
   return (
@@ -192,7 +191,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
       )}
       <PageHeader
         title="Transaksi Kas"
-        description="Perpindahan uang ANTAR kas: isi kas kecil dari Kas Besar/Bank (dengan bukti transfer), setoran kembali, dan transfer Kas Besar ↔ Bank. Pemasukan & pengeluaran biasa tetap dicatat di menu Transaksi."
+        description="Perpindahan uang ANTAR kas: isi kas kecil dari Bank (dengan bukti transfer) dan setoran kembali ke Bank. Pemasukan & pengeluaran biasa tetap dicatat di menu Transaksi."
         sticky
         action={
           <button
@@ -204,7 +203,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         {URUTAN_KAS.map((kk) => (
           <div key={kk} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
@@ -241,9 +240,9 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
         </select>
       </div>
 
-      {(!adaKasBesarAtauBank || !adaKasKecil) && (
+      {(!adaBank || !adaKasKecil) && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
-          Untuk isi kas kecil, perlu minimal satu akun Kas Besar/Bank dan satu akun Kas Kecil. Atur jenis akun di Keuangan &gt; Akun Kas.
+          Untuk isi kas kecil, perlu minimal satu akun Bank dan satu akun Kas Kecil. Atur jenis akun di Keuangan &gt; Akun Kas.
         </div>
       )}
 
@@ -355,7 +354,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
   );
 }
 
-// Form "Isi Kas Kecil": transfer dari akun Kas Besar/Bank ke akun Kas Kecil + bukti.
+// Form "Isi Kas Kecil": transfer dari akun Bank ke akun Kas Kecil + bukti.
 // Disimpan sebagai transaksi tipe "transfer" biasa (supaya saldo, laporan, dan
 // panel Pengisian Kas Kecil di Dashboard otomatis ikut) + kolom bukti_url.
 function FormPengisianKas({ k, onClose, onSaved, showToast }) {
@@ -371,7 +370,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
   const [penanda, setPenanda] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Sumber & tujuan beda entitas (mis. Kas Besar holding -> Kas Kecil usaha)
+  // Sumber & tujuan beda entitas (mis. rekening Holding -> Kas Kecil usaha)
   // = pendanaan antar-entitas; boleh diberi penanda modal / pinjaman.
   const antarEntitas = !!(sumber && tujuan && k.entDari(sumber) !== k.entDari(tujuan));
 
@@ -428,7 +427,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
       <Field label="Tanggal">
         <InputTanggal className={inputClass} value={tanggal} onChange={setTanggal} />
       </Field>
-      <Field label="Dari (Kas Besar / Bank)">
+      <Field label="Dari (Bank)">
         <select className={inputClass} value={sumber} onChange={(e) => setSumber(e.target.value)}>
           <option value="">Pilih akun sumber…</option>
           {opsi(sumberList)}
@@ -490,7 +489,7 @@ function csvCell(val) {
 
 export function BukuKas({ keuanganTransaksi = [], master = {}, showToast }) {
   const k = useDataKas(master, keuanganTransaksi);
-  const [pilih, setPilih] = useState(`kas:${KAS_BESAR}`);
+  const [pilih, setPilih] = useState(`kas:${KAS_BANK}`);
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniLokal());
   const [q, setQ] = useState("");
