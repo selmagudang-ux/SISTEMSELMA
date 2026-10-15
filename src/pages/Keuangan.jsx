@@ -38,7 +38,7 @@ import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
-import { AntarEntitas, Konsolidasi } from "./Holding";
+import { AntarEntitas, Konsolidasi, RingkasanGrup } from "./Holding";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -110,7 +110,7 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
-export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session, mode = "ops" }) {
+export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session, mode = "ops", navigasi }) {
   // mode "ops"     = menu Keuangan SELMA, dikunci ke entitas OPS.
   // mode "holding" = menu Holding, dikunci ke entitas Holding (halaman & komponen sama).
   const holding = mode === "holding";
@@ -124,7 +124,27 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   // menampilkan rekening & transaksi entitas itu. Antar Entitas & Konsolidasi
   // (yang memang butuh data semua entitas) hanya ada di mode Holding.
   const entitasList = master.entitas || [];
-  const kodeAktif = holding ? kodeEntitasHolding(entitasList) : ENTITAS_DEFAULT;
+  const kodeHolding = kodeEntitasHolding(entitasList);
+  // Di menu Holding, perusahaan yang dilihat bisa dipilih: Holding sendiri atau
+  // perusahaan anak (mis. SELMA). Keuangan SELMA sendiri tetap selalu OPS.
+  const [perusahaanPilih, setPerusahaanPilih] = useState(() => {
+    try {
+      return sessionStorage.getItem("selma-holding-perusahaan") || "";
+    } catch {
+      return "";
+    }
+  });
+  const kodeAktif = !holding ? ENTITAS_DEFAULT : entitasList.some((e) => e.kode === perusahaanPilih) ? perusahaanPilih : kodeHolding;
+  const gantiPerusahaan = (kode) => {
+    setPerusahaanPilih(kode);
+    try {
+      sessionStorage.setItem("selma-holding-perusahaan", kode);
+    } catch {}
+  };
+  // Akun Pemilik & Pemegang Saham hanya melihat (pagar sebenarnya ada di sb() di lib/api.js;
+  // di sini cuma supaya tombol tambah/ubah tidak membuka form yang akan ditolak).
+  const bacaSaja = ["owner", "pemegang_saham"].includes(session?.role);
+  const setModalAman = bacaSaja ? () => showToast?.("Akun ini hanya bisa melihat data (read-only).", "err") : setModal;
   // Form transaksi (ModalRouter) membaca entitas aktif dari sini untuk membatasi
   // pilihan rekening & memetakan rekening baru ke entitas yang benar.
   useEffect(() => {
@@ -137,7 +157,33 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [keuanganTransaksi, master.rekening, master.rekening_entitas, master.entitas, kodeAktif]
   );
-  const bungkus = (node) => node;
+  const bungkus = (node) => (
+    <div>
+      {holding && bacaSaja && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
+          Mode lihat saja — akun ini tidak bisa menambah atau mengubah data.
+        </div>
+      )}
+      {holding && entitasList.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-[11px] text-slate-500">Perusahaan:</span>
+          <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+            {entitasList.map((e) => (
+              <button
+                key={e.kode}
+                type="button"
+                onClick={() => gantiPerusahaan(e.kode)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${kodeAktif === e.kode ? "bg-amber-500/15 text-amber-400" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {node}
+    </div>
+  );
 
   // Menu Holding tanpa entitas Holding = pembukuan Holding belum disiapkan.
   // Jangan jatuh ke data tanpa batas (itu akan menampilkan data OPS di Holding).
@@ -153,17 +199,29 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     return <RiwayatPerubahan master={master} session={session} />;
   }
   if (sub === "rekening") {
-    return <RekeningKategori master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />;
+    return bungkus(<RekeningKategori master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />);
   }
   if (sub === "akun-kas") {
     // entitas: [] = sembunyikan kolom pilih entitas (entitas sudah dikunci oleh menu).
-    return <AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />;
+    return bungkus(<AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />);
   }
   if (sub === "transaksi-kas") {
-    return <TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModal} />;
+    return bungkus(<TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModalAman} />);
+  }
+  if (holding && sub === "ringkasan") {
+    return (
+      <RingkasanGrup
+        keuanganTransaksi={keuanganTransaksi}
+        master={master}
+        onBuka={(kode) => {
+          gantiPerusahaan(kode);
+          navigasi?.("holding", "transaksi");
+        }}
+      />
+    );
   }
   if (holding && sub === "antar-entitas") {
-    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModal} />;
+    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} />;
   }
   if (holding && sub === "konsolidasi") {
     return <Konsolidasi keuanganTransaksi={keuanganTransaksi} master={master} />;
@@ -190,7 +248,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     return bungkus(<LogKeterangan keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} />);
   }
   return bungkus(
-    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModal} showToast={showToast} />
+    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} />
   );
 }
 

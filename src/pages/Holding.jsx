@@ -54,6 +54,156 @@ const PesanSetup = () => (
 );
 
 // =========================================================
+// RINGKASAN GRUP — halaman awal menu Holding.
+// Kartu per perusahaan (saldo kas, pemasukan, pengeluaran, laba bulan ini),
+// kartu gabungan, dan tren laba 6 bulan terakhir. HANYA BACA.
+// Transfer antar rekening (termasuk antar entitas) tidak dihitung sebagai
+// pemasukan/pengeluaran, jadi tidak ada hitung ganda di angka gabungan.
+// =========================================================
+const NAMA_BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+const labelBulan = (ym) => {
+  const [y, m] = ym.split("-");
+  return `${NAMA_BULAN[Number(m) - 1]} ${y}`;
+};
+
+export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
+  const k = useDataKas(master, keuanganTransaksi);
+  const { data: semua, status: statusLama } = useKeuanganRentang(keuanganTransaksi, "");
+  const ents = k.entitasList;
+  const bulanIni = hariIniLokal().slice(0, 7);
+
+  const data = useMemo(() => {
+    const daftarBulan = [];
+    let [y, m] = bulanIni.split("-").map(Number);
+    for (let i = 0; i < 6; i++) {
+      daftarBulan.unshift(`${y}-${String(m).padStart(2, "0")}`);
+      m -= 1;
+      if (m === 0) {
+        m = 12;
+        y -= 1;
+      }
+    }
+    const perEnt = {};
+    ents.forEach((e) => {
+      perEnt[e.kode] = { kas: 0, bulan: Object.fromEntries(daftarBulan.map((b) => [b, { masuk: 0, keluar: 0 }])) };
+    });
+    k.rekeningList.forEach((r) => {
+      const e = perEnt[k.entDari(r.kode)];
+      if (e) e.kas += k.saldoMap.get(r.kode) || 0;
+    });
+    semua.forEach((t) => {
+      if (t.tipe !== "masuk" && t.tipe !== "keluar") return;
+      const e = perEnt[k.entDari(t.rekening)];
+      const b = e && e.bulan[(t.tanggal || "").slice(0, 7)];
+      if (b) b[t.tipe] += nilai(t);
+    });
+    return { perEnt, daftarBulan };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semua, master.rekening, master.rekening_entitas, master.entitas, master.kas_grup, keuanganTransaksi]);
+
+  if (ents.length < 2) return <PesanSetup />;
+
+  const ringkas = (kode) => {
+    const e = data.perEnt[kode];
+    const b = e.bulan[bulanIni] || { masuk: 0, keluar: 0 };
+    return { kas: e.kas, masuk: b.masuk, keluar: b.keluar, laba: b.masuk - b.keluar };
+  };
+  const semuaRingkas = ents.map((e) => ({ e, r: ringkas(e.kode) }));
+  const gab = semuaRingkas.reduce(
+    (a, { r }) => ({ kas: a.kas + r.kas, masuk: a.masuk + r.masuk, keluar: a.keluar + r.keluar, laba: a.laba + r.laba }),
+    { kas: 0, masuk: 0, keluar: 0, laba: 0 }
+  );
+  const lababulan = (kode, b) => {
+    const x = data.perEnt[kode].bulan[b];
+    return x.masuk - x.keluar;
+  };
+  const warna = (v) => (v < 0 ? "text-red-400" : "text-slate-100");
+
+  const Kartu = ({ judul, r, onClick, sorot }) => (
+    <div className={`rounded-xl border p-4 ${sorot ? "border-amber-500/30 bg-amber-500/5" : "border-slate-800 bg-slate-900"}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <Building2 size={14} className={sorot ? "text-amber-400" : "text-slate-500"} />
+        <div className="text-sm font-semibold text-slate-100 truncate">{judul}</div>
+      </div>
+      <div className="text-[11px] text-slate-500">Total kas saat ini</div>
+      <div className={`text-xl font-semibold mb-3 ${warna(r.kas)}`}>{fmtRp(r.kas)}</div>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div>
+          <div className="text-[10px] text-slate-500">Pemasukan</div>
+          <div className="text-emerald-400 font-medium">{fmtRp(r.masuk)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-500">Pengeluaran</div>
+          <div className="text-red-400 font-medium">{fmtRp(r.keluar)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-500">Laba (rugi)</div>
+          <div className={`font-medium ${warna(r.laba)}`}>{fmtRp(r.laba)}</div>
+        </div>
+      </div>
+      {onClick && (
+        <button onClick={onClick} className="mt-3 text-[11px] text-amber-400 hover:text-amber-300">
+          Lihat keuangan {judul} →
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div>
+      {statusLama && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>}
+      <PageHeader
+        title="Ringkasan Grup"
+        description={`Keuangan seluruh perusahaan dalam grup — bulan ${labelBulan(bulanIni)}, hanya untuk dilihat.`}
+        sticky
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-5">
+        <Kartu judul="Gabungan grup" r={gab} sorot />
+        {semuaRingkas.map(({ e, r }) => (
+          <Kartu key={e.kode} judul={e.label} r={r} onClick={onBuka ? () => onBuka(e.kode) : null} />
+        ))}
+      </div>
+
+      <div className="text-sm font-semibold text-slate-200 mb-2">Laba (rugi) 6 bulan terakhir</div>
+      <div className="rounded-xl border border-slate-800 overflow-x-auto">
+        <table className="w-full text-sm min-w-[480px]">
+          <thead>
+            <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800">
+              <th className="px-4 py-2.5 font-medium">Bulan</th>
+              {ents.map((e) => (
+                <th key={e.kode} className="px-2 py-2.5 font-medium text-right">{e.label}</th>
+              ))}
+              <th className="px-4 py-2.5 font-medium text-right text-amber-400">Gabungan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...data.daftarBulan].reverse().map((b) => {
+              const total = ents.reduce((a, e) => a + lababulan(e.kode, b), 0);
+              return (
+                <tr key={b} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2 text-slate-300">{labelBulan(b)}</td>
+                  {ents.map((e) => {
+                    const v = lababulan(e.kode, b);
+                    return (
+                      <td key={e.kode} className={`px-2 py-2 text-right whitespace-nowrap ${v < 0 ? "text-red-400" : ""}`}>{fmtRp(v)}</td>
+                    );
+                  })}
+                  <td className={`px-4 py-2 text-right whitespace-nowrap font-semibold ${total < 0 ? "text-red-400" : ""}`}>{fmtRp(total)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[11px] text-slate-500 mt-2">
+        Laba di sini = pemasukan − pengeluaran tercatat di Keuangan tiap perusahaan. Perpindahan uang antar perusahaan (modal, dividen, pinjaman) tidak dihitung. Lihat tab Konsolidasi untuk rinciannya.
+      </div>
+    </div>
+  );
+}
+
+// =========================================================
 // ANTAR ENTITAS
 // =========================================================
 export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal }) {

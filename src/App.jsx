@@ -1374,7 +1374,8 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "holding" && (
                 <Keuangan
                   mode="holding"
-                  sub={nav.sub || "konsolidasi"}
+                  navigasi={navigate}
+                  sub={nav.sub || "ringkasan"}
                   session={session}
                   keuanganTransaksi={keuanganTransaksi}
                   pesananMasuk={pesananMasuk}

@@ -393,11 +393,15 @@ export const NAV = [
       {
         key: "holding", label: "Holding", icon: Landmark,
         children: [
+          // Halaman awal: keuangan seluruh perusahaan dalam grup (hanya baca).
+          { key: "ringkasan", label: "Ringkasan Grup" },
+          // Halaman di bawah ini punya pilihan "Perusahaan" (Holding / SELMA / dst).
           { key: "transaksi", label: "Transaksi" },
           { key: "akun-kas", label: "Akun Kas" },
           { key: "transaksi-kas", label: "Transaksi Kas" },
           { key: "buku-kas", label: "Buku Kas" },
           { key: "rekonsiliasi", label: "Rekonsiliasi Kas" },
+          { key: "laporan", label: "Laporan Keuangan" },
           { key: "antar-entitas", label: "Antar Entitas" },
           // Hanya baca.
           { key: "konsolidasi", label: "Konsolidasi" },
