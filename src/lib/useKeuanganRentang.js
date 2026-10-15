@@ -15,7 +15,7 @@ import { awalRentangKeuanganDefault, muatKeuanganLama } from "./api";
 // PENTING: untuk saldo per rekening JANGAN pakai `data` — pakai data bulan
 // ini saja + saldoPerRekening(..., true), supaya tidak terhitung dua kali.
 export function useKeuanganRentang(dimuat, dari) {
-  const [lama, setLama] = useState(null);
+ 
   const [err, setErr] = useState("");
   const perluLama = !dari || dari < awalRentangKeuanganDefault();
 
