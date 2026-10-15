@@ -1756,6 +1756,40 @@ export function saldoPerKas(saldoRekening, peta) {
   });
   return hasil;
 }
+// ---- Lokasi ----
+// master_data tipe "lokasi": kode + nama lokasi (mis. Pusat Bandung). master_data tipe "rekening_lokasi":
+// kode = kode rekening, label = kode lokasi. Satu rekening satu lokasi; tanpa penanda = "Tanpa lokasi".
+export const LOKASI_TANPA = "__tanpa_lokasi__";
+export function petaLokasiRekening(list) {
+  const peta = {};
+  (list || []).forEach((m) => {
+    peta[m.kode] = m.label;
+  });
+  return peta;
+}
+export function lokasiDariRekening(petaLok, lokasiList, kodeRekening) {
+  const k = petaLok ? petaLok[kodeRekening] : null;
+  return k && (lokasiList || []).some((l) => l.kode === k) ? k : LOKASI_TANPA;
+}
+// Saldo per lokasi, dipecah per jenis kas (Besar / Bank / Kecil). saldoRekening = hasil saldoPerRekening().
+export function saldoPerLokasi(saldoRekening, petaKas, petaLok, lokasiList) {
+  const kosong = () => ({ besar: 0, bank: 0, kecil: 0, total: 0, jumlahRekening: 0 });
+  const baris = new Map();
+  (lokasiList || []).forEach((l) => baris.set(l.kode, { kode: l.kode, label: l.label, ...kosong() }));
+  const tanpa = { kode: LOKASI_TANPA, label: "Tanpa lokasi", ...kosong() };
+  (saldoRekening || []).forEach((r) => {
+    const lk = lokasiDariRekening(petaLok, lokasiList, r.kode);
+    const b = lk === LOKASI_TANPA ? tanpa : baris.get(lk);
+    const saldo = Number(r.saldo) || 0;
+    b[kasDariRekening(petaKas, r.kode)] += saldo;
+    b.total += saldo;
+    b.jumlahRekening += 1;
+  });
+  const hasil = [...baris.values()];
+  if (tanpa.jumlahRekening > 0) hasil.push(tanpa);
+  return hasil;
+}
+
 // =========================================================
 // PENGGAJIAN — pemanggil Edge Function gaji-admin & gaji-karyawan
 // Tabel penggajian dikunci total dari anon key (RLS), jadi SEMUA baca/tulis

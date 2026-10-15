@@ -6,6 +6,9 @@ import {
   ringkasanKeuangan,
   saldoPerRekening,
   petaKasRekening,
+  petaLokasiRekening,
+  lokasiDariRekening,
+  LOKASI_TANPA,
   kasDariRekening,
   kasTerkait,
   ringkasanPerKas,
@@ -106,6 +109,9 @@ export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [
   }
   if (sub === "rekening") {
     return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
+  }
+  if (sub === "akun-kas") {
+    return <AkunKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
   }
   if (sub === "laporan") {
     return (
@@ -1942,11 +1948,182 @@ function PengelompokanKategori({ master, reload, showToast, draft, setDraft }) {
 //   - "kategori_keluar" -> kategori pengeluaran (dipakai saat tipe = Pengeluaran)
 const TAB_KEUANGAN = [
   { key: "rekening", label: "Rekening", placeholderKode: "BCA", placeholderLabel: "Bank BCA - 12345" },
+  // Daftar lokasi (mis. Pusat, Cabang). Lokasi tiap rekening dipilih di Keuangan > Akun Kas.
+  { key: "lokasi", label: "Lokasi", placeholderKode: "BDG", placeholderLabel: "Pusat Bandung" },
   { key: "kategori_masuk", label: "Kategori Pemasukan", placeholderKode: "JUAL", placeholderLabel: "Penjualan Produk" },
   { key: "kategori_keluar", label: "Kategori Pengeluaran", placeholderKode: "GAJI", placeholderLabel: "Gaji Karyawan" },
   // Tab khusus (bukan daftar kode/nama biasa) — lihat PengelompokanKategori.
   { key: "pengelompokan", label: "Kategori & Sub Kategori" },
 ];
+
+
+// Halaman "Akun Kas": daftar rekening dengan jenis (Kas Besar / Bank / Kas Kecil), lokasi, dan saldo terkini.
+// Jenis disimpan di master_data tipe "kas_grup", lokasi di tipe "rekening_lokasi" (lihat lib/api.js).
+// Daftar lokasi diatur di Rekening & Kategori > tab Lokasi.
+function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
+  const rekeningList = master.rekening || [];
+  const lokasiList = master.lokasi || [];
+  const kasGrupList = master.kas_grup || [];
+  const mapLokasiList = master.rekening_lokasi || [];
+  const petaKas = useMemo(() => petaKasRekening(kasGrupList), [kasGrupList]);
+  const petaLok = useMemo(() => petaLokasiRekening(mapLokasiList), [mapLokasiList]);
+  const saldoMap = useMemo(
+    () => new Map(saldoPerRekening(keuanganTransaksi, rekeningList, true).map((r) => [r.kode, r.saldo])),
+    [keuanganTransaksi, rekeningList]
+  );
+  const [jenisTab, setJenisTab] = useState("semua");
+  const [lokasiFilter, setLokasiFilter] = useState("semua");
+  const [q, setQ] = useState("");
+  const [saving, setSaving] = useState(null);
+
+  const semuaBaris = rekeningList.map((r) => ({
+    ...r,
+    kas: kasDariRekening(petaKas, r.kode),
+    lokasi: lokasiDariRekening(petaLok, lokasiList, r.kode),
+    saldo: saldoMap.get(r.kode) || 0,
+  }));
+  const total = (kas) => semuaBaris.filter((r) => r.kas === kas).reduce((a, r) => a + r.saldo, 0);
+  const baris = semuaBaris
+    .filter((r) => jenisTab === "semua" || r.kas === jenisTab)
+    .filter((r) => lokasiFilter === "semua" || r.lokasi === lokasiFilter)
+    .filter((r) => {
+      const s = q.trim().toLowerCase();
+      return !s || `${r.kode} ${r.label}`.toLowerCase().includes(s);
+    });
+
+  const simpan = async (r, kerja) => {
+    setSaving(r.id);
+    try {
+      await kerja();
+      await reload();
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan", "err");
+    } finally {
+      setSaving(null);
+    }
+  };
+  const ubahJenis = (r, kas) =>
+    simpan(r, async () => {
+      const ada = kasGrupList.find((x) => x.kode === r.kode);
+      if (kas === KAS_BESAR || kas === KAS_BANK) {
+        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kas }) });
+        else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "kas_grup", kode: r.kode, label: kas }) });
+      } else if (ada) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      }
+      showToast(`${r.label} → ${LABEL_KAS[kas]}`);
+    });
+  const ubahLokasi = (r, kodeLokasi) =>
+    simpan(r, async () => {
+      const ada = mapLokasiList.find((x) => x.kode === r.kode);
+      if (kodeLokasi) {
+        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kodeLokasi }) });
+        else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_lokasi", kode: r.kode, label: kodeLokasi }) });
+      } else if (ada) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      }
+      showToast(`${r.label} → ${kodeLokasi ? labelDari(lokasiList, kodeLokasi) : "Tanpa lokasi"}`);
+    });
+
+  const selectCls = "bg-slate-900 border border-slate-700 rounded-md px-2 py-1 text-xs text-slate-200 disabled:opacity-40";
+  return (
+    <div>
+      <PageHeader
+        title="Akun Kas"
+        description="Daftar rekening beserta jenis (Kas Besar, Bank, Kas Kecil), lokasi, dan saldo terkini. Rekening baru dan daftar lokasi diatur di Rekening & Kategori."
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {URUTAN_KAS.map((k) => (
+          <div key={k} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+              <Landmark size={12} /> Total {LABEL_KAS[k]}
+            </div>
+            <div className={`text-base font-semibold ${total(k) >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(total(k))}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+          {[{ key: "semua", label: "Semua" }, ...URUTAN_KAS.map((k) => ({ key: k, label: LABEL_KAS[k] }))].map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setJenisTab(t.key)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${jenisTab === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {lokasiList.length > 0 && (
+          <select className={selectCls} value={lokasiFilter} onChange={(e) => setLokasiFilter(e.target.value)} aria-label="Filter lokasi">
+            <option value="semua">Semua lokasi</option>
+            {lokasiList.map((l) => (
+              <option key={l.kode} value={l.kode}>{l.label}</option>
+            ))}
+            <option value={LOKASI_TANPA}>Tanpa lokasi</option>
+          </select>
+        )}
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input className={`${inputClass} !pl-8 !py-1.5 text-xs w-56`} placeholder="Cari kode atau nama akun" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+      </div>
+      {lokasiList.length === 0 && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
+          Belum ada lokasi. Tambahkan dulu di Rekening &amp; Kategori &gt; tab Lokasi, lalu pilih lokasi tiap akun di sini.
+        </div>
+      )}
+      <div className="rounded-xl border border-slate-800 overflow-x-auto">
+        {baris.length === 0 ? (
+          <div className="p-6"><EmptyState label="Tidak ada akun yang cocok." /></div>
+        ) : (
+          <table className="w-full text-sm min-w-[640px]">
+            <thead>
+              <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800">
+                <th className="px-4 py-2.5 font-medium">Kode</th>
+                <th className="px-2 py-2.5 font-medium">Nama Akun</th>
+                <th className="px-2 py-2.5 font-medium">Jenis</th>
+                <th className="px-2 py-2.5 font-medium">Lokasi</th>
+                <th className="px-4 py-2.5 font-medium text-right">Saldo Terkini</th>
+              </tr>
+            </thead>
+            <tbody>
+              {baris.map((r) => (
+                <tr key={r.id || r.kode} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 font-mono text-xs text-amber-400 whitespace-nowrap">{r.kode}</td>
+                  <td className="px-2 py-2.5 text-slate-200">{r.label}</td>
+                  <td className="px-2 py-2.5">
+                    <select className={selectCls} value={r.kas} disabled={saving === r.id} onChange={(e) => ubahJenis(r, e.target.value)} aria-label={`Jenis ${r.label}`}>
+                      {URUTAN_KAS.map((k) => (
+                        <option key={k} value={k}>{LABEL_KAS[k]}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-2 py-2.5">
+                    <select
+                      className={selectCls}
+                      value={r.lokasi === LOKASI_TANPA ? "" : r.lokasi}
+                      disabled={saving === r.id || lokasiList.length === 0}
+                      onChange={(e) => ubahLokasi(r, e.target.value)}
+                      aria-label={`Lokasi ${r.label}`}
+                    >
+                      <option value="">Tanpa lokasi</option>
+                      {lokasiList.map((l) => (
+                        <option key={l.kode} value={l.kode}>{l.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className={`px-4 py-2.5 text-right whitespace-nowrap font-semibold ${r.saldo < 0 ? "text-red-400" : ""}`}>{fmtRp(r.saldo)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function RekeningKategori({ master, reload, showToast }) {
   const [activeTab, setActiveTab] = useState("rekening");
@@ -2026,6 +2203,15 @@ function RekeningKategori({ master, reload, showToast }) {
       if (activeTab === "rekening" && kodeBaru !== m.kode) {
         const g = kasGrupList.find((x) => x.kode === m.kode);
         if (g) await sb(`master_data?id=eq.${g.id}`, { method: "PATCH", body: JSON.stringify({ kode: kodeBaru }) });
+        // lokasi rekening ikut pindah ke kode baru
+        const lk = (master.rekening_lokasi || []).find((x) => x.kode === m.kode);
+        if (lk) await sb(`master_data?id=eq.${lk.id}`, { method: "PATCH", body: JSON.stringify({ kode: kodeBaru }) });
+      }
+      // Kode lokasi diganti -> semua rekening di lokasi itu ikut menunjuk ke kode baru.
+      if (activeTab === "lokasi" && kodeBaru !== m.kode) {
+        for (const lk of (master.rekening_lokasi || []).filter((x) => x.label === m.kode)) {
+          await sb(`master_data?id=eq.${lk.id}`, { method: "PATCH", body: JSON.stringify({ label: kodeBaru }) });
+        }
       }
       await reload();
       cancelEdit();
@@ -2063,6 +2249,14 @@ function RekeningKategori({ master, reload, showToast }) {
       if (activeTab === "rekening" && kodeRek) {
         const g = kasGrupList.find((x) => x.kode === kodeRek);
         if (g) await sb(`master_data?id=eq.${g.id}`, { method: "DELETE" });
+        const lk = (master.rekening_lokasi || []).find((x) => x.kode === kodeRek);
+        if (lk) await sb(`master_data?id=eq.${lk.id}`, { method: "DELETE" });
+      }
+      // Lokasi dihapus -> rekening di dalamnya kembali "Tanpa lokasi".
+      if (activeTab === "lokasi" && kodeRek) {
+        for (const lk of (master.rekening_lokasi || []).filter((x) => x.label === kodeRek)) {
+          await sb(`master_data?id=eq.${lk.id}`, { method: "DELETE" });
+        }
       }
       await reload();
       showToast("Dihapus");

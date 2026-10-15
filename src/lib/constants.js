@@ -368,6 +368,7 @@ export const NAV = [
         key: "keuangan", label: "Keuangan", icon: Wallet,
         children: [
           { key: "transaksi", label: "Transaksi" },
+          { key: "akun-kas", label: "Akun Kas" },
           { key: "laporan", label: "Laporan Keuangan" },
           { key: "log", label: "Log Keterangan" },
           { key: "rekening", label: "Rekening & Kategori" },
@@ -600,7 +601,7 @@ export const ROLE_SUBMENUS = {
 export function allowedSubMenus(role, menuKey) {
   // "Riwayat Perubahan" Keuangan: hanya superappa (guard navigasi & halaman).
   if (menuKey === "keuangan" && role !== "superappa") {
-    return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "laporan", "log", "rekening"];
+    return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "akun-kas", "laporan", "log", "rekening"];
   }
   return ROLE_SUBMENUS[role]?.[menuKey] || null;
 }
