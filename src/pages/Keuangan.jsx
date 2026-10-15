@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
   fmtRp,
@@ -32,6 +32,7 @@ import {
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel } from "../lib/constants";
+import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -112,6 +113,15 @@ export default function Keuangan({ sub, keuanganTransaksi = [], pesananMasuk = [
   }
   if (sub === "akun-kas") {
     return <AkunKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
+  }
+  if (sub === "transaksi-kas") {
+    return <TransaksiKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModal} />;
+  }
+  if (sub === "buku-kas") {
+    return <BukuKas keuanganTransaksi={keuanganTransaksi} master={master} showToast={showToast} />;
+  }
+  if (sub === "rekonsiliasi") {
+    return <RekonsiliasiKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} session={session} />;
   }
   if (sub === "laporan") {
     return (
@@ -892,6 +902,17 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                   >
                     {isTransfer ? "" : t.tipe === "masuk" ? "+" : "-"}{fmtRp(t.jumlah)}
                   </div>
+                  {t.bukti_url && (
+                    <a
+                      href={t.bukti_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="p-1.5 rounded-lg text-emerald-400/80 hover:text-emerald-300 hover:bg-slate-800"
+                      title="Lihat bukti transfer"
+                    >
+                      <Paperclip size={13} />
+                    </a>
+                  )}
                   {petaPesanan.get(t.id) && (
                     <button
                       onClick={() => setDetailPesanan({ transaksi: t, pesanan: petaPesanan.get(t.id) })}

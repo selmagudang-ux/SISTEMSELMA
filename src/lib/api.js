@@ -1790,6 +1790,21 @@ export function saldoPerLokasi(saldoRekening, petaKas, petaLok, lokasiList) {
   return hasil;
 }
 
+// Saldo SEBELUM tanggal tertentu (tanggal itu sendiri belum dihitung) untuk
+// sekumpulan rekening sekaligus — dipakai Buku Kas sebagai saldo awal periode.
+// Beda dari saldoAwalRekening(): ini TIDAK memakai override saldo awal manual,
+// murni akumulasi transaksi (+ saldo dasar kalau tanggalnya di/setelah batas
+// data yang dimuat). Kalau tanggalIso lebih lama dari batas itu, `transaksi`
+// harus sudah memuat data lama (lihat useKeuanganRentang).
+export function saldoSebelumTanggal(transaksi, kodeList, tanggalIso) {
+  const kodeSet = new Set(kodeList || []);
+  const sebelum = (transaksi || []).filter((t) => t.tanggal < tanggalIso);
+  const pakaiDasar = !!saldoDasar.sebelum && tanggalIso >= saldoDasar.sebelum;
+  return saldoPerRekening(sebelum, (kodeList || []).map((k) => ({ kode: k, label: k })), pakaiDasar)
+    .filter((r) => kodeSet.has(r.kode))
+    .reduce((a, r) => a + (Number(r.saldo) || 0), 0);
+}
+
 // =========================================================
 // PENGGAJIAN — pemanggil Edge Function gaji-admin & gaji-karyawan
 // Tabel penggajian dikunci total dari anon key (RLS), jadi SEMUA baca/tulis
