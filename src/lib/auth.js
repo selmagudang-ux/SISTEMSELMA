@@ -41,6 +41,7 @@ export async function login(username, password) {
     nama: user.nama,
     role: user.role,
     token: user.token || null, // token bertanda tangan untuk fitur Chat (lihat functions/chat)
+    jwt: user.jwt || null, // JWT untuk penulisan data (dicek RLS di database)
     loginAt: new Date().toISOString(),
   };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));

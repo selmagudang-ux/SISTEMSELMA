@@ -71,6 +71,18 @@ function headerAktor() {
   }
 }
 
+// JWT hasil login (diterbitkan Edge Function verify-login). Dipakai HANYA untuk
+// request tulis (POST/PATCH/DELETE) supaya RLS di database bisa memeriksa role.
+// Request baca tetap pakai anon key, jadi JWT kedaluwarsa tidak merusak tampilan data.
+function jwtSesi() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
+    return raw ? JSON.parse(raw).jwt || null : null;
+  } catch {
+    return null;
+  }
+}
+
 function roleSaatIni() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
@@ -144,7 +156,7 @@ export async function sb(path, opts = {}) {
     cache: "no-store",
     headers: {
       apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Authorization: `Bearer ${method !== "GET" && jwtSesi() ? jwtSesi() : SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
       Prefer: opts.prefer || "return=representation",
       ...(method === "GET" ? {} : headerAktor()),
@@ -159,6 +171,10 @@ export async function sb(path, opts = {}) {
     } catch {
       parsed = null;
     }
+    // JWT sesi kedaluwarsa / tidak ada -> database menolak penulisan (RLS).
+    if (method !== "GET" && (res.status === 401 || res.status === 403) && (parsed?.message || "").match(/JWT|row-level security/i)) {
+      throw new Error("Sesi login berakhir atau tidak punya izin untuk perubahan ini. Silakan logout lalu login ulang.");
+    }
     const friendly = friendlyDbError(parsed, res.status);
     const err = new Error(friendly || parsed?.message || text || `${res.status} ${res.statusText}`);
     // pgCode dipakai di beberapa tempat (mis. hapus SKU) untuk tahu kapan harus
@@ -167,7 +183,13 @@ export async function sb(path, opts = {}) {
     throw err;
   }
   if (res.status === 204) return null;
-  return res.json();
+  const hasil = await res.json();
+  // RLS yang menolak PATCH/DELETE TIDAK melempar error: baris disaring diam-diam
+  // dan hasilnya [] . Untuk keuangan_transaksi anggap itu penolakan, bukan sukses.
+  if ((method === "PATCH" || method === "DELETE") && /^keuangan_transaksi\?id=eq\./.test(path) && Array.isArray(hasil) && hasil.length === 0) {
+    throw new Error("Perubahan tidak tersimpan: transaksi tidak ditemukan atau Anda tidak punya izin untuk mengubahnya.");
+  }
+  return hasil;
 }
 
 // PostgREST (API Supabase) cuma balikin maksimal 1000 baris per request
