@@ -1275,34 +1275,44 @@ function PanelImportMassUpdate({ platform, tokoKode, tabelAda, jumlahTersimpan, 
 // Import Shopee SATU KESATUAN: empat file diimport sekaligus dan disimpan sekaligus (penjualan + iklan),
 // supaya data penjualan, SKU/qty, dan biaya iklan selalu satu periode dan tidak ada yang tertinggal.
 // Mass Update sengaja terpisah (cukup sesekali kalau ada produk baru).
-function SlotFile({ no, judul, petunjuk, accept, file, onPilih }) {
+function SlotFile({ no, judul, petunjuk, accept, file, onPilih, multiple = false }) {
+  const daftar = Array.isArray(file) ? file : file ? [file] : [];
   return (
     <label className="block text-xs text-md-on-surface-variant rounded-md-lg border border-md-outline-variant p-3">
-      <span className="block mb-1 text-md-on-surface text-sm">{no}. {judul} {file ? <span className="text-emerald-400">✓</span> : <span className="text-amber-400">(wajib)</span>}</span>
+      <span className="block mb-1 text-md-on-surface text-sm">{no}. {judul} {daftar.length ? <span className="text-emerald-400">✓{multiple ? ` ${daftar.length} file` : ""}</span> : <span className="text-amber-400">(wajib)</span>}</span>
       <span className="block mb-2">{petunjuk}</span>
-      <input type="file" accept={accept} onChange={onPilih} className="block text-xs" />
-      {file && <span className="block mt-1 truncate text-[11px]">{file.name}</span>}
+      <input type="file" accept={accept} multiple={multiple} onChange={onPilih} className="block text-xs" />
+      {daftar.map((f) => <span key={f.name} className="block mt-1 truncate text-[11px]">{f.name}</span>)}
     </label>
   );
 }
 
 function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasMap, iklanTabelAda, showToast, onSelesai }) {
   const [fPenghasilan, setFPenghasilan] = useState(null);
-  const [fPesanan, setFPesanan] = useState(null);
+  const [fPesanan, setFPesanan] = useState([]); // boleh lebih dari satu file (Shopee membatasi satu file = satu bulan)
   const [fIklan, setFIklan] = useState(null);
   const [fRincian, setFRincian] = useState(null);
   const [status, setStatus] = useState("");
   const [preview, setPreview] = useState(null);
   const [sibuk, setSibuk] = useState(false);
 
-  const lengkap = !!(fPenghasilan && fPesanan && fIklan && fRincian);
+  const lengkap = !!(fPenghasilan && fPesanan.length && fIklan && fRincian);
   const pilih = (set) => (e) => { set(e.target.files?.[0] || null); setPreview(null); setStatus(""); };
+  const pilihBanyak = (set) => (e) => { set([...(e.target.files || [])]); setPreview(null); setStatus(""); };
 
   const baca = async () => {
     setSibuk(true); setStatus("Membaca file…"); setPreview(null);
     try {
       const income = await parseLaporanPenghasilan(await fPenghasilan.arrayBuffer());
-      const pesanan = await parseExportPesanan(await fPesanan.arrayBuffer());
+      // beberapa file Export Pesanan digabung per nomor pesanan. Kalau satu pesanan muncul di dua file
+      // (rentang tanggal bertumpuk), dipakai yang pertama supaya SKU & qty tidak terhitung dobel.
+      const linesGabung = new Map();
+      let pesananDobel = 0;
+      for (const f of fPesanan) {
+        const hasilExport = await parseExportPesanan(await f.arrayBuffer());
+        for (const [no, l] of hasilExport.lines) { if (linesGabung.has(no)) pesananDobel++; else linesGabung.set(no, l); }
+      }
+      const pesanan = { lines: linesGabung };
       const utama = await parseLaporanIklan(await fIklan.arrayBuffer());
       const rincian = await parseRincianIklanOtomatis(await fRincian.arrayBuffer());
       const iklan = gabungIklan(utama, rincian);
@@ -1330,7 +1340,7 @@ function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasM
       }
       setPreview({
         ...hasil, existingByOrder, tidakPas: income.tidakPas, dari: tanggal[0], sampai: tanggal[tanggal.length - 1],
-        dibuatDari: dibuat[0], iklan, tumpang: [...gab.values()],
+        dibuatDari: dibuat[0], iklan, tumpang: [...gab.values()], pesananDobel, jumlahExport: fPesanan.length, pesananExport: linesGabung.size,
       });
       setStatus("");
     } catch (e) {
@@ -1400,8 +1410,8 @@ function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasM
       <div className="grid sm:grid-cols-2 gap-3 mb-3">
         <SlotFile no={1} judul="Laporan Penghasilan" accept=".xlsx" file={fPenghasilan} onPilih={pilih(setFPenghasilan)}
           petunjuk="Seller Centre → Penghasilan Saya → Sudah Dilepas → Unduh Laporan Penghasilan (.xlsx)" />
-        <SlotFile no={2} judul="Export Pesanan" accept=".xlsx" file={fPesanan} onPilih={pilih(setFPesanan)}
-          petunjuk="Pesanan Saya → Export (.xlsx), berisi SKU variasi & qty. Pakai rentang tanggal PESANAN yang mencakup semua pesanan di laporan nomor 1, tanpa filter status." />
+        <SlotFile no={2} judul="Export Pesanan (boleh lebih dari satu file)" accept=".xlsx" multiple file={fPesanan} onPilih={pilihBanyak(setFPesanan)}
+          petunjuk="Pesanan Saya → Export (.xlsx), berisi SKU variasi & qty. Shopee membatasi satu file maksimal satu bulan, jadi unduh beberapa file (mis. Agustus dan September) lalu pilih semuanya sekaligus (tahan Ctrl / Shift saat memilih). Rentang gabungannya harus mencakup pesanan tertua di laporan nomor 1, tanpa filter status." />
         <SlotFile no={3} judul="Data Keseluruhan Iklan" accept=".csv" file={fIklan} onPilih={pilih(setFIklan)}
           petunjuk="Seller Centre → Iklan Shopee → Data Keseluruhan → pilih periode → Unduh (.csv)" />
         <SlotFile no={4} judul="Rincian Data Iklan Produk Otomatis" accept=".csv" file={fRincian} onPilih={pilih(setFRincian)}
@@ -1417,6 +1427,7 @@ function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasM
       {preview && (
         <div className="mt-3 text-xs text-md-on-surface-variant space-y-1">
           <div>Penjualan: dana dilepas <b className="text-md-on-surface">{formatTanggalID(preview.dari)} – {formatTanggalID(preview.sampai)}</b> · {r.pesanan} pesanan (paling lama dibuat {formatTanggalID(preview.dibuatDari) || "?"})</div>
+          <div>Export Pesanan: {preview.jumlahExport} file · {preview.pesananExport} pesanan{preview.pesananDobel > 0 && <span className="text-amber-400"> · {preview.pesananDobel} pesanan muncul di lebih dari satu file (dipakai yang pertama)</span>}</div>
           <div>SKU lengkap dari Export Pesanan: {r.dariExport}{r.dariTersimpan > 0 && <> · memakai data SKU tersimpan: {r.dariTersimpan}</>} · <span className={r.tanpaSku ? "text-amber-400" : ""}>belum ada data SKU: {r.tanpaSku}</span></div>
           {r.tanpaSku > 0 && <div className="text-amber-400">Export Pesanan belum mencakup {r.tanpaSku} pesanan di laporan. Unduh ulang Export Pesanan mulai tanggal pesanan paling lama di atas, lalu baca ulang. Kalau tetap disimpan, pesanan itu tampil tanpa SKU, qty, dan HPP.</div>}
           <div>Baris SKU cocok Master Barang: {r.barisCocok} · <span className={r.barisTidakCocok ? "text-amber-400" : ""}>tidak cocok: {r.barisTidakCocok} ({r.referensiTidakCocok.size} kode berbeda — bisa dipetakan manual setelah disimpan)</span></div>
