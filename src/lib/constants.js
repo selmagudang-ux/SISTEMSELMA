@@ -386,8 +386,8 @@ export const NAV = [
   {
     // HOLDING — pembukuan perusahaan induk, TERPISAH dari Keuangan SELMA (OPS).
     // Memakai halaman yang sama dengan Keuangan (pages/Keuangan.jsx, mode="holding")
-    // tapi datanya dikunci ke entitas Holding. Hanya Super Appa, Pemilik, dan
-    // Pemegang Saham (lihat ROLE_MENUS & allowedSubMenus).
+    // tapi datanya dikunci ke entitas Holding. Super Appa, Pemilik, Pemegang Saham,
+    // dan Super Admin (hanya sub Antar Entitas) — lihat ROLE_MENUS & allowedSubMenus.
     key: "holding-group", label: "HOLDING", icon: Building2, group: true,
     children: [
       {
@@ -583,12 +583,15 @@ export const ROLES = [
 // PALING TERAKHIR di daftar gudang supaya bukan yang jadi halaman awal (fallback
 // landing page dari MainApp pakai allowed[0] kalau "dashboard" tidak diizinkan).
 export const ROLE_MENUS = {
-  // Super Admin: seluruh sistem SELMA, TANPA menu Holding.
-  superadmin: [...ALL_MENU_KEYS.filter((k) => k !== "holding"), "barang-masuk"],
+  // Super Admin: seluruh sistem SELMA + menu Holding, tapi di Holding HANYA
+  // sub-menu "Antar Entitas" (lihat allowedSubMenus) dan hanya boleh mencatat
+  // transfer dari perusahaan KE Holding (lihat ARAH_ANTAR_ENTITAS).
+  superadmin: [...ALL_MENU_KEYS, "barang-masuk"],
   // Super Appa: akses ke mana pun, termasuk Holding. Dari luar tampil sebagai
   // "Super Admin" — lihat catatan di ROLES di atas.
   superappa: [...ALL_MENU_KEYS, "barang-masuk"],
-  // Pemilik: HANYA Holding (read-only), plus Chat & Panduan yang untuk semua role.
+  // Pemilik: HANYA Holding (read-only, KECUALI mencatat transfer Antar Entitas
+  // dari Holding KE perusahaan — lihat ARAH_ANTAR_ENTITAS), plus Chat & Panduan.
   owner: ["holding", "chat", "panduan"],
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
@@ -620,6 +623,40 @@ export const ROLE_MENUS = {
   pemegang_saham: ["holding"],
 };
 
+// ---------------------------------------------------------------------------
+// ANTAR ENTITAS — siapa boleh mencatat transfer ke arah mana.
+//   "dariHolding" = transfer dari rekening milik Holding KE rekening perusahaan
+//                   lain (modal, pinjaman yang diberikan Holding, dst).
+//   "keHolding"   = transfer dari rekening perusahaan lain KE rekening Holding
+//                   (dividen, pelunasan pinjaman, dst).
+// Pemilik   : hanya dariHolding.
+// Super Admin: hanya keHolding.
+// Super Appa : keduanya (+ transfer antar dua perusahaan non-Holding).
+// Role lain  : tidak boleh sama sekali.
+// Mau menambah role (mis. "keuangan" boleh keHolding)? Cukup tambah barisnya di sini.
+// ---------------------------------------------------------------------------
+export const ARAH_ANTAR_ENTITAS = {
+  owner: { dariHolding: true, keHolding: false },
+  superadmin: { dariHolding: false, keHolding: true },
+  superappa: { dariHolding: true, keHolding: true, antarAnak: true },
+};
+
+// Boleh tidaknya role ini mencatat/mengubah transfer dengan entitas asal & tujuan tertentu.
+// kodeHolding = kode entitas Holding (mis. "HOLD").
+export function bolehTransferAntarEntitas(role, entAsal, entTujuan, kodeHolding) {
+  const a = ARAH_ANTAR_ENTITAS[role];
+  if (!a || !kodeHolding || !entAsal || !entTujuan || entAsal === entTujuan) return false;
+  if (entAsal === kodeHolding) return !!a.dariHolding;
+  if (entTujuan === kodeHolding) return !!a.keHolding;
+  return !!a.antarAnak; // dua perusahaan non-Holding
+}
+
+// Role ini punya hak mencatat transfer Antar Entitas arah apa pun?
+export function bisaTransferAntarEntitas(role) {
+  const a = ARAH_ANTAR_ENTITAS[role];
+  return !!a && (a.dariHolding || a.keHolding || a.antarAnak);
+}
+
 export function allowedMenus(role) {
   return ROLE_MENUS[role] || ["dashboard"];
 }
@@ -645,7 +682,10 @@ export function allowedSubMenus(role, menuKey) {
   // "Riwayat Perubahan" Keuangan: hanya superappa (guard navigasi & halaman).
   // Holding: Pemegang Saham hanya Konsolidasi; Pemilik & Super Appa semua sub.
   if (menuKey === "holding") {
-    return role === "pemegang_saham" ? ["konsolidasi"] : null;
+    if (role === "pemegang_saham") return ["konsolidasi"];
+    // Super Admin hanya butuh Antar Entitas (mencatat transfer perusahaan -> Holding).
+    if (role === "superadmin") return ["antar-entitas"];
+    return null;
   }
   // Keuangan SELMA (OPS) tidak punya Antar Entitas / Konsolidasi — itu di menu Holding.
   if (menuKey === "keuangan" && role !== "superappa") {

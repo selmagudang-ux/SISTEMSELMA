@@ -36,7 +36,7 @@ import {
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
-import { roleLabel } from "../lib/constants";
+import { roleLabel, allowedSubMenus } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { AntarEntitas, Konsolidasi, RingkasanGrup } from "./Holding";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
@@ -117,7 +117,10 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
 
   // Pemegang Saham hanya boleh melihat Konsolidasi (menu lain tidak ada di sidebar,
   // ini pengaman kalau sub tersimpan lama di sessionStorage).
-  const sub = session?.role === "pemegang_saham" ? "konsolidasi" : subProp;
+  // Sub-menu Holding juga dibatasi per role (mis. Super Admin hanya Antar Entitas):
+  // kalau sub yang diminta tidak diizinkan, jatuh ke sub pertama yang diizinkan.
+  const subsBoleh = mode === "holding" ? allowedSubMenus(session?.role, "holding") : null;
+  const sub = session?.role === "pemegang_saham" ? "konsolidasi" : subsBoleh && !subsBoleh.includes(subProp) ? subsBoleh[0] : subProp;
 
   // Entitas pembukuan DIKUNCI oleh menu (tidak ada tombol ganti lagi): Keuangan
   // SELMA selalu OPS, menu Holding selalu entitas Holding. Semua halaman hanya
@@ -144,7 +147,10 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   // Akun Pemilik & Pemegang Saham hanya melihat (pagar sebenarnya ada di sb() di lib/api.js;
   // di sini cuma supaya tombol tambah/ubah tidak membuka form yang akan ditolak).
   const bacaSaja = ["owner", "pemegang_saham"].includes(session?.role);
-  const setModalAman = bacaSaja ? () => showToast?.("Akun ini hanya bisa melihat data (read-only).", "err") : setModal;
+  // Pengecualian: di Holding → Antar Entitas, Pemilik boleh mengubah/menghapus transfer
+  // arah Holding → perusahaan (tombolnya sendiri disaring per arah di pages/Holding.jsx).
+  const adaPengecualianOwner = holding && sub === "antar-entitas" && session?.role === "owner";
+  const setModalAman = bacaSaja && !adaPengecualianOwner ? () => showToast?.("Akun ini hanya bisa melihat data (read-only).", "err") : setModal;
   // Form transaksi (ModalRouter) membaca entitas aktif dari sini untuk membatasi
   // pilihan rekening & memetakan rekening baru ke entitas yang benar.
   useEffect(() => {
@@ -159,7 +165,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   );
   const bungkus = (node) => (
     <div>
-      {holding && bacaSaja && (
+      {holding && bacaSaja && !adaPengecualianOwner && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
           Mode lihat saja — akun ini tidak bisa menambah atau mengubah data.
         </div>
@@ -221,7 +227,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     );
   }
   if (holding && sub === "antar-entitas") {
-    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} />;
+    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;
   }
   if (holding && sub === "konsolidasi") {
     return <Konsolidasi keuanganTransaksi={keuanganTransaksi} master={master} />;

@@ -83,8 +83,28 @@ function roleSaatIni() {
 // Satu-satunya pengecualian untuk role read-only: PATCH ke pengajuan_restock
 // (approve/tolak). Path-nya selalu diawali "pengajuan_restock" (mis.
 // "pengajuan_restock?id=eq.123"), tidak pernah dipakai untuk tabel lain.
-function bolehWalauReadOnly(path, method) {
-  return method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path);
+//
+// Pengecualian ke-2: role "owner" (BUKAN pemegang_saham) boleh menulis ke
+// keuangan_transaksi, tapi HANYA untuk transfer Antar Entitas (menu Holding →
+// Antar Entitas, arah Holding → perusahaan). Di sini hanya dicek bentuknya:
+// POST harus tipe "transfer" ber-penanda; PATCH/DELETE harus menunjuk satu id.
+// Arah (Holding → perusahaan vs sebaliknya) dicek di UI (pages/Holding.jsx,
+// pakai bolehTransferAntarEntitas di lib/constants.js) karena di sini tidak
+// ada data rekening/entitas.
+function bolehWalauReadOnly(path, method, opts = {}) {
+  if (method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path)) return true;
+  if (roleSaatIni() === "owner" && /^keuangan_transaksi(\?|$)/.test(path)) {
+    if (method === "POST") {
+      try {
+        const b = JSON.parse(opts.body || "{}");
+        return b.tipe === "transfer" && !!b.penanda;
+      } catch {
+        return false;
+      }
+    }
+    if (method === "PATCH" || method === "DELETE") return /[?&]id=eq\.[^&]+/.test(path);
+  }
+  return false;
 }
 
 // Semua request ke Supabase dibatasi waktu. Tanpa batas ini, koneksi yang
@@ -116,7 +136,7 @@ async function fetchBatas(url, opts = {}, ms = TIMEOUT_BACA_MS, method = "GET") 
 
 export async function sb(path, opts = {}) {
   const method = (opts.method || "GET").toUpperCase();
-  if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method)) {
+  if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method, opts)) {
     throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menambah, mengubah, atau menghapus data.");
   }
   const res = await fetchBatas(`${SUPABASE_URL}/rest/v1/${path}`, {

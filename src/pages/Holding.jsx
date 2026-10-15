@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_BESAR, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS } from "../lib/api";
+import { sb, fmtRp, LABEL_KAS, KAS_BESAR, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding } from "../lib/api";
+import { bolehTransferAntarEntitas, bisaTransferAntarEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
 
@@ -206,8 +207,16 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
 // =========================================================
 // ANTAR ENTITAS
 // =========================================================
-export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal }) {
+export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal, role }) {
   const k = useDataKas(master, keuanganTransaksi);
+  // Hak per arah transfer (lihat ARAH_ANTAR_ENTITAS di lib/constants.js):
+  // Pemilik = Holding -> perusahaan, Super Admin = perusahaan -> Holding, Super Appa = keduanya.
+  const kodeHolding = kodeEntitasHolding(k.entitasList);
+  const bisaTambah = bisaTransferAntarEntitas(role);
+  const bolehKelola = (t) => {
+    const x = lintasEntitas(t, k);
+    return !!x && bolehTransferAntarEntitas(role, x.asal, x.tujuan, kodeHolding);
+  };
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniLokal());
   const [filterPenanda, setFilterPenanda] = useState("semua");
@@ -253,14 +262,26 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         description="Uang yang pindah antar perusahaan (mis. SELMA ↔ Holding): modal, dividen, pinjaman, dan pelunasannya. Bukan pemasukan/pengeluaran, jadi tidak masuk laba rugi masing-masing."
         sticky
         action={
-          <button
-            onClick={() => setFormBuka(true)}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-          >
-            <Plus size={14} /> Transfer Antar Entitas
-          </button>
+          bisaTambah ? (
+            <button
+              onClick={() => setFormBuka(true)}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Plus size={14} /> Transfer Antar Entitas
+            </button>
+          ) : null
         }
       />
+      {role === "owner" && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
+          Anda hanya bisa mencatat transfer <b>dari Holding ke perusahaan</b> (mis. modal, pinjaman). Transfer dari perusahaan ke Holding dicatat oleh Admin.
+        </div>
+      )}
+      {role === "superadmin" && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
+          Anda hanya bisa mencatat transfer <b>dari perusahaan ke Holding</b> (mis. dividen, pelunasan pinjaman). Transfer dari Holding ke perusahaan dicatat oleh Pemilik.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard label="Modal (periode)" value={fmtRp(total("modal"))} accent="text-sky-400" icon={Building2} iconColor="text-sky-500" />
@@ -307,12 +328,15 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {daftar.map((t, i) => {
             const x = lintasEntitas(t, k);
+            const kelola = bolehKelola(t);
             return (
               <div key={t.id} className={`flex items-center justify-between gap-3 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     {t.penanda ? (
                       <Badge color={WARNA_PENANDA[t.penanda]}>{PENANDA_ANTAR_ENTITAS[t.penanda]}</Badge>
+                    ) : !kelola ? (
+                      <Badge color="amber">Belum ditandai</Badge>
                     ) : (
                       <select
                         value=""
@@ -338,7 +362,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <div className="text-sm font-semibold text-sky-400">{fmtRp(t.jumlah)}</div>
-                  {t.penanda && (
+                  {t.penanda && kelola && (
                     <button onClick={() => setPenanda(t, "")} disabled={menyimpanId === t.id} className="text-[10px] text-slate-500 hover:text-slate-300" title="Hapus penanda">
                       ubah
                     </button>
@@ -348,12 +372,16 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                       <Paperclip size={13} />
                     </a>
                   )}
-                  <button onClick={() => setModal?.({ type: "keuangan-transaksi-form", item: t })} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800" title="Edit">
-                    <Pencil size={13} />
-                  </button>
-                  <button onClick={() => setModal?.({ type: "hapus-keuangan-transaksi", item: t })} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800" title="Hapus">
-                    <Trash2 size={13} />
-                  </button>
+                  {kelola && (
+                    <>
+                      <button onClick={() => setModal?.({ type: "keuangan-transaksi-form", item: t })} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800" title="Edit">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => setModal?.({ type: "hapus-keuangan-transaksi", item: t })} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800" title="Hapus">
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -364,6 +392,8 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
       {formBuka && (
         <FormAntarEntitas
           k={k}
+          role={role}
+          kodeHolding={kodeHolding}
           onClose={() => setFormBuka(false)}
           showToast={showToast}
           onSaved={async () => {
@@ -376,7 +406,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   );
 }
 
-function FormAntarEntitas({ k, onClose, onSaved, showToast }) {
+function FormAntarEntitas({ k, role, kodeHolding, onClose, onSaved, showToast }) {
   const [tanggal, setTanggal] = useState(hariIniLokal());
   const [penanda, setPenanda] = useState("");
   const [sumber, setSumber] = useState("");
@@ -390,10 +420,21 @@ function FormAntarEntitas({ k, onClose, onSaved, showToast }) {
   const saldoSumber = sumber ? k.saldoMap.get(sumber) ?? 0 : null;
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
   const sama = sumber && tujuan && k.entDari(sumber) === k.entDari(tujuan);
-  const valid = tanggal && penanda && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama;
+  const arahDilarang = !!(sumber && tujuan && !sama && !bolehTransferAntarEntitas(role, k.entDari(sumber), k.entDari(tujuan), kodeHolding));
+  const valid = tanggal && penanda && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama && !arahDilarang;
 
-  const opsi = (kecualiKode) =>
+  // Entitas yang masih mungkin dipilih sebagai sumber / tujuan untuk role ini
+  // (mis. Pemilik: sumber hanya Holding, tujuan hanya perusahaan lain).
+  const entCocok = (kode, peran) =>
+    k.entitasList.some((e) =>
+      peran === "sumber"
+        ? bolehTransferAntarEntitas(role, kode, e.kode, kodeHolding)
+        : bolehTransferAntarEntitas(role, e.kode, kode, kodeHolding)
+    );
+
+  const opsi = (kecualiKode, peran) =>
     k.entitasList.map((e) => {
+      if (!entCocok(e.kode, peran)) return null;
       const items = k.rekeningList.filter((r) => k.entDari(r.kode) === e.kode && r.kode !== kecualiKode).sort(k.urutKas);
       if (!items.length) return null;
       return (
@@ -456,19 +497,31 @@ function FormAntarEntitas({ k, onClose, onSaved, showToast }) {
       <Field label="Dari rekening">
         <select className={inputClass} value={sumber} onChange={(e) => setSumber(e.target.value)}>
           <option value="">Pilih rekening sumber…</option>
-          {opsi(tujuan)}
+          {opsi(tujuan, "sumber")}
         </select>
       </Field>
       <Field label="Ke rekening">
         <select className={inputClass} value={tujuan} onChange={(e) => setTujuan(e.target.value)}>
           <option value="">Pilih rekening tujuan…</option>
-          {opsi(sumber)}
+          {opsi(sumber, "tujuan")}
         </select>
       </Field>
       {sama && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>Kedua rekening milik entitas yang sama. Untuk perpindahan di dalam satu perusahaan pakai menu Transaksi / Transaksi Kas.</div>
+        </div>
+      )}
+      {arahDilarang && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
+          <div>
+            {role === "owner"
+              ? "Akun Anda hanya boleh mencatat transfer dari Holding ke perusahaan."
+              : role === "superadmin"
+                ? "Akun Anda hanya boleh mencatat transfer dari perusahaan ke Holding."
+                : "Akun ini tidak boleh mencatat transfer dengan arah tersebut."}
+          </div>
         </div>
       )}
       <Field label="Jumlah (Rp)">
