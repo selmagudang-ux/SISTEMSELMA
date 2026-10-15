@@ -388,11 +388,11 @@ export const NAV = [
     key: "holding-group", label: "HOLDING", icon: Building2, group: true,
     children: [
       {
-        key: "holding", label: "Holding", icon: Landmark,
+        key: "holding", label: "Keuangan Grup", icon: Landmark,
         children: [
           // Halaman awal: keuangan seluruh perusahaan dalam grup (hanya baca).
-          // Tab: Ringkasan | Konsolidasi.
-          { key: "grup", label: "Grup" },
+          // Tab: Per Perusahaan | Konsolidasi.
+          { key: "grup", label: "Ringkasan" },
           // Halaman di bawah ini punya pilihan "Perusahaan" (Holding / SELMA / dst).
           { key: "transaksi", label: "Transaksi" },
           { key: "kas", label: "Kas" },

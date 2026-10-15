@@ -235,7 +235,7 @@ export default function Sidebar({
               <div className="text-xs font-medium text-md-on-surface truncate">{user.nama || user.username}</div>
               <div className="text-[10px] text-md-on-surface-variant truncate flex items-center gap-1.5">
                 {roleLabel(user.role)}
-                {(user.role === "owner" || user.role === "pemegang_saham") && (
+                {user.role === "pemegang_saham" && (
                   <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-md-container-high text-md-primary leading-none">
                     Read-only
                   </span>

@@ -165,7 +165,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
       session?.role === "pemegang_saham"
         ? [{ key: "konsolidasi", label: "Konsolidasi" }]
         : [
-            { key: "ringkasan", label: "Ringkasan" },
+            { key: "ringkasan", label: "Per Perusahaan" },
             { key: "konsolidasi", label: "Konsolidasi" },
           ],
   };
