@@ -509,7 +509,7 @@ function FormAntarEntitas({ k, role, kodeHolding, onClose, onSaved, showToast })
       {sama && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-          <div>Kedua rekening milik entitas yang sama. Untuk perpindahan di dalam satu perusahaan pakai menu Transaksi / Transaksi Kas.</div>
+          <div>Kedua rekening milik entitas yang sama. Untuk perpindahan di dalam satu perusahaan pakai menu Transaksi (tab Transaksi atau Transfer Antar Kas).</div>
         </div>
       )}
       {arahDilarang && (
@@ -673,7 +673,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
         </table>
       </div>
       <div className="text-[11px] text-slate-500 mt-2">
-        Saldo kas dihitung dari akun yang dipetakan ke tiap entitas (Keuangan &gt; Akun Kas). Laba di sini = pemasukan − pengeluaran tercatat di Keuangan, belum termasuk penyusutan atau penyesuaian lain.
+        Saldo kas dihitung dari akun yang dipetakan ke tiap entitas (Keuangan &gt; Kas &gt; Akun Kas). Laba di sini = pemasukan − pengeluaran tercatat di Keuangan, belum termasuk penyusutan atau penyesuaian lain.
       </div>
     </div>
   );

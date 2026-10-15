@@ -164,12 +164,13 @@ const SECTIONS = [
     key: "keuangan",
     label: "Keuangan",
     icon: Landmark,
-    ringkasan: "Transaksi, Laporan Keuangan, Log Keterangan, Rekening & Kategori.",
+    ringkasan: "Transaksi, Kas, Laporan Keuangan, Pengaturan.",
     poin: [
-      "Transaksi: catat kas masuk, kas keluar, dan transfer antar rekening satu per satu.",
+      "Transaksi: catat kas masuk, kas keluar, dan transfer antar rekening satu per satu. Tab Transfer Antar Kas khusus untuk memindahkan uang antar kas (isi kas kecil dari bank, setoran kembali ke bank).",
+      "Kas: tab Akun Kas (daftar rekening, jenis, lokasi, saldo), Buku Kas (riwayat dan saldo berjalan per akun), dan Rekonsiliasi (cocokkan saldo aplikasi dengan uang fisik atau mutasi bank).",
       "Laporan Keuangan: ringkasan, grafik arus kas, dan breakdown pengeluaran mengikuti rentang tanggal yang dipilih.",
-      "Log Keterangan: daftar keterangan yang pernah dipakai di Transaksi — jadi rekomendasi otomatis saat mengisi keterangan transaksi baru. Menghapus di sini hanya menyembunyikan dari log/rekomendasi, transaksi aslinya tidak ikut terhapus.",
-      "Rekening & Kategori: kelola daftar rekening (sumber dana) dan kategori pemasukan/pengeluaran yang muncul di form Transaksi.",
+      "Pengaturan > Log Keterangan: daftar keterangan yang pernah dipakai di Transaksi — jadi rekomendasi otomatis saat mengisi keterangan transaksi baru. Menghapus di sini hanya menyembunyikan dari log/rekomendasi, transaksi aslinya tidak ikut terhapus.",
+      "Pengaturan > Rekening & Kategori: kelola daftar rekening (sumber dana) dan kategori pemasukan/pengeluaran yang muncul di form Transaksi.",
     ],
   },
   {

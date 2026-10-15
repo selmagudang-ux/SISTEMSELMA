@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } fro
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
@@ -379,7 +379,11 @@ function MainApp({ session, onLogout }) {
   const [nav, setNav] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");
-      if (saved && allowed.includes(saved.menu)) return saved;
+      if (saved && allowed.includes(saved.menu)) {
+        // Sub-menu Keuangan/Holding lama (sudah digabung jadi tab) dipetakan ke yang baru.
+        const lama = (saved.menu === "keuangan" || saved.menu === "holding") && SUB_KEUANGAN_LAMA[saved.sub];
+        return lama ? { ...saved, sub: lama.sub } : saved;
+      }
     } catch {}
     return { menu: landingKeDashboard ? "dashboard" : allowed[0], sub: null };
   });
@@ -1375,7 +1379,7 @@ function MainApp({ session, onLogout }) {
                 <Keuangan
                   mode="holding"
                   navigasi={navigate}
-                  sub={nav.sub || "ringkasan"}
+                  sub={nav.sub || "grup"}
                   session={session}
                   keuanganTransaksi={keuanganTransaksi}
                   pesananMasuk={pesananMasuk}

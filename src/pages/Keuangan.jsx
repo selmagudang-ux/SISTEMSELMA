@@ -35,7 +35,7 @@ import {
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
-import { roleLabel, allowedSubMenus } from "../lib/constants";
+import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { AntarEntitas, Konsolidasi, RingkasanGrup } from "./Holding";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
@@ -109,17 +109,71 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
+// Tab di dalam satu menu (mis. Kas -> Akun Kas | Buku Kas | Rekonsiliasi).
+function TabBar({ tabs, aktif, onPilih }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => onPilih(t.key)}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${aktif === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"}`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session, mode = "ops", navigasi }) {
   // mode "ops"     = menu Keuangan SELMA, dikunci ke entitas OPS.
   // mode "holding" = menu Holding, dikunci ke entitas Holding (halaman & komponen sama).
   const holding = mode === "holding";
 
   // Pemegang Saham hanya boleh melihat Konsolidasi (menu lain tidak ada di sidebar,
-  // ini pengaman kalau sub tersimpan lama di sessionStorage).
+  // ini pengaman kalau sub tersimpan lama di sessionStorage). Di menu Grup, Pemegang
+  // Saham hanya mendapat tab Konsolidasi (lihat TAB_SUB di bawah).
   // Sub-menu Holding juga dibatasi per role (mis. Super Admin hanya Antar Entitas):
   // kalau sub yang diminta tidak diizinkan, jatuh ke sub pertama yang diizinkan.
   const subsBoleh = mode === "holding" ? allowedSubMenus(session?.role, "holding") : null;
-  const sub = session?.role === "pemegang_saham" ? "konsolidasi" : subsBoleh && !subsBoleh.includes(subProp) ? subsBoleh[0] : subProp;
+  // Nama sub-menu lama (tersimpan di sessionStorage / tautan lama) dipetakan ke menu hasil penggabungan.
+  const lama = SUB_KEUANGAN_LAMA[subProp];
+  const subDiminta = lama ? lama.sub : subProp;
+  const subValid = ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["grup", "antar-entitas"] : [])];
+  const subPilih = session?.role === "pemegang_saham" ? "grup" : subsBoleh && !subsBoleh.includes(subDiminta) ? subsBoleh[0] : subDiminta;
+  const sub = subValid.includes(subPilih) ? subPilih : "transaksi";
+  // Tab di dalam tiap menu. Pilihan tab diingat per menu selama halaman terbuka.
+  const [tabPilih, setTabPilih] = useState({});
+  const TAB_SUB = {
+    transaksi: [
+      { key: "transaksi", label: "Transaksi" },
+      { key: "transfer", label: "Transfer Antar Kas" },
+    ],
+    kas: [
+      { key: "akun", label: "Akun Kas" },
+      { key: "buku", label: "Buku Kas" },
+      { key: "rekonsiliasi", label: "Rekonsiliasi" },
+    ],
+    pengaturan: [
+      { key: "rekening", label: "Rekening & Kategori" },
+      { key: "log", label: "Log Keterangan" },
+      ...(session?.role === "superappa" ? [{ key: "riwayat", label: "Riwayat Perubahan" }] : []),
+    ],
+    grup:
+      session?.role === "pemegang_saham"
+        ? [{ key: "konsolidasi", label: "Konsolidasi" }]
+        : [
+            { key: "ringkasan", label: "Ringkasan" },
+            { key: "konsolidasi", label: "Konsolidasi" },
+          ],
+  };
+  const daftarTab = TAB_SUB[sub] || null;
+  const tabDiminta = tabPilih[sub] || (lama && lama.sub === sub ? lama.tab : null);
+  const tab = daftarTab ? (daftarTab.some((t) => t.key === tabDiminta) ? tabDiminta : daftarTab[0].key) : null;
+  const barTab =
+    daftarTab && daftarTab.length > 1 ? <TabBar tabs={daftarTab} aktif={tab} onPilih={(k) => setTabPilih((p) => ({ ...p, [sub]: k }))} /> : null;
 
   // Entitas pembukuan DIKUNCI oleh menu (tidak ada tombol ganti lagi): Keuangan
   // SELMA selalu OPS, menu Holding selalu entitas Holding. Semua halaman hanya
@@ -163,7 +217,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [keuanganTransaksi, master.rekening, master.rekening_entitas, master.entitas, kodeAktif]
   );
-  const bungkus = (node) => (
+  const bungkus = (node, bar = null) => (
     <div>
       {holding && bacaSaja && !adaPengecualianOwner && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
@@ -187,6 +241,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
           </div>
         </div>
       )}
+      {bar}
       {node}
     </div>
   );
@@ -201,42 +256,51 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     );
   }
 
-  if (sub === "riwayat") {
-    return <RiwayatPerubahan master={master} session={session} />;
+  if (sub === "pengaturan") {
+    if (tab === "riwayat") {
+      return (
+        <div>
+          {barTab}
+          <RiwayatPerubahan master={master} session={session} />
+        </div>
+      );
+    }
+    if (tab === "log") {
+      return bungkus(<LogKeterangan keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} />, barTab);
+    }
+    return bungkus(<RekeningKategori master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />, barTab);
   }
-  if (sub === "rekening") {
-    return bungkus(<RekeningKategori master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />);
-  }
-  if (sub === "akun-kas") {
+  if (sub === "kas") {
+    if (tab === "buku") {
+      return bungkus(<BukuKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} showToast={showToast} />, barTab);
+    }
+    if (tab === "rekonsiliasi") {
+      return bungkus(<RekonsiliasiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} session={session} />, barTab);
+    }
     // entitas: [] = sembunyikan kolom pilih entitas (entitas sudah dikunci oleh menu).
-    return bungkus(<AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />);
+    return bungkus(<AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />, barTab);
   }
-  if (sub === "transaksi-kas") {
-    return bungkus(<TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModalAman} />);
-  }
-  if (holding && sub === "ringkasan") {
+  if (holding && sub === "grup") {
     return (
-      <RingkasanGrup
-        keuanganTransaksi={keuanganTransaksi}
-        master={master}
-        onBuka={(kode) => {
-          gantiPerusahaan(kode);
-          navigasi?.("holding", "transaksi");
-        }}
-      />
+      <div>
+        {barTab}
+        {tab === "konsolidasi" ? (
+          <Konsolidasi keuanganTransaksi={keuanganTransaksi} master={master} />
+        ) : (
+          <RingkasanGrup
+            keuanganTransaksi={keuanganTransaksi}
+            master={master}
+            onBuka={(kode) => {
+              gantiPerusahaan(kode);
+              navigasi?.("holding", "transaksi");
+            }}
+          />
+        )}
+      </div>
     );
   }
   if (holding && sub === "antar-entitas") {
     return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;
-  }
-  if (holding && sub === "konsolidasi") {
-    return <Konsolidasi keuanganTransaksi={keuanganTransaksi} master={master} />;
-  }
-  if (sub === "buku-kas") {
-    return bungkus(<BukuKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} showToast={showToast} />);
-  }
-  if (sub === "rekonsiliasi") {
-    return bungkus(<RekonsiliasiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} session={session} />);
   }
   if (sub === "laporan") {
     return bungkus(
@@ -250,11 +314,12 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
       />
     );
   }
-  if (sub === "log") {
-    return bungkus(<LogKeterangan keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} />);
+  if (tab === "transfer") {
+    return bungkus(<TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModalAman} />, barTab);
   }
   return bungkus(
-    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} />
+    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} />,
+    barTab
   );
 }
 
@@ -2187,7 +2252,7 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
     <div>
       <PageHeader
         title="Akun Kas"
-        description="Daftar rekening beserta jenis (Bank, Kas Kecil), lokasi, dan saldo terkini. Rekening baru dan daftar lokasi diatur di Rekening & Kategori."
+        description="Daftar rekening beserta jenis (Bank, Kas Kecil), lokasi, dan saldo terkini. Rekening baru dan daftar lokasi diatur di Pengaturan > Rekening & Kategori."
       />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
         {URUTAN_KAS.map((k) => (
@@ -2228,7 +2293,7 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
       </div>
       {lokasiList.length === 0 && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
-          Belum ada lokasi. Tambahkan dulu di Rekening &amp; Kategori &gt; tab Lokasi, lalu pilih lokasi tiap akun di sini.
+          Belum ada lokasi. Tambahkan dulu di Pengaturan &gt; Rekening &amp; Kategori &gt; tab Lokasi, lalu pilih lokasi tiap akun di sini.
         </div>
       )}
       <div className="rounded-xl border border-slate-800 overflow-x-auto">

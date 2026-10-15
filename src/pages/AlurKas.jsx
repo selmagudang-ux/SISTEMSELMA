@@ -242,7 +242,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
 
       {(!adaBank || !adaKasKecil) && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
-          Untuk isi kas kecil, perlu minimal satu akun Bank dan satu akun Kas Kecil. Atur jenis akun di Keuangan &gt; Akun Kas.
+          Untuk isi kas kecil, perlu minimal satu akun Bank dan satu akun Kas Kecil. Atur jenis akun di Keuangan &gt; Kas &gt; Akun Kas.
         </div>
       )}
 

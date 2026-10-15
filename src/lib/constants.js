@@ -367,17 +367,14 @@ export const NAV = [
       {
         key: "keuangan", label: "Keuangan", icon: Wallet,
         children: [
+          // Tab di dalam tiap menu diatur di pages/Keuangan.jsx:
+          //   Transaksi  : Transaksi | Transfer Antar Kas
+          //   Kas        : Akun Kas | Buku Kas | Rekonsiliasi
+          //   Pengaturan : Rekening & Kategori | Log Keterangan | Riwayat Perubahan (khusus superappa)
           { key: "transaksi", label: "Transaksi" },
-          { key: "akun-kas", label: "Akun Kas" },
-          { key: "transaksi-kas", label: "Transaksi Kas" },
-          { key: "buku-kas", label: "Buku Kas" },
-          { key: "rekonsiliasi", label: "Rekonsiliasi Kas" },
+          { key: "kas", label: "Kas" },
           { key: "laporan", label: "Laporan Keuangan" },
-          { key: "log", label: "Log Keterangan" },
-          { key: "rekening", label: "Rekening & Kategori" },
-          // Khusus role "superappa" (disaring di filterNavByAllowed &
-          // allowedSubMenus) — jejak siapa yang menambah/mengubah/menghapus transaksi.
-          { key: "riwayat", label: "Riwayat Perubahan", onlyRole: "superappa" },
+          { key: "pengaturan", label: "Pengaturan" },
         ],
       },
       { key: "penggajian", label: "Penggajian", icon: Banknote },
@@ -394,18 +391,14 @@ export const NAV = [
         key: "holding", label: "Holding", icon: Landmark,
         children: [
           // Halaman awal: keuangan seluruh perusahaan dalam grup (hanya baca).
-          { key: "ringkasan", label: "Ringkasan Grup" },
+          // Tab: Ringkasan | Konsolidasi.
+          { key: "grup", label: "Grup" },
           // Halaman di bawah ini punya pilihan "Perusahaan" (Holding / SELMA / dst).
           { key: "transaksi", label: "Transaksi" },
-          { key: "akun-kas", label: "Akun Kas" },
-          { key: "transaksi-kas", label: "Transaksi Kas" },
-          { key: "buku-kas", label: "Buku Kas" },
-          { key: "rekonsiliasi", label: "Rekonsiliasi Kas" },
+          { key: "kas", label: "Kas" },
           { key: "laporan", label: "Laporan Keuangan" },
           { key: "antar-entitas", label: "Antar Entitas" },
-          // Hanya baca.
-          { key: "konsolidasi", label: "Konsolidasi" },
-          { key: "rekening", label: "Rekening & Kategori" },
+          { key: "pengaturan", label: "Pengaturan" },
         ],
       },
     ],
@@ -676,20 +669,34 @@ export const ROLE_SUBMENUS = {
   },
 };
 
+// Nama sub-menu Keuangan/Holding LAMA yang sudah digabung jadi tab. Dipakai supaya
+// menu yang tersimpan di sessionStorage (atau tautan lama) tetap membuka halaman yang benar.
+export const SUB_KEUANGAN_LAMA = {
+  "transaksi-kas": { sub: "transaksi", tab: "transfer" },
+  "akun-kas": { sub: "kas", tab: "akun" },
+  "buku-kas": { sub: "kas", tab: "buku" },
+  rekonsiliasi: { sub: "kas", tab: "rekonsiliasi" },
+  rekening: { sub: "pengaturan", tab: "rekening" },
+  log: { sub: "pengaturan", tab: "log" },
+  riwayat: { sub: "pengaturan", tab: "riwayat" },
+  ringkasan: { sub: "grup", tab: "ringkasan" },
+  konsolidasi: { sub: "grup", tab: "konsolidasi" },
+};
+
 // Sub-menu apa saja yang boleh dilihat role ini untuk satu menu tertentu.
 // Return null = boleh akses semua anak menu (tidak dibatasi).
 export function allowedSubMenus(role, menuKey) {
-  // "Riwayat Perubahan" Keuangan: hanya superappa (guard navigasi & halaman).
-  // Holding: Pemegang Saham hanya Konsolidasi; Pemilik & Super Appa semua sub.
+  // Tab "Riwayat Perubahan" (Keuangan > Pengaturan): hanya superappa (guard di pages/Keuangan.jsx).
+  // Holding: Pemegang Saham hanya Grup (tab Konsolidasi saja); Pemilik & Super Appa semua sub.
   if (menuKey === "holding") {
-    if (role === "pemegang_saham") return ["konsolidasi"];
+    if (role === "pemegang_saham") return ["grup"];
     // Super Admin hanya butuh Antar Entitas (mencatat transfer perusahaan -> Holding).
     if (role === "superadmin") return ["antar-entitas"];
     return null;
   }
   // Keuangan SELMA (OPS) tidak punya Antar Entitas / Konsolidasi — itu di menu Holding.
   if (menuKey === "keuangan" && role !== "superappa") {
-    return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "akun-kas", "transaksi-kas", "buku-kas", "rekonsiliasi", "laporan", "log", "rekening"];
+    return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "kas", "laporan", "pengaturan"];
   }
   return ROLE_SUBMENUS[role]?.[menuKey] || null;
 }
