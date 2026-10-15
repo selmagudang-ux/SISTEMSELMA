@@ -161,7 +161,6 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [urutPesanan, setUrutPesanan] = useState(null); // null = urutan asli (tanggal dana dilepas terbaru)
   const [urutSku, setUrutSku] = useState({ k: "laba", d: "desc" });
   const [urutEtalase, setUrutEtalase] = useState({ k: "labaSetelah", d: "desc" });
-  const [iklanOpen, setIklanOpen] = useState(false);
   const [iklanRows, setIklanRows] = useState([]); // baris marketplace_iklan yang periodenya menyentuh rentang tampilan
   const [petaOpen, setPetaOpen] = useState(false);
   const [petaProduk, setPetaProduk] = useState([]); // pemetaan Kode Produk -> judul/SKU (marketplace_produk_map)
@@ -582,10 +581,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           Perbarui HPP
         </button>
         {platform === "shopee" && (
-          <button onClick={() => setPetaOpen((v) => !v)} className={btnOutlined} title="Import file Mass Update produk Shopee (Kode Produk ↔ judul ↔ SKU) untuk membagi biaya iklan ke SKU"><Link2 size={14} /> Import Mass Update</button>
-        )}
-        {platform === "shopee" && (
-          <button onClick={() => setIklanOpen((v) => !v)} className={btnOutlined} title="Import laporan iklan Shopee (CSV) supaya biaya iklan ikut mengurangi laba bersih"><Megaphone size={14} /> Import Iklan</button>
+          <button onClick={() => setPetaOpen((v) => !v)} className={btnOutlined} title="Import file Mass Update produk Shopee (Kode Produk ↔ judul ↔ SKU). Terpisah dari Import Laporan Shopee, cukup sesekali kalau ada produk baru"><Link2 size={14} /> Import Mass Update</button>
         )}
         {platform === "shopee" && (
           <button onClick={() => setImportOpen((v) => !v)} className={btnFilled}><Upload size={14} /> Import Laporan Shopee</button>
@@ -599,16 +595,9 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         />
       )}
 
-      {iklanOpen && (
-        <PanelImportIklan
-          platform={platform} tokoKode={tokoKode} tokoLabel={toko.label || ""} filterToko={filterToko} tabelAda={iklanTabelAda}
-          showToast={showToast} onSelesai={() => { setIklanOpen(false); muat(); }}
-        />
-      )}
-
       {importOpen && (
         <PanelImport
-          platform={platform} tokoKode={tokoKode} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap}
+          platform={platform} tokoKode={tokoKode} tokoLabel={toko.label || ""} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap} iklanTabelAda={iklanTabelAda}
           showToast={showToast} onSelesai={(rentang) => { setImportOpen(false); setRentangImport(rentang || null); muat(); }}
         />
       )}
@@ -716,7 +705,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <div className="mb-2 text-[11px] text-md-on-surface-variant max-w-3xl space-y-1">
             <div>Satu baris = satu etalase (produk/listing Shopee). Biaya iklan di sini angka asli per etalase, tidak dibagi ke SKU. Klik baris untuk melihat SKU di dalamnya.</div>
             {!petaProduk.length && <div className="text-amber-400">Etalase belum dikenali — import file Mass Update (tombol Import Mass Update) supaya biaya iklan bisa dicocokkan ke etalase. Sementara ini baris dikelompokkan per judul produk, tanpa biaya iklan.</div>}
-            {iklanTabelAda && iklanPeriode.length === 0 && <div className="text-amber-400">Belum ada data biaya iklan yang periodenya masuk ke rentang tanggal ini, jadi kolom Biaya Iklan masih kosong. Klik Import Iklan, atau ubah rentang tanggal ke periode iklan yang sudah diimport.</div>}
+            {iklanTabelAda && iklanPeriode.length === 0 && <div className="text-amber-400">Belum ada data biaya iklan yang periodenya masuk ke rentang tanggal ini, jadi kolom Biaya Iklan masih kosong. Import ulang lewat Import Laporan Shopee (file iklan ikut diimport), atau ubah rentang tanggal ke periode iklan yang sudah diimport.</div>}
             {!iklanTabelAda && <div className="text-amber-400">Tabel marketplace_iklan belum ada di database — jalankan dulu file SQL marketplace_iklan.sql, lalu muat ulang halaman.</div>}
             {iklanTanpaKode > 0 && <div className="text-amber-400">Iklan tanpa kode produk {fmtRp(iklanTanpaKode)} tidak bisa dimasukkan ke etalase mana pun, tapi tetap dihitung di kartu total.</div>}
           </div>
@@ -1210,106 +1199,6 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
   );
 }
 
-function PanelImportIklan({ platform, tokoKode, tokoLabel, filterToko, tabelAda, showToast, onSelesai }) {
-  const [file, setFile] = useState(null);
-  const [fileRincian, setFileRincian] = useState(null);
-  const [status, setStatus] = useState("");
-  const [preview, setPreview] = useState(null);
-  const [sibuk, setSibuk] = useState(false);
-
-  const baca = async () => {
-    setSibuk(true); setStatus("Membaca file…"); setPreview(null);
-    try {
-      const utama = await parseLaporanIklan(await file.arrayBuffer());
-      const rincian = fileRincian ? await parseRincianIklanOtomatis(await fileRincian.arrayBuffer()) : null;
-      const hasil = gabungIklan(utama, rincian);
-      // import iklan lain yang periodenya tumpang tindih -> akan digantikan (supaya biaya tidak dobel)
-      const lama = await sbAll(`marketplace_iklan?select=periode_dari,periode_sampai,biaya&${filterToko}&periode_dari=lte.${hasil.sampai}&periode_sampai=gte.${hasil.dari}`);
-      const gab = new Map();
-      for (const x of lama || []) {
-        const k = `${x.periode_dari}|${x.periode_sampai}`;
-        if (!gab.has(k)) gab.set(k, { dari: x.periode_dari, sampai: x.periode_sampai, biaya: 0 });
-        gab.get(k).biaya += Number(x.biaya) || 0;
-      }
-      setPreview({ ...hasil, tumpang: [...gab.values()] });
-      setStatus("");
-    } catch (e) {
-      setStatus(e.message || "Gagal membaca file");
-    } finally {
-      setSibuk(false);
-    }
-  };
-
-  const simpan = async () => {
-    setSibuk(true);
-    try {
-      setStatus("Menyimpan…");
-      if (preview.tumpang.length) {
-        await sbTulis(`marketplace_iklan?${filterToko}&periode_dari=lte.${preview.sampai}&periode_sampai=gte.${preview.dari}`, { method: "DELETE", prefer: "return=minimal" });
-      }
-      const baris = preview.iklan.map((x) => ({ platform, toko: tokoKode, periode_dari: preview.dari, periode_sampai: preview.sampai, ...x }));
-      for (let i = 0; i < baris.length; i += 200) {
-        await sbTulis("marketplace_iklan", { method: "POST", prefer: "return=minimal", body: JSON.stringify(baris.slice(i, i + 200)) });
-      }
-      showToast?.(`Biaya iklan ${fmtRp(preview.totalBiaya)} (${baris.length} baris) tersimpan`);
-      onSelesai();
-    } catch (e) {
-      setStatus(e.message || "Gagal menyimpan");
-      setSibuk(false);
-    }
-  };
-
-  const denganKode = preview ? preview.iklan.filter((x) => x.kode_produk).reduce((a, x) => a + x.biaya, 0) : 0;
-  return (
-    <div className="mb-5 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4">
-      <div className="text-sm font-medium mb-1">Import Biaya Iklan Shopee</div>
-      <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
-        Seller Centre → Iklan Shopee → Data Keseluruhan → pilih periode → Unduh (CSV). Untuk total laba cukup file ke-1.
-        File ke-2 (Rincian Data Iklan Produk Otomatis, periode yang sama) diperlukan supaya biaya Iklan Produk Otomatis ikut dibagi per SKU.
-      </p>
-      {!tabelAda && (
-        <div className="mb-3 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
-          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-          <div>Tabel <b>marketplace_iklan</b> belum ada di database — jalankan dulu file SQL <b>marketplace_iklan.sql</b>, lalu muat ulang halaman ini.</div>
-        </div>
-      )}
-      <div className="grid sm:grid-cols-2 gap-4 mb-3">
-        <label className="block text-xs text-md-on-surface-variant">
-          <span className="block mb-1 text-md-on-surface">1. Data Keseluruhan Iklan (wajib)</span>
-          <input type="file" accept=".csv" onChange={(e) => { setFile(e.target.files?.[0] || null); setPreview(null); setStatus(""); }} className="block mt-1 text-xs" />
-        </label>
-        <label className="block text-xs text-md-on-surface-variant">
-          <span className="block mb-1 text-md-on-surface">2. Rincian Data Iklan Produk Otomatis (disarankan)</span>
-          <input type="file" accept=".csv" onChange={(e) => { setFileRincian(e.target.files?.[0] || null); setPreview(null); setStatus(""); }} className="block mt-1 text-xs" />
-        </label>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <button className={btnTonal} disabled={!file || sibuk || !tabelAda} onClick={baca}>Baca file</button>
-        {preview && <button className={btnFilled} disabled={sibuk} onClick={simpan}>Simpan biaya iklan</button>}
-        <button className={btnText} onClick={onSelesai} disabled={sibuk}>Tutup</button>
-        {status && <span className="text-xs text-md-on-surface-variant">{status}</span>}
-      </div>
-      {preview && (
-        <div className="mt-3 text-xs text-md-on-surface-variant space-y-1">
-          <div>Toko di file: <b className="text-md-on-surface">{preview.namaToko || preview.username || "?"}</b> → disimpan ke toko: <b className="text-md-on-surface">{tokoLabel || tokoKode}</b></div>
-          <div>Periode: <b className="text-md-on-surface">{formatTanggalID(preview.dari)} – {formatTanggalID(preview.sampai)}</b> · {preview.iklan.length} baris</div>
-          <div>Total biaya iklan: <b className="text-md-on-surface">{fmtRp(preview.totalBiaya)}</b> · omzet dari iklan: {fmtRp(preview.totalOmzet)}</div>
-          <div>
-            Yang punya Kode Produk (bisa dibagi ke SKU): <b className="text-md-on-surface">{fmtRp(denganKode)}</b>
-            {preview.totalBiaya - denganKode > 0.5 && <span className="text-amber-400"> · tanpa kode produk: {fmtRp(Math.round(preview.totalBiaya - denganKode))}{!preview.rincianDipakai ? " (file ke-2 belum diisi: Iklan Produk Otomatis belum terpecah per produk)" : ""}</span>}
-            {preview.rincianDipakai && Math.abs(preview.selisihBulat) >= 0.5 && <> · selisih pembulatan {fmtRp(preview.selisihBulat)} dicatat terpisah supaya total tetap sama dengan Shopee</>}
-          </div>
-          {preview.tumpang.length > 0 && (
-            <div className="text-amber-400">
-              Sudah ada import iklan di periode yang tumpang tindih ({preview.tumpang.map((t) => `${formatTanggalID(t.dari)}–${formatTanggalID(t.sampai)}: ${fmtRp(t.biaya)}`).join("; ")}) — akan digantikan oleh file ini supaya biaya tidak dobel.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function PanelImportMassUpdate({ platform, tokoKode, tabelAda, jumlahTersimpan, showToast, onSelesai }) {
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState("");
@@ -1383,18 +1272,40 @@ function PanelImportMassUpdate({ platform, tokoKode, tabelAda, jumlahTersimpan, 
   );
 }
 
-function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToast, onSelesai }) {
+// Import Shopee SATU KESATUAN: empat file diimport sekaligus dan disimpan sekaligus (penjualan + iklan),
+// supaya data penjualan, SKU/qty, dan biaya iklan selalu satu periode dan tidak ada yang tertinggal.
+// Mass Update sengaja terpisah (cukup sesekali kalau ada produk baru).
+function SlotFile({ no, judul, petunjuk, accept, file, onPilih }) {
+  return (
+    <label className="block text-xs text-md-on-surface-variant rounded-md-lg border border-md-outline-variant p-3">
+      <span className="block mb-1 text-md-on-surface text-sm">{no}. {judul} {file ? <span className="text-emerald-400">✓</span> : <span className="text-amber-400">(wajib)</span>}</span>
+      <span className="block mb-2">{petunjuk}</span>
+      <input type="file" accept={accept} onChange={onPilih} className="block text-xs" />
+      {file && <span className="block mt-1 truncate text-[11px]">{file.name}</span>}
+    </label>
+  );
+}
+
+function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasMap, iklanTabelAda, showToast, onSelesai }) {
   const [fPenghasilan, setFPenghasilan] = useState(null);
   const [fPesanan, setFPesanan] = useState(null);
+  const [fIklan, setFIklan] = useState(null);
+  const [fRincian, setFRincian] = useState(null);
   const [status, setStatus] = useState("");
   const [preview, setPreview] = useState(null);
   const [sibuk, setSibuk] = useState(false);
+
+  const lengkap = !!(fPenghasilan && fPesanan && fIklan && fRincian);
+  const pilih = (set) => (e) => { set(e.target.files?.[0] || null); setPreview(null); setStatus(""); };
 
   const baca = async () => {
     setSibuk(true); setStatus("Membaca file…"); setPreview(null);
     try {
       const income = await parseLaporanPenghasilan(await fPenghasilan.arrayBuffer());
-      const pesanan = fPesanan ? await parseExportPesanan(await fPesanan.arrayBuffer()) : null;
+      const pesanan = await parseExportPesanan(await fPesanan.arrayBuffer());
+      const utama = await parseLaporanIklan(await fIklan.arrayBuffer());
+      const rincian = await parseRincianIklanOtomatis(await fRincian.arrayBuffer());
+      const iklan = gabungIklan(utama, rincian);
 
       // baris yang sudah tersimpan untuk pesanan-pesanan ini (supaya data SKU lama tidak hilang)
       const nomor = [...income.orders.keys()];
@@ -1407,7 +1318,20 @@ function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToa
       }
       const hasil = bangunBaris({ income, pesanan, existingByOrder, aliasMap, skuMap, platform, toko: tokoKode });
       const tanggal = [...income.orders.values()].map((o) => o.tanggal_dilepas).filter(Boolean).sort();
-      setPreview({ ...hasil, existingByOrder, tidakPas: income.tidakPas, dari: tanggal[0], sampai: tanggal[tanggal.length - 1] });
+      const dibuat = [...income.orders.values()].map((o) => o.tanggal_pesanan).filter(Boolean).sort();
+
+      // import iklan lain yang periodenya tumpang tindih -> akan digantikan (supaya biaya tidak dobel)
+      const lama = await sbAll(`marketplace_iklan?select=periode_dari,periode_sampai,biaya&${filterToko}&periode_dari=lte.${iklan.sampai}&periode_sampai=gte.${iklan.dari}`);
+      const gab = new Map();
+      for (const x of lama || []) {
+        const k = `${x.periode_dari}|${x.periode_sampai}`;
+        if (!gab.has(k)) gab.set(k, { dari: x.periode_dari, sampai: x.periode_sampai, biaya: 0 });
+        gab.get(k).biaya += Number(x.biaya) || 0;
+      }
+      setPreview({
+        ...hasil, existingByOrder, tidakPas: income.tidakPas, dari: tanggal[0], sampai: tanggal[tanggal.length - 1],
+        dibuatDari: dibuat[0], iklan, tumpang: [...gab.values()],
+      });
       setStatus("");
     } catch (e) {
       setStatus(e.message || "Gagal membaca file");
@@ -1418,10 +1342,11 @@ function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToa
 
   const simpan = async () => {
     setSibuk(true);
+    let penjualanTersimpan = false;
     try {
-      const { baris, existingByOrder } = preview;
+      const { baris, existingByOrder, iklan } = preview;
       for (let i = 0; i < baris.length; i += 400) {
-        setStatus(`Menyimpan… ${Math.min(i + 400, baris.length)}/${baris.length}`);
+        setStatus(`Menyimpan penjualan… ${Math.min(i + 400, baris.length)}/${baris.length}`);
         await sbTulis("marketplace_penjualan?on_conflict=platform,toko,no_pesanan,no_baris", {
           method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baris.slice(i, i + 400)),
         });
@@ -1435,42 +1360,79 @@ function PanelImport({ platform, tokoKode, filterToko, skuMap, aliasMap, showToa
           await sbTulis(`marketplace_penjualan?${filterToko}&no_pesanan=eq.${encodeURIComponent(no)}&no_baris=gt.${max}`, { method: "DELETE", prefer: "return=minimal" });
         }
       }
-      showToast?.(`${barisMax.size} pesanan (${baris.length} baris SKU) tersimpan`);
+      penjualanTersimpan = true;
+
+      setStatus("Menyimpan biaya iklan…");
+      if (preview.tumpang.length) {
+        await sbTulis(`marketplace_iklan?${filterToko}&periode_dari=lte.${iklan.sampai}&periode_sampai=gte.${iklan.dari}`, { method: "DELETE", prefer: "return=minimal" });
+      }
+      const barisIklan = iklan.iklan.map((x) => ({ platform, toko: tokoKode, periode_dari: iklan.dari, periode_sampai: iklan.sampai, ...x }));
+      for (let i = 0; i < barisIklan.length; i += 200) {
+        await sbTulis("marketplace_iklan", { method: "POST", prefer: "return=minimal", body: JSON.stringify(barisIklan.slice(i, i + 200)) });
+      }
+      showToast?.(`${barisMax.size} pesanan (${baris.length} baris) dan biaya iklan ${fmtRp(iklan.totalBiaya)} tersimpan`);
       onSelesai({ dari: preview.dari, sampai: preview.sampai });
     } catch (e) {
-      setStatus(e.message || "Gagal menyimpan");
+      setStatus(penjualanTersimpan
+        ? `Penjualan sudah tersimpan, tetapi biaya iklan GAGAL: ${e.message || "error"}. Ulangi import supaya lengkap.`
+        : (e.message || "Gagal menyimpan"));
       setSibuk(false);
     }
   };
 
   const r = preview?.ringkas;
+  const ik = preview?.iklan;
+  const denganKode = ik ? ik.iklan.filter((x) => x.kode_produk).reduce((a, x) => a + x.biaya, 0) : 0;
+  const periodeBeda = preview && ik && (ik.dari > preview.sampai || ik.sampai < preview.dari || ik.dari > preview.dari || ik.sampai < preview.sampai);
   return (
     <div className="mb-5 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4">
-      <div className="text-sm font-medium mb-3">Import dari Shopee</div>
-      <div className="grid sm:grid-cols-2 gap-4 mb-3">
-        <label className="block text-xs text-md-on-surface-variant">
-          <span className="block mb-1 text-md-on-surface">1. Laporan Penghasilan (wajib)</span>
-          Seller Centre → Penghasilan Saya → Sudah Dilepas → Unduh Laporan Penghasilan
-          <input type="file" accept=".xlsx" onChange={(e) => { setFPenghasilan(e.target.files?.[0] || null); setPreview(null); }} className="block mt-2 text-xs" />
-        </label>
-        <label className="block text-xs text-md-on-surface-variant">
-          <span className="block mb-1 text-md-on-surface">2. Export Pesanan (disarankan)</span>
-          Pesanan Saya → Export — isi SKU variasi & qty. Pakai rentang tanggal PESANAN yang mencakup pesanan di laporan di atas.
-          <input type="file" accept=".xlsx" onChange={(e) => { setFPesanan(e.target.files?.[0] || null); setPreview(null); }} className="block mt-2 text-xs" />
-        </label>
+      <div className="text-sm font-medium mb-1">Import Laporan Shopee (satu kesatuan)</div>
+      <p className="text-xs text-md-on-surface-variant mb-3 max-w-3xl">
+        Keempat file di bawah harus diisi semua dan disimpan sekaligus, supaya penjualan, SKU/qty, dan biaya iklan selalu satu periode.
+        Pakai periode yang sama untuk ketiga laporan (misalnya 1–30 bulan yang sama). Mass Update diimport terpisah lewat tombolnya sendiri.
+      </p>
+      {!iklanTabelAda && (
+        <div className="mb-3 flex gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md-lg px-3 py-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <div>Tabel <b>marketplace_iklan</b> belum ada di database — jalankan dulu file SQL <b>marketplace_iklan.sql</b>, lalu muat ulang halaman ini.</div>
+        </div>
+      )}
+      <div className="grid sm:grid-cols-2 gap-3 mb-3">
+        <SlotFile no={1} judul="Laporan Penghasilan" accept=".xlsx" file={fPenghasilan} onPilih={pilih(setFPenghasilan)}
+          petunjuk="Seller Centre → Penghasilan Saya → Sudah Dilepas → Unduh Laporan Penghasilan (.xlsx)" />
+        <SlotFile no={2} judul="Export Pesanan" accept=".xlsx" file={fPesanan} onPilih={pilih(setFPesanan)}
+          petunjuk="Pesanan Saya → Export (.xlsx), berisi SKU variasi & qty. Pakai rentang tanggal PESANAN yang mencakup semua pesanan di laporan nomor 1, tanpa filter status." />
+        <SlotFile no={3} judul="Data Keseluruhan Iklan" accept=".csv" file={fIklan} onPilih={pilih(setFIklan)}
+          petunjuk="Seller Centre → Iklan Shopee → Data Keseluruhan → pilih periode → Unduh (.csv)" />
+        <SlotFile no={4} judul="Rincian Data Iklan Produk Otomatis" accept=".csv" file={fRincian} onPilih={pilih(setFRincian)}
+          petunjuk="Periode yang sama dengan nomor 3, supaya biaya Iklan Produk Otomatis ikut terpecah per etalase (.csv)" />
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button className={btnTonal} disabled={!fPenghasilan || sibuk} onClick={baca}>Baca file</button>
-        {preview && <button className={btnFilled} disabled={sibuk} onClick={simpan}>Simpan {r.pesanan} pesanan</button>}
+        <button className={btnTonal} disabled={!lengkap || sibuk || !iklanTabelAda} onClick={baca}>Baca semua file</button>
+        {preview && <button className={btnFilled} disabled={sibuk} onClick={simpan}>Simpan semuanya ({r.pesanan} pesanan + iklan)</button>}
         <button className={btnText} onClick={() => onSelesai(null)} disabled={sibuk}>Tutup</button>
+        {!lengkap && <span className="text-xs text-amber-400">Isi keempat file dulu</span>}
         {status && <span className="text-xs text-md-on-surface-variant">{status}</span>}
       </div>
       {preview && (
         <div className="mt-3 text-xs text-md-on-surface-variant space-y-1">
-          <div>Periode dana dilepas: <b className="text-md-on-surface">{formatTanggalID(preview.dari)} – {formatTanggalID(preview.sampai)}</b> · {r.pesanan} pesanan</div>
+          <div>Penjualan: dana dilepas <b className="text-md-on-surface">{formatTanggalID(preview.dari)} – {formatTanggalID(preview.sampai)}</b> · {r.pesanan} pesanan (paling lama dibuat {formatTanggalID(preview.dibuatDari) || "?"})</div>
           <div>SKU lengkap dari Export Pesanan: {r.dariExport}{r.dariTersimpan > 0 && <> · memakai data SKU tersimpan: {r.dariTersimpan}</>} · <span className={r.tanpaSku ? "text-amber-400" : ""}>belum ada data SKU: {r.tanpaSku}</span></div>
+          {r.tanpaSku > 0 && <div className="text-amber-400">Export Pesanan belum mencakup {r.tanpaSku} pesanan di laporan. Unduh ulang Export Pesanan mulai tanggal pesanan paling lama di atas, lalu baca ulang. Kalau tetap disimpan, pesanan itu tampil tanpa SKU, qty, dan HPP.</div>}
           <div>Baris SKU cocok Master Barang: {r.barisCocok} · <span className={r.barisTidakCocok ? "text-amber-400" : ""}>tidak cocok: {r.barisTidakCocok} ({r.referensiTidakCocok.size} kode berbeda — bisa dipetakan manual setelah disimpan)</span></div>
           {preview.tidakPas > 0 && <div className="text-amber-400">{preview.tidakPas} pesanan angkanya tidak pas dengan Total Penghasilan Shopee — periksa file.</div>}
+          <div>Iklan: toko di file <b className="text-md-on-surface">{ik.namaToko || ik.username || "?"}</b> → disimpan ke toko <b className="text-md-on-surface">{tokoLabel || tokoKode}</b> · periode <b className="text-md-on-surface">{formatTanggalID(ik.dari)} – {formatTanggalID(ik.sampai)}</b> · {ik.iklan.length} baris</div>
+          <div>
+            Total biaya iklan <b className="text-md-on-surface">{fmtRp(ik.totalBiaya)}</b> · omzet dari iklan {fmtRp(ik.totalOmzet)} · punya Kode Produk (bisa masuk etalase): <b className="text-md-on-surface">{fmtRp(denganKode)}</b>
+            {ik.totalBiaya - denganKode > 0.5 && <span className="text-amber-400"> · tanpa kode produk: {fmtRp(Math.round(ik.totalBiaya - denganKode))}</span>}
+            {Math.abs(ik.selisihBulat) >= 0.5 && <> · selisih pembulatan {fmtRp(ik.selisihBulat)} dicatat terpisah supaya total tetap sama dengan Shopee</>}
+          </div>
+          {periodeBeda && <div className="text-amber-400">Periode iklan tidak sama dengan periode dana dilepas penjualan. Pastikan ketiga laporan memakai periode yang sama, kalau tidak laba setelah iklan bisa meleset.</div>}
+          {preview.tumpang.length > 0 && (
+            <div className="text-amber-400">
+              Sudah ada data iklan di periode yang tumpang tindih ({preview.tumpang.map((t) => `${formatTanggalID(t.dari)}–${formatTanggalID(t.sampai)}: ${fmtRp(t.biaya)}`).join("; ")}) — akan digantikan supaya biaya tidak dobel.
+            </div>
+          )}
           <div>Menyimpan ulang pesanan yang sudah ada akan menimpanya (aman diulang).</div>
         </div>
       )}
