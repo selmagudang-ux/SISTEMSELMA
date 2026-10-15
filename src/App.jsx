@@ -909,7 +909,7 @@ function MainApp({ session, onLogout }) {
       // loadMarketplace juga ditarik di sini supaya Laporan Keuangan bisa
       // menampilkan info tambahan "Iklan Marketplace" periode berjalan
       // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
-      if (menu === "keuangan") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
+      if (menu === "keuangan" || menu === "holding") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
       if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan], force);
@@ -1359,7 +1359,22 @@ function MainApp({ session, onLogout }) {
               )}
               {nav.menu === "keuangan" && (
                 <Keuangan
+                  mode="ops"
                   sub={nav.sub || "transaksi"}
+                  session={session}
+                  keuanganTransaksi={keuanganTransaksi}
+                  pesananMasuk={pesananMasuk}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  master={master}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
+              {nav.menu === "holding" && (
+                <Keuangan
+                  mode="holding"
+                  sub={nav.sub || "konsolidasi"}
                   session={session}
                   keuanganTransaksi={keuanganTransaksi}
                   pesananMasuk={pesananMasuk}

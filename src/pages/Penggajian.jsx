@@ -7,7 +7,7 @@ import {
 } from "../components/ui";
 import {
   fmtRp, cekPasswordAdmin, daftarGaji, simpanDraftGaji, serahkanGaji,
-  batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin,
+  batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, ENTITAS_DEFAULT,
 } from "../lib/api";
 import { listKaryawan } from "../lib/absensi";
 
@@ -113,7 +113,12 @@ async function unduhGambarQr(data) {
 
 export default function Penggajian({ session, master, showToast }) {
   const readOnly = session?.role === "owner"; // owner hanya melihat
-  const rekeningList = master?.rekening || [];
+  // Gaji SELMA hanya boleh keluar dari rekening entitas OPS (bukan rekening Holding).
+  const rekeningList = useMemo(
+    () => lingkupEntitas([], master || {}, ENTITAS_DEFAULT).master.rekening || [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [master?.rekening, master?.rekening_entitas, master?.entitas]
+  );
 
   // Password admin hanya disimpan di memori halaman ini (hilang saat pindah menu / refresh).
   const [pw, setPw] = useState(null);

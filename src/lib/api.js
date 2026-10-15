@@ -1822,6 +1822,14 @@ export function saldoSebelumTanggal(transaksi, kodeList, tanggalIso) {
 // entitas = transaksi antar-entitas (kolom penanda: modal/dividen/pinjaman).
 // =========================================================
 export const ENTITAS_DEFAULT = "OPS";
+export const ENTITAS_HOLDING = "HOLD";
+
+// Kode entitas Holding: "HOLD" kalau ada, kalau tidak entitas pertama selain default.
+// Kosong = entitas belum diatur (SQL fase 4 belum dijalankan).
+export function kodeEntitasHolding(entitasList) {
+  const l = entitasList || [];
+  return l.find((e) => e.kode === ENTITAS_HOLDING)?.kode || l.find((e) => e.kode !== ENTITAS_DEFAULT)?.kode || "";
+}
 export const PENANDA_ANTAR_ENTITAS = {
   modal: "Modal",
   dividen: "Dividen",

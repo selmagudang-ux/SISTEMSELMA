@@ -12,6 +12,7 @@ import {
   petaEntitasRekening,
   entitasDariRekening,
   ENTITAS_DEFAULT,
+  kodeEntitasHolding,
   LOKASI_TANPA,
   kasDariRekening,
   kasTerkait,
@@ -109,75 +110,62 @@ export function labelDari(list, kode) {
   return found ? found.label : kode;
 }
 
-export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session }) {
+export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session, mode = "ops" }) {
+  // mode "ops"     = menu Keuangan SELMA, dikunci ke entitas OPS.
+  // mode "holding" = menu Holding, dikunci ke entitas Holding (halaman & komponen sama).
+  const holding = mode === "holding";
+
   // Pemegang Saham hanya boleh melihat Konsolidasi (menu lain tidak ada di sidebar,
   // ini pengaman kalau sub tersimpan lama di sessionStorage).
   const sub = session?.role === "pemegang_saham" ? "konsolidasi" : subProp;
 
-  // Entitas pembukuan aktif (Fase 4 — Holding). Halaman Transaksi, Laporan, Log,
-  // Buku Kas, dan Rekonsiliasi hanya menampilkan rekening & transaksi entitas ini.
-  // Tanpa entitas (SQL fase 4 belum dijalankan) semuanya tampil seperti biasa.
+  // Entitas pembukuan DIKUNCI oleh menu (tidak ada tombol ganti lagi): Keuangan
+  // SELMA selalu OPS, menu Holding selalu entitas Holding. Semua halaman hanya
+  // menampilkan rekening & transaksi entitas itu. Antar Entitas & Konsolidasi
+  // (yang memang butuh data semua entitas) hanya ada di mode Holding.
   const entitasList = master.entitas || [];
-  const [entitasPilih, setEntitasPilih] = useState(() => {
+  const kodeAktif = holding ? kodeEntitasHolding(entitasList) : ENTITAS_DEFAULT;
+  // Form transaksi (ModalRouter) membaca entitas aktif dari sini untuk membatasi
+  // pilihan rekening & memetakan rekening baru ke entitas yang benar.
+  useEffect(() => {
     try {
-      return sessionStorage.getItem("selma-entitas") || "";
-    } catch {
-      return "";
-    }
-  });
-  const kodeAktif = entitasList.some((e) => e.kode === entitasPilih)
-    ? entitasPilih
-    : entitasList.find((e) => e.kode === ENTITAS_DEFAULT)?.kode || entitasList[0]?.kode || "";
-  const gantiEntitas = (kode) => {
-    setEntitasPilih(kode);
-    try {
-      sessionStorage.setItem("selma-entitas", kode);
+      sessionStorage.setItem("selma-entitas", kodeAktif);
     } catch {}
-  };
+  }, [kodeAktif]);
   const lingkup = useMemo(
     () => lingkupEntitas(keuanganTransaksi, master, kodeAktif),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [keuanganTransaksi, master.rekening, master.rekening_entitas, master.entitas, kodeAktif]
   );
-  const bungkus = (node) => (
-    <div>
-      {entitasList.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2 mb-3">
-          <span className="text-[11px] text-slate-500">Pembukuan:</span>
-          <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
-            {entitasList.map((e) => (
-              <button
-                key={e.kode}
-                type="button"
-                onClick={() => gantiEntitas(e.kode)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${kodeAktif === e.kode ? "bg-amber-500/15 text-amber-400" : "text-slate-400 hover:text-slate-200"}`}
-              >
-                {e.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {node}
-    </div>
-  );
+  const bungkus = (node) => node;
+
+  // Menu Holding tanpa entitas Holding = pembukuan Holding belum disiapkan.
+  // Jangan jatuh ke data tanpa batas (itu akan menampilkan data OPS di Holding).
+  if (holding && !kodeAktif) {
+    return (
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-400 text-xs px-4 py-3">
+        Entitas Holding belum diatur. Jalankan <span className="font-mono">fase4_holding.sql</span> di database, lalu muat ulang halaman.
+      </div>
+    );
+  }
 
   if (sub === "riwayat") {
     return <RiwayatPerubahan master={master} session={session} />;
   }
   if (sub === "rekening") {
-    return <RekeningKategori master={master} reload={reload} showToast={showToast} />;
+    return <RekeningKategori master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />;
   }
   if (sub === "akun-kas") {
-    return <AkunKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} />;
+    // entitas: [] = sembunyikan kolom pilih entitas (entitas sudah dikunci oleh menu).
+    return <AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />;
   }
   if (sub === "transaksi-kas") {
-    return <TransaksiKas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModal} />;
+    return <TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModal} />;
   }
-  if (sub === "antar-entitas") {
+  if (holding && sub === "antar-entitas") {
     return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModal} />;
   }
-  if (sub === "konsolidasi") {
+  if (holding && sub === "konsolidasi") {
     return <Konsolidasi keuanganTransaksi={keuanganTransaksi} master={master} />;
   }
   if (sub === "buku-kas") {
@@ -927,6 +915,9 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
             const kasAsal = kasDariRekening(petaKas, t.rekening);
             const kasTujuan = isTransfer ? kasDariRekening(petaKas, t.rekening_tujuan) : null;
             const kasTeks = isTransfer && kasAsal !== kasTujuan ? `${LABEL_KAS[kasAsal]} → ${LABEL_KAS[kasTujuan]}` : LABEL_KAS[kasAsal];
+            // Transfer yang salah satu rekeningnya milik entitas lain (modal, dividen, pinjaman).
+            const antarEntitas =
+              isTransfer && rekeningList.__batasi && !(rekeningList.some((r) => r.kode === t.rekening) && rekeningList.some((r) => r.kode === t.rekening_tujuan));
             return (
               <div
                 key={t.id}
@@ -942,6 +933,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                     ) : (
                       <Badge color={t.tipe === "masuk" ? "emerald" : "red"}>{kategoriLabel}</Badge>
                     )}
+                    {antarEntitas && <Badge color="amber">Antar Entitas</Badge>}
                     <span className="text-[11px] text-slate-500 flex items-center gap-1">
                       {isTransfer ? (
                         <>
@@ -2237,7 +2229,7 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
   );
 }
 
-function RekeningKategori({ master, reload, showToast }) {
+function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
   const [activeTab, setActiveTab] = useState("rekening");
   // Isian tab "Kategori & Sub Kategori" yang belum disimpan (lihat PengelompokanKategori).
   const [draftKelompok, setDraftKelompok] = useState({});
@@ -2343,6 +2335,13 @@ function RekeningKategori({ master, reload, showToast }) {
         method: "POST",
         body: JSON.stringify({ tipe: activeTab, kode: kode.trim().toUpperCase(), label: label.trim() }),
       });
+      // Rekening baru ikut entitas menu yang sedang dibuka (OPS = tanpa penanda).
+      if (activeTab === "rekening" && entitasKode && entitasKode !== ENTITAS_DEFAULT) {
+        await sb("master_data", {
+          method: "POST",
+          body: JSON.stringify({ tipe: "rekening_entitas", kode: kode.trim().toUpperCase(), label: entitasKode }),
+        });
+      }
       setKode("");
       setLabel("");
       setKodeTouched(false);

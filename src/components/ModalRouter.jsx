@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadmin
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang,
+  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -1205,10 +1205,21 @@ export default function ModalRouter({
 
   if (modal.type === "keuangan-transaksi-form") {
     const t = modal.item; // null = tambah baru, ada isinya = edit
+    // Pilihan rekening di form dibatasi ke entitas menu yang sedang dibuka
+    // (Keuangan SELMA = OPS, Holding = Holding; lihat pages/Keuangan.jsx).
+    // Transaksi yang melintasi entitas (transfer antar entitas) tetap dibuka
+    // dengan daftar rekening penuh supaya rekening tujuannya masih ada.
+    let masterForm = master;
+    try {
+      const eAktif = sessionStorage.getItem("selma-entitas") || "";
+      const terbatas = lingkupEntitas([], master, eAktif).master;
+      const ada = (k) => !k || (terbatas.rekening || []).some((r) => r.kode === k);
+      if (eAktif && (!t || (ada(t.rekening) && ada(t.rekening_tujuan)))) masterForm = terbatas;
+    } catch {}
     return (
       <KeuanganTransaksiForm
         transaksi={t}
-        master={master}
+        master={masterForm}
         keuanganTransaksi={keuanganTransaksi}
         reload={reload}
         onClose={close}
