@@ -18,7 +18,7 @@ import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./
 // (tipe "pengaturan_holding", kode "tanggal_pt").
 // =========================================================
 
-const WARNA = { prive_dividen: "sky", pinjaman_pemilik: "amber", gaji_pemilik: "violet", pelunasan_pemilik: "emerald" };
+const WARNA = { setoran_modal: "teal", prive_dividen: "sky", pinjaman_pemilik: "amber", gaji_pemilik: "violet", pelunasan_pemilik: "emerald" };
 const nilai = (t) => Number(t.jumlah) || 0;
 const JENIS = Object.keys(PENARIKAN_PEMILIK);
 
@@ -85,8 +85,8 @@ export default function PenarikanPemilik({ keuanganTransaksi = [], master = {}, 
     <div>
       {statusLama && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>}
       <PageHeader
-        title="Penarikan Pemilik"
-        description="Uang Holding yang dipakai pemilik untuk keperluan pribadi. Prive/dividen dan pinjaman tidak mengurangi laba, hanya mengurangi kas."
+        title="Modal & Penarikan Pemilik"
+        description="Setoran modal / dana awal dari pemilik, dan uang Holding yang dipakai pemilik untuk keperluan pribadi. Semuanya hanya menggerakkan kas, tidak masuk pemasukan maupun laba (kecuali gaji pemilik)."
         sticky
         action={
           bisaTambah ? (
@@ -94,13 +94,14 @@ export default function PenarikanPemilik({ keuanganTransaksi = [], master = {}, 
               onClick={() => setFormBuka(true)}
               className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
             >
-              <Plus size={14} /> Catat Penarikan
+              <Plus size={14} /> Catat Modal / Penarikan
             </button>
           ) : null
         }
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <StatCard label="Setoran modal (periode)" value={fmtRp(total("setoran_modal"))} accent="text-teal-300" icon={Landmark} iconColor="text-teal-400" />
         <StatCard label={`${labelPrive} (periode)`} value={fmtRp(total("prive_dividen"))} accent="text-sky-400" icon={Wallet} iconColor="text-sky-500" />
         <StatCard label="Gaji pemilik (periode)" value={fmtRp(total("gaji_pemilik"))} accent="text-violet-300" icon={HandCoins} iconColor="text-violet-400" />
         <StatCard label="Pinjaman diberikan (periode)" value={fmtRp(total("pinjaman_pemilik"))} accent="text-amber-400" icon={Landmark} iconColor="text-amber-500" />
@@ -131,7 +132,7 @@ export default function PenarikanPemilik({ keuanganTransaksi = [], master = {}, 
       </div>
 
       {daftar.length === 0 ? (
-        <EmptyState label="Belum ada penarikan pemilik di rentang ini." />
+        <EmptyState label="Belum ada setoran modal atau penarikan pemilik di rentang ini." />
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {daftar.map((t, i) => (
@@ -167,7 +168,7 @@ export default function PenarikanPemilik({ keuanganTransaksi = [], master = {}, 
         </div>
       )}
       <div className="text-[11px] text-slate-500 mt-2">
-        Salah catat? Hapus lalu catat ulang. Saldo kas tetap berkurang/bertambah sesuai penarikan, tetapi angka laba rugi tidak ikut berubah kecuali untuk Gaji pemilik.
+        Salah catat? Hapus lalu catat ulang. Saldo kas tetap bertambah/berkurang sesuai catatan, tetapi angka laba rugi tidak ikut berubah kecuali untuk Gaji pemilik.
       </div>
 
       {formBuka && (
@@ -268,6 +269,7 @@ function FormPenarikan({ k, kodeHolding, master, tanggalPt, namaJenis, onClose, 
 
   const labelJenis = (v) => (v === "prive_dividen" ? (tanggalPt ? "Prive / Dividen (otomatis sesuai tanggal PT)" : "Prive") : PENARIKAN_PEMILIK[v]);
   const petunjuk = {
+    setoran_modal: "Dana awal / tambahan modal dari pemilik ke Holding. Menambah kas, BUKAN pemasukan, tidak dihitung sebagai laba.",
     prive_dividen: "Bagi hasil / pengambilan pribadi. Tidak mengurangi laba, hanya mengurangi kas.",
     pinjaman_pemilik: "Pinjam sementara, harus dikembalikan. Dicatat sebagai piutang, bukan beban.",
     gaji_pemilik: "Imbalan kerja pemilik. Dihitung sebagai beban dan mengurangi laba.",
@@ -304,7 +306,7 @@ function FormPenarikan({ k, kodeHolding, master, tanggalPt, namaJenis, onClose, 
   };
 
   return (
-    <ModalShell title="Catat Penarikan Pemilik" onClose={onClose}>
+    <ModalShell title="Catat Modal / Penarikan Pemilik" onClose={onClose}>
       <Field label="Jenis">
         <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)}>
           <option value="">Pilih jenis…</option>

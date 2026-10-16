@@ -398,7 +398,7 @@ export const NAV = [
           { key: "transaksi", label: "Transaksi" },
           { key: "kas", label: "Kas" },
           { key: "laporan", label: "Laporan Keuangan" },
-          { key: "penarikan", label: "Penarikan Pemilik" },
+          { key: "penarikan", label: "Modal & Penarikan Pemilik" },
           { key: "pengaturan", label: "Pengaturan" },
         ],
       },

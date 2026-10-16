@@ -1906,15 +1906,18 @@ export const PENANDA_ANTAR_ENTITAS = {
 //   prive_dividen     (keluar) : prive (usaha perorangan) / dividen (setelah PT berdiri)
 //   pinjaman_pemilik  (keluar) : pinjaman ke pemilik = piutang, harus kembali
 //   pelunasan_pemilik (masuk)  : pemilik mengembalikan pinjaman
+//   setoran_modal     (masuk)  : pemilik menyetor modal/dana awal ke Holding
 // gaji_pemilik (keluar) tetap beban biasa, jadi ikut laba rugi.
 // =========================================================
 export const PENARIKAN_PEMILIK = {
+  setoran_modal: "Setoran Modal Pemilik",
   prive_dividen: "Prive / Dividen",
   pinjaman_pemilik: "Pinjaman ke Pemilik",
   gaji_pemilik: "Gaji Pemilik",
   pelunasan_pemilik: "Pelunasan Pinjaman Pemilik",
 };
 export const TIPE_PENARIKAN = {
+  setoran_modal: "masuk",
   prive_dividen: "keluar",
   pinjaman_pemilik: "keluar",
   gaji_pemilik: "keluar",
@@ -1925,7 +1928,7 @@ export const TIPE_PENARIKAN = {
 export function bukanLabaRugi(t) {
   if (!t || !t.penanda) return false;
   if (t.tipe === "keluar") return t.penanda === "prive_dividen" || t.penanda === "pinjaman_pemilik";
-  if (t.tipe === "masuk") return t.penanda === "pelunasan_pemilik";
+  if (t.tipe === "masuk") return t.penanda === "pelunasan_pemilik" || t.penanda === "setoran_modal";
   return false;
 }
 
