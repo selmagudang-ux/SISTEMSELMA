@@ -669,11 +669,17 @@ export function bisaTransferAntarEntitas(role) {
   return !!a && (a.dariHolding || a.keHolding || a.antarAnak);
 }
 
-// Akun yang terikat ke PT selain Selma (entitas bukan "OPS") HANYA boleh Keuangan
-// + Chat + Panduan: menu gudang/grosir/marketplace masih memuat data Selma, belum
-// dipisah per PT. Pemilik, Pemegang Saham, dan Super Appa lintas entitas (tidak dibatasi).
+// Akun yang terikat ke PT selain Selma (entitas bukan "OPS") hanya boleh menu yang
+// datanya SUDAH dipisah per PT: Keuangan (lewat rekening), grup OPERASIONAL/gudang
+// (kolom entitas, lihat TABEL_PER_PT di api.js), Chat, Panduan. Dashboard, grosir,
+// penjualan, absensi, dll belum dipisah, jadi disembunyikan dulu.
+// Pemilik, Pemegang Saham, dan Super Appa lintas entitas (tidak dibatasi).
 const ROLE_LINTAS_ENTITAS = ["superappa", "owner", "pemegang_saham"];
-const MENU_PT_LAIN = ["keuangan", "chat", "panduan"];
+const MENU_PT_LAIN = [
+  "keuangan", "chat", "panduan",
+  "persetujuan-restock", "barang-datang", "data-barang", "sku-harga", "stok", "rak",
+  "cetak-label", "foto", "marketplace",
+];
 export function allowedMenus(role, entitas) {
   const menus = ROLE_MENUS[role] || ["dashboard"];
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {

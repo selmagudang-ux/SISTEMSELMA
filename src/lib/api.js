@@ -92,6 +92,48 @@ function roleSaatIni() {
   }
 }
 
+// =========================================================
+// DATA GUDANG PER PT (entitas)
+// Tabel di bawah punya kolom `entitas` (lihat gudang_per_pt.sql). Semua akses
+// lewat sb()/sbAll() otomatis dipisah per PT sesuai entitas akun yang login:
+//   GET / PATCH / DELETE : ditambah filter `entitas=eq.<PT akun>`
+//   POST                 : kolom `entitas` diisi otomatis dengan PT akun
+// Jadi halaman-halaman gudang tidak perlu diubah satu per satu. Tabel grosir,
+// keuangan, dan marketplace SENGAJA tidak masuk daftar ini (belum dipisah).
+// =========================================================
+export const TABEL_PER_PT = new Set([
+  "items", "sku_master", "penempatan", "rak", "stock_history", "rak_events",
+  "barang_rusak", "pesanan_masuk", "pesanan_penerimaan", "suppliers",
+  "pengajuan_restock", "belanja_habis_pakai", "belanja_habis_pakai_item",
+  "perlengkapan", "perlengkapan_mutasi",
+]);
+
+function entitasSesi() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
+    return (raw && JSON.parse(raw).entitas) || ENTITAS_DEFAULT;
+  } catch {
+    return ENTITAS_DEFAULT;
+  }
+}
+
+export function terapkanEntitasPT(path, method, body) {
+  const tabel = String(path).split("?")[0];
+  if (!TABEL_PER_PT.has(tabel)) return { path, body };
+  const e = entitasSesi();
+  if (method === "POST") {
+    if (typeof body !== "string") return { path, body };
+    try {
+      const isi = (o) => (o && typeof o === "object" && o.entitas === undefined ? { ...o, entitas: e } : o);
+      const d = JSON.parse(body);
+      return { path, body: JSON.stringify(Array.isArray(d) ? d.map(isi) : isi(d)) };
+    } catch {
+      return { path, body };
+    }
+  }
+  return { path: `${path}${path.includes("?") ? "&" : "?"}entitas=eq.${encodeURIComponent(e)}`, body };
+}
+
 // Satu-satunya pengecualian untuk role read-only: PATCH ke pengajuan_restock
 // (approve/tolak). Path-nya selalu diawali "pengajuan_restock" (mis.
 // "pengajuan_restock?id=eq.123"), tidak pernah dipakai untuk tabel lain.
@@ -164,6 +206,9 @@ async function fetchBatas(url, opts = {}, ms = TIMEOUT_BACA_MS, method = "GET") 
 
 export async function sb(path, opts = {}) {
   const method = (opts.method || "GET").toUpperCase();
+  const tPT = terapkanEntitasPT(path, method, opts.body);
+  path = tPT.path;
+  if (tPT.body !== opts.body) opts = { ...opts, body: tPT.body };
   if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method, opts)) {
     throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menambah, mengubah, atau menghapus data.");
   }
@@ -260,6 +305,7 @@ async function sbPage(path, opts, from, to, withCount) {
 }
 
 export async function sbAll(path, opts = {}) {
+  path = terapkanEntitasPT(path, "GET").path;
   // Halaman pertama sekalian minta total jumlah baris (lewat
   // "Prefer: count=exact"), supaya begitu ketahuan ada berapa halaman lagi,
   // SISANYA bisa diambil SEKALIGUS secara paralel — bukan satu-satu
