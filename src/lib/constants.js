@@ -205,77 +205,86 @@ export const NAV = [
   // Dibatasi ke owner & superadmin lewat ROLE_MENUS di bawah (role lain tidak
   // didaftarkan eksplisit di sana jadi otomatis tidak dapat menu ini).
   { key: "persetujuan-restock", label: "PERSETUJUAN RESTOK", icon: ClipboardList },
+  // Tiga kelompok kerja gudang dibungkus satu group "OPERASIONAL" (group
+  // bersarang, sama pola dengan Store Selma di PENJUALAN). Key menu/sub di dalamnya
+  // TIDAK berubah, jadi routing & hak akses role tetap sama. Badge group ini
+  // otomatis = jumlah badge ketiga group di dalamnya (withParentBadges).
   {
-    key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
+    key: "operasional-group", label: "OPERASIONAL", icon: Boxes, group: true,
     children: [
       {
-        key: "barang-datang", label: "Pengadaan Barang", icon: Truck,
+        key: "gudang-group", label: "ADMIN GUDANG", icon: Warehouse, group: true,
         children: [
-          { key: "datang", label: "Pesanan Barang" },
-          // Master data Supplier — disimpan di tabel "suppliers" sendiri
-          // (bukan cuma teks bebas di kolom pesanan_masuk.supplier lagi),
-          // supaya bisa dipilih ulang & tidak beda-beda ejaan tiap kali
-          // catat barang datang (sama pola dengan "Toko Pengirim" di Grosir).
-          { key: "supplier", label: "Data Supplier" },
-          // Pembelian keperluan usaha non-dagangan (bubble wrap, lakban, ATK, dst)
-          // + pantauan stok perlengkapan. Halaman: pages/BelanjaHabisPakai.jsx.
-          { key: "habis-pakai", label: "Belanja Barang Habis Pakai" },
+          {
+            key: "barang-datang", label: "Pengadaan Barang", icon: Truck,
+            children: [
+              { key: "datang", label: "Pesanan Barang" },
+              // Master data Supplier — disimpan di tabel "suppliers" sendiri
+              // (bukan cuma teks bebas di kolom pesanan_masuk.supplier lagi),
+              // supaya bisa dipilih ulang & tidak beda-beda ejaan tiap kali
+              // catat barang datang (sama pola dengan "Toko Pengirim" di Grosir).
+              { key: "supplier", label: "Data Supplier" },
+              // Pembelian keperluan usaha non-dagangan (bubble wrap, lakban, ATK, dst)
+              // + pantauan stok perlengkapan. Halaman: pages/BelanjaHabisPakai.jsx.
+              { key: "habis-pakai", label: "Belanja Barang Habis Pakai" },
+            ],
+          },
+          { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
+          {
+            key: "sku-harga", label: "SKU & Harga", icon: Tag,
+            children: [
+              { key: "buat", label: "Buat SKU" },
+              { key: "master-barang", label: "Master Barang" },
+              { key: "kategori", label: "Master Data" },
+              // Menu "Rusak" dipindahkan ke sini (dari top-level) dan diganti nama
+              // jadi "Barang Reject" — daftar barang rusak yang dipisahkan otomatis
+              // begitu SKU dibuat (lihat ModalRouter "buat-sku") lebih pas dikelompokkan
+              // bareng data SKU & Harga lain, bukan jadi menu terpisah sendiri.
+              { key: "reject", label: "Barang Reject" },
+            ],
+          },
+          {
+            key: "stok", label: "Stok", icon: BarChart3,
+            children: [
+              { key: "barang", label: "Stok Barang" },
+              { key: "menipis", label: "Stok Menipis" },
+              { key: "keluar", label: "Barang Keluar" },
+              // Dulu "Hitung Qty" — diganti nama jadi "Stok Opname" (istilah yang
+              // lebih umum dipakai gudang untuk hitung fisik vs stok sistem).
+              { key: "hitung", label: "Stok Opname" },
+              { key: "riwayat", label: "Riwayat Stok" },
+            ],
+          },
+          {
+            key: "rak", label: "Rak", icon: MapPin,
+            children: [
+              { key: "tempatkan", label: "Tempatkan Barang" },
+              { key: "gudang", label: "Sisa di Gudang" },
+              { key: "master", label: "Master Rak" },
+              { key: "peta", label: "Peta Rak" },
+            ],
+          },
+          { key: "cetak-label", label: "Cetak Label", icon: Printer },
         ],
       },
-      { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
       {
-        key: "sku-harga", label: "SKU & Harga", icon: Tag,
+        key: "pemotretan-group", label: "PEMOTRETAN", icon: Image, group: true,
         children: [
-          { key: "buat", label: "Buat SKU" },
-          { key: "master-barang", label: "Master Barang" },
-          { key: "kategori", label: "Master Data" },
-          // Menu "Rusak" dipindahkan ke sini (dari top-level) dan diganti nama
-          // jadi "Barang Reject" — daftar barang rusak yang dipisahkan otomatis
-          // begitu SKU dibuat (lihat ModalRouter "buat-sku") lebih pas dikelompokkan
-          // bareng data SKU & Harga lain, bukan jadi menu terpisah sendiri.
-          { key: "reject", label: "Barang Reject" },
+          { key: "foto", label: "Foto Produk", icon: Camera },
         ],
       },
       {
-        key: "stok", label: "Stok", icon: BarChart3,
+        key: "marketplace-group", label: "MARKETPLACE", icon: Globe, group: true,
         children: [
-          { key: "barang", label: "Stok Barang" },
-          { key: "menipis", label: "Stok Menipis" },
-          { key: "keluar", label: "Barang Keluar" },
-          // Dulu "Hitung Qty" — diganti nama jadi "Stok Opname" (istilah yang
-          // lebih umum dipakai gudang untuk hitung fisik vs stok sistem).
-          { key: "hitung", label: "Stok Opname" },
-          { key: "riwayat", label: "Riwayat Stok" },
-        ],
-      },
-      {
-        key: "rak", label: "Rak", icon: MapPin,
-        children: [
-          { key: "tempatkan", label: "Tempatkan Barang" },
-          { key: "gudang", label: "Sisa di Gudang" },
-          { key: "master", label: "Master Rak" },
-          { key: "peta", label: "Peta Rak" },
-        ],
-      },
-      { key: "cetak-label", label: "Cetak Label", icon: Printer },
-    ],
-  },
-  {
-    key: "pemotretan-group", label: "PEMOTRETAN", icon: Image, group: true,
-    children: [
-      { key: "foto", label: "Foto Produk", icon: Camera },
-    ],
-  },
-  {
-    key: "marketplace-group", label: "MARKETPLACE", icon: Globe, group: true,
-    children: [
-      {
-        key: "marketplace", label: "Marketplace", icon: ShoppingBag,
-        children: [
-          { key: "belum", label: "Belum Upload" },
-          { key: "sudah", label: "Sudah Upload" },
-          { key: "riwayat", label: "Riwayat Upload" },
-          { key: "cek", label: "Cek Marketplace" },
+          {
+            key: "marketplace", label: "Marketplace", icon: ShoppingBag,
+            children: [
+              { key: "belum", label: "Belum Upload" },
+              { key: "sudah", label: "Sudah Upload" },
+              { key: "riwayat", label: "Riwayat Upload" },
+              { key: "cek", label: "Cek Marketplace" },
+            ],
+          },
         ],
       },
     ],
