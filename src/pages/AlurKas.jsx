@@ -452,7 +452,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
         <Field label={`Penanda antar entitas (${k.entNama(k.entDari(sumber))} → ${k.entNama(k.entDari(tujuan))})`}>
           <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)}>
             <option value="">Belum ditandai</option>
-            {["modal", "pinjaman", "pelunasan_pinjaman", "dividen"].map((v) => (
+            {["modal", "pinjaman", "pelunasan_pinjaman", "dividen", "biaya_antar"].map((v) => (
               <option key={v} value={v}>{PENANDA_ANTAR_ENTITAS[v]}</option>
             ))}
           </select>

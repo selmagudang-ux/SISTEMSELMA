@@ -16,7 +16,7 @@ import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./
 // (eliminasi) saat digabung di Konsolidasi.
 // =========================================================
 
-const WARNA_PENANDA = { modal: "sky", dividen: "emerald", pinjaman: "amber", pelunasan_pinjaman: "amber" };
+const WARNA_PENANDA = { modal: "sky", dividen: "emerald", pinjaman: "amber", pelunasan_pinjaman: "amber", biaya_antar: "violet" };
 const nilai = (t) => Number(t.jumlah) || 0;
 
 // Transfer yang melintasi dua entitas -> { asal, tujuan } (kode entitas), selain itu null.
@@ -26,6 +26,19 @@ function lintasEntitas(t, k) {
   const tujuan = k.entDari(t.rekening_tujuan);
   return asal === tujuan ? null : { asal, tujuan };
 }
+
+// Dua jenis transfer antar-entitas ikut masuk laba rugi tiap entitas, lalu dieliminasi di Konsolidasi:
+//   dividen     : pendapatan dividen bagi penerima (anak -> induk). Bagi pembayar BUKAN beban.
+//   biaya_antar : pengeluaran bagi pembayar + pemasukan bagi penerima (management fee, sewa, royalti).
+// Keduanya tidak boleh dihitung di angka gabungan (sudah dihitung di sisi perusahaan asalnya).
+const efekLaba = (t, k) => {
+  const x = lintasEntitas(t, k);
+  if (!x) return null;
+  const j = nilai(t);
+  if (t.penanda === "dividen") return { tujuan: x.tujuan, dividen: j };
+  if (t.penanda === "biaya_antar") return { asal: x.asal, tujuan: x.tujuan, biaya: j };
+  return null;
+};
 
 // Posisi pinjaman antar-entitas per entitas (+ piutang, - utang), dari SELURUH riwayat.
 function posisiPinjaman(semua, k) {
@@ -86,17 +99,39 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
     }
     const perEnt = {};
     ents.forEach((e) => {
-      perEnt[e.kode] = { kas: 0, bulan: Object.fromEntries(daftarBulan.map((b) => [b, { masuk: 0, keluar: 0 }])) };
+      perEnt[e.kode] = {
+        kas: 0,
+        bulan: Object.fromEntries(daftarBulan.map((b) => [b, { masuk: 0, keluar: 0, dividen: 0, antarMasuk: 0, antarKeluar: 0 }])),
+      };
     });
     k.rekeningList.forEach((r) => {
       const e = perEnt[k.entDari(r.kode)];
       if (e) e.kas += k.saldoMap.get(r.kode) || 0;
     });
+    const ember = (kode, tanggal) => perEnt[kode] && perEnt[kode].bulan[(tanggal || "").slice(0, 7)];
     semua.forEach((t) => {
-      if (t.tipe !== "masuk" && t.tipe !== "keluar") return;
-      const e = perEnt[k.entDari(t.rekening)];
-      const b = e && e.bulan[(t.tanggal || "").slice(0, 7)];
-      if (b) b[t.tipe] += nilai(t);
+      if (t.tipe === "masuk" || t.tipe === "keluar") {
+        const b = ember(k.entDari(t.rekening), t.tanggal);
+        if (b) b[t.tipe] += nilai(t);
+        return;
+      }
+      const f = efekLaba(t, k);
+      if (!f) return;
+      if (f.dividen) {
+        const b = ember(f.tujuan, t.tanggal);
+        if (b) b.dividen += f.dividen;
+      } else if (f.biaya) {
+        const bm = ember(f.tujuan, t.tanggal);
+        if (bm) {
+          bm.masuk += f.biaya;
+          bm.antarMasuk += f.biaya;
+        }
+        const bk = ember(f.asal, t.tanggal);
+        if (bk) {
+          bk.keluar += f.biaya;
+          bk.antarKeluar += f.biaya;
+        }
+      }
     });
     return { perEnt, daftarBulan };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,18 +141,30 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
 
   const ringkas = (kode) => {
     const e = data.perEnt[kode];
-    const b = e.bulan[bulanIni] || { masuk: 0, keluar: 0 };
-    return { kas: e.kas, masuk: b.masuk, keluar: b.keluar, laba: b.masuk - b.keluar };
+    const b = e.bulan[bulanIni] || { masuk: 0, keluar: 0, dividen: 0, antarMasuk: 0, antarKeluar: 0 };
+    // Laba entitas = pemasukan - pengeluaran + pendapatan dividen (dividen yang diterima dari perusahaan lain).
+    return { kas: e.kas, masuk: b.masuk, keluar: b.keluar, dividen: b.dividen, laba: b.masuk - b.keluar + b.dividen, antarMasuk: b.antarMasuk, antarKeluar: b.antarKeluar };
   };
   const semuaRingkas = ents.map((e) => ({ e, r: ringkas(e.kode) }));
+  // Gabungan: buang transaksi antar perusahaan (biaya antar perusahaan & dividen) supaya tidak dihitung ganda.
   const gab = semuaRingkas.reduce(
-    (a, { r }) => ({ kas: a.kas + r.kas, masuk: a.masuk + r.masuk, keluar: a.keluar + r.keluar, laba: a.laba + r.laba }),
-    { kas: 0, masuk: 0, keluar: 0, laba: 0 }
+    (a, { r }) => {
+      const masuk = a.masuk + r.masuk - r.antarMasuk;
+      const keluar = a.keluar + r.keluar - r.antarKeluar;
+      return { kas: a.kas + r.kas, masuk, keluar, dividen: 0, laba: masuk - keluar };
+    },
+    { kas: 0, masuk: 0, keluar: 0, dividen: 0, laba: 0 }
   );
   const lababulan = (kode, b) => {
     const x = data.perEnt[kode].bulan[b];
-    return x.masuk - x.keluar;
+    return x.masuk - x.keluar + x.dividen;
   };
+  // Laba operasional gabungan: tanpa dividen antar perusahaan.
+  const labaGabunganBulan = (b) =>
+    ents.reduce((a, e) => {
+      const x = data.perEnt[e.kode].bulan[b];
+      return a + (x.masuk - x.antarMasuk) - (x.keluar - x.antarKeluar);
+    }, 0);
   const warna = (v) => (v < 0 ? "text-red-400" : "text-slate-100");
 
   const Kartu = ({ judul, r, onClick, sorot }) => (
@@ -142,6 +189,8 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
           <div className={`font-medium ${warna(r.laba)}`}>{fmtRp(r.laba)}</div>
         </div>
       </div>
+      {r.dividen > 0 && <div className="mt-2 text-[10px] text-slate-500">Laba sudah termasuk pendapatan dividen {fmtRp(r.dividen)}</div>}
+      {sorot && <div className="mt-2 text-[10px] text-slate-500">Dividen dan biaya antar perusahaan sudah dieliminasi.</div>}
       {onClick && (
         <button onClick={onClick} className="mt-3 text-[11px] text-amber-400 hover:text-amber-300">
           Lihat keuangan {judul} →
@@ -180,7 +229,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
           </thead>
           <tbody>
             {[...data.daftarBulan].reverse().map((b) => {
-              const total = ents.reduce((a, e) => a + lababulan(e.kode, b), 0);
+              const total = labaGabunganBulan(b);
               return (
                 <tr key={b} className="border-b border-slate-800/60 last:border-0">
                   <td className="px-4 py-2 text-slate-300">{labelBulan(b)}</td>
@@ -198,7 +247,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
         </table>
       </div>
       <div className="text-[11px] text-slate-500 mt-2">
-        Laba di sini = pemasukan − pengeluaran tercatat di Keuangan tiap perusahaan. Perpindahan uang antar perusahaan (modal, dividen, pinjaman) tidak dihitung. Lihat tab Konsolidasi untuk rinciannya.
+        Laba per perusahaan = pemasukan − pengeluaran tercatat di Keuangan + dividen yang diterima dari perusahaan lain + biaya antar perusahaan (sebagai pemasukan penerima / pengeluaran pembayar). Kolom Gabungan membuang dividen dan biaya antar perusahaan agar tidak dihitung ganda. Modal dan pinjaman tidak dihitung sebagai laba. Lihat tab Konsolidasi untuk rinciannya.
       </div>
     </div>
   );
@@ -486,9 +535,10 @@ function FormAntarEntitas({ k, role, kodeHolding, onClose, onSaved, showToast })
         </select>
         <div className="text-[11px] text-slate-500 mt-1">
           {penanda === "modal" && "Setoran modal: biasanya dari rekening Holding ke rekening SELMA."}
-          {penanda === "dividen" && "Dividen: biasanya dari rekening SELMA ke rekening Holding."}
+          {penanda === "dividen" && "Dividen: biasanya dari rekening SELMA ke rekening Holding. Jadi pendapatan dividen Holding, bukan beban SELMA."}
           {penanda === "pinjaman" && "Pinjaman: dari pihak yang meminjamkan ke pihak yang meminjam."}
           {penanda === "pelunasan_pinjaman" && "Pelunasan: dari pihak yang berutang ke pihak yang meminjamkan."}
+          {penanda === "biaya_antar" && "Biaya antar perusahaan (management fee, sewa, royalti): dari pihak yang membayar ke pihak yang menagih, mis. SELMA → Holding. Jadi pengeluaran pembayar dan pemasukan penerima, lalu dieliminasi di Konsolidasi."}
         </div>
       </Field>
       <Field label="Tanggal">
@@ -565,7 +615,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     const periode = semua.filter((t) => (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai));
     const perEnt = {};
     ents.forEach((e) => {
-      perEnt[e.kode] = { kas: { [KAS_BANK]: 0, [KAS_KECIL]: 0 }, masuk: 0, keluar: 0, modal: 0, dividen: 0, pinjaman: 0, tanpa: 0 };
+      perEnt[e.kode] = { kas: { [KAS_BANK]: 0, [KAS_KECIL]: 0 }, masuk: 0, keluar: 0, antarMasuk: 0, antarKeluar: 0, dividenMasuk: 0, modal: 0, dividen: 0, pinjaman: 0, biaya: 0, tanpa: 0 };
     });
     k.rekeningList.forEach((r) => {
       const e = perEnt[k.entDari(r.kode)];
@@ -582,9 +632,26 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
       } else {
         const x = lintasEntitas(t, k);
         if (!x) return;
-        const kunci = t.penanda === "modal" ? "modal" : t.penanda === "dividen" ? "dividen" : t.penanda ? "pinjaman" : "tanpa";
+        const kunci =
+          t.penanda === "modal" ? "modal"
+          : t.penanda === "dividen" ? "dividen"
+          : t.penanda === "biaya_antar" ? "biaya"
+          : t.penanda === "pinjaman" || t.penanda === "pelunasan_pinjaman" ? "pinjaman"
+          : "tanpa";
         if (perEnt[x.tujuan]) perEnt[x.tujuan][kunci] += j; // diterima
         if (perEnt[x.asal]) perEnt[x.asal][kunci] -= j; // diberikan
+        // Dividen & biaya antar perusahaan ikut laba rugi tiap entitas (dieliminasi di kolom Konsolidasi).
+        if (t.penanda === "dividen" && perEnt[x.tujuan]) perEnt[x.tujuan].dividenMasuk += j;
+        if (t.penanda === "biaya_antar") {
+          if (perEnt[x.tujuan]) {
+            perEnt[x.tujuan].masuk += j;
+            perEnt[x.tujuan].antarMasuk += j;
+          }
+          if (perEnt[x.asal]) {
+            perEnt[x.asal].keluar += j;
+            perEnt[x.asal].antarKeluar += j;
+          }
+        }
       }
     });
     return { perEnt, posisi: posisiPinjaman(semua, k), periode };
@@ -601,13 +668,16 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     ...URUTAN_KAS.map((kk) => ({ label: LABEL_KAS[kk], ambil: (p) => p.kas[kk], indent: true })),
     { label: "Total kas", ambil: totalKas, tebal: true },
     { judul: "Operasional (periode terpilih)" },
-    { label: "Pemasukan", ambil: (p) => p.masuk, warna: "text-emerald-400" },
-    { label: "Pengeluaran", ambil: (p) => p.keluar, warna: "text-red-400" },
-    { label: "Laba (rugi)", ambil: (p) => p.masuk - p.keluar, tebal: true },
+    { label: "Pemasukan", ambil: (p) => p.masuk, gabung: () => jumlahSemua((p) => p.masuk - p.antarMasuk), warna: "text-emerald-400" },
+    { label: "Pengeluaran", ambil: (p) => p.keluar, gabung: () => jumlahSemua((p) => p.keluar - p.antarKeluar), warna: "text-red-400" },
+    { label: "Laba operasional", ambil: (p) => p.masuk - p.keluar, tebal: true },
+    { label: "Pendapatan dividen (dieliminasi di Konsolidasi)", ambil: (p) => p.dividenMasuk, gabung: () => 0, indent: true },
+    { label: "Laba (rugi) entitas", ambil: (p) => p.masuk - p.keluar + p.dividenMasuk, gabung: () => jumlahSemua((p) => p.masuk - p.keluar), tebal: true },
     { judul: "Dana antar entitas (periode; + diterima, − diberikan)" },
     { label: "Modal", ambil: (p) => p.modal, indent: true },
     { label: "Dividen", ambil: (p) => p.dividen, indent: true },
     { label: "Pinjaman & pelunasan", ambil: (p) => p.pinjaman, indent: true },
+    { label: "Biaya antar perusahaan", ambil: (p) => p.biaya, indent: true },
     { label: "Belum ditandai", ambil: (p) => p.tanpa, indent: true },
     { judul: "Posisi pinjaman antar entitas (dari awal)" },
     { label: "Piutang (+) / Utang (−)", ambil: (_p, kode) => data.posisi[kode] || 0, indent: true },
@@ -634,7 +704,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
         <StatCard label="Total kas gabungan" value={fmtRp(jumlahSemua((p) => totalKas(p)))} accent="text-slate-100" icon={Landmark} iconColor="text-slate-400" />
-        <StatCard label="Pemasukan gabungan" value={fmtRp(jumlahSemua((p) => p.masuk))} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label="Pemasukan gabungan" value={fmtRp(jumlahSemua((p) => p.masuk - p.antarMasuk))} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
         <StatCard label="Laba (rugi) gabungan" value={fmtRp(jumlahSemua((p) => p.masuk - p.keluar))} accent="text-slate-100" icon={TrendingDown} iconColor="text-slate-400" />
       </div>
 
@@ -664,7 +734,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
                     </td>
                   ))}
                   <td className={`px-4 py-2 text-right whitespace-nowrap ${b.tebal ? "font-semibold" : ""}`}>
-                    {sel(jumlahSemua((p, kode) => b.ambil(p, kode)), b.warna)}
+                    {sel(b.gabung ? b.gabung() : jumlahSemua((p, kode) => b.ambil(p, kode)), b.warna)}
                   </td>
                 </tr>
               )
@@ -673,7 +743,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
         </table>
       </div>
       <div className="text-[11px] text-slate-500 mt-2">
-        Saldo kas dihitung dari akun yang dipetakan ke tiap entitas (Keuangan &gt; Kas &gt; Akun Kas). Laba di sini = pemasukan − pengeluaran tercatat di Keuangan, belum termasuk penyusutan atau penyesuaian lain.
+        Saldo kas dihitung dari akun yang dipetakan ke tiap entitas (Keuangan &gt; Kas &gt; Akun Kas). Laba di sini = pemasukan − pengeluaran tercatat di Keuangan, belum termasuk penyusutan atau penyesuaian lain. Di kolom Konsolidasi, dividen dan biaya antar perusahaan dibuang (sudah terhitung di perusahaan asalnya), jadi pemasukan dan pengeluaran gabungan tidak membengkak.
       </div>
     </div>
   );

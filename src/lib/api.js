@@ -1878,7 +1878,7 @@ export function saldoSebelumTanggal(transaksi, kodeList, tanggalIso) {
 // label = kode entitas. Rekening tanpa penanda = entitas default (OPS), jadi
 // data lama tidak perlu dimigrasi. Transaksi tidak punya kolom entitas — milik
 // entitas mana ditentukan dari rekeningnya. Transfer antar rekening beda
-// entitas = transaksi antar-entitas (kolom penanda: modal/dividen/pinjaman).
+// entitas = transaksi antar-entitas (kolom penanda: modal/dividen/pinjaman/biaya_antar).
 // =========================================================
 export const ENTITAS_DEFAULT = "OPS";
 export const ENTITAS_HOLDING = "HOLD";
@@ -1894,6 +1894,7 @@ export const PENANDA_ANTAR_ENTITAS = {
   dividen: "Dividen",
   pinjaman: "Pinjaman",
   pelunasan_pinjaman: "Pelunasan Pinjaman",
+  biaya_antar: "Biaya Antar Perusahaan",
 };
 
 export function petaEntitasRekening(list) {
