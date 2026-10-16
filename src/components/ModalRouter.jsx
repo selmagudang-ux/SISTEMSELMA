@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadmin
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas,
+  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -3634,7 +3634,7 @@ export default function ModalRouter({
               // sudah keluar duluan saat pesan.
               if (totalHarga > 0) {
                 const kategoriSupplier = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_PEMBAYARAN_SUPPLIER);
-                const rekeningSupplier = await cariAtauBuatMasterTetap("rekening", REKENING_PEMBAYARAN_SUPPLIER);
+                const rekeningSupplier = await cariAtauBuatRekeningTetap(master, REKENING_PEMBAYARAN_SUPPLIER, suggestKode);
                 const [transaksiSupplier] = await sb("keuangan_transaksi", {
                   method: "POST",
                   body: JSON.stringify({
@@ -4075,7 +4075,7 @@ export default function ModalRouter({
                   return kode;
                 };
                 const kategoriOngkir = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_ONGKIR_BARANG_DATANG);
-                const rekeningOngkir = await cariAtauBuatMasterTetap("rekening", REKENING_ONGKIR_BARANG_DATANG);
+                const rekeningOngkir = await cariAtauBuatRekeningTetap(master, REKENING_ONGKIR_BARANG_DATANG, suggestKode);
                 const hariIni = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
                 const resiOngkir = (resi !== undefined ? resi : p.resi) || p.kode_pesanan || "";
                 const bodyOngkir = {
@@ -4519,7 +4519,7 @@ export default function ModalRouter({
               };
 
               const kategoriOngkir = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_ONGKIR_BARANG_DATANG);
-              const rekeningOngkir = await cariAtauBuatMasterTetap("rekening", REKENING_ONGKIR_BARANG_DATANG);
+              const rekeningOngkir = await cariAtauBuatRekeningTetap(master, REKENING_ONGKIR_BARANG_DATANG, suggestKode);
 
               const resiOngkir = (resi !== undefined ? resi : p.resi) || p.kode_pesanan || "";
               const bodyOngkir = {

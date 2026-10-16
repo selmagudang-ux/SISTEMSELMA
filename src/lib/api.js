@@ -2019,6 +2019,32 @@ export function lingkupEntitas(transaksi, master, kodeEntitas) {
   return { transaksi: trx, master: { ...master, rekening } };
 }
 
+// Rekening TETAP (mis. "BCA a/n Sandi Purwoto" untuk Pesan Barang, "Petty Cash" untuk
+// ongkir) harus milik ENTITAS akun yang sedang login. Transaksi tidak punya kolom
+// entitas — ia ikut entitas rekeningnya — jadi kalau akun PT lain (mis. Alivia)
+// memakai rekening bernama sama milik SELMA, uangnya tercatat di keuangan SELMA.
+// Di sini: cari rekening berlabel itu yang MILIK entitas akun; kalau belum ada,
+// buat rekening baru khusus entitas itu + pemetaan rekening_entitas-nya.
+export async function cariAtauBuatRekeningTetap(master, labelTetap, suggestKodeFn) {
+  const e = entitasSesi();
+  const daftar = master?.rekening || [];
+  const entList = master?.entitas || [];
+  const peta = petaEntitasRekening(master?.rekening_entitas);
+  const norm = (x) => String(x || "").trim().toLowerCase();
+  const ada = daftar.find(
+    (r) => norm(r.label) === norm(labelTetap) && entitasDariRekening(peta, entList, r.kode) === e
+  );
+  if (ada) return ada.kode;
+  const dasar = suggestKodeFn(labelTetap);
+  let kode = e === ENTITAS_DEFAULT ? dasar : `${dasar}-${String(e).toLowerCase()}`;
+  if (daftar.some((r) => r.kode === kode)) kode = `${kode}${daftar.length + 1}`;
+  await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening", kode, label: labelTetap }) });
+  if (e !== ENTITAS_DEFAULT) {
+    await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_entitas", kode, label: e }) });
+  }
+  return kode;
+}
+
 // =========================================================
 // PENGGAJIAN — pemanggil Edge Function gaji-admin & gaji-karyawan
 // Tabel penggajian dikunci total dari anon key (RLS), jadi SEMUA baca/tulis
