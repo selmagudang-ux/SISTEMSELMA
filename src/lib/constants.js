@@ -362,7 +362,7 @@ export const NAV = [
     ],
   },
   {
-    key: "keuangan-group", label: "ADMIN KEUANGAN", icon: Landmark, group: true,
+    key: "keuangan-group", label: "KEUANGAN", icon: Landmark, group: true,
     children: [
       {
         key: "keuangan", label: "Keuangan", icon: Wallet,
@@ -377,20 +377,11 @@ export const NAV = [
           { key: "pengaturan", label: "Pengaturan" },
         ],
       },
-      { key: "penggajian", label: "Penggajian", icon: Banknote },
-    ],
-  },
-  {
-    // HOLDING — dibagi dua menu supaya tidak membingungkan:
-    //  1) "Perusahaan Grup" : semua yang menyangkut perusahaan-perusahaan dalam grup
-    //     (ringkasan & konsolidasi, lihat keuangan perusahaan, transfer Antar Entitas).
-    //  2) "Keuangan Holding": pembukuan Holding SENDIRI (kas, transaksi, laporan,
-    //     penarikan pemilik) — dikunci ke entitas Holding, tanpa pilihan perusahaan.
-    // Keduanya memakai halaman pages/Keuangan.jsx (mode="grup" dan mode="holding").
-    // Role: Super Appa, Pemilik (keduanya), Pemegang Saham (hanya Ringkasan), dan
-    // Super Admin (hanya Antar Entitas) — lihat ROLE_MENUS & allowedSubMenus.
-    key: "holding-group", label: "HOLDING", icon: Building2, group: true,
-    children: [
+      // Menu Holding (hanya Super Appa, Pemilik, Pemegang Saham, Super Admin — lihat ROLE_MENUS):
+      //  - "Perusahaan Grup" : semua yang menyangkut perusahaan dalam grup (ringkasan &
+      //    konsolidasi, lihat keuangan perusahaan, transfer Antar Entitas).
+      //  - "Keuangan Holding": pembukuan Holding SENDIRI, dikunci ke entitas Holding.
+      // Keduanya memakai pages/Keuangan.jsx (mode="grup" dan mode="holding").
       {
         key: "perusahaan", label: "Perusahaan Grup", icon: Building2,
         children: [
@@ -411,6 +402,7 @@ export const NAV = [
           { key: "pengaturan", label: "Pengaturan" },
         ],
       },
+      { key: "penggajian", label: "Penggajian", icon: Banknote },
     ],
   },
   {
