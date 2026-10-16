@@ -353,7 +353,7 @@ function AppShell({
 }
 
 function MainApp({ session, onLogout }) {
-  const allowed = allowedMenus(session.role);
+  const allowed = allowedMenus(session.role, session.entitas);
 
   // Badge "Chat" di sidebar = jumlah pesan belum dibaca. Polling ringan tiap 20 detik
   // (hanya saat tab terlihat); Chat.jsx memanggil refreshChatBadge() begitu pesan dibaca.

@@ -40,6 +40,7 @@ export async function login(username, password) {
     username: user.username,
     nama: user.nama,
     role: user.role,
+    entitas: user.entitas || "OPS", // PT tempat akun terikat (OPS = Selma)
     token: user.token || null, // token bertanda tangan untuk fitur Chat (lihat functions/chat)
     loginAt: new Date().toISOString(),
   };
@@ -82,7 +83,7 @@ export async function listUsers() {
 // Tabel app_users dikunci total dari anon key, jadi tambah user lewat Edge
 // Function create-user (service_role) — bukan sb() langsung (lihat
 // supabase/functions/create-user).
-export async function createUser({ username, password, nama, role }) {
+export async function createUser({ username, password, nama, role, entitas }) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
     method: "POST",
     headers: {
@@ -90,7 +91,7 @@ export async function createUser({ username, password, nama, role }) {
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     },
-    body: JSON.stringify({ username: (username || "").trim(), password, nama, role }),
+    body: JSON.stringify({ username: (username || "").trim(), password, nama, role, entitas: entitas || "OPS" }),
   });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || "Gagal menambah user");

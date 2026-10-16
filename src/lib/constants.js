@@ -660,8 +660,17 @@ export function bisaTransferAntarEntitas(role) {
   return !!a && (a.dariHolding || a.keHolding || a.antarAnak);
 }
 
-export function allowedMenus(role) {
-  return ROLE_MENUS[role] || ["dashboard"];
+// Akun yang terikat ke PT selain Selma (entitas bukan "OPS") HANYA boleh Keuangan
+// + Chat + Panduan: menu gudang/grosir/marketplace masih memuat data Selma, belum
+// dipisah per PT. Pemilik, Pemegang Saham, dan Super Appa lintas entitas (tidak dibatasi).
+const ROLE_LINTAS_ENTITAS = ["superappa", "owner", "pemegang_saham"];
+const MENU_PT_LAIN = ["keuangan", "chat", "panduan"];
+export function allowedMenus(role, entitas) {
+  const menus = ROLE_MENUS[role] || ["dashboard"];
+  if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
+    return menus.filter((k) => MENU_PT_LAIN.includes(k));
+  }
+  return menus;
 }
 
 // Daftar SUB-menu (anak menu) yang boleh diakses tiap role, untuk menu yang

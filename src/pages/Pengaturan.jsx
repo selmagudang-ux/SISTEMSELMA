@@ -108,7 +108,8 @@ function MaintenanceToggle({ settings, reload, showToast }) {
 function UserManager({ showToast }) {
   const [users, setUsers] = useState(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [form, setForm] = useState({ username: "", password: "", nama: "", role: "gudang" });
+  const [form, setForm] = useState({ username: "", password: "", nama: "", role: "gudang", entitas: "OPS" });
+  const [entitasList, setEntitasList] = useState([]);
   const [saving, setSaving] = useState(false);
   const [pwEdit, setPwEdit] = useState(null); // {id, value}
 
@@ -125,7 +126,13 @@ function UserManager({ showToast }) {
 
   useEffect(() => {
     load();
+    // Daftar PT dari master_data (tipe "entitas") — diatur di Perusahaan Grup > Kelola.
+    sb("master_data?tipe=eq.entitas&select=kode,label&order=kode")
+      .then((r) => setEntitasList(Array.isArray(r) ? r : []))
+      .catch(() => setEntitasList([]));
   }, []);
+
+  const namaPT = (kode) => entitasList.find((e) => e.kode === kode)?.label || kode || "OPS";
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -138,7 +145,7 @@ function UserManager({ showToast }) {
     setSaving(true);
     try {
       await createUser(form);
-      setForm({ username: "", password: "", nama: "", role: "gudang" });
+      setForm({ username: "", password: "", nama: "", role: "gudang", entitas: form.entitas });
       await load();
       showToast("User baru ditambahkan");
     } catch (e) {
@@ -194,6 +201,13 @@ function UserManager({ showToast }) {
             options={ROLES.map((r) => ({ value: r.key, label: r.label }))}
           />
         </Field>
+        <Field label="PT (akun terikat ke)">
+          <SearchableSelect
+            value={form.entitas}
+            onChange={(v) => set("entitas", v)}
+            options={[{ value: "OPS", label: namaPT("OPS") }, ...entitasList.filter((e) => e.kode !== "OPS").map((e) => ({ value: e.kode, label: e.label || e.kode }))]}
+          />
+        </Field>
         <button
           disabled={saving}
           className="sm:col-span-2 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
@@ -214,7 +228,7 @@ function UserManager({ showToast }) {
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-slate-200 truncate">{u.nama}</div>
                   <div className="text-[11px] text-slate-500 truncate">
-                    @{u.username} · {roleLabel(u.role)}
+                    @{u.username} · {roleLabel(u.role)} · {namaPT(u.entitas || "OPS")}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">

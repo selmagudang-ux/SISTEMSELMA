@@ -205,7 +205,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   // Pilihan perusahaan hanya ada di Perusahaan Grup > Keuangan Perusahaan (daftar perusahaan anak).
   const perusahaanAnak = entitasList.filter((e) => e.kode !== kodeHolding);
   const kodeAktif = !holding
-    ? ENTITAS_DEFAULT
+    ? session?.entitas || ENTITAS_DEFAULT // akun terikat ke 1 PT: Keuangan dikunci ke PT-nya
     : modeGrup && sub === "detail"
       ? perusahaanAnak.some((e) => e.kode === perusahaanPilih) ? perusahaanPilih : perusahaanAnak[0]?.kode || ""
       : kodeHolding;
