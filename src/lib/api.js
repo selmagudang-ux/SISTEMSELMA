@@ -256,7 +256,14 @@ export async function sb(path, opts = {}) {
       throw new Error("Sesi login berakhir atau tidak punya izin untuk perubahan ini. Silakan logout lalu login ulang.");
     }
     const friendly = friendlyDbError(parsed, res.status);
-    const err = new Error(friendly || parsed?.message || text || `${res.status} ${res.statusText}`);
+    // Untuk bentrok data unik (23505): tambahkan tabel, nama aturan, dan baris yang bentrok,
+    // supaya kelihatan tabel mana yang menolak (pesan ramah saja tidak cukup untuk melacak).
+    let rincian = "";
+    if (parsed?.code === "23505") {
+      const aturan = String(parsed.message || "").match(/constraint "([^"]+)"/)?.[1] || "";
+      rincian = ` [${String(path).split("?")[0]}${aturan ? ` · ${aturan}` : ""}${parsed.details ? ` · ${parsed.details}` : ""}]`;
+    }
+    const err = new Error(friendly ? friendly + rincian : parsed?.message || text || `${res.status} ${res.statusText}`);
     // pgCode dipakai di beberapa tempat (mis. hapus SKU) untuk tahu kapan harus
     // fallback ke "nonaktifkan" alih-alih gagal total waktu kena foreign key.
     if (parsed?.code) err.pgCode = parsed.code;
