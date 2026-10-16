@@ -2053,8 +2053,16 @@ export async function cariAtauBuatRekeningTetap(master, labelTetap, suggestKodeF
   );
   if (ada) return ada.kode;
   const dasar = suggestKodeFn(labelTetap);
-  let kode = e === ENTITAS_DEFAULT ? dasar : `${dasar}-${String(e).toLowerCase()}`;
-  if (daftar.some((r) => r.kode === kode)) kode = `${kode}${daftar.length + 1}`;
+  const basis = e === ENTITAS_DEFAULT ? dasar : `${dasar}-${String(e).toLowerCase()}`;
+  // Cek kode ke database langsung (bukan cuma master di memori): rekening yang sudah dihapus
+  // bisa meninggalkan baris pemetaan rekening_entitas dengan kode yang sama -> bentrok unique.
+  const terpakai = new Set(
+    ((await sbAll("master_data?select=tipe,kode&tipe=in.(rekening,rekening_entitas)").catch(() => [])) || []).map((m) => m.kode)
+  );
+  daftar.forEach((r) => terpakai.add(r.kode));
+  (master?.rekening_entitas || []).forEach((m) => terpakai.add(m.kode));
+  let kode = basis;
+  for (let n = 2; terpakai.has(kode); n++) kode = `${basis}-${n}`;
   await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening", kode, label: labelTetap }) });
   if (e !== ENTITAS_DEFAULT) {
     await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_entitas", kode, label: e }) });

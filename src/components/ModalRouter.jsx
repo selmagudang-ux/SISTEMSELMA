@@ -3593,6 +3593,14 @@ export default function ModalRouter({
             for (let i = 0; i < bonList.length; i++) {
               const { totalHarga, catatan } = bonList[i];
               const kodePesan = `PSN-${String(nomorAwal + i).padStart(4, "0")}`;
+              // Kategori & rekening pembayaran disiapkan SEBELUM pesanan disimpan, supaya kalau
+              // gagal di sini tidak tersisa baris pesanan tanpa pencatatan keuangannya.
+              let kategoriSupplier = null;
+              let rekeningSupplier = null;
+              if (totalHarga > 0) {
+                kategoriSupplier = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_PEMBAYARAN_SUPPLIER);
+                rekeningSupplier = await cariAtauBuatRekeningTetap(master, REKENING_PEMBAYARAN_SUPPLIER, suggestKode);
+              }
               const [pesananBaru] = await sb("pesanan_masuk", {
                 method: "POST",
                 body: JSON.stringify({
@@ -3633,8 +3641,6 @@ export default function ModalRouter({
               // datang/dikonfirmasi, karena pembayaran ke supplier biasanya
               // sudah keluar duluan saat pesan.
               if (totalHarga > 0) {
-                const kategoriSupplier = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_PEMBAYARAN_SUPPLIER);
-                const rekeningSupplier = await cariAtauBuatRekeningTetap(master, REKENING_PEMBAYARAN_SUPPLIER, suggestKode);
                 const [transaksiSupplier] = await sb("keuangan_transaksi", {
                   method: "POST",
                   body: JSON.stringify({
