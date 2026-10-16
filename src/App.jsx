@@ -531,7 +531,7 @@ function MainApp({ session, onLogout }) {
     const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
     if (keys.length === 0) return;
     try {
-      await sb("marketplace_notif_ack?on_conflict=notif_key", {
+      await sb("marketplace_notif_ack?on_conflict=entitas,notif_key", {
         method: "POST",
         prefer: "return=representation,resolution=merge-duplicates",
         body: JSON.stringify(keys.map((k) => ({ notif_key: k }))),

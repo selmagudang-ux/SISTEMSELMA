@@ -106,6 +106,8 @@ export const TABEL_PER_PT = new Set([
   "barang_rusak", "pesanan_masuk", "pesanan_penerimaan", "suppliers",
   "pengajuan_restock", "belanja_habis_pakai", "belanja_habis_pakai_item",
   "perlengkapan", "perlengkapan_mutasi",
+  // Konfirmasi notifikasi "Cek Marketplace" (stok tipis / rak berubah) per PT.
+  "marketplace_notif_ack",
 ]);
 
 function entitasSesi() {
@@ -345,6 +347,10 @@ export async function sbAll(path, opts = {}) {
 export const STORAGE_BUCKET = "verifikasi-foto";
 
 export async function sbUploadFoto(file, path) {
+  // Akun PT selain Selma menyimpan file di sub-folder PT-nya (mis. "alv/ABC-1.jpg"),
+  // supaya SKU yang sama di dua PT tidak saling menimpa foto di Storage.
+  const ptFoto = entitasSesi();
+  if (ptFoto !== ENTITAS_DEFAULT) path = `${String(ptFoto).toLowerCase().replace(/[^a-z0-9_-]/g, "-")}/${path}`;
   const res = await fetchBatas(
     `${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${path}`,
     {
