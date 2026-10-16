@@ -108,6 +108,9 @@ export const TABEL_PER_PT = new Set([
   "perlengkapan", "perlengkapan_mutasi",
   // Konfirmasi notifikasi "Cek Marketplace" (stok tipis / rak berubah) per PT.
   "marketplace_notif_ack",
+  // View "terbaru per SKU/rak" (hemat egress) — HARUS punya kolom entitas
+  // (lihat view_latest_per_pt.sql) dan dikelompokkan per (entitas, sku/rak).
+  "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",
 ]);
 
 function entitasSesi() {
