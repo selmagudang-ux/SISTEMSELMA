@@ -379,10 +379,13 @@ function MainApp({ session, onLogout }) {
   const [nav, setNav] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");
-      if (saved && allowed.includes(saved.menu)) {
+      if (saved) {
         // Sub-menu Keuangan/Holding lama (sudah digabung jadi tab) dipetakan ke yang baru.
         const lama = (saved.menu === "keuangan" || saved.menu === "holding") && SUB_KEUANGAN_LAMA[saved.sub];
-        return lama ? { ...saved, sub: lama.sub } : saved;
+        let s = lama ? { ...saved, sub: lama.sub } : saved;
+        // Menu Holding lama dipecah: halaman grup/antar-entitas sekarang di "Perusahaan Grup".
+        if (s.menu === "holding" && ["grup", "antar-entitas"].includes(s.sub)) s = { ...s, menu: "perusahaan" };
+        if (allowed.includes(s.menu)) return s;
       }
     } catch {}
     return { menu: landingKeDashboard ? "dashboard" : allowed[0], sub: null };
@@ -913,7 +916,7 @@ function MainApp({ session, onLogout }) {
       // loadMarketplace juga ditarik di sini supaya Laporan Keuangan bisa
       // menampilkan info tambahan "Iklan Marketplace" periode berjalan
       // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
-      if (menu === "keuangan" || menu === "holding") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
+      if (menu === "keuangan" || menu === "holding" || menu === "perusahaan") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
       if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan], force);
@@ -1375,11 +1378,26 @@ function MainApp({ session, onLogout }) {
                   setModal={setModal}
                 />
               )}
+              {nav.menu === "perusahaan" && (
+                <Keuangan
+                  mode="grup"
+                  navigasi={navigate}
+                  sub={nav.sub || "grup"}
+                  session={session}
+                  keuanganTransaksi={keuanganTransaksi}
+                  pesananMasuk={pesananMasuk}
+                  marketplaceTransaksi={marketplaceTransaksi}
+                  master={master}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
+                  setModal={setModal}
+                />
+              )}
               {nav.menu === "holding" && (
                 <Keuangan
                   mode="holding"
                   navigasi={navigate}
-                  sub={nav.sub || "grup"}
+                  sub={nav.sub || "transaksi"}
                   session={session}
                   keuanganTransaksi={keuanganTransaksi}
                   pesananMasuk={pesananMasuk}

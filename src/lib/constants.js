@@ -381,23 +381,32 @@ export const NAV = [
     ],
   },
   {
-    // HOLDING — pembukuan perusahaan induk, TERPISAH dari Keuangan SELMA (OPS).
-    // Memakai halaman yang sama dengan Keuangan (pages/Keuangan.jsx, mode="holding")
-    // tapi datanya dikunci ke entitas Holding. Super Appa, Pemilik, Pemegang Saham,
-    // dan Super Admin (hanya sub Antar Entitas) — lihat ROLE_MENUS & allowedSubMenus.
+    // HOLDING — dibagi dua menu supaya tidak membingungkan:
+    //  1) "Perusahaan Grup" : semua yang menyangkut perusahaan-perusahaan dalam grup
+    //     (ringkasan & konsolidasi, lihat keuangan perusahaan, transfer Antar Entitas).
+    //  2) "Keuangan Holding": pembukuan Holding SENDIRI (kas, transaksi, laporan,
+    //     penarikan pemilik) — dikunci ke entitas Holding, tanpa pilihan perusahaan.
+    // Keduanya memakai halaman pages/Keuangan.jsx (mode="grup" dan mode="holding").
+    // Role: Super Appa, Pemilik (keduanya), Pemegang Saham (hanya Ringkasan), dan
+    // Super Admin (hanya Antar Entitas) — lihat ROLE_MENUS & allowedSubMenus.
     key: "holding-group", label: "HOLDING", icon: Building2, group: true,
     children: [
       {
-        key: "holding", label: "Keuangan Grup", icon: Landmark,
+        key: "perusahaan", label: "Perusahaan Grup", icon: Building2,
         children: [
-          // Halaman awal: keuangan seluruh perusahaan dalam grup (hanya baca).
           // Tab: Per Perusahaan | Konsolidasi.
           { key: "grup", label: "Ringkasan" },
-          // Halaman di bawah ini punya pilihan "Perusahaan" (Holding / SELMA / dst).
+          // Lihat (hanya baca) transaksi, kas & laporan satu perusahaan anak.
+          { key: "detail", label: "Keuangan Perusahaan" },
+          { key: "antar-entitas", label: "Antar Entitas" },
+        ],
+      },
+      {
+        key: "holding", label: "Keuangan Holding", icon: Landmark,
+        children: [
           { key: "transaksi", label: "Transaksi" },
           { key: "kas", label: "Kas" },
           { key: "laporan", label: "Laporan Keuangan" },
-          { key: "antar-entitas", label: "Antar Entitas" },
           { key: "penarikan", label: "Penarikan Pemilik" },
           { key: "pengaturan", label: "Pengaturan" },
         ],
@@ -481,7 +490,7 @@ export function filterNavByAllowed(nodes, allowedMenuKeys, role) {
   // Sub-menu bertanda onlyRole hanya tampil untuk role itu.
   const sembunyikanSub = (n) => {
     if (!n.children) return n;
-    const subs = n.key === "holding" || n.key === "keuangan" ? allowedSubMenus(role, n.key) : null;
+    const subs = n.key === "holding" || n.key === "perusahaan" || n.key === "keuangan" ? allowedSubMenus(role, n.key) : null;
     return {
       ...n,
       children: n.children.filter((c) => (!c.onlyRole || c.onlyRole === role) && (!subs || subs.includes(c.key))),
@@ -580,13 +589,14 @@ export const ROLE_MENUS = {
   // Super Admin: seluruh sistem SELMA + menu Holding, tapi di Holding HANYA
   // sub-menu "Antar Entitas" (lihat allowedSubMenus) dan hanya boleh mencatat
   // transfer dari perusahaan KE Holding (lihat ARAH_ANTAR_ENTITAS).
-  superadmin: [...ALL_MENU_KEYS, "barang-masuk"],
+  // (Menu "holding" = pembukuan Holding sendiri, bukan untuk Super Admin.)
+  superadmin: [...ALL_MENU_KEYS.filter((k) => k !== "holding"), "barang-masuk"],
   // Super Appa: akses ke mana pun, termasuk Holding. Dari luar tampil sebagai
   // "Super Admin" — lihat catatan di ROLES di atas.
   superappa: [...ALL_MENU_KEYS, "barang-masuk"],
-  // Pemilik: HANYA Holding (read-only, KECUALI mencatat transfer Antar Entitas
+  // Pemilik: HANYA menu Holding (Perusahaan Grup + Keuangan Holding; read-only, KECUALI mencatat transfer Antar Entitas
   // dari Holding KE perusahaan — lihat ARAH_ANTAR_ENTITAS), plus Chat & Panduan.
-  owner: ["holding", "chat", "panduan"],
+  owner: ["perusahaan", "holding", "chat", "panduan"],
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
   // di ROLE_SUBMENUS. "Stok Menipis" (ajukan restock) sekarang jadi sub-menu
@@ -614,7 +624,7 @@ export const ROLE_MENUS = {
   keuangan: ["keuangan", "chat", "panduan"],
   // Pemegang Saham: hanya melihat tab Konsolidasi di menu Holding (read-only,
   // lihat ROLE_READONLY di lib/api.js & allowedSubMenus di bawah).
-  pemegang_saham: ["holding"],
+  pemegang_saham: ["perusahaan"],
 };
 
 // ---------------------------------------------------------------------------
@@ -694,10 +704,16 @@ export const SUB_KEUANGAN_LAMA = {
 export function allowedSubMenus(role, menuKey) {
   // Tab "Riwayat Perubahan" (Keuangan > Pengaturan): hanya superappa (guard di pages/Keuangan.jsx).
   // Holding: Pemegang Saham hanya Grup (tab Konsolidasi saja); Pemilik & Super Appa semua sub.
-  if (menuKey === "holding") {
+  // Perusahaan Grup: Pemegang Saham hanya Ringkasan (tab Konsolidasi saja);
+  // Super Admin hanya Antar Entitas (mencatat transfer perusahaan -> Holding).
+  if (menuKey === "perusahaan") {
     if (role === "pemegang_saham") return ["grup"];
-    // Super Admin hanya butuh Antar Entitas (mencatat transfer perusahaan -> Holding).
     if (role === "superadmin") return ["antar-entitas"];
+    return null;
+  }
+  // Keuangan Holding (pembukuan Holding sendiri): Pemilik & Super Appa semua sub.
+  if (menuKey === "holding") {
+    if (role === "pemegang_saham" || role === "superadmin") return [];
     return null;
   }
   // Keuangan SELMA (OPS) tidak punya Antar Entitas / Konsolidasi — itu di menu Holding.

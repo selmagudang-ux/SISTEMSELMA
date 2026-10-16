@@ -130,21 +130,24 @@ function TabBar({ tabs, aktif, onPilih }) {
 
 export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesananMasuk = [], marketplaceTransaksi = [], master = {}, reload, showToast, setModal, session, mode = "ops", navigasi }) {
   // mode "ops"     = menu Keuangan SELMA, dikunci ke entitas OPS.
-  // mode "holding" = menu Holding, dikunci ke entitas Holding (halaman & komponen sama).
-  const holding = mode === "holding";
+  // mode "holding" = menu Keuangan Holding (pembukuan Holding sendiri), dikunci ke entitas Holding.
+  // mode "grup"    = menu Perusahaan Grup: Ringkasan/Konsolidasi, Keuangan Perusahaan
+  //                  (lihat data perusahaan anak), dan Antar Entitas.
+  const modeGrup = mode === "grup";
+  const holding = mode === "holding" || modeGrup;
 
   // Pemegang Saham hanya boleh melihat Konsolidasi (menu lain tidak ada di sidebar,
   // ini pengaman kalau sub tersimpan lama di sessionStorage). Di menu Grup, Pemegang
   // Saham hanya mendapat tab Konsolidasi (lihat TAB_SUB di bawah).
   // Sub-menu Holding juga dibatasi per role (mis. Super Admin hanya Antar Entitas):
   // kalau sub yang diminta tidak diizinkan, jatuh ke sub pertama yang diizinkan.
-  const subsBoleh = mode === "holding" ? allowedSubMenus(session?.role, "holding") : null;
+  const subsBoleh = holding ? allowedSubMenus(session?.role, modeGrup ? "perusahaan" : "holding") : null;
   // Nama sub-menu lama (tersimpan di sessionStorage / tautan lama) dipetakan ke menu hasil penggabungan.
   const lama = SUB_KEUANGAN_LAMA[subProp];
   const subDiminta = lama ? lama.sub : subProp;
-  const subValid = ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["grup", "antar-entitas", "penarikan"] : [])];
+  const subValid = modeGrup ? ["grup", "detail", "antar-entitas"] : ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["penarikan"] : [])];
   const subPilih = session?.role === "pemegang_saham" ? "grup" : subsBoleh && !subsBoleh.includes(subDiminta) ? subsBoleh[0] : subDiminta;
-  const sub = subValid.includes(subPilih) ? subPilih : "transaksi";
+  const sub = subValid.includes(subPilih) ? subPilih : subValid[0];
   // Tab di dalam tiap menu. Pilihan tab diingat per menu selama halaman terbuka.
   const [tabPilih, setTabPilih] = useState({});
   const TAB_SUB = {
@@ -169,6 +172,13 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
             { key: "ringkasan", label: "Per Perusahaan" },
             { key: "konsolidasi", label: "Konsolidasi" },
           ],
+    // Keuangan Perusahaan (hanya baca): satu perusahaan anak, beberapa tampilan.
+    detail: [
+      { key: "transaksi", label: "Transaksi" },
+      { key: "akun", label: "Akun Kas" },
+      { key: "buku", label: "Buku Kas" },
+      { key: "laporan", label: "Laporan Keuangan" },
+    ],
   };
   const daftarTab = TAB_SUB[sub] || null;
   const tabDiminta = tabPilih[sub] || (lama && lama.sub === sub ? lama.tab : null);
@@ -191,9 +201,14 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
       return "";
     }
   });
-  // Penarikan Pemilik selalu membukukan entitas Holding (uang Holding yang dipakai pribadi).
-  const paksaHolding = holding && sub === "penarikan";
-  const kodeAktif = !holding ? ENTITAS_DEFAULT : paksaHolding ? kodeHolding : entitasList.some((e) => e.kode === perusahaanPilih) ? perusahaanPilih : kodeHolding;
+  // Menu Keuangan Holding selalu membukukan entitas Holding (termasuk Penarikan Pemilik).
+  // Pilihan perusahaan hanya ada di Perusahaan Grup > Keuangan Perusahaan (daftar perusahaan anak).
+  const perusahaanAnak = entitasList.filter((e) => e.kode !== kodeHolding);
+  const kodeAktif = !holding
+    ? ENTITAS_DEFAULT
+    : modeGrup && sub === "detail"
+      ? perusahaanAnak.some((e) => e.kode === perusahaanPilih) ? perusahaanPilih : perusahaanAnak[0]?.kode || ""
+      : kodeHolding;
   const gantiPerusahaan = (kode) => {
     setPerusahaanPilih(kode);
     try {
@@ -206,7 +221,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   const bacaSaja = session?.role === "pemegang_saham" || (session?.role === "owner" && kodeAktif !== kodeHolding);
   // Pengecualian: di Holding → Antar Entitas, Pemilik boleh mengubah/menghapus transfer
   // arah Holding → perusahaan (tombolnya sendiri disaring per arah di pages/Holding.jsx).
-  const adaPengecualianOwner = holding && sub === "antar-entitas" && session?.role === "owner";
+  const adaPengecualianOwner = modeGrup && sub === "antar-entitas" && session?.role === "owner";
   const setModalAman = bacaSaja && !adaPengecualianOwner ? () => showToast?.("Akun ini hanya bisa melihat data (read-only).", "err") : setModal;
   // Form transaksi (ModalRouter) membaca entitas aktif dari sini untuk membatasi
   // pilihan rekening & memetakan rekening baru ke entitas yang benar.
@@ -227,11 +242,11 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
           Mode lihat saja — akun ini tidak bisa menambah atau mengubah data.
         </div>
       )}
-      {holding && entitasList.length > 1 && (
+      {modeGrup && sub === "detail" && perusahaanAnak.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <span className="text-[11px] text-slate-500">Perusahaan:</span>
           <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
-            {entitasList.map((e) => (
+            {perusahaanAnak.map((e) => (
               <button
                 key={e.kode}
                 type="button"
@@ -251,7 +266,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
 
   // Menu Holding tanpa entitas Holding = pembukuan Holding belum disiapkan.
   // Jangan jatuh ke data tanpa batas (itu akan menampilkan data OPS di Holding).
-  if (holding && !kodeAktif) {
+  if (holding && !kodeHolding) {
     return (
       <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 text-amber-400 text-xs px-4 py-3">
         Entitas Holding belum diatur. Jalankan <span className="font-mono">fase4_holding.sql</span> di database, lalu muat ulang halaman.
@@ -283,7 +298,25 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     // entitas: [] = sembunyikan kolom pilih entitas (entitas sudah dikunci oleh menu).
     return bungkus(<AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />, barTab);
   }
-  if (holding && sub === "grup") {
+  if (modeGrup && sub === "detail") {
+    if (!kodeAktif) {
+      return <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-400 text-xs px-4 py-3">Belum ada perusahaan anak yang terdaftar di grup.</div>;
+    }
+    if (tab === "akun") {
+      return bungkus(<AkunKas keuanganTransaksi={lingkup.transaksi} master={{ ...lingkup.master, entitas: [] }} reload={reload} showToast={showToast} />, barTab);
+    }
+    if (tab === "buku") {
+      return bungkus(<BukuKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} showToast={showToast} />, barTab);
+    }
+    if (tab === "laporan") {
+      return bungkus(
+        <LaporanKeuangan keuanganTransaksi={lingkup.transaksi} marketplaceTransaksi={marketplaceTransaksi} pesananMasuk={pesananMasuk} master={lingkup.master} reload={reload} showToast={showToast} />,
+        barTab
+      );
+    }
+    return bungkus(<Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} />, barTab);
+  }
+  if (modeGrup && sub === "grup") {
     return (
       <div>
         {barTab}
@@ -294,18 +327,21 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
             keuanganTransaksi={keuanganTransaksi}
             master={master}
             onBuka={(kode) => {
-              gantiPerusahaan(kode);
-              navigasi?.("holding", "transaksi");
+              if (kode === kodeHolding) navigasi?.("holding", "transaksi");
+              else {
+                gantiPerusahaan(kode);
+                navigasi?.("perusahaan", "detail");
+              }
             }}
           />
         )}
       </div>
     );
   }
-  if (holding && sub === "penarikan") {
+  if (!modeGrup && holding && sub === "penarikan") {
     return <PenarikanPemilik keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;
   }
-  if (holding && sub === "antar-entitas") {
+  if (modeGrup && sub === "antar-entitas") {
     return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;
   }
   if (sub === "laporan") {
