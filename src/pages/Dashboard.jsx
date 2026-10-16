@@ -70,7 +70,7 @@ import PanelBarangHabisPakai from "../components/PanelBarangHabisPakai";
 // Toko Offline (dari keuangan_transaksi yang ditandai isEntriTokoOffline —
 // lihat pages/TokoOffline.jsx). Lihat fungsi DashboardPenjualan di bawah.
 const TABS = [
-  { key: "gudang", label: "Dashboard Gudang", icon: Warehouse, color: "sky" },
+  { key: "gudang", label: "Dashboard Operasional", icon: Warehouse, color: "sky" },
   { key: "penjualan", label: "Dashboard Penjualan", icon: Store, color: "emerald" },
   { key: "absensi", label: "Dashboard Absensi", icon: Clock, color: "violet" },
   { key: "keuangan", label: "Dashboard Keuangan", icon: Wallet, color: "amber" },
@@ -181,8 +181,16 @@ export default function Dashboard({
   karyawanList = [],
   pengajuanRestock = [],
   skuMaster = [],
+  entitas = ENTITAS_DEFAULT, // PT akun yang login (session.entitas); OPS = SELMA
 }) {
   const [tab, setTab] = useState("gudang");
+  // PT selain SELMA: data penjualan (grosir/reseller/marketplace) & absensi belum dipisah
+  // per PT, jadi tab itu disembunyikan — hanya Operasional & Keuangan yang datanya sudah per PT.
+  const bukanOps = entitas !== ENTITAS_DEFAULT;
+  const tabsTersedia = bukanOps ? TABS.filter((t) => t.key === "gudang" || t.key === "keuangan") : TABS;
+  const namaPerusahaan = bukanOps
+    ? ((master.entitas || []).find((e) => e.kode === entitas)?.label || entitas)
+    : "SELMA ACC BANDUNG";
 
   // Filter periode global "Bulan & Tahun" — dipakai oleh ringkasan yang
   // sifatnya berbasis periode (Keuangan, Grosir, Monitoring, Absensi). Default
@@ -197,17 +205,18 @@ export default function Dashboard({
   // App.jsx hanya memuat keuangan bulan ini; kalau periode yang dipilih lebih
   // lama, data lamanya ditarik & digabung di sini (lib/useKeuanganRentang.js).
   const { data: keuanganSemuaEntitas, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, periodeDari);
-  // Dashboard ini khusus perusahaan operasional (SELMA): rekening & transaksi Holding
-  // tidak boleh ikut terhitung (kas, pemasukan, laba). Dashboard Holding ada di menu Holding.
+  // Dashboard ini khusus SATU perusahaan (PT akun yang login): rekening & transaksi
+  // perusahaan lain / Holding tidak boleh ikut terhitung (kas, pemasukan, laba).
+  // Dashboard Holding ada di menu Holding.
   const lingkupOps = useMemo(
-    () => lingkupEntitas(keuanganSemuaEntitas, master, ENTITAS_DEFAULT),
+    () => lingkupEntitas(keuanganSemuaEntitas, master, entitas),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [keuanganSemuaEntitas, master.rekening, master.rekening_entitas, master.entitas]
+    [keuanganSemuaEntitas, master.rekening, master.rekening_entitas, master.entitas, entitas]
   );
   const keuanganDimuatOps = useMemo(
-    () => lingkupEntitas(keuanganDimuat, master, ENTITAS_DEFAULT).transaksi,
+    () => lingkupEntitas(keuanganDimuat, master, entitas).transaksi,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [keuanganDimuat, master.rekening, master.rekening_entitas, master.entitas]
+    [keuanganDimuat, master.rekening, master.rekening_entitas, master.entitas, entitas]
   );
   const keuanganTransaksi = lingkupOps.transaksi;
   const masterOps = lingkupOps.master;
@@ -223,7 +232,7 @@ export default function Dashboard({
             ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
-            : "Ringkasan alur barang, stok, dan SKU di SELMA ACC BANDUNG."
+            : `Ringkasan alur barang, stok, dan SKU di ${namaPerusahaan}.`
         }
         action={
           <FilterBulanTahun
@@ -235,8 +244,8 @@ export default function Dashboard({
         }
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        {TABS.map((t) => {
+      <div className={`grid grid-cols-2 ${bukanOps ? "sm:grid-cols-2" : "sm:grid-cols-4"} gap-3 mb-5`}>
+        {tabsTersedia.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
           const c = COLOR[t.color] || COLOR.slate;
@@ -297,7 +306,7 @@ export default function Dashboard({
           keuanganTransaksi={keuanganTransaksi}
           keuanganDimuat={keuanganDimuatOps}
           pesananMasuk={pesananMasuk}
-          marketplaceTransaksi={marketplaceTransaksi}
+          marketplaceTransaksi={bukanOps ? [] : marketplaceTransaksi}
           master={masterOps}
           onNavigate={onNavigate}
           periodeDari={periodeDari}

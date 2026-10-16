@@ -683,7 +683,8 @@ const MENU_PT_LAIN = [
 export function allowedMenus(role, entitas) {
   const menus = ROLE_MENUS[role] || ["dashboard"];
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
-    return menus.filter((k) => MENU_PT_LAIN.includes(k));
+    // Dashboard PT sendiri (data dibatasi ke PT-nya di pages/Dashboard.jsx): hanya Super Admin.
+    return menus.filter((k) => MENU_PT_LAIN.includes(k) || (k === "dashboard" && role === "superadmin"));
   }
   return menus;
 }

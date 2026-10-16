@@ -612,7 +612,9 @@ function MainApp({ session, onLogout }) {
   // nyambungin freshness-nya lintas reload. TTL & semantik force=true tetap
   // sama persis (lihat catatan CACHE_TTL_MS di atas) — cuma sumber "kapan
   // terakhir dimuat & datanya apa" yang ditambah localStorage.
-  const CORE_CACHE_KEY = "selma-cache-core-v1";
+  // Cache dipisah per PT: tanpa ini, akun Alivia yang login di browser yang sama
+  // dengan Selma (dalam 90 dtk / 6 jam) ikut menampilkan data cache milik Selma.
+  const CORE_CACHE_KEY = `selma-cache-core-v1-${(session && session.entitas) || "OPS"}`;
   const bacaCacheCoreLokal = () => {
     try {
       const raw = localStorage.getItem(CORE_CACHE_KEY);
@@ -1196,6 +1198,7 @@ function MainApp({ session, onLogout }) {
                   absensiRows={absensiRows}
                   karyawanList={karyawanList}
                   pengajuanRestock={pengajuanRestock}
+                  entitas={session.entitas || "OPS"}
                 />
               )}
               {nav.menu === "persetujuan-restock" && (
