@@ -79,7 +79,7 @@ export default function Login({ onLogin }) {
           </button>
         </form>
 
-        <div className="text-center text-[11px] text-slate-600 mt-4">Sistem Selma — Manajemen Inventori</div>
+        <div className="text-center text-[11px] text-slate-600 mt-4">SISTEM ERP SELMA</div>
       </div>
     </div>
   );

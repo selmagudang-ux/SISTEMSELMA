@@ -210,7 +210,7 @@ export default function Sidebar({
               ) : (
                 <>
                   <div className="font-medium text-sm leading-none text-md-on-surface">Sistem Selma</div>
-                  <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5">Manajemen inventori</div>
+                  <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5">SISTEM ERP SELMA</div>
                 </>
               )}
             </div>
