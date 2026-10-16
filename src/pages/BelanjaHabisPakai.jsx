@@ -14,7 +14,7 @@ import {
   formatTanggalID,
   suggestKode,
 } from "../components/ui";
-import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK } from "../lib/api";
+import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, lingkupEntitas, entitasSesi } from "../lib/api";
 import { isSuperadminLike } from "../lib/constants";
 
 // =========================================================
@@ -1077,7 +1077,9 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
 // ---------------------------------------------------------
 function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
   const [tanggal, setTanggal] = useState(todayIso());
-  const rekeningList = master.rekening || [];
+  // Rekening pembayaran dibatasi ke PT akun yang login — transaksi mengikuti entitas rekeningnya,
+  // jadi rekening PT lain tidak boleh bisa dipilih di sini.
+  const rekeningList = lingkupEntitas([], master, entitasSesi()).master.rekening || [];
   const petaKas = petaKasRekening(master.kas_grup);
   const [rekening, setRekening] = useState("");
   const [saving, setSaving] = useState(false);

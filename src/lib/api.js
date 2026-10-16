@@ -111,6 +111,8 @@ export const TABEL_PER_PT = new Set([
   // View "terbaru per SKU/rak" (hemat egress) — HARUS punya kolom entitas
   // (lihat view_latest_per_pt.sql) dan dikelompokkan per (entitas, sku/rak).
   "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",
+  // View stok barang habis pakai (perlengkapan + mutasi) — wajib punya kolom entitas.
+  "perlengkapan_stok",
 ]);
 
 // Pemilik/Super Appa (akun Holding) boleh MELIHAT data gudang PT lain di Dashboard.
@@ -124,7 +126,7 @@ export function entitasBacaSaatIni() {
   return entitasBacaOverride || entitasSesi();
 }
 
-function entitasSesi() {
+export function entitasSesi() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
     return (raw && JSON.parse(raw).entitas) || ENTITAS_DEFAULT;
