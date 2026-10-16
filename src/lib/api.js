@@ -1080,11 +1080,13 @@ export function ringkasanKeuangan(transaksi, dari, sampai) {
     if (sampai && t.tanggal > sampai) return false;
     return true;
   });
+  // Prive/dividen, pinjaman ke pemilik, dan pelunasannya tidak dihitung (lihat bukanLabaRugi),
+  // tapi tetap ada di `list` supaya terlihat di daftar transaksi.
   const masuk = list
-    .filter((t) => t.tipe === "masuk")
+    .filter((t) => t.tipe === "masuk" && !bukanLabaRugi(t))
     .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   const keluar = list
-    .filter((t) => t.tipe === "keluar")
+    .filter((t) => t.tipe === "keluar" && !bukanLabaRugi(t))
     .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   return { masuk, keluar, saldo: masuk - keluar, list };
 }
@@ -1389,7 +1391,7 @@ export function arusKasPerPeriode(transaksi) {
 // kategoriList = master_data tipe "kategori_keluar" ({ kode, label }[]), dipakai
 // untuk menerjemahkan kode kategori ke nama yang enak dibaca.
 export function breakdownPengeluaranKategori(transaksi, kategoriList) {
-  const pengeluaran = (transaksi || []).filter((t) => t.tipe === "keluar");
+  const pengeluaran = (transaksi || []).filter((t) => t.tipe === "keluar" && !bukanLabaRugi(t));
   const total = pengeluaran.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
   const map = new Map();
@@ -1470,7 +1472,7 @@ export function kelompokkanBreakdown(data, pemetaan, total) {
 // di atas, tapi untuk transaksi tipe "masuk". kategoriList = master_data tipe
 // "kategori_masuk". Dipakai oleh Laporan Laba Rugi di bawah.
 export function breakdownPemasukanKategori(transaksi, kategoriList) {
-  const pemasukan = (transaksi || []).filter((t) => t.tipe === "masuk");
+  const pemasukan = (transaksi || []).filter((t) => t.tipe === "masuk" && !bukanLabaRugi(t));
   const total = pemasukan.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
   const map = new Map();
@@ -1566,7 +1568,7 @@ export function laporanBulananData(transaksi, kategoriMasukList, kategoriKeluarL
     const map = new Map();
     (kategoriList || []).forEach((k) => map.set(k.kode, { kode: k.kode, label: k.label, bulan: Array(12).fill(0) }));
     list
-      .filter((t) => t.tipe === tipe)
+      .filter((t) => t.tipe === tipe && !bukanLabaRugi(t))
       .forEach((t) => {
         const kode = t.kategori || "";
         if (!map.has(kode)) {
@@ -1896,6 +1898,36 @@ export const PENANDA_ANTAR_ENTITAS = {
   pelunasan_pinjaman: "Pelunasan Pinjaman",
   biaya_antar: "Biaya Antar Perusahaan",
 };
+
+// =========================================================
+// PENARIKAN PEMILIK (menu Holding > Penarikan Pemilik)
+// Uang Holding yang dipakai pemilik secara pribadi. Disimpan di keuangan_transaksi
+// (tipe keluar/masuk) dengan kolom penanda di bawah ini. Yang BUKAN laba rugi:
+//   prive_dividen     (keluar) : prive (usaha perorangan) / dividen (setelah PT berdiri)
+//   pinjaman_pemilik  (keluar) : pinjaman ke pemilik = piutang, harus kembali
+//   pelunasan_pemilik (masuk)  : pemilik mengembalikan pinjaman
+// gaji_pemilik (keluar) tetap beban biasa, jadi ikut laba rugi.
+// =========================================================
+export const PENARIKAN_PEMILIK = {
+  prive_dividen: "Prive / Dividen",
+  pinjaman_pemilik: "Pinjaman ke Pemilik",
+  gaji_pemilik: "Gaji Pemilik",
+  pelunasan_pemilik: "Pelunasan Pinjaman Pemilik",
+};
+export const TIPE_PENARIKAN = {
+  prive_dividen: "keluar",
+  pinjaman_pemilik: "keluar",
+  gaji_pemilik: "keluar",
+  pelunasan_pemilik: "masuk",
+};
+// Transaksi yang tidak boleh dihitung ke pendapatan/beban (laba rugi), tapi tetap
+// menggerakkan saldo kas.
+export function bukanLabaRugi(t) {
+  if (!t || !t.penanda) return false;
+  if (t.tipe === "keluar") return t.penanda === "prive_dividen" || t.penanda === "pinjaman_pemilik";
+  if (t.tipe === "masuk") return t.penanda === "pelunasan_pemilik";
+  return false;
+}
 
 export function petaEntitasRekening(list) {
   const peta = {};

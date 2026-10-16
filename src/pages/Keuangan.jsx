@@ -38,6 +38,7 @@ import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/D
 import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { AntarEntitas, Konsolidasi, RingkasanGrup } from "./Holding";
+import PenarikanPemilik from "./PenarikanPemilik";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
@@ -141,7 +142,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   // Nama sub-menu lama (tersimpan di sessionStorage / tautan lama) dipetakan ke menu hasil penggabungan.
   const lama = SUB_KEUANGAN_LAMA[subProp];
   const subDiminta = lama ? lama.sub : subProp;
-  const subValid = ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["grup", "antar-entitas"] : [])];
+  const subValid = ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["grup", "antar-entitas", "penarikan"] : [])];
   const subPilih = session?.role === "pemegang_saham" ? "grup" : subsBoleh && !subsBoleh.includes(subDiminta) ? subsBoleh[0] : subDiminta;
   const sub = subValid.includes(subPilih) ? subPilih : "transaksi";
   // Tab di dalam tiap menu. Pilihan tab diingat per menu selama halaman terbuka.
@@ -190,7 +191,9 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
       return "";
     }
   });
-  const kodeAktif = !holding ? ENTITAS_DEFAULT : entitasList.some((e) => e.kode === perusahaanPilih) ? perusahaanPilih : kodeHolding;
+  // Penarikan Pemilik selalu membukukan entitas Holding (uang Holding yang dipakai pribadi).
+  const paksaHolding = holding && sub === "penarikan";
+  const kodeAktif = !holding ? ENTITAS_DEFAULT : paksaHolding ? kodeHolding : entitasList.some((e) => e.kode === perusahaanPilih) ? perusahaanPilih : kodeHolding;
   const gantiPerusahaan = (kode) => {
     setPerusahaanPilih(kode);
     try {
@@ -298,6 +301,9 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
         )}
       </div>
     );
+  }
+  if (holding && sub === "penarikan") {
+    return <PenarikanPemilik keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;
   }
   if (holding && sub === "antar-entitas") {
     return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;

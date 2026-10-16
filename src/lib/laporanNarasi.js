@@ -5,7 +5,7 @@
 // bukan sekadar tabel angka. Dipakai di halaman Keuangan (tombol
 // "Laporan Sederhana"), bisa disalin teksnya atau dikirim ke WhatsApp.
 // =========================================================
-import { fmtRp } from "./api";
+import { fmtRp, bukanLabaRugi } from "./api";
 import { formatTanggalID } from "../components/ui";
 
 function labelDari(list, kode) {
@@ -32,7 +32,7 @@ export function buatLaporanNarasi({
   kategoriKeluarList,
   namaUsaha,
 }) {
-  const transaksiNonTransfer = (list || []).filter((t) => t.tipe !== "transfer");
+  const transaksiNonTransfer = (list || []).filter((t) => t.tipe !== "transfer" && !bukanLabaRugi(t));
   const masuk = transaksiNonTransfer
     .filter((t) => t.tipe === "masuk")
     .reduce((a, t) => a + (Number(t.jumlah) || 0), 0);

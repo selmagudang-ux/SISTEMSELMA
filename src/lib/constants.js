@@ -398,6 +398,7 @@ export const NAV = [
           { key: "kas", label: "Kas" },
           { key: "laporan", label: "Laporan Keuangan" },
           { key: "antar-entitas", label: "Antar Entitas" },
+          { key: "penarikan", label: "Penarikan Pemilik" },
           { key: "pengaturan", label: "Pengaturan" },
         ],
       },
@@ -642,6 +643,11 @@ export function bolehTransferAntarEntitas(role, entAsal, entTujuan, kodeHolding)
   if (entAsal === kodeHolding) return !!a.dariHolding;
   if (entTujuan === kodeHolding) return !!a.keHolding;
   return !!a.antarAnak; // dua perusahaan non-Holding
+}
+
+// Siapa boleh mencatat Penarikan Pemilik (uang Holding yang dipakai pribadi).
+export function bisaPenarikanPemilik(role) {
+  return role === "owner" || role === "superappa";
 }
 
 // Role ini punya hak mencatat transfer Antar Entitas arah apa pun?

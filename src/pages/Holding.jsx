@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding } from "../lib/api";
+import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, bukanLabaRugi } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
@@ -110,6 +110,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
     });
     const ember = (kode, tanggal) => perEnt[kode] && perEnt[kode].bulan[(tanggal || "").slice(0, 7)];
     semua.forEach((t) => {
+      if (bukanLabaRugi(t)) return; // prive/dividen & pinjaman pemilik bukan laba rugi
       if (t.tipe === "masuk" || t.tipe === "keluar") {
         const b = ember(k.entDari(t.rekening), t.tanggal);
         if (b) b[t.tipe] += nilai(t);
@@ -615,7 +616,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     const periode = semua.filter((t) => (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai));
     const perEnt = {};
     ents.forEach((e) => {
-      perEnt[e.kode] = { kas: { [KAS_BANK]: 0, [KAS_KECIL]: 0 }, masuk: 0, keluar: 0, antarMasuk: 0, antarKeluar: 0, dividenMasuk: 0, modal: 0, dividen: 0, pinjaman: 0, biaya: 0, tanpa: 0 };
+      perEnt[e.kode] = { kas: { [KAS_BANK]: 0, [KAS_KECIL]: 0 }, masuk: 0, keluar: 0, prive: 0, antarMasuk: 0, antarKeluar: 0, dividenMasuk: 0, modal: 0, dividen: 0, pinjaman: 0, biaya: 0, tanpa: 0 };
     });
     k.rekeningList.forEach((r) => {
       const e = perEnt[k.entDari(r.kode)];
@@ -623,6 +624,15 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     });
     periode.forEach((t) => {
       const j = nilai(t);
+      if (bukanLabaRugi(t)) {
+        // Prive/dividen ke pemilik: uang keluar dari grup, tapi bukan beban. Pinjaman ke pemilik
+        // dan pelunasannya tidak masuk laba rugi maupun baris ini (lihat menu Penarikan Pemilik).
+        if (t.tipe === "keluar" && t.penanda === "prive_dividen") {
+          const e = perEnt[k.entDari(t.rekening)];
+          if (e) e.prive += j;
+        }
+        return;
+      }
       if (t.tipe === "masuk") {
         const e = perEnt[k.entDari(t.rekening)];
         if (e) e.masuk += j;
@@ -673,6 +683,7 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     { label: "Laba operasional", ambil: (p) => p.masuk - p.keluar, tebal: true },
     { label: "Pendapatan dividen (dieliminasi di Konsolidasi)", ambil: (p) => p.dividenMasuk, gabung: () => 0, indent: true },
     { label: "Laba (rugi) entitas", ambil: (p) => p.masuk - p.keluar + p.dividenMasuk, gabung: () => jumlahSemua((p) => p.masuk - p.keluar), tebal: true },
+    { label: "Prive / dividen ke pemilik (tidak mengurangi laba)", ambil: (p) => p.prive, indent: true },
     { judul: "Dana antar entitas (periode; + diterima, − diberikan)" },
     { label: "Modal", ambil: (p) => p.modal, indent: true },
     { label: "Dividen", ambil: (p) => p.dividen, indent: true },
