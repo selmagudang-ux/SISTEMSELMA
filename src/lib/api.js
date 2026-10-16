@@ -113,6 +113,17 @@ export const TABEL_PER_PT = new Set([
   "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",
 ]);
 
+// Pemilik/Super Appa (akun Holding) boleh MELIHAT data gudang PT lain di Dashboard.
+// Override ini hanya dipakai untuk request GET (baca); POST/PATCH/DELETE tetap
+// memakai PT akun sendiri, jadi tidak ada tulisan yang mendarat di PT yang sedang dilihat.
+let entitasBacaOverride = null;
+export function aturEntitasBaca(kode) {
+  entitasBacaOverride = kode || null;
+}
+export function entitasBacaSaatIni() {
+  return entitasBacaOverride || entitasSesi();
+}
+
 function entitasSesi() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
@@ -136,7 +147,8 @@ export function terapkanEntitasPT(path, method, body) {
       return { path, body };
     }
   }
-  return { path: `${path}${path.includes("?") ? "&" : "?"}entitas=eq.${encodeURIComponent(e)}`, body };
+  const eFilter = String(method).toUpperCase() === "GET" ? entitasBacaSaatIni() : e;
+  return { path: `${path}${path.includes("?") ? "&" : "?"}entitas=eq.${encodeURIComponent(eFilter)}`, body };
 }
 
 // Satu-satunya pengecualian untuk role read-only: PATCH ke pengajuan_restock
@@ -2046,6 +2058,22 @@ export async function cariAtauBuatRekeningTetap(master, labelTetap, suggestKodeF
     await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_entitas", kode, label: e }) });
   }
   return kode;
+}
+
+// Gabungan semua perusahaan OPERASIONAL (tanpa rekening Holding): dipakai Dashboard
+// akun Holding. Transfer antar-PT saling meniadakan karena kedua rekeningnya ikut;
+// transfer ke Holding tetap dihitung sebagai uang keluar dari gabungan PT.
+export function lingkupGabunganPT(transaksi, master) {
+  const entitasList = master?.entitas || [];
+  if (entitasList.length < 2 || !entitasList.some((e) => e.kode === ENTITAS_HOLDING)) return { transaksi, master };
+  const peta = petaEntitasRekening(master.rekening_entitas);
+  const entDari = (kode) => entitasDariRekening(peta, entitasList, kode);
+  const rekening = (master.rekening || []).filter((r) => entDari(r.kode) !== ENTITAS_HOLDING);
+  rekening.__batasi = true;
+  const sentuh = (t) => entDari(t.rekening) !== ENTITAS_HOLDING || (t.tipe === "transfer" && entDari(t.rekening_tujuan) !== ENTITAS_HOLDING);
+  const trx = (transaksi || []).filter(sentuh);
+  trx.__saring = sentuh;
+  return { transaksi: trx, master: { ...master, rekening } };
 }
 
 // =========================================================

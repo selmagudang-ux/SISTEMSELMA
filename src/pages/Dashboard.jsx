@@ -40,7 +40,9 @@ import {
   labelFor,
   daftarTokoMarketplace,
   lingkupEntitas,
+  lingkupGabunganPT,
   ENTITAS_DEFAULT,
+  ENTITAS_HOLDING,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
@@ -182,15 +184,29 @@ export default function Dashboard({
   pengajuanRestock = [],
   skuMaster = [],
   entitas = ENTITAS_DEFAULT, // PT akun yang login (session.entitas); OPS = SELMA
+  bolehPilihPT = false, // Pemilik / Super Appa (akun Holding): boleh pilih PT atau Gabungan
+  ptLihat = null, // null = PT akun sendiri; kode entitas; atau "GABUNGAN"
+  onGantiPT = () => {},
 }) {
-  const [tab, setTab] = useState("gudang");
+  const [tabPilih, setTab] = useState("gudang");
+  const gabungan = bolehPilihPT && ptLihat === "GABUNGAN";
+  const entAktif = bolehPilihPT && ptLihat && !gabungan ? ptLihat : entitas;
   // PT selain SELMA: data penjualan (grosir/reseller/marketplace) & absensi belum dipisah
   // per PT, jadi tab itu disembunyikan — hanya Operasional & Keuangan yang datanya sudah per PT.
-  const bukanOps = entitas !== ENTITAS_DEFAULT;
-  const tabsTersedia = bukanOps ? TABS.filter((t) => t.key === "gudang" || t.key === "keuangan") : TABS;
-  const namaPerusahaan = bukanOps
-    ? ((master.entitas || []).find((e) => e.kode === entitas)?.label || entitas)
+  // Gabungan semua PT: hanya Keuangan (data gudang tiap PT tidak dijumlahkan).
+  const bukanOps = gabungan || entAktif !== ENTITAS_DEFAULT;
+  const tabsTersedia = gabungan
+    ? TABS.filter((t) => t.key === "keuangan")
+    : bukanOps
+    ? TABS.filter((t) => t.key === "gudang" || t.key === "keuangan")
+    : TABS;
+  const tab = tabsTersedia.some((t) => t.key === tabPilih) ? tabPilih : tabsTersedia[0].key;
+  const namaPerusahaan = gabungan
+    ? "Gabungan semua PT"
+    : entAktif !== ENTITAS_DEFAULT
+    ? ((master.entitas || []).find((e) => e.kode === entAktif)?.label || entAktif)
     : "SELMA ACC BANDUNG";
+  const daftarPT = (master.entitas || []).filter((e) => e.kode !== ENTITAS_HOLDING);
 
   // Filter periode global "Bulan & Tahun" — dipakai oleh ringkasan yang
   // sifatnya berbasis periode (Keuangan, Grosir, Monitoring, Absensi). Default
@@ -209,14 +225,14 @@ export default function Dashboard({
   // perusahaan lain / Holding tidak boleh ikut terhitung (kas, pemasukan, laba).
   // Dashboard Holding ada di menu Holding.
   const lingkupOps = useMemo(
-    () => lingkupEntitas(keuanganSemuaEntitas, master, entitas),
+    () => (gabungan ? lingkupGabunganPT(keuanganSemuaEntitas, master) : lingkupEntitas(keuanganSemuaEntitas, master, entAktif)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [keuanganSemuaEntitas, master.rekening, master.rekening_entitas, master.entitas, entitas]
+    [keuanganSemuaEntitas, master.rekening, master.rekening_entitas, master.entitas, entAktif, gabungan]
   );
   const keuanganDimuatOps = useMemo(
-    () => lingkupEntitas(keuanganDimuat, master, entitas).transaksi,
+    () => (gabungan ? lingkupGabunganPT(keuanganDimuat, master) : lingkupEntitas(keuanganDimuat, master, entAktif)).transaksi,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [keuanganDimuat, master.rekening, master.rekening_entitas, master.entitas, entitas]
+    [keuanganDimuat, master.rekening, master.rekening_entitas, master.entitas, entAktif, gabungan]
   );
   const keuanganTransaksi = lingkupOps.transaksi;
   const masterOps = lingkupOps.master;
@@ -235,12 +251,27 @@ export default function Dashboard({
             : `Ringkasan alur barang, stok, dan SKU di ${namaPerusahaan}.`
         }
         action={
-          <FilterBulanTahun
-            bulan={bulan}
-            tahun={tahun}
-            onChangeBulan={setBulan}
-            onChangeTahun={setTahun}
-          />
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {bolehPilihPT && daftarPT.length > 0 && (
+              <select
+                value={ptLihat || entitas}
+                onChange={(e) => onGantiPT(e.target.value)}
+                className={`${inputClass} w-auto text-xs py-1.5`}
+                aria-label="Pilih perusahaan"
+              >
+                {daftarPT.map((e) => (
+                  <option key={e.kode} value={e.kode}>{e.label || e.kode}</option>
+                ))}
+                {daftarPT.length > 1 && <option value="GABUNGAN">Gabungan semua PT</option>}
+              </select>
+            )}
+            <FilterBulanTahun
+              bulan={bulan}
+              tahun={tahun}
+              onChangeBulan={setBulan}
+              onChangeTahun={setTahun}
+            />
+          </div>
         }
       />
 

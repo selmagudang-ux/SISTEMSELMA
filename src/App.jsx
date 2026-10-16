@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
-import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama } from "./lib/api";
+import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
@@ -614,10 +614,10 @@ function MainApp({ session, onLogout }) {
   // terakhir dimuat & datanya apa" yang ditambah localStorage.
   // Cache dipisah per PT: tanpa ini, akun Alivia yang login di browser yang sama
   // dengan Selma (dalam 90 dtk / 6 jam) ikut menampilkan data cache milik Selma.
-  const CORE_CACHE_KEY = `selma-cache-core-v1-${(session && session.entitas) || "OPS"}`;
+  const kunciCacheCore = () => `selma-cache-core-v1-${entitasBacaSaatIni()}`;
   const bacaCacheCoreLokal = () => {
     try {
-      const raw = localStorage.getItem(CORE_CACHE_KEY);
+      const raw = localStorage.getItem(kunciCacheCore());
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed.disimpanPada !== "number") return null;
@@ -636,7 +636,7 @@ function MainApp({ session, onLogout }) {
   // semua tabel selesai diunduh.
   const bacaCacheCoreBasi = () => {
     try {
-      const raw = localStorage.getItem(CORE_CACHE_KEY);
+      const raw = localStorage.getItem(kunciCacheCore());
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed.disimpanPada !== "number" || !parsed.data) return null;
@@ -648,7 +648,7 @@ function MainApp({ session, onLogout }) {
   };
   const simpanCacheCoreLokal = (data) => {
     try {
-      localStorage.setItem(CORE_CACHE_KEY, JSON.stringify({ disimpanPada: Date.now(), data }));
+      localStorage.setItem(kunciCacheCore(), JSON.stringify({ disimpanPada: Date.now(), data }));
     } catch {
       // Kalau gagal simpan (mis. quota localStorage penuh), tidak masalah —
       // ini cuma optimisasi, app tetap jalan seperti sebelum ada cache ini,
@@ -762,6 +762,27 @@ function MainApp({ session, onLogout }) {
     terapkanDataCore(dataCore);
     tandaiSudahDimuat("core");
   }, []);
+
+  // Dashboard akun Holding (Pemilik/Super Appa): pilih PT yang dilihat. null = PT akun sendiri;
+  // "GABUNGAN" = ringkasan keuangan semua PT (data gudang tidak berubah). Pilihan PT lain hanya
+  // mengubah BACAAN data gudang (aturEntitasBaca) dan di-reset begitu keluar dari Dashboard.
+  const [ptLihat, setPtLihat] = useState(null);
+  const bolehPilihPT = ["owner", "superappa"].includes(session.role);
+  const gantiPtLihat = async (kode) => {
+    const sendiri = session.entitas || "OPS";
+    const baru = !kode || kode === sendiri ? null : kode;
+    aturEntitasBaca(baru && baru !== "GABUNGAN" ? baru : null);
+    setPtLihat(baru);
+    if (baru !== "GABUNGAN") await loadCore(true);
+  };
+  useEffect(() => {
+    if (nav.menu !== "dashboard" && ptLihat) {
+      aturEntitasBaca(null);
+      setPtLihat(null);
+      loadCore(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav.menu]);
 
   const loadGrosir = useCallback(async (force = false) => {
     if (!force && masihSegar("grosir")) return;
@@ -1199,6 +1220,9 @@ function MainApp({ session, onLogout }) {
                   karyawanList={karyawanList}
                   pengajuanRestock={pengajuanRestock}
                   entitas={session.entitas || "OPS"}
+                  bolehPilihPT={bolehPilihPT}
+                  ptLihat={ptLihat}
+                  onGantiPT={gantiPtLihat}
                 />
               )}
               {nav.menu === "persetujuan-restock" && (
