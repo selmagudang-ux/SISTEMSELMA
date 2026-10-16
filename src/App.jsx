@@ -766,8 +766,10 @@ function MainApp({ session, onLogout }) {
   // Dashboard akun Holding (Pemilik/Super Appa): pilih PT yang dilihat. null = PT akun sendiri;
   // "GABUNGAN" = ringkasan keuangan semua PT (data gudang tidak berubah). Pilihan PT lain hanya
   // mengubah BACAAN data gudang (aturEntitasBaca) dan di-reset begitu keluar dari Dashboard.
-  const [ptLihat, setPtLihat] = useState(null);
+  // Pemilik/Super Appa membuka Dashboard langsung di mode Gabungan (Ringkasan Grup); akun lain null.
   const bolehPilihPT = ["owner", "superappa"].includes(session.role);
+  const PT_AWAL = bolehPilihPT ? "GABUNGAN" : null;
+  const [ptLihat, setPtLihat] = useState(PT_AWAL);
   const gantiPtLihat = async (kode) => {
     const sendiri = session.entitas || "OPS";
     const baru = !kode || kode === sendiri ? null : kode;
@@ -776,9 +778,9 @@ function MainApp({ session, onLogout }) {
     if (baru !== "GABUNGAN") await loadCore(true);
   };
   useEffect(() => {
-    if (nav.menu !== "dashboard" && ptLihat) {
+    if (nav.menu !== "dashboard" && ptLihat && ptLihat !== PT_AWAL) {
       aturEntitasBaca(null);
-      setPtLihat(null);
+      setPtLihat(PT_AWAL);
       loadCore(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

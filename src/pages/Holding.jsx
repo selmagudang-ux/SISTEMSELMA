@@ -80,7 +80,7 @@ const labelBulan = (ym) => {
   return `${NAMA_BULAN[Number(m) - 1]} ${y}`;
 };
 
-export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
+export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tanpaHeader = false, labelBuka = "Lihat keuangan" }) {
   const k = useDataKas(master, keuanganTransaksi);
   const { data: semua, status: statusLama } = useKeuanganRentang(keuanganTransaksi, "");
   const ents = k.entitasList;
@@ -194,7 +194,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
       {sorot && <div className="mt-2 text-[10px] text-slate-500">Dividen dan biaya antar perusahaan sudah dieliminasi.</div>}
       {onClick && (
         <button onClick={onClick} className="mt-3 text-[11px] text-amber-400 hover:text-amber-300">
-          Lihat keuangan {judul} →
+          {labelBuka} {judul} →
         </button>
       )}
     </div>
@@ -203,11 +203,15 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka }) {
   return (
     <div>
       {statusLama && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>}
-      <PageHeader
-        title="Ringkasan Grup"
-        description={`Keuangan seluruh perusahaan dalam grup — bulan ${labelBulan(bulanIni)}, hanya untuk dilihat.`}
-        sticky
-      />
+      {tanpaHeader ? (
+        <div className="text-xs text-slate-500 mb-3">Keuangan seluruh perusahaan dalam grup — bulan {labelBulan(bulanIni)}, hanya untuk dilihat.</div>
+      ) : (
+        <PageHeader
+          title="Ringkasan Grup"
+          description={`Keuangan seluruh perusahaan dalam grup — bulan ${labelBulan(bulanIni)}, hanya untuk dilihat.`}
+          sticky
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-5">
         <Kartu judul="Gabungan grup" r={gab} sorot />

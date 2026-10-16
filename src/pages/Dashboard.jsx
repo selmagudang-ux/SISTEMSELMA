@@ -48,6 +48,7 @@ import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HAR
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
 import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, DetailKelompokModal, GrafikArusKas, LaporanLabaRugi } from "./Keuangan";
 import { isEntriTokoOffline } from "./TokoOffline";
+import { RingkasanGrup } from "./Holding";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 import PanelBarangHabisPakai from "../components/PanelBarangHabisPakai";
@@ -245,7 +246,9 @@ export default function Dashboard({
           tab === "penjualan"
             ? "Ringkasan penjualan dari semua channel — Grosir, Reseller, Marketplace, dan Toko Offline — plus piutang & deposit pelanggan grosir."
             : tab === "keuangan"
-            ? "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
+            ? gabungan
+            ? "Keuangan seluruh perusahaan dalam grup: kas, pemasukan, pengeluaran, dan laba (rugi) per perusahaan serta gabungannya."
+            : "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
             : `Ringkasan alur barang, stok, dan SKU di ${namaPerusahaan}.`
@@ -265,12 +268,14 @@ export default function Dashboard({
                 {daftarPT.length > 1 && <option value="GABUNGAN">Gabungan semua PT</option>}
               </select>
             )}
-            <FilterBulanTahun
-              bulan={bulan}
-              tahun={tahun}
-              onChangeBulan={setBulan}
-              onChangeTahun={setTahun}
-            />
+            {!gabungan && (
+              <FilterBulanTahun
+                bulan={bulan}
+                tahun={tahun}
+                onChangeBulan={setBulan}
+                onChangeTahun={setTahun}
+              />
+            )}
           </div>
         }
       />
@@ -299,7 +304,7 @@ export default function Dashboard({
         })}
       </div>
 
-      {statusKeuanganLama && (tab === "keuangan" || tab === "penjualan") && (
+      {statusKeuanganLama && !gabungan && (tab === "keuangan" || tab === "penjualan") && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
@@ -332,6 +337,10 @@ export default function Dashboard({
           periodeSampai={periodeSampai}
           periodeLabel={periodeLabel}
         />
+      ) : tab === "keuangan" && gabungan ? (
+        // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
+        // + laba rugi 6 bulan). Data semua entitas (belum dibatasi), tombol kartu membuka dashboard PT itu.
+        <RingkasanGrup keuanganTransaksi={keuanganDimuat} master={master} onBuka={onGantiPT} tanpaHeader labelBuka="Lihat dashboard" />
       ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
