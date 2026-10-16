@@ -133,6 +133,17 @@ export const REKENING_TOKO_OFFLINE_CASH = "Petty Cash";
 export const REKENING_TOKO_OFFLINE_CASHLESS = "BCA a/n Teh Oca";
 export const KODE_REKENING_TOKO_OFFLINE_CASHLESS = "BCA2";
 
+// Peran rekening otomatis. Tiap entitas/PT memilih sendiri rekeningnya untuk tiap peran di
+// Keuangan > Pengaturan > Penggunaan Rekening (master_data tipe "rekening_peran":
+// kode = "<ENTITAS>:<peran>", label = kode rekening). Belum diatur -> dicari lewat nama
+// (labelDefault) seperti sebelumnya, jadi entitas lama tetap jalan.
+export const PERAN_REKENING = [
+  { key: "pembayaran_supplier", label: "Pembayaran supplier", desc: "Sumber dana saat Buat Pesan Barang disimpan", labelDefault: REKENING_PEMBAYARAN_SUPPLIER },
+  { key: "ongkir_barang_datang", label: "Ongkir barang datang", desc: "Sumber dana ongkir saat Tandai Status Kedatangan", labelDefault: REKENING_ONGKIR_BARANG_DATANG },
+  { key: "toko_offline_cash", label: "Toko Offline - Cash", desc: "Rekening penampung penjualan tunai", labelDefault: REKENING_TOKO_OFFLINE_CASH },
+  { key: "toko_offline_cashless", label: "Toko Offline - Cashless", desc: "Rekening penampung Transfer / QRIS", labelDefault: REKENING_TOKO_OFFLINE_CASHLESS },
+];
+
 export const STAGE_ROLE = {
   sku: "gudang",
   rak: "gudang",

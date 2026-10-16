@@ -35,7 +35,7 @@ import {
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
-import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA } from "../lib/constants";
+import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { AntarEntitas, Konsolidasi, RingkasanGrup, KelolaPerusahaan } from "./Holding";
 import PenarikanPemilik from "./PenarikanPemilik";
@@ -162,6 +162,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     ],
     pengaturan: [
       { key: "rekening", label: "Rekening & Kategori" },
+      { key: "penggunaan", label: "Penggunaan Rekening" },
       { key: "log", label: "Log Keterangan" },
       ...(session?.role === "superappa" ? [{ key: "riwayat", label: "Riwayat Perubahan" }] : []),
     ],
@@ -282,6 +283,9 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
           <RiwayatPerubahan master={master} session={session} />
         </div>
       );
+    }
+    if (tab === "penggunaan") {
+      return bungkus(<PenggunaanRekening master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />, barTab);
     }
     if (tab === "log") {
       return bungkus(<LogKeterangan keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} />, barTab);
@@ -2402,6 +2406,81 @@ function AkunKas({ keuanganTransaksi, master, reload, showToast }) {
   );
 }
 
+// Pengaturan "Penggunaan Rekening": rekening mana yang dipakai otomatis untuk tiap peran
+// (pembayaran supplier, ongkir barang datang, Toko Offline). Per entitas/PT.
+// Disimpan di master_data tipe "rekening_peran": kode = "<ENTITAS>:<peran>", label = kode rekening.
+function PenggunaanRekening({ master, entitasKode, reload, showToast }) {
+  const [saving, setSaving] = useState(null);
+  const kodeEnt = entitasKode || ENTITAS_DEFAULT;
+  const rekening = master.rekening || [];
+  const barisPeran = master.rekening_peran || [];
+
+  const simpan = async (peran, kodeRek) => {
+    const kunci = `${kodeEnt}:${peran.key}`;
+    const ada = barisPeran.find((x) => x.kode === kunci);
+    setSaving(peran.key);
+    try {
+      if (!kodeRek) {
+        if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      } else if (ada) {
+        await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: kodeRek }) });
+      } else {
+        await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_peran", kode: kunci, label: kodeRek }) });
+      }
+      await reload();
+      showToast(kodeRek ? `${peran.label} → ${kodeRek}` : `${peran.label}: kembali otomatis`);
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan", "err");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Penggunaan Rekening"
+        description="Pilih rekening yang dipakai otomatis oleh tiap fitur untuk perusahaan ini. Kalau dikosongkan, sistem mencari rekening milik perusahaan ini yang namanya sama dengan nama bawaan (dan membuat baru bila tidak ada)."
+      />
+      <div className="rounded-xl border border-slate-800 overflow-hidden max-w-2xl">
+        {PERAN_REKENING.map((p, i) => {
+          const baris = barisPeran.find((x) => x.kode === `${kodeEnt}:${p.key}`);
+          const nilai = baris?.label || "";
+          const hilang = nilai && !rekening.some((r) => r.kode === nilai);
+          return (
+            <div key={p.key} className={`px-4 py-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-200">{p.label}</div>
+                  <div className="text-[11px] text-slate-500">{p.desc}</div>
+                </div>
+                <select
+                  value={hilang ? "" : nilai}
+                  disabled={saving === p.key}
+                  onChange={(e) => simpan(p, e.target.value)}
+                  className={`${inputClass} w-64 max-w-full disabled:opacity-50`}
+                >
+                  <option value="">Otomatis (cari nama "{p.labelDefault}")</option>
+                  {rekening.map((r) => (
+                    <option key={r.kode} value={r.kode}>
+                      {r.label} ({r.kode})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {hilang && (
+                <div className="text-[11px] text-amber-400 mt-1.5">
+                  Rekening "{nilai}" yang dipilih sebelumnya sudah tidak ada. Pilih ulang, atau biarkan Otomatis.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
   const [activeTab, setActiveTab] = useState("rekening");
   // Isian tab "Kategori & Sub Kategori" yang belum disimpan (lihat PengelompokanKategori).
@@ -2483,6 +2562,13 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
         // lokasi rekening ikut pindah ke kode baru
         const lk = (master.rekening_lokasi || []).find((x) => x.kode === m.kode);
         if (lk) await sb(`master_data?id=eq.${lk.id}`, { method: "PATCH", body: JSON.stringify({ kode: kodeBaru }) });
+        // penanda entitas ikut pindah (tanpa ini rekening PT non-OPS dianggap milik OPS dan "hilang")
+        const en = (master.rekening_entitas || []).find((x) => x.kode === m.kode);
+        if (en) await sb(`master_data?id=eq.${en.id}`, { method: "PATCH", body: JSON.stringify({ kode: kodeBaru }) });
+        // pengaturan Penggunaan Rekening yang menunjuk rekening ini ikut menunjuk kode baru
+        for (const pr of (master.rekening_peran || []).filter((x) => x.label === m.kode)) {
+          await sb(`master_data?id=eq.${pr.id}`, { method: "PATCH", body: JSON.stringify({ label: kodeBaru }) });
+        }
       }
       // Kode lokasi diganti -> semua rekening di lokasi itu ikut menunjuk ke kode baru.
       if (activeTab === "lokasi" && kodeBaru !== m.kode) {
@@ -2535,6 +2621,12 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
         if (g) await sb(`master_data?id=eq.${g.id}`, { method: "DELETE" });
         const lk = (master.rekening_lokasi || []).find((x) => x.kode === kodeRek);
         if (lk) await sb(`master_data?id=eq.${lk.id}`, { method: "DELETE" });
+        // penanda entitas & pengaturan Penggunaan Rekening yang menunjuk rekening ini ikut dibersihkan
+        const en = (master.rekening_entitas || []).find((x) => x.kode === kodeRek);
+        if (en) await sb(`master_data?id=eq.${en.id}`, { method: "DELETE" });
+        for (const pr of (master.rekening_peran || []).filter((x) => x.label === kodeRek)) {
+          await sb(`master_data?id=eq.${pr.id}`, { method: "DELETE" });
+        }
       }
       // Lokasi dihapus -> rekening di dalamnya kembali "Tanpa lokasi".
       if (activeTab === "lokasi" && kodeRek) {

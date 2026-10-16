@@ -4,7 +4,7 @@ import {
   PageHeader, EmptyState, StatCard, Field, InputTanggal, InputRupiah,
   Badge, formatTanggalID, suggestKode,
 } from "../components/ui";
-import { sb, fmtRp } from "../lib/api";
+import { sb, fmtRp, cariAtauBuatRekeningTetap, kodeRekeningPeran, entitasSesi, petaEntitasRekening, entitasDariRekening } from "../lib/api";
 import {
   REKENING_TOKO_OFFLINE_CASH,
   REKENING_TOKO_OFFLINE_CASHLESS,
@@ -116,12 +116,22 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
   // perlu warning "belum ada" — akan dibuatkan otomatis saat Simpan (lihat
   // resolveRekeningTetap di bawah), sama pola dengan
   // REKENING_PEMBAYARAN_SUPPLIER / REKENING_ONGKIR_BARANG_DATANG.
-  const rekeningCashObj = daftarRekening.find(
-    (r) => normalisasiLabel(r.label) === normalisasiLabel(REKENING_TOKO_OFFLINE_CASH)
-  );
-  const rekeningCashlessObj = daftarRekening.find(
-    (r) => normalisasiLabel(r.label) === normalisasiLabel(REKENING_TOKO_OFFLINE_CASHLESS)
-  );
+  // Pengaturan per entitas (Keuangan > Pengaturan > Penggunaan Rekening) menang; kalau belum
+  // diatur, dicocokkan lewat nama seperti dulu, tapi hanya rekening milik entitas akun ini.
+  const entitasAkun = entitasSesi();
+  const petaEnt = petaEntitasRekening(master?.rekening_entitas);
+  const entList = master?.entitas || [];
+  const cariRekening = (peran, labelTetap) => {
+    const kodePilih = kodeRekeningPeran(master, entitasAkun, peran);
+    if (kodePilih) return daftarRekening.find((r) => r.kode === kodePilih) || null;
+    return (
+      daftarRekening.find(
+        (r) => normalisasiLabel(r.label) === normalisasiLabel(labelTetap) && entitasDariRekening(petaEnt, entList, r.kode) === entitasAkun
+      ) || null
+    );
+  };
+  const rekeningCashObj = cariRekening("toko_offline_cash", REKENING_TOKO_OFFLINE_CASH);
+  const rekeningCashlessObj = cariRekening("toko_offline_cashless", REKENING_TOKO_OFFLINE_CASHLESS);
 
   const cashNum = Number(cash) || 0;
   const cashlessNum = Number(cashless) || 0;
@@ -147,14 +157,10 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
   // buatkan sekali di master_data (tipe "rekening") dengan kode yang
   // ditentukan (kodeTetap, kalau ada) — pola sama seperti
   // cariAtauBuatMasterTetap di ModalRouter.jsx.
-  const resolveRekeningTetap = async (labelTetap, kodeTetap) => {
-    const ada = daftarRekening.find((r) => normalisasiLabel(r.label) === normalisasiLabel(labelTetap));
-    if (ada) return ada.kode;
-    let kode = kodeTetap || suggestKode(labelTetap);
-    if (daftarRekening.some((r) => r.kode === kode)) kode = `${kode}-2`;
-    await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening", kode, label: labelTetap }) });
-    return kode;
-  };
+  // Lewat cariAtauBuatRekeningTetap supaya rekening hanya dicari/dibuat untuk entitas akun ini
+  // (rekening baru ikut diberi penanda entitasnya), dan pengaturan peran dipakai lebih dulu.
+  const resolveRekeningTetap = (labelTetap, kodeTetap, peran) =>
+    cariAtauBuatRekeningTetap(master, labelTetap, kodeTetap ? () => kodeTetap : suggestKode, peran);
 
   const simpan = async () => {
     if (!canSubmit) return;
@@ -162,14 +168,14 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
     try {
       const rows = [];
       if (cashNum > 0) {
-        const rekeningCash = await resolveRekeningTetap(REKENING_TOKO_OFFLINE_CASH);
+        const rekeningCash = await resolveRekeningTetap(REKENING_TOKO_OFFLINE_CASH, undefined, "toko_offline_cash");
         rows.push({
           tanggal, tipe: "masuk", rekening: rekeningCash, kategori: kategoriCash,
           jumlah: cashNum, keterangan: buatKeterangan("Cash", catatan),
         });
       }
       if (cashlessNum > 0) {
-        const rekeningCashless = await resolveRekeningTetap(REKENING_TOKO_OFFLINE_CASHLESS, KODE_REKENING_TOKO_OFFLINE_CASHLESS);
+        const rekeningCashless = await resolveRekeningTetap(REKENING_TOKO_OFFLINE_CASHLESS, KODE_REKENING_TOKO_OFFLINE_CASHLESS, "toko_offline_cashless");
         rows.push({
           tanggal, tipe: "masuk", rekening: rekeningCashless, kategori: kategoriCashless,
           jumlah: cashlessNum, keterangan: buatKeterangan(`Cashless (${metodeCashless})`, catatan),

@@ -2049,10 +2049,23 @@ export function lingkupEntitas(transaksi, master, kodeEntitas) {
 // memakai rekening bernama sama milik SELMA, uangnya tercatat di keuangan SELMA.
 // Di sini: cari rekening berlabel itu yang MILIK entitas akun; kalau belum ada,
 // buat rekening baru khusus entitas itu + pemetaan rekening_entitas-nya.
-export async function cariAtauBuatRekeningTetap(master, labelTetap, suggestKodeFn) {
+// Rekening yang dipilih entitas untuk satu peran (Keuangan > Pengaturan > Penggunaan Rekening).
+// master_data tipe "rekening_peran": kode = "<ENTITAS>:<peran>", label = kode rekening.
+// Mengembalikan kode rekening, atau null kalau belum diatur / rekeningnya sudah tidak ada.
+export function kodeRekeningPeran(master, kodeEntitas, peran) {
+  if (!peran) return null;
+  const baris = (master?.rekening_peran || []).find((x) => x.kode === `${kodeEntitas}:${peran}`);
+  if (!baris) return null;
+  return (master?.rekening || []).some((r) => r.kode === baris.label) ? baris.label : null;
+}
+
+export async function cariAtauBuatRekeningTetap(master, labelTetap, suggestKodeFn, peran) {
   const e = entitasSesi();
   const daftar = master?.rekening || [];
   const entList = master?.entitas || [];
+  // Pengaturan eksplisit per entitas menang atas pencarian nama.
+  const dipilih = kodeRekeningPeran(master, e, peran);
+  if (dipilih) return dipilih;
   const peta = petaEntitasRekening(master?.rekening_entitas);
   const norm = (x) => String(x || "").trim().toLowerCase();
   const ada = daftar.find(
