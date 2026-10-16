@@ -586,9 +586,9 @@ export const ROLE_MENUS = {
   // Super Appa: akses ke mana pun, termasuk Holding. Dari luar tampil sebagai
   // "Super Admin" — lihat catatan di ROLES di atas.
   superappa: [...ALL_MENU_KEYS, "barang-masuk"],
-  // Pemilik: HANYA menu Holding (Perusahaan Grup + Keuangan Holding; read-only, KECUALI mencatat transfer Antar Entitas
+  // Pemilik: Dashboard Monitoring SELMA (semua tab, read-only) + menu Holding (Perusahaan Grup + Keuangan Holding; read-only, KECUALI mencatat transfer Antar Entitas
   // dari Holding KE perusahaan — lihat ARAH_ANTAR_ENTITAS), plus Chat & Panduan.
-  owner: ["perusahaan", "holding", "chat", "panduan"],
+  owner: ["dashboard", "perusahaan", "holding", "chat", "panduan"],
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
   // di ROLE_SUBMENUS. "Stok Menipis" (ajukan restock) sekarang jadi sub-menu

@@ -39,6 +39,8 @@ import {
   detailModelPesanan,
   labelFor,
   daftarTokoMarketplace,
+  lingkupEntitas,
+  ENTITAS_DEFAULT,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
@@ -194,7 +196,21 @@ export default function Dashboard({
   const periodeLabel = `${BULAN_LABEL_PANJANG[bulan - 1]} ${tahun}`;
   // App.jsx hanya memuat keuangan bulan ini; kalau periode yang dipilih lebih
   // lama, data lamanya ditarik & digabung di sini (lib/useKeuanganRentang.js).
-  const { data: keuanganTransaksi, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, periodeDari);
+  const { data: keuanganSemuaEntitas, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, periodeDari);
+  // Dashboard ini khusus perusahaan operasional (SELMA): rekening & transaksi Holding
+  // tidak boleh ikut terhitung (kas, pemasukan, laba). Dashboard Holding ada di menu Holding.
+  const lingkupOps = useMemo(
+    () => lingkupEntitas(keuanganSemuaEntitas, master, ENTITAS_DEFAULT),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [keuanganSemuaEntitas, master.rekening, master.rekening_entitas, master.entitas]
+  );
+  const keuanganDimuatOps = useMemo(
+    () => lingkupEntitas(keuanganDimuat, master, ENTITAS_DEFAULT).transaksi,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [keuanganDimuat, master.rekening, master.rekening_entitas, master.entitas]
+  );
+  const keuanganTransaksi = lingkupOps.transaksi;
+  const masterOps = lingkupOps.master;
 
   return (
     <div>
@@ -268,7 +284,7 @@ export default function Dashboard({
           pelangganGrosir={pelangganGrosir}
           keuanganTransaksi={keuanganTransaksi}
           marketplaceTransaksi={marketplaceTransaksi}
-          master={master}
+          master={masterOps}
           onNavigate={onNavigate}
           setModal={setModal}
           tahun={tahun}
@@ -279,10 +295,10 @@ export default function Dashboard({
       ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
-          keuanganDimuat={keuanganDimuat}
+          keuanganDimuat={keuanganDimuatOps}
           pesananMasuk={pesananMasuk}
           marketplaceTransaksi={marketplaceTransaksi}
-          master={master}
+          master={masterOps}
           onNavigate={onNavigate}
           periodeDari={periodeDari}
           periodeSampai={periodeSampai}
