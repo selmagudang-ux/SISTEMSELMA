@@ -43,6 +43,10 @@ import {
   lingkupGabunganPT,
   ENTITAS_DEFAULT,
   ENTITAS_HOLDING,
+  kodeEntitasHolding,
+  petaEntitasRekening,
+  entitasDariRekening,
+  saldoSebelumTanggal,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
@@ -340,7 +344,19 @@ export default function Dashboard({
       ) : tab === "keuangan" && gabungan ? (
         // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
         // + laba rugi 6 bulan). Data semua entitas (belum dibatasi), tombol kartu membuka dashboard PT itu.
-        <RingkasanGrup keuanganTransaksi={keuanganDimuat} master={master} onBuka={onGantiPT} tanpaHeader labelBuka="Lihat dashboard" />
+        <>
+          <DashboardKeuanganGrup
+            keuanganPeriode={keuanganSemuaEntitas}
+            keuanganDimuat={keuanganDimuat}
+            master={master}
+            periodeDari={periodeDari}
+            periodeSampai={periodeSampai}
+            periodeLabel={periodeLabel}
+            onNavigate={onNavigate}
+          />
+          <div className="text-sm font-semibold text-slate-200 mt-8 mb-3">Ringkasan per Perusahaan</div>
+          <RingkasanGrup keuanganTransaksi={keuanganDimuat} master={master} onBuka={onGantiPT} tanpaHeader labelBuka="Lihat dashboard" />
+        </>
       ) : tab === "keuangan" ? (
         <DashboardKeuangan
           keuanganTransaksi={keuanganTransaksi}
@@ -789,6 +805,263 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         )}
       </div>
       )}
+    </div>
+  );
+}
+
+// Dashboard Keuangan gabungan (Pemilik / Super Appa, mode "Gabungan semua PT").
+// Kas Besar = semua rekening milik entitas Holding. Rekening entitas lain dibagi Bank / Kas Kecil
+// menurut penanda jenis kas (kas_grup), dan dikelompokkan per lokasi.
+function DashboardKeuanganGrup({ keuanganPeriode = [], keuanganDimuat = [], master = {}, periodeDari, periodeSampai, periodeLabel, onNavigate }) {
+  const [lokasiPilih, setLokasiPilih] = useState("semua");
+  const entList = master.entitas || [];
+  const kodeHold = kodeEntitasHolding(entList);
+  const petaEnt = useMemo(() => petaEntitasRekening(master.rekening_entitas), [master.rekening_entitas]);
+  const petaKas = useMemo(() => petaKasRekening(master.kas_grup), [master.kas_grup]);
+  const lokasiList = master.lokasi || [];
+  const petaLok = useMemo(() => petaLokasiRekening(master.rekening_lokasi), [master.rekening_lokasi]);
+  const jenis = (kode) =>
+    kodeHold && entitasDariRekening(petaEnt, entList, kode) === kodeHold ? "besar" : kasDariRekening(petaKas, kode) === KAS_BANK ? "bank" : "kecil";
+  const lokasiAktif = lokasiPilih === "semua" || lokasiPilih === LOKASI_TANPA || lokasiList.some((l) => l.kode === lokasiPilih) ? lokasiPilih : "semua";
+  const rekDiLokasi = (kode) => lokasiAktif === "semua" || lokasiDariRekening(petaLok, lokasiList, kode) === lokasiAktif;
+
+  const transaksi = useMemo(
+    () => keuanganPeriode.filter((t) => lokasiAktif === "semua" || rekDiLokasi(t.rekening) || (t.tipe === "transfer" && rekDiLokasi(t.rekening_tujuan))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [keuanganPeriode, lokasiAktif, petaLok, lokasiList]
+  );
+  const ringkas = ringkasanKeuangan(transaksi, periodeDari, periodeSampai);
+  const saldo = saldoPerRekening(keuanganDimuat, master.rekening || [], true).filter((r) => rekDiLokasi(r.kode));
+
+  // Kartu saldo: total, Kas Besar (Holding), Kas Kecil per lokasi, Bank.
+  const jumlah = (rows) => rows.reduce((a, r) => a + (Number(r.saldo) || 0), 0);
+  const labelLokasi = (kode) => (kode === LOKASI_TANPA ? "tanpa lokasi" : lokasiList.find((l) => l.kode === kode)?.label || kode);
+  const kecilPerLokasi = new Map();
+  saldo.filter((r) => jenis(r.kode) === "kecil").forEach((r) => {
+    const lk = lokasiDariRekening(petaLok, lokasiList, r.kode);
+    kecilPerLokasi.set(lk, [...(kecilPerLokasi.get(lk) || []), r]);
+  });
+  const kartu = [
+    { key: "total", judul: "Total Uang Perusahaan", rows: saldo, cls: "border-sky-500/30 bg-sky-500/5", ikon: Wallet, warna: "text-sky-400" },
+    { key: "besar", judul: `Kas Besar${kodeHold ? " (Holding)" : ""}`, rows: saldo.filter((r) => jenis(r.kode) === "besar"), cls: "border-emerald-500/30 bg-emerald-500/5", ikon: Banknote, warna: "text-emerald-400" },
+    ...[...kecilPerLokasi.entries()].map(([lk, rows]) => ({
+      key: `kecil-${lk}`, judul: `Kas Kecil ${labelLokasi(lk)}`, rows, cls: "border-violet-500/30 bg-violet-500/5", ikon: Wallet, warna: "text-violet-400",
+    })),
+    { key: "bank", judul: "Bank", rows: saldo.filter((r) => jenis(r.kode) === "bank"), cls: "border-teal-500/30 bg-teal-500/5", ikon: Landmark, warna: "text-teal-400" },
+  ];
+  // Perubahan sejak awal bulan: saldo sekarang dibanding saldo sebelum tanggal pertama periode.
+  const perubahan = (rows) => {
+    const nilai = jumlah(rows);
+    const awal = saldoSebelumTanggal(keuanganPeriode, rows.map((r) => r.kode), periodeDari);
+    return awal ? ((nilai - awal) / Math.abs(awal)) * 100 : null;
+  };
+
+  // Saldo per lokasi: Kas Besar / Kas Kecil / Bank.
+  const barisLokasi = (() => {
+    const kosong = () => ({ besar: 0, kecil: 0, bank: 0, total: 0, n: 0 });
+    const m = new Map(lokasiList.map((l) => [l.kode, { kode: l.kode, label: l.label, ...kosong() }]));
+    const tanpa = { kode: LOKASI_TANPA, label: "Tanpa lokasi", ...kosong() };
+    saldo.forEach((r) => {
+      const lk = lokasiDariRekening(petaLok, lokasiList, r.kode);
+      const b = lk === LOKASI_TANPA ? tanpa : m.get(lk);
+      if (!b) return;
+      const v = Number(r.saldo) || 0;
+      b[jenis(r.kode)] += v;
+      b.total += v;
+      b.n += 1;
+    });
+    const hasil = [...m.values()];
+    if (tanpa.n > 0) hasil.push(tanpa);
+    return hasil;
+  })();
+
+  const labelRek = (kode) => (master.rekening || []).find((r) => r.kode === kode)?.label || kode || "—";
+  const urutTerbaru = (a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""));
+  const riwayat = [...ringkas.list].sort(urutTerbaru).slice(0, 6);
+  // Pengisian kas kecil = transfer ke rekening Kas Kecil dari Kas Besar atau Bank.
+  const pengisian = ringkas.list.filter((t) => t.tipe === "transfer" && jenis(t.rekening_tujuan) === "kecil" && jenis(t.rekening) !== "kecil").sort(urutTerbaru);
+  const totalPengisian = pengisian.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+
+  const arusKas = arusKasPerPeriode(ringkas.list);
+  const bMasuk = breakdownPemasukanKategori(ringkas.list, master.kategori_masuk || []);
+  const bKeluar = breakdownPengeluaranKategori(ringkas.list, master.kategori_keluar || []);
+  const dataMasuk = kelompokkanBreakdown(bMasuk.data, master.kelompok_masuk, bMasuk.total);
+  const dataKeluar = kelompokkanBreakdown(bKeluar.data, master.kelompok_keluar, bKeluar.total);
+  const warnaAngka = (v) => (v < 0 ? "text-red-400" : "text-slate-300");
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="text-xs text-slate-500">Seluruh perusahaan dalam grup, {periodeLabel}. Kas Besar = rekening milik Holding.</div>
+        {lokasiList.length > 0 && (
+          <select
+            value={lokasiAktif}
+            onChange={(e) => setLokasiPilih(e.target.value)}
+            aria-label="Filter lokasi"
+            className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200"
+          >
+            <option value="semua">Semua lokasi</option>
+            {lokasiList.map((l) => (
+              <option key={l.kode} value={l.kode}>{l.label}</option>
+            ))}
+            <option value={LOKASI_TANPA}>Tanpa lokasi</option>
+          </select>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 mb-4">
+        {kartu.map((k) => {
+          const Icon = k.ikon;
+          const nilai = jumlah(k.rows);
+          const p = perubahan(k.rows);
+          return (
+            <div key={k.key} className={`rounded-xl border p-4 ${k.cls}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <Icon size={15} className={k.warna} />
+                <div className="text-xs text-slate-300 truncate">{k.judul}</div>
+              </div>
+              <div className={`text-lg font-semibold ${nilai < 0 ? "text-red-400" : "text-slate-100"}`}>{fmtRp(nilai)}</div>
+              <div className={`text-[11px] mt-1 ${p === null ? "text-slate-500" : p >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                {p === null ? "—" : `${p >= 0 ? "↑" : "↓"} ${Math.abs(p).toFixed(0)}% dari awal bulan`}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr_1fr] gap-4 mb-4">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-slate-200 mb-2">Arus Kas</div>
+          <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+        </div>
+        <div className="min-w-0">
+          <BreakdownPemasukan total={bMasuk.total} data={dataMasuk} />
+        </div>
+        <div className="min-w-0">
+          <BreakdownPengeluaran total={bKeluar.total} data={dataKeluar} />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden mb-4">
+        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Saldo Kas per Lokasi</div>
+        {lokasiList.length === 0 ? (
+          <div className="px-4 py-4 text-xs text-slate-500">Belum ada lokasi. Tambahkan di Keuangan &gt; Rekening &amp; Kategori &gt; tab Lokasi.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
+                  <th className="px-4 py-2 font-medium">Lokasi</th>
+                  <th className="px-2 py-2 font-medium text-right">Kas Besar</th>
+                  <th className="px-2 py-2 font-medium text-right">Kas Kecil</th>
+                  <th className="px-2 py-2 font-medium text-right">Bank</th>
+                  <th className="px-4 py-2 font-medium text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {barisLokasi.map((b) => (
+                  <tr key={b.kode} className="border-b border-slate-800/60">
+                    <td className="px-4 py-2.5 text-slate-200">{b.label}</td>
+                    {[b.besar, b.kecil, b.bank].map((v, i) => (
+                      <td key={i} className={`px-2 py-2.5 text-right whitespace-nowrap ${warnaAngka(v)}`}>{fmtRp(v)}</td>
+                    ))}
+                    <td className={`px-4 py-2.5 text-right whitespace-nowrap font-semibold ${b.total < 0 ? "text-red-400" : ""}`}>{fmtRp(b.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-900/70 font-semibold">
+                  <td className="px-4 py-2.5">Total Perusahaan</td>
+                  {["besar", "kecil", "bank", "total"].map((k, i) => {
+                    const v = barisLokasi.reduce((a, b) => a + b[k], 0);
+                    return <td key={k} className={`${i === 3 ? "px-4" : "px-2"} py-2.5 text-right whitespace-nowrap ${v < 0 ? "text-red-400" : ""}`}>{fmtRp(v)}</td>;
+                  })}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-2">
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Riwayat Transaksi Terakhir</div>
+          {riwayat.length === 0 ? (
+            <div className="p-6"><EmptyState label="Belum ada transaksi di periode ini." /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
+                    <th className="px-4 py-2 font-medium">Tanggal</th>
+                    <th className="px-2 py-2 font-medium">Jenis</th>
+                    <th className="px-2 py-2 font-medium">Keterangan</th>
+                    <th className="px-4 py-2 font-medium text-right">Nominal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {riwayat.map((t, i) => {
+                    const j = t.tipe === "masuk" ? { teks: "Pemasukan", cls: "bg-emerald-500/15 text-emerald-400", nominal: "text-emerald-400", tanda: "+ " }
+                      : t.tipe === "keluar" ? { teks: "Pengeluaran", cls: "bg-red-500/15 text-red-400", nominal: "text-red-400", tanda: "− " }
+                      : { teks: "Transfer", cls: "bg-sky-500/15 text-sky-400", nominal: "text-sky-400", tanda: "" };
+                    return (
+                      <tr key={t.id || i} className="border-b border-slate-800/60 last:border-0">
+                        <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{formatTanggalID(t.tanggal)}</td>
+                        <td className="px-2 py-2.5"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${j.cls}`}>{j.teks}</span></td>
+                        <td className="px-2 py-2.5 text-slate-300">
+                          <div className="line-clamp-1">{t.keterangan || "—"}</div>
+                          <div className="text-[11px] text-slate-500">{t.tipe === "transfer" ? `${labelRek(t.rekening)} → ${labelRek(t.rekening_tujuan)}` : labelRek(t.rekening)}</div>
+                        </td>
+                        <td className={`px-4 py-2.5 text-right whitespace-nowrap font-semibold ${j.nominal}`}>{j.tanda}{fmtRp(Number(t.jumlah) || 0)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {onNavigate && (
+            <button type="button" onClick={() => onNavigate("keuangan")} className="w-full px-4 py-2.5 text-xs text-sky-400 hover:bg-slate-900/60 border-t border-slate-800 text-left">
+              Lihat semua transaksi
+            </button>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-baseline justify-between gap-3">
+            <span className="text-sm font-semibold">Pengisian Kas Kecil, {periodeLabel}</span>
+            <span className="text-xs text-slate-400">Total <b className="text-slate-100">{fmtRp(totalPengisian)}</b></span>
+          </div>
+          {pengisian.length === 0 ? (
+            <div className="p-6"><EmptyState label="Belum ada pengisian kas kecil di periode ini." /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
+                    <th className="px-4 py-2 font-medium">Tanggal</th>
+                    <th className="px-2 py-2 font-medium">Dari → Ke</th>
+                    <th className="px-4 py-2 font-medium text-right">Nominal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pengisian.slice(0, 8).map((t, i) => (
+                    <tr key={t.id || i} className="border-b border-slate-800/60 last:border-0">
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-300">{formatTanggalID(t.tanggal)}</td>
+                      <td className="px-2 py-2.5 text-slate-300">
+                        <div>{labelRek(t.rekening)} → {labelRek(t.rekening_tujuan)}</div>
+                        {t.keterangan ? <div className="text-[11px] text-slate-500 line-clamp-1">{t.keterangan}</div> : null}
+                      </td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap font-semibold text-sky-400">{fmtRp(Number(t.jumlah) || 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="px-4 py-2 text-[11px] text-slate-500 border-t border-slate-800">Perpindahan kas, bukan pemasukan atau pengeluaran, jadi tidak mengubah laba rugi.</div>
+        </div>
+      </div>
     </div>
   );
 }
