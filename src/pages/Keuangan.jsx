@@ -37,7 +37,7 @@ import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
-import { AntarEntitas, Konsolidasi, RingkasanGrup } from "./Holding";
+import { AntarEntitas, Konsolidasi, RingkasanGrup, KelolaPerusahaan } from "./Holding";
 import PenarikanPemilik from "./PenarikanPemilik";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
@@ -145,7 +145,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   // Nama sub-menu lama (tersimpan di sessionStorage / tautan lama) dipetakan ke menu hasil penggabungan.
   const lama = SUB_KEUANGAN_LAMA[subProp];
   const subDiminta = lama ? lama.sub : subProp;
-  const subValid = modeGrup ? ["grup", "detail", "antar-entitas"] : ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["penarikan"] : [])];
+  const subValid = modeGrup ? ["grup", "detail", "antar-entitas", "kelola"] : ["transaksi", "kas", "laporan", "pengaturan", ...(holding ? ["penarikan"] : [])];
   const subPilih = session?.role === "pemegang_saham" ? "grup" : subsBoleh && !subsBoleh.includes(subDiminta) ? subsBoleh[0] : subDiminta;
   const sub = subValid.includes(subPilih) ? subPilih : subValid[0];
   // Tab di dalam tiap menu. Pilihan tab diingat per menu selama halaman terbuka.
@@ -340,6 +340,9 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   }
   if (!modeGrup && holding && sub === "penarikan") {
     return <PenarikanPemilik keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;
+  }
+  if (modeGrup && sub === "kelola") {
+    return <KelolaPerusahaan master={master} reload={reload} showToast={showToast} />;
   }
   if (modeGrup && sub === "antar-entitas") {
     return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} />;

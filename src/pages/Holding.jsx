@@ -759,3 +759,144 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     </div>
   );
 }
+// =========================================================
+// KELOLA PERUSAHAAN (Perusahaan Grup > Kelola Perusahaan) — khusus Super Appa.
+// Menambah perusahaan (entitas) baru dan rekening miliknya. Entitas = baris
+// master_data tipe "entitas"; rekening milik entitas = master_data tipe "rekening"
+// + pemetaan tipe "rekening_entitas" (kode rekening -> kode entitas).
+// Transaksi tidak punya kolom entitas: milik entitas mana ditentukan dari rekeningnya.
+// =========================================================
+export function KelolaPerusahaan({ master = {}, reload, showToast }) {
+  const entitas = master.entitas || [];
+  const petaEnt = useMemo(() => {
+    const p = {};
+    (master.rekening_entitas || []).forEach((m) => {
+      p[m.kode] = m.label;
+    });
+    return p;
+  }, [master.rekening_entitas]);
+  const rekeningDari = (kodeEnt) => (master.rekening || []).filter((r) => (petaEnt[r.kode] || "OPS") === kodeEnt);
+
+  const [kode, setKode] = useState("");
+  const [nama, setNama] = useState("");
+  const [saving, setSaving] = useState(false);
+  const kodeBersih = kode.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+  const kodeAda = entitas.some((e) => e.kode === kodeBersih);
+
+  const tambahEntitas = async () => {
+    if (!kodeBersih || !nama.trim() || kodeAda || saving) return;
+    setSaving(true);
+    try {
+      await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas", kode: kodeBersih, label: nama.trim() }) });
+      showToast?.(`Perusahaan ${nama.trim()} ditambahkan`);
+      setKode("");
+      setNama("");
+      await reload?.();
+    } catch (e) {
+      showToast?.(e.message || "Gagal menambah perusahaan", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Kelola Perusahaan"
+        description="Tambah perusahaan baru ke grup, lalu buat rekening kas/bank miliknya. Setelah itu transaksi, kas, dan laporannya muncul di Keuangan Perusahaan dan Konsolidasi."
+        sticky
+      />
+      <div className="rounded-xl border border-slate-800 p-3 bg-slate-900/50 mb-4">
+        <div className="text-xs text-slate-300 mb-2">Tambah perusahaan</div>
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Kode (huruf/angka, mis. PTB)">
+            <input className={`${inputClass} w-40`} value={kode} onChange={(e) => setKode(e.target.value)} placeholder="PTB" />
+          </Field>
+          <Field label="Nama perusahaan">
+            <input className={`${inputClass} w-64`} value={nama} onChange={(e) => setNama(e.target.value)} placeholder="PT Contoh Baru" />
+          </Field>
+          <button
+            onClick={tambahEntitas}
+            disabled={!kodeBersih || !nama.trim() || kodeAda || saving}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg mb-3"
+          >
+            <Plus size={14} /> {saving ? "Menyimpan…" : "Tambah"}
+          </button>
+        </div>
+        {kodeAda && <div className="text-[11px] text-red-400">Kode {kodeBersih} sudah dipakai.</div>}
+      </div>
+
+      {entitas.length === 0 ? (
+        <EmptyState label="Belum ada perusahaan terdaftar." />
+      ) : (
+        <div className="space-y-3">
+          {entitas.map((e) => (
+            <KartuPerusahaan key={e.kode} e={e} rekening={rekeningDari(e.kode)} master={master} reload={reload} showToast={showToast} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KartuPerusahaan({ e, rekening, master, reload, showToast }) {
+  const [kode, setKode] = useState("");
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const kodeBersih = kode.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+  const kodeAda = (master.rekening || []).some((r) => r.kode === kodeBersih);
+  const isDefault = e.kode === "OPS";
+
+  const tambahRekening = async () => {
+    if (!kodeBersih || !label.trim() || kodeAda || saving) return;
+    setSaving(true);
+    try {
+      await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening", kode: kodeBersih, label: label.trim() }) });
+      // Entitas default (OPS) = tanpa penanda; entitas lain dipetakan lewat rekening_entitas.
+      if (!isDefault) {
+        await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "rekening_entitas", kode: kodeBersih, label: e.kode }) });
+      }
+      showToast?.(`Rekening ${label.trim()} ditambahkan ke ${e.label}`);
+      setKode("");
+      setLabel("");
+      await reload?.();
+    } catch (err) {
+      showToast?.(err.message || "Gagal menambah rekening", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Building2 size={14} className="text-amber-400" />
+        <div className="text-sm font-semibold text-slate-100">{e.label}</div>
+        <Badge color="slate">{e.kode}</Badge>
+      </div>
+      {rekening.length === 0 ? (
+        <div className="text-[11px] text-slate-500 mb-2">Belum ada rekening. Tambahkan minimal satu supaya bisa mencatat transaksi.</div>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {rekening.map((r) => (
+            <span key={r.kode} className="text-[11px] px-2 py-1 rounded-md bg-slate-800 text-slate-300">
+              {r.label} <span className="text-slate-500">({r.kode})</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <input className={`${inputClass} w-32`} value={kode} onChange={(x) => setKode(x.target.value)} placeholder="Kode rek." />
+        <input className={`${inputClass} w-52`} value={label} onChange={(x) => setLabel(x.target.value)} placeholder="Nama rekening, mis. BCA PTB" />
+        <button
+          onClick={tambahRekening}
+          disabled={!kodeBersih || !label.trim() || kodeAda || saving}
+          className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200"
+        >
+          + Rekening
+        </button>
+        {kodeAda && <span className="text-[11px] text-red-400">Kode rekening sudah dipakai.</span>}
+      </div>
+    </div>
+  );
+}

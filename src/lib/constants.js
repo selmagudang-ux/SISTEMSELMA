@@ -390,6 +390,8 @@ export const NAV = [
           // Lihat (hanya baca) transaksi, kas & laporan satu perusahaan anak.
           { key: "detail", label: "Keuangan Perusahaan" },
           { key: "antar-entitas", label: "Antar Entitas" },
+          // Tambah perusahaan baru & rekeningnya (khusus Super Appa).
+          { key: "kelola", label: "Kelola Perusahaan", onlyRole: "superappa" },
         ],
       },
       {
@@ -701,6 +703,7 @@ export function allowedSubMenus(role, menuKey) {
   if (menuKey === "perusahaan") {
     if (role === "pemegang_saham") return ["grup"];
     if (role === "superadmin") return ["antar-entitas"];
+    if (role !== "superappa") return ["grup", "detail", "antar-entitas"]; // Kelola Perusahaan: Super Appa saja
     return null;
   }
   // Keuangan Holding (pembukuan Holding sendiri): Pemilik & Super Appa semua sub.
