@@ -145,14 +145,21 @@ export default function SistemSelmaApp() {
   const cekMaintenance = useCallback(async () => {
     setCheckingMaintenance(true);
     try {
-      const res = await sb("settings?select=maintenance_mode");
-      setMaintenance(!!res?.[0]?.maintenance_mode);
+      const ent = session?.entitas || "";
+      // Mode perbaikan global (semua PT) ATAU khusus PT akun ini (master_data entitas_set "<PT>:perbaikan").
+      const [res, perPt] = await Promise.all([
+        sb("settings?select=maintenance_mode"),
+        ent
+          ? sb(`master_data?tipe=eq.entitas_set&kode=eq.${encodeURIComponent(ent + ":perbaikan")}&select=label`)
+          : Promise.resolve([]),
+      ]);
+      setMaintenance(!!res?.[0]?.maintenance_mode || (Array.isArray(perPt) && perPt.some((m) => m.label === "1")));
     } catch {
       // Gagal cek (mis. offline) — biarkan status lama, jangan asal kunci akses.
     } finally {
       setCheckingMaintenance(false);
     }
-  }, []);
+  }, [session?.entitas]);
 
   useEffect(() => {
     cekMaintenance();

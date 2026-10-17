@@ -1,24 +1,27 @@
 import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
-import { sb, sbAll } from "../lib/api";
+import { sb, sbAll, RUMUS_HARGA_BAWAAN, rumusHargaEntitas, daftarkanProfilEntitas, entitasSesi } from "../lib/api";
 import { ROLES, roleLabel, isSuperadminLike } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
-  // Mode Perbaikan HANYA untuk role "superappa" (Super Admin tersembunyi) —
-  // SENGAJA lebih sempit dari isSuperadminLike (yang juga meng-cakup
-  // "superadmin" biasa), karena begitu mode ini aktif superadmin biasa pun
-  // ikut terkunci dari MainApp (lihat App.jsx) — cuma superappa yang selalu
-  // punya jalan untuk menyalakan/mematikannya lagi.
+  // Mode Perbaikan & pembersih data HANYA untuk role "superappa" (Super Admin tersembunyi) —
+  // SENGAJA lebih sempit dari isSuperadminLike, karena begitu Mode Perbaikan aktif superadmin
+  // biasa pun ikut terkunci dari MainApp (lihat App.jsx) — cuma superappa yang selalu punya
+  // jalan untuk menyalakan/mematikannya lagi.
   const isSuperappa = session?.role === "superappa";
+  const bolehAtur = isSuperadminLike(session?.role);
+  // Super Admin tiap PT (Selma, Alivia, dst) hanya melihat Rumus Harga dan Kelola User, keduanya
+  // terkunci ke PT akunnya sendiri. Super Appa melihat semuanya dan bebas memilih PT.
+  const ptSendiri = isSuperappa ? null : session?.entitas || "OPS";
 
   if (!settings) {
     return (
       <div>
         <PageHeader title="Pengaturan" />
         <EmptyState label="Data pengaturan belum tersedia di Supabase." />
-        {isSuperadminLike(session?.role) && <UserManager showToast={showToast} />}
+        {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
       </div>
     );
   }
@@ -29,11 +32,207 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
 
       {isSuperappa && <MaintenanceToggle settings={settings} reload={reload} showToast={showToast} />}
 
-      <SkuYatimCleaner reload={reload} showToast={showToast} />
+      {bolehAtur && (
+        <PengaturanPerPT settings={settings} session={session} isSuperappa={isSuperappa} showToast={showToast} />
+      )}
 
-      <FotoYatimCleaner reload={reload} showToast={showToast} />
+      {isSuperappa && <SkuYatimCleaner reload={reload} showToast={showToast} />}
 
-      {isSuperadminLike(session?.role) && <UserManager showToast={showToast} />}
+      {isSuperappa && <FotoYatimCleaner reload={reload} showToast={showToast} />}
+
+      {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
+    </div>
+  );
+}
+
+// Pengaturan per perusahaan (entitas): rumus harga & Mode Perbaikan khusus satu PT.
+// Disimpan di master_data tipe "entitas_set" (kode "<PT>:<kunci>", label = isi) — pola yang sama
+// dengan profil perusahaan, jadi TIDAK perlu SQL baru. Kosong = pakai bawaan.
+// Super Appa memilih PT mana saja; superadmin biasa hanya PT akunnya sendiri (rumus harga saja).
+const FIELD_HARGA = [
+  { key: "round_to", label: "Pembulatan harga (kelipatan Rp)" },
+  { key: "harga_min", label: "Harga asli minimal (Rp)" },
+  { key: "hpp_persen", label: "Tambahan HPP (%)" },
+  { key: "grosir_x", label: "Pengali Grosir (x HPP)" },
+  { key: "tengah_x1", label: "Pengali Tengah, HPP < 10.000" },
+  { key: "tengah_x2", label: "Pengali Tengah, HPP 10.000–<20.000" },
+  { key: "tengah_x3", label: "Pengali Tengah, HPP ≥ 20.000" },
+  { key: "ecer_x", label: "Pengali Ecer (x Tengah)" },
+];
+
+function hitungContoh(hargaAsli, r) {
+  const round = (n) => Math.round(n / r.round_to) * r.round_to;
+  const dasar = Math.max(hargaAsli, r.harga_min);
+  const hpp = dasar * (1 + r.hpp_persen / 100);
+  const mult = hpp < 10000 ? r.tengah_x1 : hpp < 20000 ? r.tengah_x2 : r.tengah_x3;
+  const tengah = round(hpp * mult);
+  return { grosir: round(hpp * r.grosir_x), tengah, ecer: round(tengah * r.ecer_x) };
+}
+
+function PengaturanPerPT({ settings, session, isSuperappa, showToast }) {
+  const [entitas, setEntitas] = useState([]);
+  const [setList, setSetList] = useState([]);
+  const [pt, setPt] = useState(session?.entitas || entitasSesi());
+  const [nilai, setNilai] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const muat = async () => {
+    const [e, st] = await Promise.all([
+      sb("master_data?tipe=eq.entitas&select=id,kode,label&order=kode"),
+      sb("master_data?tipe=eq.entitas_set&select=id,kode,label"),
+    ]);
+    const el = Array.isArray(e) ? e : [];
+    const sl = Array.isArray(st) ? st : [];
+    setEntitas(el);
+    setSetList(sl);
+    daftarkanProfilEntitas({ entitas: el, entitas_set: sl });
+    return sl;
+  };
+
+  useEffect(() => {
+    muat().catch((err) => showToast(err.message || "Gagal memuat pengaturan perusahaan", "err"));
+  }, []);
+
+  const baris = (kunci) => setList.find((m) => m.kode === `${pt}:${kunci}`);
+
+  // Isi form ulang tiap ganti PT / data termuat: hanya nilai yang memang ditimpa PT ini.
+  useEffect(() => {
+    const awal = {};
+    FIELD_HARGA.forEach((f) => {
+      const b = setList.find((m) => m.kode === `${pt}:${f.key}`);
+      awal[f.key] = b ? String(b.label) : "";
+    });
+    setNilai(awal);
+  }, [pt, setList]);
+
+  const ptSendiri = session?.entitas || "OPS";
+  const daftarPT = isSuperappa
+    ? entitas
+    : [{ kode: ptSendiri, label: entitas.find((e) => e.kode === ptSendiri)?.label || ptSendiri }];
+  const namaPT = entitas.find((e) => e.kode === pt)?.label || pt;
+
+  const bawaan = (k) => (k === "round_to" ? Number(settings?.round_to) || 1000 : RUMUS_HARGA_BAWAAN[k]);
+  const efektif = { ...rumusHargaEntitas([], pt, settings) };
+  FIELD_HARGA.forEach((f) => {
+    const n = Number(String(nilai[f.key] ?? "").replace(",", "."));
+    efektif[f.key] = Number.isFinite(n) && n > 0 && nilai[f.key] !== "" ? n : bawaan(f.key);
+  });
+  const contoh = hitungContoh(10000, efektif);
+  const fmt = (n) => "Rp " + Math.round(n).toLocaleString("id-ID");
+
+  const tulis = async (kunci, isi) => {
+    const ada = baris(kunci);
+    if (ada && isi) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: isi }) });
+    else if (ada && !isi) await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+    else if (!ada && isi) await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_set", kode: `${pt}:${kunci}`, label: isi }) });
+  };
+
+  const simpanHarga = async () => {
+    if (saving) return;
+    for (const f of FIELD_HARGA) {
+      const v = String(nilai[f.key] ?? "").trim();
+      if (v !== "" && !(Number(v.replace(",", ".")) > 0)) {
+        showToast(`${f.label}: isi angka lebih dari 0, atau kosongkan untuk pakai bawaan`, "err");
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      for (const f of FIELD_HARGA) await tulis(f.key, String(nilai[f.key] ?? "").trim().replace(",", "."));
+      await muat();
+      showToast(`Rumus harga ${namaPT} disimpan`);
+    } catch (err) {
+      showToast(err.message || "Gagal menyimpan rumus harga", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const perbaikanAktif = baris("perbaikan")?.label === "1";
+  const togglePerbaikan = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await tulis("perbaikan", perbaikanAktif ? "" : "1");
+      await muat();
+      showToast(perbaikanAktif ? `Mode perbaikan ${namaPT} dimatikan` : `Mode perbaikan ${namaPT} diaktifkan`);
+    } catch (err) {
+      showToast(err.message || "Gagal mengubah mode perbaikan", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
+      <div className="text-sm font-semibold mb-1">Pengaturan per Perusahaan</div>
+      <p className="text-xs text-slate-500 mb-3 max-w-xl">
+        Rumus harga dan Mode Perbaikan yang berlaku khusus untuk satu PT. Kolom dikosongkan = pakai
+        bawaan. Harga barang yang sudah tersimpan tidak berubah — rumus baru dipakai saat harga dihitung
+        ulang (SKU baru / edit harga).
+      </p>
+
+      <Field label="Perusahaan">
+        <SearchableSelect
+          value={pt}
+          onChange={setPt}
+          options={daftarPT.map((e) => ({ value: e.kode, label: e.label || e.kode }))}
+        />
+      </Field>
+
+      <div className="text-xs text-slate-300 mt-2 mb-2">Rumus harga — {namaPT}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3">
+        {FIELD_HARGA.map((f) => (
+          <Field key={f.key} label={f.label}>
+            <input
+              className={inputClass}
+              inputMode="decimal"
+              value={nilai[f.key] ?? ""}
+              onChange={(e) => setNilai((n) => ({ ...n, [f.key]: e.target.value }))}
+              placeholder={`Bawaan: ${bawaan(f.key)}`}
+            />
+          </Field>
+        ))}
+      </div>
+      <div className="text-[11px] text-slate-500 mt-1 mb-3">
+        Contoh harga asli Rp 10.000 → Grosir {fmt(contoh.grosir)} · Tengah {fmt(contoh.tengah)} · Ecer {fmt(contoh.ecer)}
+      </div>
+      <button
+        onClick={simpanHarga}
+        disabled={saving}
+        className="text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
+      >
+        {saving ? "Menyimpan…" : "Simpan rumus harga"}
+      </button>
+
+      {isSuperappa && (
+        <div className="mt-4 pt-4 border-t border-slate-800">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold mb-1 flex items-center gap-1.5">
+                <Wrench size={14} /> Mode Perbaikan — {namaPT}
+              </div>
+              <p className="text-xs text-slate-500 max-w-xl">
+                Hanya akun milik {namaPT} yang terkunci (tampil "Sedang Dalam Perbaikan"). PT lain tetap
+                jalan normal. Super Appa dan absen karyawan tidak terpengaruh.
+              </p>
+            </div>
+            <button
+              onClick={togglePerbaikan}
+              disabled={saving}
+              className={`flex-shrink-0 relative w-12 h-7 rounded-full transition-colors ${perbaikanAktif ? "bg-amber-500" : "bg-slate-700"} disabled:opacity-50`}
+              title={perbaikanAktif ? "Matikan mode perbaikan PT ini" : "Aktifkan mode perbaikan PT ini"}
+            >
+              <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${perbaikanAktif ? "translate-x-5" : ""}`} />
+            </button>
+          </div>
+          {perbaikanAktif && (
+            <div className="mt-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg">
+              <AlertTriangle size={13} className="flex-shrink-0" /> Mode perbaikan {namaPT} sedang AKTIF.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -72,7 +271,7 @@ function MaintenanceToggle({ settings, reload, showToast }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold mb-1 flex items-center gap-1.5">
-            <Wrench size={14} /> Mode Perbaikan
+            <Wrench size={14} /> Mode Perbaikan (semua PT)
           </div>
           <p className="text-xs text-slate-500 max-w-xl">
             Kalau diaktifkan, semua user (selain akun Super Admin ini) akan melihat tulisan
@@ -105,10 +304,10 @@ function MaintenanceToggle({ settings, reload, showToast }) {
 }
 
 // Kelola user login (username, nama, role, password) — hanya untuk superadmin.
-function UserManager({ showToast }) {
+function UserManager({ showToast, ptTetap = null }) {
   const [users, setUsers] = useState(null);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [form, setForm] = useState({ username: "", password: "", nama: "", role: "gudang", entitas: "OPS" });
+  const [form, setForm] = useState({ username: "", password: "", nama: "", role: "gudang", entitas: ptTetap || "OPS" });
   const [entitasList, setEntitasList] = useState([]);
   const [saving, setSaving] = useState(false);
   const [pwEdit, setPwEdit] = useState(null); // {id, value}
@@ -144,8 +343,8 @@ function UserManager({ showToast }) {
     }
     setSaving(true);
     try {
-      await createUser(form);
-      setForm({ username: "", password: "", nama: "", role: "gudang", entitas: form.entitas });
+      await createUser({ ...form, entitas: ptTetap || form.entitas });
+      setForm({ username: "", password: "", nama: "", role: "gudang", entitas: ptTetap || form.entitas });
       await load();
       showToast("User baru ditambahkan");
     } catch (e) {
@@ -181,7 +380,9 @@ function UserManager({ showToast }) {
     <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
       <div className="text-sm font-semibold mb-1">Kelola User Login</div>
       <p className="text-xs text-slate-500 mb-4 max-w-xl">
-        Tambah, hapus, atau ubah password akun login. Hanya Super Admin yang bisa mengakses bagian ini.
+        {ptTetap
+          ? `Tambah, hapus, atau ubah password akun login ${namaPT(ptTetap)}. Akun baru otomatis terikat ke ${namaPT(ptTetap)}.`
+          : "Tambah, hapus, atau ubah password akun login semua PT. Hanya Super Admin yang bisa mengakses bagian ini."}
       </p>
 
       <form onSubmit={tambah} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 pb-4 border-b border-slate-800">
@@ -201,13 +402,19 @@ function UserManager({ showToast }) {
             options={ROLES.map((r) => ({ value: r.key, label: r.label }))}
           />
         </Field>
-        <Field label="PT (akun terikat ke)">
-          <SearchableSelect
-            value={form.entitas}
-            onChange={(v) => set("entitas", v)}
-            options={[{ value: "OPS", label: namaPT("OPS") }, ...entitasList.filter((e) => e.kode !== "OPS").map((e) => ({ value: e.kode, label: e.label || e.kode }))]}
-          />
-        </Field>
+        {ptTetap ? (
+          <Field label="PT (akun terikat ke)">
+            <div className={`${inputClass} text-slate-400`}>{namaPT(ptTetap)} (otomatis)</div>
+          </Field>
+        ) : (
+          <Field label="PT (akun terikat ke)">
+            <SearchableSelect
+              value={form.entitas}
+              onChange={(v) => set("entitas", v)}
+              options={[{ value: "OPS", label: namaPT("OPS") }, ...entitasList.filter((e) => e.kode !== "OPS").map((e) => ({ value: e.kode, label: e.label || e.kode }))]}
+            />
+          </Field>
+        )}
         <button
           disabled={saving}
           className="sm:col-span-2 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"

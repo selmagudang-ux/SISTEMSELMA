@@ -695,6 +695,8 @@ const MENU_PT_LAIN = [
   // Penggajian juga dipisah per PT (kolom entitas di tabel penggajian, lihat penggajian_per_pt.sql);
   // gaji hanya boleh keluar dari rekening milik PT-nya sendiri.
   "absensi", "penggajian",
+  // Pengaturan per PT (rumus harga, pembersih data PT-nya sendiri) — Kelola User tetap hanya untuk Selma/Super Appa.
+  "pengaturan",
   // Grup PENJUALAN (di sidebar PT selain Selma, grup "Store Selma" tampil sebagai "Store <nama PT>").
   "grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller",
 ];

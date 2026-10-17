@@ -492,24 +492,48 @@ export async function kompresFotoProduk(file, { maxDim = 1280, quality = 0.82 } 
   }
 }
 
+// Rumus harga bawaan (dipakai kalau PT belum punya pengaturan sendiri). Bisa ditimpa per PT lewat
+// master_data tipe "entitas_set" (kunci: round_to, harga_min, hpp_persen, grosir_x, tengah_x1/x2/x3, ecer_x)
+// — diatur di Pengaturan > Pengaturan per Perusahaan. round_to bawaan tetap dari tabel settings.
+export const RUMUS_HARGA_BAWAAN = {
+  harga_min: 7000, // harga asli minimal
+  hpp_persen: 10, // HPP = harga asli + x%
+  tengah_x1: 3, // pengali harga tengah kalau HPP < 10.000
+  tengah_x2: 2.5, // HPP 10.000 - <20.000
+  tengah_x3: 2, // HPP >= 20.000
+  grosir_x: 1.5, // grosir = HPP x ini
+  ecer_x: 2, // ecer = tengah x ini
+};
+export function rumusHargaEntitas(setList, kode, settings) {
+  const hasil = { ...RUMUS_HARGA_BAWAAN, round_to: Number(settings?.round_to) || 1000 };
+  (setList || []).forEach((m) => {
+    const k = String(m.kode || "");
+    const i = k.indexOf(":");
+    if (i <= 0 || k.slice(0, i) !== kode) return;
+    const kunci = k.slice(i + 1);
+    const n = Number(String(m.label).replace(",", "."));
+    if ((kunci in hasil || kunci === "round_to") && Number.isFinite(n) && n > 0) hasil[kunci] = n;
+  });
+  return hasil;
+}
+
 export function calcHarga(hargaAsli, settings) {
-  const round = (n) => Math.round(n / settings.round_to) * settings.round_to;
+  const r = rumusHargaEntitas(profilTerdaftar.set, entitasSesi(), settings);
+  const round = (n) => Math.round(n / r.round_to) * r.round_to;
 
-  // Harga asli minimal Rp 7.000.
-  const hargaAsliDipakai = Math.max(Number(hargaAsli) || 0, 7000);
+  const hargaAsliDipakai = Math.max(Number(hargaAsli) || 0, r.harga_min);
 
-  // HPP = Harga Asli + 10%.
-  const hpp = hargaAsliDipakai * 1.1;
+  const hpp = hargaAsliDipakai * (1 + r.hpp_persen / 100);
 
   // Pengali Harga Tengah tergantung besar HPP.
   let tengahMultiplier;
-  if (hpp < 10000) tengahMultiplier = 3;
-  else if (hpp < 20000) tengahMultiplier = 2.5;
-  else tengahMultiplier = 2;
+  if (hpp < 10000) tengahMultiplier = r.tengah_x1;
+  else if (hpp < 20000) tengahMultiplier = r.tengah_x2;
+  else tengahMultiplier = r.tengah_x3;
 
   const tengah = round(hpp * tengahMultiplier);
-  const ecer = round(tengah * 2);
-  const grosir = round(hpp * 1.5);
+  const ecer = round(tengah * r.ecer_x);
+  const grosir = round(hpp * r.grosir_x);
 
   return { hargaDasar: hargaAsliDipakai, hpp, grosir, tengah, ecer };
 }

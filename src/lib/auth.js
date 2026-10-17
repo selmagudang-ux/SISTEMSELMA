@@ -42,6 +42,9 @@ export async function login(username, password) {
     role: user.role,
     entitas: user.entitas || "OPS", // PT tempat akun terikat (OPS = Selma)
     token: user.token || null, // token bertanda tangan untuk fitur Chat (lihat functions/chat)
+    // JWT sesi dari verify-login, dipakai HANYA untuk fungsi Kelola User (header x-selma-jwt).
+    // Sengaja bukan field "jwt": api.js memakai field itu sebagai Authorization untuk PostgREST.
+    jwtUser: user.jwt || null,
     loginAt: new Date().toISOString(),
   };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -66,6 +69,12 @@ export function logout() {
 // Tabel app_users dikunci total dari anon key, jadi ambil daftar user lewat
 // Edge Function list-users (service_role) — bukan sb() langsung (lihat
 // supabase/functions/list-users).
+// Header identitas untuk Edge Function kelola user (server memeriksa role & PT dari JWT ini).
+function headerKelolaUser() {
+  const jwt = getSession()?.jwtUser;
+  return jwt ? { "x-selma-jwt": jwt } : {};
+}
+
 export async function listUsers() {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/list-users`, {
     method: "POST",
@@ -73,6 +82,7 @@ export async function listUsers() {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...headerKelolaUser(),
     },
   });
   const data = await res.json().catch(() => null);
@@ -90,6 +100,7 @@ export async function createUser({ username, password, nama, role, entitas }) {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...headerKelolaUser(),
     },
     body: JSON.stringify({ username: (username || "").trim(), password, nama, role, entitas: entitas || "OPS" }),
   });
@@ -111,6 +122,7 @@ export async function updateUserPassword(id, newPassword) {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...headerKelolaUser(),
     },
     body: JSON.stringify({ id, newPassword }),
   });
@@ -129,6 +141,7 @@ export async function deleteUser(id) {
       "Content-Type": "application/json",
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...headerKelolaUser(),
     },
     body: JSON.stringify({ id }),
   });
