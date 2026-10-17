@@ -168,8 +168,30 @@ export function identitasNotaEntitas(master) {
   return { nama: namaUsahaEntitas(master, kode).toUpperCase(), alamat: alamatEntitas(master, kode) };
 }
 
+// Master Data kode SKU (bahan, peruntukan, kategori, subkategori, warna, ukuran) dipisah per PT lewat
+// kolom master_data.entitas (lihat master_data_per_pt.sql). Tipe lain di master_data (rekening,
+// entitas, entitas_set, toko_entitas, kas_grup, dst) SENGAJA tetap global — Holding membacanya
+// lintas PT. Baris tanpa entitas (data lama / SQL belum dijalankan) dianggap bersama untuk semua PT.
+export const TIPE_MASTER_SKU = ["bahan", "peruntukan", "kategori", "subkategori", "warna", "ukuran"];
+export function masterDataUntukPT(rows, ent) {
+  return (rows || []).filter((m) => !TIPE_MASTER_SKU.includes(m.tipe) || m.entitas == null || m.entitas === ent);
+}
+
 export function terapkanEntitasPT(path, method, body) {
   const tabel = String(path).split("?")[0];
+  // Tulisan baru ke master_data bertipe kode-SKU diberi entitas PT akun yang login.
+  if (tabel === "master_data" && method === "POST" && typeof body === "string") {
+    try {
+      const d = JSON.parse(body);
+      const isi = (o) =>
+        o && typeof o === "object" && TIPE_MASTER_SKU.includes(o.tipe) && o.entitas === undefined
+          ? { ...o, entitas: entitasSesi() }
+          : o;
+      return { path, body: JSON.stringify(Array.isArray(d) ? d.map(isi) : isi(d)) };
+    } catch {
+      return { path, body };
+    }
+  }
   if (!TABEL_PER_PT.has(tabel)) return { path, body };
   const e = entitasSesi();
   if (method === "POST") {

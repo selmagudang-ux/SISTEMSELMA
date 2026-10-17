@@ -41,6 +41,13 @@ export default function MasterData({ master, skuMaster, reload, showToast }) {
   };
 
   const deleteEntry = async (id) => {
+    // Jangan hapus kode yang masih dipakai SKU (SKU-nya akan kehilangan label & kode di dropdown).
+    const entri = (master[activeTipe] || []).find((m) => m.id === id);
+    const dipakai = entri ? (skuMaster || []).filter((s) => s[activeTipe] === entri.kode).length : 0;
+    if (dipakai > 0) {
+      showToast(`Kode "${entri.kode}" masih dipakai ${dipakai} SKU — tidak bisa dihapus.`, "err");
+      return;
+    }
     try {
       await sb(`master_data?id=eq.${id}`, { method: "DELETE" });
       await reload();

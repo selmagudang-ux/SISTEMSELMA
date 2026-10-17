@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
-import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
+import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, fiturMatiEntitas, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
@@ -127,6 +127,8 @@ const KOLOM_RAK = ["id", "code", "meja", "baris", "zona"].join(",");
 // cuma pernah kirim tipe/kode/label, dan pembacaannya juga cuma 4 kolom ini
 // (id dipakai buat React key, tipe buat pengelompokan di loadCore).
 const KOLOM_MASTER_DATA = ["id", "tipe", "kode", "label"].join(",");
+// Dengan kolom entitas (Master Data kode-SKU per PT, lihat master_data_per_pt.sql).
+const KOLOM_MASTER_DATA_PT = KOLOM_MASTER_DATA + ",entitas";
 
 export default function SistemSelmaApp() {
   const [session, setSession] = useState(() => getSession());
@@ -745,7 +747,10 @@ function MainApp({ session, onLogout }) {
       sbAll(`suppliers?select=${KOLOM_SUPPLIERS}&order=nama`),
       sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
       sbAll(`rak?select=${KOLOM_RAK}&order=code`),
-      sbAll(`master_data?select=${KOLOM_MASTER_DATA}&order=label`),
+      // Kalau kolom entitas belum ada (SQL belum dijalankan), jatuh ke bacaan lama tanpa kolom itu.
+      sbAll(`master_data?select=${KOLOM_MASTER_DATA_PT}&order=label`).catch(() =>
+        sbAll(`master_data?select=${KOLOM_MASTER_DATA}&order=label`)
+      ),
       sb("settings?select=*"),
       sbAll(`penempatan?select=${KOLOM_PENEMPATAN}&order=created_at.desc`),
       sbAll("stock_history_latest?select=*"),
@@ -762,7 +767,8 @@ function MainApp({ session, onLogout }) {
       ),
     ]);
     const grouped = {};
-    (masterRes || []).forEach((m) => {
+    // Kode SKU hanya milik PT yang sedang dilihat; tipe global (rekening, entitas, dst) utuh.
+    masterDataUntukPT(masterRes, entitasBacaSaatIni()).forEach((m) => {
       grouped[m.tipe] = grouped[m.tipe] || [];
       grouped[m.tipe].push(m);
     });
