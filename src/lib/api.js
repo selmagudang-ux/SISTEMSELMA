@@ -113,6 +113,8 @@ export const TABEL_PER_PT = new Set([
   "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",
   // View stok barang habis pakai (perlengkapan + mutasi) — wajib punya kolom entitas.
   "perlengkapan_stok",
+  // Kelengkapan (barang pendamping yang ikut dijual) — lihat kelengkapan_tahap1.sql.
+  "kelengkapan", "kelengkapan_mutasi", "kelengkapan_stok",
   // Penjualan (menu PENJUALAN: Store/Grosir, Toko Offline, Marketplace, Reseller, Master Data
   // Grosir). Kolom entitas ditambah lewat penjualan_per_pt.sql — JALANKAN SQL ITU DULU sebelum
   // deploy versi ini, kalau tidak semua halaman penjualan Selma error "column entitas does not exist".

@@ -23,6 +23,7 @@ const PersetujuanRestock = lazy(() => import("./pages/PersetujuanRestock"));
 const BarangDatang = lazy(() => import("./pages/BarangDatang"));
 const BarangMasuk = lazy(() => import("./pages/BarangMasuk"));
 const BelanjaHabisPakai = lazy(() => import("./pages/BelanjaHabisPakai"));
+const Kelengkapan = lazy(() => import("./pages/Kelengkapan"));
 const DataBarang = lazy(() => import("./pages/DataBarang"));
 const SkuHarga = lazy(() => import("./pages/SkuHarga"));
 const Stok = lazy(() => import("./pages/Stok"));
@@ -1284,7 +1285,10 @@ function MainApp({ session, onLogout }) {
                   session={session}
                 />
               )}
-              {nav.menu === "barang-datang" && nav.sub !== "habis-pakai" && (
+              {nav.menu === "barang-datang" && nav.sub === "kelengkapan" && (
+                <Kelengkapan showToast={showToast} session={session} />
+              )}
+              {nav.menu === "barang-datang" && nav.sub !== "habis-pakai" && nav.sub !== "kelengkapan" && (
                 <BarangDatang
                   sub={nav.sub || "datang"}
                   pesananMasuk={pesananMasuk}

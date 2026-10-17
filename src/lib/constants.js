@@ -238,6 +238,8 @@ export const NAV = [
               // Pembelian keperluan usaha non-dagangan (bubble wrap, lakban, ATK, dst)
               // + pantauan stok perlengkapan. Halaman: pages/BelanjaHabisPakai.jsx.
               { key: "habis-pakai", label: "Belanja Barang Habis Pakai" },
+              // Barang pendamping yang ikut dijual (box, kantong, dst), SKU & harga sendiri.
+              { key: "kelengkapan", label: "Kelengkapan" },
             ],
           },
           { key: "data-barang", label: "Alur Barang", icon: ClipboardList },
