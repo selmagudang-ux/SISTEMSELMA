@@ -192,14 +192,22 @@ export default function Dashboard({
   const [tabPilih, setTab] = useState("gudang");
   const gabungan = bolehPilihPT && ptLihat === "GABUNGAN";
   const entAktif = bolehPilihPT && ptLihat && !gabungan ? ptLihat : entitas;
-  // PT selain SELMA: data gudang, penjualan (grosir/reseller/marketplace, kolom entitas) dan
-  // keuangan (lewat rekening) sudah dipisah per PT. Absensi belum, jadi tab itu disembunyikan.
+  // PT selain SELMA: data gudang, penjualan (grosir/reseller/marketplace, kolom entitas),
+  // keuangan (lewat rekening) dan absensi (kolom entitas di tabel absensi & karyawan) sudah
+  // dipisah per PT.
+  // Tab Absensi: App.jsx memuat absensi milik PT akun yang login (session.entitas), jadi tab ini
+  // hanya muncul kalau PT yang sedang dilihat = PT akun sendiri. Akun Holding yang memilih PT lain
+  // di dropdown tidak mendapat tab ini (datanya bukan milik PT yang dipilih).
   // Gabungan semua PT: hanya Keuangan (data gudang/penjualan tiap PT tidak dijumlahkan).
   const bukanOps = gabungan || entAktif !== ENTITAS_DEFAULT;
+  const absensiBolehTampil = !gabungan && entAktif === entitas;
   const tabsTersedia = gabungan
     ? TABS.filter((t) => t.key === "keuangan")
     : bukanOps
-    ? TABS.filter((t) => t.key === "gudang" || t.key === "penjualan" || t.key === "keuangan")
+    ? TABS.filter(
+        (t) =>
+          t.key === "gudang" || t.key === "penjualan" || t.key === "keuangan" || (t.key === "absensi" && absensiBolehTampil)
+      )
     : TABS;
   const tab = tabsTersedia.some((t) => t.key === tabPilih) ? tabPilih : tabsTersedia[0].key;
   const namaPerusahaan = gabungan ? "Gabungan semua PT" : namaUsahaEntitas(master, entAktif);
