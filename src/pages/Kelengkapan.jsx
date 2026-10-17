@@ -79,6 +79,16 @@ async function catatRiwayatHarga(id, lama, baru, keterangan, oleh) {
   await sb("kelengkapan_harga_riwayat", { method: "POST", body: JSON.stringify(row) });
 }
 
+// Cek SKU yang diketik: tidak boleh kosong dan tidak boleh sama dengan kelengkapan lain.
+function cekSku(skuMentah, daftar, idSendiri) {
+  const sku = String(skuMentah || "").trim();
+  if (!sku) return { sku, error: "SKU wajib diisi" };
+  if (daftar.some((p) => p.id !== idSendiri && String(p.sku).trim().toLowerCase() === sku.toLowerCase())) {
+    return { sku, error: `SKU "${sku}" sudah dipakai kelengkapan lain` };
+  }
+  return { sku, error: "" };
+}
+
 function BannerSql() {
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs px-4 py-3 mb-4">
@@ -215,7 +225,7 @@ export default function Kelengkapan({ showToast, session }) {
         <FormBarang barang={modal.item} stok={stok} session={session} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
       )}
       {modal?.type === "lanjut" && (
-        <FormLanjut barang={modal.item} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
+        <FormLanjut barang={modal.item} stok={stok} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
       )}
       {modal?.type === "beli" && (
         <FormBeli barang={modal.item} stok={aktif} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
@@ -383,6 +393,7 @@ function TabRiwayat({ mutasi, stok, bisaUbah, setModal, kosong }) {
 // ---------------------------------------------------------
 function FormBarang({ barang, stok, session, onClose, onSaved, showToast }) {
   const [nama, setNama] = useState(barang?.nama || "");
+  const [skuEdit, setSkuEdit] = useState(barang?.sku || "");
   const [satuan, setSatuan] = useState(barang?.satuan || "pcs");
   const [hargaBeli, setHargaBeli] = useState(barang?.harga_beli ?? "");
   const [hargaGrosir, setHargaGrosir] = useState(barang?.harga_grosir ?? "");
@@ -401,9 +412,19 @@ function FormBarang({ barang, stok, session, onClose, onSaved, showToast }) {
       showToast?.(`Kelengkapan "${namaTrim}" sudah ada`, "err");
       return;
     }
+    let skuTrim = barang?.sku;
+    if (barang) {
+      const cek = cekSku(skuEdit, stok, barang.id);
+      if (cek.error) {
+        showToast?.(cek.error, "err");
+        return;
+      }
+      skuTrim = cek.sku;
+    }
     setSaving(true);
     try {
       const data = {
+        ...(barang ? { sku: skuTrim } : {}),
         nama: namaTrim,
         satuan: satuan.trim() || "pcs",
         harga_beli: Number(hargaBeli) || 0,
@@ -460,8 +481,15 @@ function FormBarang({ barang, stok, session, onClose, onSaved, showToast }) {
 
   return (
     <ModalShell title={barang ? `Edit ${barang.sku}` : "Tambah Kelengkapan"} onClose={onClose}>
+      {barang && (
+        <div className="mb-3">
+          <Field label="SKU">
+            <input value={skuEdit} onChange={(e) => setSkuEdit(e.target.value)} className={inputClass} />
+          </Field>
+        </div>
+      )}
       <Field label="Nama">
-        <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="mis. Box Perhiasan Kecil" className={inputClass} autoFocus />
+        <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="mis. Box Perhiasan Kecil" className={inputClass} autoFocus={!barang} />
       </Field>
       <div className="grid grid-cols-2 gap-3 mt-3">
         <Field label="Satuan">
@@ -815,13 +843,15 @@ function TabTahapan({ stok, siap, session, showToast, setModal }) {
 //   verifikasi  -> unggah foto                      -> marketplace
 //   marketplace -> tandai sudah upload              -> selesai
 // ---------------------------------------------------------
-function FormLanjut({ barang, onClose, onSaved, showToast }) {
+function FormLanjut({ barang, stok, onClose, onSaved, showToast }) {
   const stage = tahapDari(barang);
   const meta = STAGE_META[stage];
   const [rakList, setRakList] = useState(null);
   const [rak, setRak] = useState(barang.rak_code || "");
   const [file, setFile] = useState(null);
+  const [skuBaru, setSkuBaru] = useState("");
   const [saving, setSaving] = useState(false);
+  const cek = cekSku(skuBaru, stok || [], barang.id);
 
   useEffect(() => {
     if (stage !== "rak") return undefined;
@@ -834,9 +864,9 @@ function FormLanjut({ barang, onClose, onSaved, showToast }) {
     };
   }, [stage]);
 
-  const bisaSimpan = !saving && (stage === "sku" || stage === "marketplace" || (stage === "rak" && !!rak) || (stage === "verifikasi" && !!file));
+  const bisaSimpan = !saving && ((stage === "sku" && !cek.error) || stage === "marketplace" || (stage === "rak" && !!rak) || (stage === "verifikasi" && !!file));
   const tombol = {
-    sku: "Konfirmasi & lanjut ke Rak",
+    sku: "Simpan SKU & lanjut ke Rak",
     rak: "Simpan & lanjut ke Verifikasi Foto",
     verifikasi: "Unggah & lanjut ke Marketplace",
     marketplace: "Tandai sudah upload — selesai",
@@ -847,15 +877,17 @@ function FormLanjut({ barang, onClose, onSaved, showToast }) {
     try {
       let pesan = "";
       if (stage === "sku") {
-        await patchKlg(barang.id, { stage: "rak" });
-        pesan = "SKU dikonfirmasi — lanjut ke Rak";
+        if (cek.error) throw new Error(cek.error);
+        await patchKlg(barang.id, { sku: cek.sku, stage: "rak" });
+        pesan = `SKU ${cek.sku} tersimpan — lanjut ke Rak`;
       } else if (stage === "rak") {
         await patchKlg(barang.id, { rak_code: rak, stage: "verifikasi" });
         pesan = "Kelengkapan ditempatkan di rak";
       } else if (stage === "verifikasi") {
         const kecil = await kompresFotoProduk(file);
         const ext = (kecil.name.split(".").pop() || "jpg").toLowerCase();
-        const url = await sbUploadFoto(kecil, `${barang.sku}.${ext}`);
+        const namaFile = String(barang.sku).replace(/[^a-zA-Z0-9-_]/g, "-");
+        const url = await sbUploadFoto(kecil, `${namaFile}.${ext}`);
         await patchKlg(barang.id, { foto_url: url, stage: "marketplace" });
         pesan = "Foto verifikasi tersimpan";
       } else if (stage === "marketplace") {
@@ -875,8 +907,20 @@ function FormLanjut({ barang, onClose, onSaved, showToast }) {
 
       {stage === "sku" && (
         <div>
+          <Field label="SKU">
+            <input
+              value={skuBaru}
+              onChange={(e) => setSkuBaru(e.target.value)}
+              placeholder="Ketik SKU kelengkapan ini"
+              className={inputClass}
+              autoFocus
+            />
+          </Field>
+          <div className={`text-[11px] mt-1 mb-3 ${skuBaru && cek.error ? "text-red-400" : "text-slate-500"}`}>
+            {skuBaru && cek.error ? cek.error : `Kode sementara dari sistem: ${barang.sku}. Akan diganti dengan SKU yang kamu ketik.`}
+          </div>
           <div className="rounded-lg border border-slate-800 overflow-hidden text-xs">
-            {[["SKU", barang.sku], ["Satuan", barang.satuan], ["Harga beli", fmtRp(barang.harga_beli)], ["Harga grosir", fmtRp(barang.harga_grosir)], ["Harga ecer", fmtRp(barang.harga_ecer)]].map(([l, v], i) => (
+            {[["Satuan", barang.satuan], ["Harga beli", fmtRp(barang.harga_beli)], ["Harga grosir", fmtRp(barang.harga_grosir)], ["Harga ecer", fmtRp(barang.harga_ecer)]].map(([l, v], i) => (
               <div key={l} className={`flex justify-between px-3 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
                 <span className="text-slate-500">{l}</span>
                 <span className="text-slate-200 font-mono">{v}</span>
