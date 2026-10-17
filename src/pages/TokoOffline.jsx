@@ -4,7 +4,7 @@ import {
   PageHeader, EmptyState, StatCard, Field, InputTanggal, InputRupiah,
   Badge, formatTanggalID, suggestKode,
 } from "../components/ui";
-import { sb, fmtRp, cariAtauBuatRekeningTetap, kodeRekeningPeran, entitasSesi, petaEntitasRekening, entitasDariRekening } from "../lib/api";
+import { sb, fmtRp, cariAtauBuatRekeningTetap, kodeRekeningPeran, entitasSesi, petaEntitasRekening, entitasDariRekening, lingkupEntitas } from "../lib/api";
 import {
   REKENING_TOKO_OFFLINE_CASH,
   REKENING_TOKO_OFFLINE_CASHLESS,
@@ -207,7 +207,10 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
     }
   };
 
-  const semuaEntri = (keuanganTransaksi || []).filter(isEntriTokoOffline);
+  // keuanganTransaksi yang dioper App.jsx berisi transaksi SEMUA PT — saring ke PT akun ini
+  // (lewat rekeningnya) supaya Alivia tidak melihat input toko offline Selma.
+  const transaksiPT = lingkupEntitas(keuanganTransaksi || [], master, entitasAkun).transaksi;
+  const semuaEntri = (transaksiPT || []).filter(isEntriTokoOffline);
   const entriBulanIni = semuaEntri.filter((t) => t.tanggal >= awalBulanIni());
   const entriHariIni = semuaEntri.filter((t) => t.tanggal === todayIso);
   // "Cashless" mencakup entri lama yang masih berlabel "Transfer" (sebelum
