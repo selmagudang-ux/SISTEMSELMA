@@ -192,14 +192,14 @@ export default function Dashboard({
   const [tabPilih, setTab] = useState("gudang");
   const gabungan = bolehPilihPT && ptLihat === "GABUNGAN";
   const entAktif = bolehPilihPT && ptLihat && !gabungan ? ptLihat : entitas;
-  // PT selain SELMA: data penjualan (grosir/reseller/marketplace) & absensi belum dipisah
-  // per PT, jadi tab itu disembunyikan — hanya Operasional & Keuangan yang datanya sudah per PT.
-  // Gabungan semua PT: hanya Keuangan (data gudang tiap PT tidak dijumlahkan).
+  // PT selain SELMA: data gudang, penjualan (grosir/reseller/marketplace, kolom entitas) dan
+  // keuangan (lewat rekening) sudah dipisah per PT. Absensi belum, jadi tab itu disembunyikan.
+  // Gabungan semua PT: hanya Keuangan (data gudang/penjualan tiap PT tidak dijumlahkan).
   const bukanOps = gabungan || entAktif !== ENTITAS_DEFAULT;
   const tabsTersedia = gabungan
     ? TABS.filter((t) => t.key === "keuangan")
     : bukanOps
-    ? TABS.filter((t) => t.key === "gudang" || t.key === "keuangan")
+    ? TABS.filter((t) => t.key === "gudang" || t.key === "penjualan" || t.key === "keuangan")
     : TABS;
   const tab = tabsTersedia.some((t) => t.key === tabPilih) ? tabPilih : tabsTersedia[0].key;
   const namaPerusahaan = gabungan

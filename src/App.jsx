@@ -777,13 +777,15 @@ function MainApp({ session, onLogout }) {
     const baru = !kode || kode === sendiri ? null : kode;
     aturEntitasBaca(baru && baru !== "GABUNGAN" ? baru : null);
     setPtLihat(baru);
-    if (baru !== "GABUNGAN") await loadCore(true);
+    // Data gudang, grosir & marketplace dibaca per PT di server (aturEntitasBaca), jadi ketiganya
+    // harus ditarik ulang saat PT yang dilihat berganti (keuangan disaring di klien, tidak perlu).
+    if (baru !== "GABUNGAN") await runLoaders([loadCore, loadGrosir, loadMarketplace], true);
   };
   useEffect(() => {
     if (nav.menu !== "dashboard" && ptLihat && ptLihat !== PT_AWAL) {
       aturEntitasBaca(null);
       setPtLihat(PT_AWAL);
-      loadCore(true);
+      runLoaders([loadCore, loadGrosir, loadMarketplace], true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav.menu]);
