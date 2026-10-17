@@ -580,6 +580,29 @@ const SKU_TEXT_TABLES = ["items", "stock_history", "penempatan", "rak_events", "
 
 async function renameSkuEverywhere(oldSku, newSku) {
   for (const table of SKU_TEXT_TABLES) {
+    // grosir_detail_pesanan BUKAN tabel per-PT (tidak punya kolom entitas), jadi PATCH ?sku=eq.
+    // biasa akan ikut mengubah detail pesanan PT lain yang kebetulan memakai kode SKU yang sama
+    // (kode SKU dibentuk dari Master Data yang dipakai bersama). Batasi ke detail milik pesanan
+    // PT ini saja: grosir_pesanan sudah otomatis difilter per PT oleh sb().
+    if (table === "grosir_detail_pesanan") {
+      const detail = (await sbAll(`grosir_detail_pesanan?select=id,pesanan_id&sku=eq.${encodeURIComponent(oldSku)}`)) || [];
+      if (detail.length === 0) continue;
+      const pesananIds = [...new Set(detail.map((d) => d.pesanan_id).filter((x) => x != null))];
+      const milikPT = new Set();
+      for (let i = 0; i < pesananIds.length; i += 100) {
+        const potong = pesananIds.slice(i, i + 100);
+        const rows = (await sb(`grosir_pesanan?select=id&id=in.(${potong.join(",")})`)) || [];
+        rows.forEach((r) => milikPT.add(r.id));
+      }
+      const idDetailMilikPT = detail.filter((d) => milikPT.has(d.pesanan_id)).map((d) => d.id);
+      for (let i = 0; i < idDetailMilikPT.length; i += 100) {
+        await sb(`grosir_detail_pesanan?id=in.(${idDetailMilikPT.slice(i, i + 100).join(",")})`, {
+          method: "PATCH",
+          body: JSON.stringify({ sku: newSku }),
+        });
+      }
+      continue;
+    }
     await sb(`${table}?sku=eq.${encodeURIComponent(oldSku)}`, {
       method: "PATCH",
       body: JSON.stringify({ sku: newSku }),

@@ -188,10 +188,14 @@ export async function updateNamaKaryawan(id, namaBaru) {
     body: JSON.stringify({ nama }),
   });
 
-  const rows = await sb(`karyawan?id=eq.${id}&select=id_karyawan`);
+  const rows = await sb(`karyawan?id=eq.${id}&select=id_karyawan,entitas`);
   const idKaryawan = (rows || [])[0]?.id_karyawan;
+  // Tabel absensi TIDAK otomatis difilter per PT (bukan bagian TABEL_PER_PT), jadi PT karyawan
+  // ini harus disebut eksplisit — kalau tidak, karyawan PT lain yang kebetulan punya
+  // id_karyawan sama ikut berganti nama di riwayat absensinya.
+  const entKaryawan = (rows || [])[0]?.entitas || entitasAbsensi();
   if (idKaryawan) {
-    await sb(`absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}`, {
+    await sb(`absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&entitas=eq.${encodeURIComponent(entKaryawan)}`, {
       method: "PATCH",
       body: JSON.stringify({ nama }),
     });
@@ -391,8 +395,9 @@ export async function listAbsensi(force = false, entitas = entitasAbsensi()) {
 // terpisah), penghapusan ini otomatis berpengaruh ke rekap bulanan & mingguan
 // juga — tidak perlu sinkronisasi manual di tempat lain.
 export async function hapusAbsensiHarian(idKaryawan, tanggal) {
+  // Wajib dibatasi ke PT yang sedang dikelola: id_karyawan bisa sama di dua PT.
   return sb(
-    `absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&tanggal=eq.${encodeURIComponent(tanggal)}`,
+    `absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&tanggal=eq.${encodeURIComponent(tanggal)}&entitas=eq.${encodeURIComponent(entitasAbsensi())}`,
     { method: "DELETE" }
   );
 }
@@ -521,7 +526,7 @@ export async function updateJamAbsensi({ idKaryawan, tanggal, tipe, jamBaru }) {
   if (!idKaryawan || !tanggal || !jamBaru) throw new Error("Data tidak lengkap.");
 
   const rows = await sb(
-    `absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&tanggal=eq.${encodeURIComponent(tanggal)}&tipe=eq.${tipe}`
+    `absensi?id_karyawan=eq.${encodeURIComponent(idKaryawan)}&tanggal=eq.${encodeURIComponent(tanggal)}&tipe=eq.${tipe}&entitas=eq.${encodeURIComponent(entitasAbsensi())}`
   );
   const row = (rows || [])[0];
   if (!row) {
