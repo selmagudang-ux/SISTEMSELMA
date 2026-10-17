@@ -694,13 +694,81 @@ const MENU_PT_LAIN = [
   // Grup PENJUALAN (di sidebar PT selain Selma, grup "Store Selma" tampil sebagai "Store <nama PT>").
   "grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller",
 ];
-export function allowedMenus(role, entitas) {
-  const menus = ROLE_MENUS[role] || ["dashboard"];
+// fiturMati = daftar key menu yang DIMATIKAN untuk perusahaan akun ini (lihat
+// FITUR_ENTITAS & fiturMatiEntitas di bawah). Super Appa tidak pernah disaring,
+// supaya tidak bisa mengunci dirinya sendiri dari menu Kelola Perusahaan.
+export function allowedMenus(role, entitas, fiturMati = []) {
+  let menus = ROLE_MENUS[role] || ["dashboard"];
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
     // Dashboard PT sendiri (data dibatasi ke PT-nya di pages/Dashboard.jsx): hanya Super Admin.
-    return menus.filter((k) => MENU_PT_LAIN.includes(k) || (k === "dashboard" && role === "superadmin"));
+    menus = menus.filter((k) => MENU_PT_LAIN.includes(k) || (k === "dashboard" && role === "superadmin"));
+  }
+  if (role !== "superappa" && fiturMati.length) {
+    const mati = new Set(fiturMati);
+    // "barang-masuk" = izin tombol tambah cepat, ikut mati bersama "barang-datang".
+    if (mati.has("barang-datang")) mati.add("barang-masuk");
+    menus = menus.filter((k) => !mati.has(k));
   }
   return menus;
+}
+
+// ---------------------------------------------------------------------------
+// FITUR PER PERUSAHAAN (entitas) — diatur Super Appa di Perusahaan Grup > Kelola
+// Perusahaan. Tiap perusahaan punya daftar fitur (menu) sendiri. Default: semua fitur
+// yang memang didukung untuk perusahaan itu NYALA, jadi perusahaan lama tidak berubah.
+// Yang dimatikan disimpan di master_data tipe "entitas_fitur":
+//   kode = "<ENTITAS>:<key menu>", label = "mati"   (tidak ada baris = nyala)
+// CATATAN: ini membatasi tampilan menu (sama seperti pembatasan role di atas), bukan
+// pengaman di sisi database.
+// ---------------------------------------------------------------------------
+export const FITUR_ENTITAS = [
+  { grup: "Gudang", fitur: [
+    { key: "barang-datang", label: "Pengadaan Barang" },
+    { key: "data-barang", label: "Alur Barang" },
+    { key: "sku-harga", label: "SKU & Harga" },
+    { key: "stok", label: "Stok" },
+    { key: "rak", label: "Rak" },
+    { key: "cetak-label", label: "Cetak Label" },
+    { key: "persetujuan-restock", label: "Persetujuan Restok" },
+  ] },
+  { grup: "Pemotretan & Marketplace", fitur: [
+    { key: "foto", label: "Foto Produk" },
+    { key: "marketplace", label: "Marketplace (upload produk)" },
+  ] },
+  { grup: "Penjualan", fitur: [
+    { key: "grosir", label: "Grosir" },
+    { key: "toko-offline", label: "Toko Offline" },
+    { key: "penjualan-marketplace", label: "Marketplace (penjualan)" },
+    { key: "reseller", label: "Reseller" },
+    { key: "pelanggan", label: "Pelanggan" },
+    { key: "toko", label: "Toko Pengirim" },
+  ] },
+  { grup: "Keuangan & SDM", fitur: [
+    { key: "keuangan", label: "Keuangan" },
+    { key: "penggajian", label: "Penggajian" },
+    { key: "absensi", label: "Absensi" },
+  ] },
+];
+
+// Fitur yang boleh diatur untuk satu perusahaan: Selma (OPS) semua, perusahaan lain hanya
+// menu yang datanya sudah dipisah per PT (MENU_PT_LAIN). Holding tidak punya pengaturan fitur.
+export function fiturTersediaEntitas(kodeEntitas) {
+  const ops = !kodeEntitas || kodeEntitas === "OPS";
+  return FITUR_ENTITAS.map((g) => ({
+    grup: g.grup,
+    fitur: g.fitur.filter((f) => ops || MENU_PT_LAIN.includes(f.key)),
+  })).filter((g) => g.fitur.length);
+}
+
+// Key menu yang dimatikan untuk satu perusahaan, dari master (master_data tipe "entitas_fitur").
+export function fiturMatiEntitas(master, kodeEntitas) {
+  const hasil = [];
+  (master?.entitas_fitur || []).forEach((m) => {
+    const k = String(m.kode || "");
+    const i = k.indexOf(":");
+    if (i > 0 && k.slice(0, i) === kodeEntitas && m.label === "mati") hasil.push(k.slice(i + 1));
+  });
+  return hasil;
 }
 
 // Daftar SUB-menu (anak menu) yang boleh diakses tiap role, untuk menu yang

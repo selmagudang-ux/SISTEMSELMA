@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } fro
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, fiturMatiEntitas, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
@@ -355,7 +355,9 @@ function AppShell({
 }
 
 function MainApp({ session, onLogout }) {
-  const allowed = allowedMenus(session.role, session.entitas);
+  // Menu awal (sebelum master dimuat); daftar final `allowed` (sudah dipotong fitur yang
+  // dimatikan untuk perusahaan ini) dihitung setelah state master di bawah.
+  const allowedAwal = allowedMenus(session.role, session.entitas);
 
   // Badge "Chat" di sidebar = jumlah pesan belum dibaca. Polling ringan tiap 20 detik
   // (hanya saat tab terlihat); Chat.jsx memanggil refreshChatBadge() begitu pesan dibaca.
@@ -377,7 +379,7 @@ function MainApp({ session, onLogout }) {
   // memang halaman utama (superadmin/owner) — role operasional (termasuk
   // gudang) tidak punya akses "dashboard" sama sekali, langsung ke halaman
   // kerja masing-masing (allowed[0]).
-  const landingKeDashboard = allowed.includes("dashboard") && ["superadmin", "superappa", "owner"].includes(session.role);
+  const landingKeDashboard = allowedAwal.includes("dashboard") && ["superadmin", "superappa", "owner"].includes(session.role);
   const [nav, setNav] = useState(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem("selma-nav") || "null");
@@ -387,10 +389,10 @@ function MainApp({ session, onLogout }) {
         let s = lama ? { ...saved, sub: lama.sub } : saved;
         // Menu Holding lama dipecah: halaman grup/antar-entitas sekarang di "Perusahaan Grup".
         if (s.menu === "holding" && ["grup", "antar-entitas"].includes(s.sub)) s = { ...s, menu: "perusahaan" };
-        if (allowed.includes(s.menu)) return s;
+        if (allowedAwal.includes(s.menu)) return s;
       }
     } catch {}
-    return { menu: landingKeDashboard ? "dashboard" : allowed[0], sub: null };
+    return { menu: landingKeDashboard ? "dashboard" : allowedAwal[0], sub: null };
   });
 
   const [loading, setLoading] = useState(true);
@@ -403,6 +405,9 @@ function MainApp({ session, onLogout }) {
   const [skuMaster, setSkuMaster] = useState([]);
   const [rak, setRak] = useState([]);
   const [master, setMaster] = useState({});
+  // Fitur yang dimatikan Super Appa untuk perusahaan akun ini (master_data tipe "entitas_fitur").
+  const fiturMati = useMemo(() => fiturMatiEntitas(master, session.entitas), [master, session.entitas]);
+  const allowed = useMemo(() => allowedMenus(session.role, session.entitas, fiturMati), [session.role, session.entitas, fiturMati]);
   const [settings, setSettings] = useState(null);
   const [penempatan, setPenempatan] = useState([]);
   // stockHistory di sini SENGAJA cuma baris TERBARU per SKU (dari view
@@ -498,6 +503,16 @@ function MainApp({ session, onLogout }) {
       loadBarangRusak();
     }
   };
+
+  // Kalau menu yang sedang dibuka ternyata dimatikan untuk perusahaan ini (mis. Super Appa
+  // baru mematikan fiturnya, atau menu tersimpan di sessionStorage), pindah ke menu pertama
+  // yang masih boleh. Tunggu master selesai dimuat supaya tidak salah pindah saat awal.
+  useEffect(() => {
+    if (loading || allowed.includes(nav.menu) || !allowed.length) return;
+    const tujuan = allowed.includes("dashboard") && ["superadmin", "superappa", "owner"].includes(session.role) ? "dashboard" : allowed[0];
+    navigate(tujuan, null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed, loading, nav.menu]);
 
   // Aksi satu-klik untuk tahap yang tidak butuh form (marketplace)
   const quickAdvance = async (item, stage) => {

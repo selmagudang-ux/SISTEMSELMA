@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, bukanLabaRugi, pengaturanEntitas } from "../lib/api";
-import { bolehTransferAntarEntitas, bisaTransferAntarEntitas } from "../lib/constants";
+import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas } from "../lib/api";
+import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
 
@@ -850,6 +850,7 @@ function KartuPerusahaan({ e, rekening, master, reload, showToast }) {
   const kodeBersih = kode.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
   const kodeAda = (master.rekening || []).some((r) => r.kode === kodeBersih);
   const isDefault = e.kode === "OPS";
+  const adalahHolding = e.kode === kodeHoldingPasti(master.entitas, master.entitas_set);
 
   const tambahRekening = async () => {
     if (!kodeBersih || !label.trim() || kodeAda || saving) return;
@@ -902,6 +903,93 @@ function KartuPerusahaan({ e, rekening, master, reload, showToast }) {
         {kodeAda && <span className="text-[11px] text-red-400">Kode rekening sudah dipakai.</span>}
       </div>
       <ProfilPerusahaan e={e} master={master} isDefault={isDefault} reload={reload} showToast={showToast} />
+      {!adalahHolding && <FiturPerusahaan e={e} master={master} reload={reload} showToast={showToast} />}
+    </div>
+  );
+}
+
+// Fitur (menu) yang aktif di satu perusahaan. Default semua nyala; yang dimatikan disimpan di
+// master_data tipe "entitas_fitur" (lihat fiturMatiEntitas di lib/constants.js) dan hilang dari
+// sidebar semua akun perusahaan itu (kecuali Super Appa). Datanya tidak dihapus.
+function FiturPerusahaan({ e, master, reload, showToast }) {
+  const grup = useMemo(() => fiturTersediaEntitas(e.kode), [e.kode]);
+  const semuaKunci = useMemo(() => grup.flatMap((g) => g.fitur.map((f) => f.key)), [grup]);
+  const matiAwal = fiturMatiEntitas(master, e.kode).filter((k) => semuaKunci.includes(k));
+  const penandaAwal = matiAwal.slice().sort().join("|");
+  const [mati, setMati] = useState(() => new Set(matiAwal));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setMati(new Set(penandaAwal ? penandaAwal.split("|") : []));
+  }, [penandaAwal]);
+
+  const berubah = [...mati].sort().join("|") !== penandaAwal;
+  const nyala = semuaKunci.length - semuaKunci.filter((k) => mati.has(k)).length;
+  const toggle = (key) =>
+    setMati((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const simpan = async () => {
+    if (saving || !berubah) return;
+    setSaving(true);
+    try {
+      const baris = master.entitas_fitur || [];
+      for (const key of semuaKunci) {
+        const kodeBaris = `${e.kode}:${key}`;
+        const ada = baris.find((m) => m.kode === kodeBaris);
+        const harusMati = mati.has(key);
+        if (harusMati && !ada) await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_fitur", kode: kodeBaris, label: "mati" }) });
+        else if (harusMati && ada && ada.label !== "mati") await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: "mati" }) });
+        else if (!harusMati && ada) await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      }
+      showToast?.(`Fitur ${e.label} disimpan`);
+      await reload?.();
+    } catch (err) {
+      showToast?.(err.message || "Gagal menyimpan fitur", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <div className="text-xs text-slate-300">
+          Fitur perusahaan <span className="text-slate-500">({nyala} dari {semuaKunci.length} aktif)</span>
+        </div>
+        <div className="flex items-center gap-3 text-[11px]">
+          <button type="button" onClick={() => setMati(new Set())} className="text-amber-400 hover:text-amber-300">Nyalakan semua</button>
+          <button type="button" onClick={() => setMati(new Set(semuaKunci))} className="text-slate-400 hover:text-slate-200">Matikan semua</button>
+        </div>
+      </div>
+      <div className="text-[11px] text-slate-500 mb-3">
+        Fitur yang dimatikan hilang dari menu semua akun {e.label} (Super Appa tetap melihat semuanya). Data tidak dihapus, dan bisa dinyalakan lagi kapan saja.
+      </div>
+      <div className="space-y-3 mb-3">
+        {grup.map((g) => (
+          <div key={g.grup}>
+            <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">{g.grup}</div>
+            <div className="grid sm:grid-cols-2 gap-x-3 gap-y-1.5">
+              {g.fitur.map((f) => (
+                <label key={f.key} className="flex items-center gap-2 text-[12px] text-slate-300">
+                  <input type="checkbox" checked={!mati.has(f.key)} onChange={() => toggle(f.key)} />
+                  {f.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={simpan}
+        disabled={saving || !berubah}
+        className="text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
+      >
+        {saving ? "Menyimpan…" : "Simpan fitur"}
+      </button>
     </div>
   );
 }
