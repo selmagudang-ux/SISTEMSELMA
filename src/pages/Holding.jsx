@@ -911,6 +911,7 @@ function KartuPerusahaan({ e, rekening, master, reload, showToast }) {
 // baru cukup diisi di sini, tanpa ubah kode. Kosong = bawaan (OPS: kop Selma; lainnya: nama perusahaan).
 function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
   const awal = pengaturanEntitas(master, e.kode);
+  const [namaPT, setNamaPT] = useState(e.label || "");
   const [namaUsaha, setNamaUsaha] = useState(awal.nama_usaha || "");
   const [alamat, setAlamat] = useState((awal.alamat || "").split("|").join("\n"));
   const [namaStore, setNamaStore] = useState(awal.nama_store || "");
@@ -929,6 +930,10 @@ function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
         else if (ada && !isi) await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
         else if (!ada && isi) await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_set", kode: kodeBaris, label: isi }) });
       };
+      // Nama perusahaan (label entitas) boleh diganti; kodenya tidak, karena dipakai di semua data.
+      if (namaPT.trim() && namaPT.trim() !== e.label && e.id) {
+        await sb(`master_data?id=eq.${e.id}`, { method: "PATCH", body: JSON.stringify({ label: namaPT.trim() }) });
+      }
       await tulis(e.kode, "nama_usaha", namaUsaha.trim());
       await tulis(e.kode, "alamat", alamat.split("\n").map((x) => x.trim()).filter(Boolean).join("|"));
       await tulis(e.kode, "nama_store", namaStore.trim());
@@ -953,6 +958,9 @@ function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
   return (
     <div className="mt-3 pt-3 border-t border-slate-800">
       <div className="text-xs text-slate-300 mb-2">Profil perusahaan</div>
+      <Field label={`Nama perusahaan (kode ${e.kode} tidak bisa diubah)`}>
+        <input className={inputClass} value={namaPT} onChange={(x) => setNamaPT(x.target.value)} />
+      </Field>
       <div className="grid sm:grid-cols-2 gap-x-3">
         <Field label="Nama usaha (kop nota & laporan)">
           <input className={inputClass} value={namaUsaha} onChange={(x) => setNamaUsaha(x.target.value)} placeholder={isDefault ? "SELMA ACC BANDUNG" : e.label} />
