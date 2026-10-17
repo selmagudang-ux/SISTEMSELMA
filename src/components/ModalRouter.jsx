@@ -4821,6 +4821,70 @@ export default function ModalRouter({
             }
           }, "SKU dibuat & stok tercatat")
         }
+        // Barang pelengkap (box, kantong, dst): masuk Master Barang & alur yang
+        // sama dengan barang utama, tapi SKU & harga diketik manual (tidak dari
+        // Master Data / rumus calcHarga). Butuh kolom sku_master.nama &
+        // sku_master.pelengkap (lihat pelengkap_master_barang.sql).
+        onSubmitPelengkap={(info, hargaAsli, harga) =>
+          run(async () => {
+            if (!settings) throw new Error("Pengaturan harga belum termuat");
+            const sku = String(info.sku || "").trim();
+            if (!sku) throw new Error("SKU wajib diisi");
+            if (skuMaster.some((s) => String(s.sku).trim().toLowerCase() === sku.toLowerCase())) {
+              throw new Error(`SKU ${sku} sudah ada di daftar — pilih di kolom "SKU yang sudah ada" untuk menambah stok.`);
+            }
+            const jumlahRusak = modal.item.jumlah_rusak || 0;
+            const jumlah = Math.max((modal.item.jumlah || 0) - jumlahRusak, 0) || 1;
+            // hpp & harga_dasar tetap dihitung dari harga asli (sama seperti
+            // jalur harga manual) supaya laporan lain tetap konsisten.
+            const otomatis = calcHarga(hargaAsli, settings);
+            await sb("sku_master", {
+              method: "POST",
+              body: JSON.stringify({
+                sku,
+                nama: info.nama,
+                pelengkap: true,
+                kategori: "PELENGKAP",
+                harga_asli: hargaAsli,
+                harga_dasar: otomatis.hargaDasar,
+                hpp: otomatis.hpp,
+                grosir: harga.grosir,
+                tengah: harga.tengah,
+                ecer: harga.ecer,
+                stok: jumlah,
+                barcode_supplier: modal.item.barcode_supplier || null,
+              }),
+            });
+            await sb(`items?id=eq.${modal.item.id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ sku, stage: "rak", jumlah, stage_setelah_rak: "verifikasi" }),
+            });
+            await sb("stock_history", {
+              method: "POST",
+              body: JSON.stringify({
+                sku,
+                type: "masuk",
+                qty_before: 0,
+                qty_change: jumlah,
+                qty_after: jumlah,
+                note: "SKU pelengkap baru dibuat (manual)",
+              }),
+            });
+            if (jumlahRusak > 0) {
+              await sb("barang_rusak", {
+                method: "POST",
+                body: JSON.stringify({
+                  sku,
+                  qty: jumlahRusak,
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  catatan: modal.item.alasan_rusak || null,
+                  item_id: modal.item.id,
+                  kode_bon: modal.item.kode_pesanan || null,
+                }),
+              });
+            }
+          }, "Pelengkap dibuat & stok tercatat")
+        }
         // Satu baris Alur Barang (1 model, qty gabungan) dipecah jadi beberapa
         // SKU sekaligus — satu per ukuran. Bahan/Peruntukan/Kategori/
         // Subkategori/Model/Warna/Harga sama untuk semua baris pecahan, cuma

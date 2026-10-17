@@ -138,6 +138,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
       const qLower = q.toLowerCase();
       const cocokQ =
         s.sku.toLowerCase().includes(qLower) ||
+        (s.nama || "").toLowerCase().includes(qLower) ||
         (s.barcode_supplier || "").toLowerCase().includes(qLower);
       if (!cocokQ) return false;
       if (kategori && s.kategori !== kategori) return false;
@@ -150,8 +151,10 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
     .sort((a, b) => {
       if (sortBy === "az") return a.sku.localeCompare(b.sku, "id", { numeric: true, sensitivity: "base" });
       if (sortBy === "za") return b.sku.localeCompare(a.sku, "id", { numeric: true, sensitivity: "base" });
-      const ma = modelFromSku(a.sku);
-      const mb = modelFromSku(b.sku);
+      // SKU pelengkap diketik manual (bukan format bahan-kategori-model-...),
+      // jadi tidak punya "model" — ditaruh di akhir grupnya.
+      const ma = a.pelengkap ? "" : modelFromSku(a.sku);
+      const mb = b.pelengkap ? "" : modelFromSku(b.sku);
       if (!ma && !mb) return 0;
       if (!ma) return 1;
       if (!mb) return -1;
@@ -456,6 +459,12 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session 
                               )}
                               <div className="min-w-0">
                                 <div className="font-mono text-xs text-slate-300 truncate">{s.sku}</div>
+                                {s.pelengkap && (
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <Badge color="violet">Pelengkap</Badge>
+                                    {s.nama && <span className="text-[11px] text-slate-400 truncate">{s.nama}</span>}
+                                  </div>
+                                )}
                                 {s.barcode_supplier && (
                                   <div
                                     className="font-mono text-[10px] text-slate-500 truncate"

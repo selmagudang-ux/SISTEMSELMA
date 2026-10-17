@@ -1888,7 +1888,7 @@ export function EditBarangDatangForm({ pesanan, onClose, onSubmit, saving, suppl
 // Pelanggan di Grosir > Buat Pesanan Baru: pilih dari daftar yang sudah ada
 // DI ATAS, atau isi bagian "buat SKU baru" di bawahnya — dua-duanya kelihatan
 // sekaligus, user tinggal pakai salah satu lalu simpan.
-export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, onSubmitSplit, saving, session }) {
+export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClose, onSubmitExisting, onSubmitNew, onSubmitSplit, onSubmitPelengkap, saving, session }) {
   const isSuperadmin = isSuperadminLike(session?.role);
   const [selectedId, setSelectedId] = useState("");
   const [hargaBaru, setHargaBaru] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
@@ -1988,6 +1988,25 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
       setEcerManual(hasil.ecer);
     }
   };
+
+  // Mode "Barang pelengkap" (box, kantong, kartu, dst): barang pendamping yang
+  // ikut dijual. Tetap masuk Master Barang & alur yang sama (Rak -> Verifikasi
+  // Foto -> Marketplace), BEDANYA SKU dan harganya diketik manual — tidak
+  // dibentuk dari Master Data (bahan/kategori/...) dan tidak memakai rumus
+  // calcHarga. Boleh dipakai semua role yang bisa Buat SKU (bukan cuma superadmin).
+  const [pelengkap, setPelengkap] = useState(false);
+  const [plSku, setPlSku] = useState("");
+  const [plNama, setPlNama] = useState("");
+  const [plHargaAsli, setPlHargaAsli] = useState(() => (Number(item?.harga) > 0 ? String(item.harga) : ""));
+  const [plGrosir, setPlGrosir] = useState("");
+  const [plTengah, setPlTengah] = useState("");
+  const [plEcer, setPlEcer] = useState("");
+  const plSkuTrim = plSku.trim();
+  const plSkuDobel =
+    !!plSkuTrim && (skuMaster || []).some((s) => String(s.sku).trim().toLowerCase() === plSkuTrim.toLowerCase());
+  const plReady =
+    !!plSkuTrim && !plSkuDobel && !!plNama.trim() && Number(plHargaAsli) > 0 &&
+    Number(plGrosir) > 0 && Number(plEcer) > 0 && !!settings;
 
   // Rekomendasi nomor Model berikutnya: cari SKU lain dengan kombinasi bahan +
   // peruntukan + kategori + subkategori yang sama, lalu ambil nomor terkecil
@@ -2200,6 +2219,82 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
         <div className="h-px flex-1 bg-slate-800" />
       </div>
 
+      <label className="flex items-center gap-2 text-xs text-slate-300 mb-3 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={pelengkap}
+          onChange={(e) => setPelengkap(e.target.checked)}
+          className="accent-amber-500"
+        />
+        Ini barang pelengkap (box, kantong, kartu, dll) — SKU &amp; harga diisi manual
+      </label>
+
+      {pelengkap ? (
+        <div>
+          <Field label="SKU (ketik manual)">
+            <input
+              value={plSku}
+              onChange={(e) => setPlSku(e.target.value)}
+              placeholder="mis. BOX-KECIL"
+              className={inputClass}
+            />
+            {plSkuDobel && (
+              <p className="text-[11px] text-red-400 mt-1">
+                SKU ini sudah ada di Master Barang. Kalau mau menambah stoknya, pilih di kolom "SKU yang sudah ada" di atas.
+              </p>
+            )}
+          </Field>
+          <Field label="Nama barang pelengkap">
+            <input
+              value={plNama}
+              onChange={(e) => setPlNama(e.target.value)}
+              placeholder="mis. Box Perhiasan Kecil"
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Harga Asli / beli (Rp)">
+            <input
+              type="number"
+              className={inputClass}
+              value={plHargaAsli}
+              onChange={(e) => setPlHargaAsli(e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+          <div className="grid grid-cols-3 gap-x-2 mb-1">
+            <Field label="Grosir">
+              <InputRupiah value={plGrosir} onChange={setPlGrosir} placeholder="0" />
+            </Field>
+            <Field label="Tengah (opsional)">
+              <InputRupiah value={plTengah} onChange={setPlTengah} placeholder="= Grosir" />
+            </Field>
+            <Field label="Ecer">
+              <InputRupiah value={plEcer} onChange={setPlEcer} placeholder="0" />
+            </Field>
+          </div>
+          <p className="text-[11px] text-slate-500 mb-3">
+            Harga Tengah dikosongkan = sama dengan Grosir. Setelah disimpan, barang masuk Master Barang dan lanjut ke
+            Rak, Verifikasi Foto, lalu Marketplace seperti barang biasa.
+          </p>
+          <button
+            disabled={!plReady || saving}
+            onClick={() =>
+              onSubmitPelengkap(
+                { sku: plSkuTrim, nama: plNama.trim() },
+                Number(plHargaAsli),
+                {
+                  grosir: Number(plGrosir),
+                  tengah: Number(plTengah) > 0 ? Number(plTengah) : Number(plGrosir),
+                  ecer: Number(plEcer),
+                }
+              )
+            }
+            className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+          >
+            {saving ? "Menyimpan…" : "Simpan Pelengkap & Lanjut ke Rak"}
+          </button>
+        </div>
+      ) : (
       <div>
         <Field label="Ketik Kode Gabungan SKU Lengkap (opsional)">
           <KodeGabunganInput
@@ -2499,6 +2594,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
           </>
         )}
       </div>
+      )}
     </ModalShell>
   );
 }
