@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, rekeningEntitasSesi } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, rekeningEntitasSesi, daftarTujuanPencairan, tujuanPencairanDefault } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { isSuperadminLike, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
@@ -3962,6 +3962,9 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   const [metodeBayar, setMetodeBayar] = useState(isCekout ? "Marketplace" : "Cash");
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+  // Tujuan pencairan (Reseller Cekout, metode Marketplace): toko marketplace PT ini.
+  const daftarTujuan = daftarTujuanPencairan(master);
+  const [tujuan, setTujuan] = useState(() => tujuanPencairanDefault(master));
 
   const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
@@ -3988,7 +3991,8 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   // (lihat catatan di atas).
   const catatKeKeuangan = metodeBayar !== "Deposit" && metodeBayar !== "Marketplace";
   const siapDicatat = !catatKeKeuangan || (rekening && kategoriGrosirObj);
-  const canSubmit = jumlahNum > 0 && !depositTidakCukup && siapDicatat && !saving;
+  const butuhTujuan = metodeBayar === "Marketplace" && !daftarTujuan.some((d) => d.value === tujuan);
+  const canSubmit = jumlahNum > 0 && !depositTidakCukup && siapDicatat && !butuhTujuan && !saving;
 
   return (
     <ModalShell title={`Catat Pembayaran — ${pesanan.nomor_pesanan}`} onClose={onClose}>
@@ -4022,10 +4026,26 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
       </Field>
 
       {metodeBayar === "Marketplace" && (
-        <div className="text-[11px] text-slate-500 mb-3 -mt-2">
-          Tidak langsung tercatat di Keuangan — ditampung dulu sebagai saldo toko Shopee "Gudang" lewat menu
-          Marketplace {">"} Shopee. Baru masuk Keuangan saat saldo toko itu di-"Cairkan".
-        </div>
+        <>
+          <Field label="Cair ke Toko Marketplace">
+            {daftarTujuan.length > 0 ? (
+              <select value={tujuan} onChange={(e) => setTujuan(e.target.value)} className={inputClass}>
+                {daftarTujuan.map((d) => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex items-start gap-1.5 text-[11px] text-amber-400">
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                Belum ada toko marketplace di PT ini. Buat dulu lewat menu Marketplace {">"} Tambah Toko.
+              </div>
+            )}
+          </Field>
+          <div className="text-[11px] text-slate-500 mb-3 -mt-2">
+            Tidak langsung tercatat di Keuangan — ditampung dulu sebagai saldo toko marketplace yang dipilih
+            (menu Marketplace). Baru masuk Keuangan saat saldo toko itu di-"Cairkan".
+          </div>
+        </>
       )}
 
       {catatKeKeuangan && (
@@ -4091,6 +4111,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
             catatan: catatan.trim(),
             rekening: catatKeKeuangan ? rekening : null,
             kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
+            tujuan: metodeBayar === "Marketplace" ? tujuan : null,
           })
         }
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"

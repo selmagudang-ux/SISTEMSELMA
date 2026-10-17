@@ -1281,6 +1281,52 @@ export function lingkupTokoMarketplace(master, kodeEntitas) {
   return hasil;
 }
 
+// Tujuan pencairan Reseller Cekout — platform + toko marketplace mana yang menampung uang
+// yang cair. Daftarnya diambil dari `master` yang SUDAH difilter per PT (lihat
+// lingkupTokoMarketplace di atas), jadi akun Selma hanya melihat toko Selma dan akun Alivia
+// hanya toko Alivia. Nilai opsi = "<platform>:<kode toko>".
+// Default: pilihan terakhir yang dipakai akun/PT ini (disimpan di localStorage, hanya
+// kemudahan per perangkat) -> toko Shopee "Gudang" kalau ada -> toko pertama.
+const NAMA_PLATFORM_MARKETPLACE = { shopee: "Shopee", tiktok: "TikTok Shop", lazada: "Lazada" };
+export function daftarTujuanPencairan(master) {
+  const hasil = [];
+  PLATFORM_MARKETPLACE.forEach((pf) => {
+    (master?.[`toko_${pf}`] || []).forEach((t) => {
+      hasil.push({
+        value: `${pf}:${t.kode}`,
+        platform: pf,
+        toko: t.kode,
+        label: `${NAMA_PLATFORM_MARKETPLACE[pf] || pf} — ${t.label}`,
+      });
+    });
+  });
+  return hasil;
+}
+export function cariTujuanPencairan(master, value) {
+  return daftarTujuanPencairan(master).find((d) => d.value === value) || null;
+}
+const kunciTujuanPencairan = () => `selma-tujuan-cair-${entitasSesi()}`;
+export function tujuanPencairanDefault(master) {
+  const daftar = daftarTujuanPencairan(master);
+  if (daftar.length === 0) return "";
+  try {
+    const terakhir = localStorage.getItem(kunciTujuanPencairan());
+    if (terakhir && daftar.some((d) => d.value === terakhir)) return terakhir;
+  } catch {
+    /* storage tidak tersedia — abaikan */
+  }
+  const gudang = tokoShopeeGudang(master);
+  if (gudang && daftar.some((d) => d.value === `shopee:${gudang.kode}`)) return `shopee:${gudang.kode}`;
+  return daftar[0].value;
+}
+export function ingatTujuanPencairan(value) {
+  try {
+    if (value) localStorage.setItem(kunciTujuanPencairan(), value);
+  } catch {
+    /* abaikan */
+  }
+}
+
 // Daftar toko untuk satu platform (dari master_data tipe "toko_<platform>"),
 // masing-masing dilengkapi saldonya sendiri (lihat saldoMarketplace di
 // atas). Toko yang belum pernah punya transaksi tetap muncul dengan saldo

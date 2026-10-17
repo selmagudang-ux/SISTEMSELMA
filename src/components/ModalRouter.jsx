@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadmin
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT, rekeningEntitasSesi,
+  detailModelPesanan, cariTujuanPencairan, ingatTujuanPencairan, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT, rekeningEntitasSesi,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -63,12 +63,12 @@ const LabelPengirimanModal = lazy(() => import("../pages/NotaGrosir").then((m) =
 // diam saja tanpa efek apa-apa.
 async function lepasPemasukanCekoutDariGudang(p, { master, marketplaceTransaksi, keuanganTransaksi }) {
   if (p.jenis_transaksi !== "reseller_cekout") return;
-  const tokoGudang = tokoShopeeGudang(master);
+  // Pemasukan pesanan ini bisa tertampung di toko/platform MANA PUN milik PT ini (tujuan
+  // pencairan dipilih per transaksi), jadi dicari lewat keterangan yang menyebut nomor
+  // pesanan persis, tanpa membatasi ke satu toko.
   const pemasukanTerkait = (marketplaceTransaksi || []).filter(
     (t) =>
-      t.platform === "shopee" &&
       t.tipe === "pemasukan" &&
-      (!tokoGudang || (t.toko || null) === tokoGudang.kode) &&
       typeof t.keterangan === "string" &&
       (t.keterangan === `Cair pesanan reseller cekout ${p.nomor_pesanan}` ||
         t.keterangan.startsWith(`Pelunasan ${p.nomor_pesanan} ·`))
@@ -79,59 +79,65 @@ async function lepasPemasukanCekoutDariGudang(p, { master, marketplaceTransaksi,
     await sb(`marketplace_transaksi?id=eq.${t.id}`, { method: "DELETE" });
   }
 
-  if (!tokoGudang) return;
+  // Per (platform, toko) yang terdampak: kalau saldonya jadi minus gara-gara sebagian uang
+  // itu sudah kadung "dicairkan" ke Keuangan, kurangi riwayat pencairan terbaru (LIFO).
+  const kunciToko = (t) => `${t.platform}::${t.toko || ""}`;
+  const tokoTerdampak = new Map();
+  pemasukanTerkait.forEach((t) => tokoTerdampak.set(kunciToko(t), { platform: t.platform, toko: t.toko || null }));
 
-  const sisaTransaksiGudang = (marketplaceTransaksi || []).filter(
-    (t) =>
-      t.platform === "shopee" &&
-      (t.toko || null) === tokoGudang.kode &&
-      !pemasukanTerkait.some((x) => x.id === t.id)
-  );
-  const saldoSetelahHapus = sisaTransaksiGudang.reduce((saldo, t) => {
-    const jumlah = Number(t.jumlah) || 0;
-    if (t.tipe === "pemasukan") return saldo + jumlah;
-    if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
-    return saldo;
-  }, 0);
+  for (const { platform, toko } of tokoTerdampak.values()) {
+    const sisaTransaksiToko = (marketplaceTransaksi || []).filter(
+      (t) =>
+        t.platform === platform &&
+        (t.toko || null) === toko &&
+        !pemasukanTerkait.some((x) => x.id === t.id)
+    );
+    const saldoSetelahHapus = sisaTransaksiToko.reduce((saldo, t) => {
+      const jumlah = Number(t.jumlah) || 0;
+      if (t.tipe === "pemasukan") return saldo + jumlah;
+      if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
+      return saldo;
+    }, 0);
 
-  if (saldoSetelahHapus >= -0.0001) return;
+    if (saldoSetelahHapus >= -0.0001) continue;
 
-  let kekurangan = -saldoSetelahHapus;
-  const riwayatPencairan = sisaTransaksiGudang
-    .filter((t) => t.tipe === "pencairan")
-    .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+    let kekurangan = -saldoSetelahHapus;
+    const riwayatPencairan = sisaTransaksiToko
+      .filter((t) => t.tipe === "pencairan")
+      .sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
 
-  for (const pencairan of riwayatPencairan) {
-    if (kekurangan <= 0.0001) break;
-    const jumlahPencairan = Number(pencairan.jumlah) || 0;
-    const potong = Math.min(jumlahPencairan, kekurangan);
-    const jumlahBaru = jumlahPencairan - potong;
+    for (const pencairan of riwayatPencairan) {
+      if (kekurangan <= 0.0001) break;
+      const jumlahPencairan = Number(pencairan.jumlah) || 0;
+      const potong = Math.min(jumlahPencairan, kekurangan);
+      const jumlahBaru = jumlahPencairan - potong;
 
-    if (jumlahBaru <= 0.0001) {
-      await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, { method: "DELETE" });
-    } else {
-      await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ jumlah: jumlahBaru }),
-      });
-    }
+      if (jumlahBaru <= 0.0001) {
+        await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, { method: "DELETE" });
+      } else {
+        await sb(`marketplace_transaksi?id=eq.${pencairan.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ jumlah: jumlahBaru }),
+        });
+      }
 
-    if (pencairan.keuangan_transaksi_id) {
-      const tKeuangan = (keuanganTransaksi || []).find((x) => x.id === pencairan.keuangan_transaksi_id);
-      if (tKeuangan) {
-        const jumlahKeuanganBaru = (Number(tKeuangan.jumlah) || 0) - potong;
-        if (jumlahKeuanganBaru <= 0.0001) {
-          await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, { method: "DELETE" });
-        } else {
-          await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ jumlah: jumlahKeuanganBaru }),
-          });
+      if (pencairan.keuangan_transaksi_id) {
+        const tKeuangan = (keuanganTransaksi || []).find((x) => x.id === pencairan.keuangan_transaksi_id);
+        if (tKeuangan) {
+          const jumlahKeuanganBaru = (Number(tKeuangan.jumlah) || 0) - potong;
+          if (jumlahKeuanganBaru <= 0.0001) {
+            await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, { method: "DELETE" });
+          } else {
+            await sb(`keuangan_transaksi?id=eq.${pencairan.keuangan_transaksi_id}`, {
+              method: "PATCH",
+              body: JSON.stringify({ jumlah: jumlahKeuanganBaru }),
+            });
+          }
         }
       }
-    }
 
-    kekurangan -= potong;
+      kekurangan -= potong;
+    }
   }
 }
 
@@ -2675,17 +2681,18 @@ export default function ModalRouter({
               // toko itu (menu Marketplace → Shopee → Gudang) — pola sama
               // persis dengan nominal cair saat pesanan cekout pertama kali
               // dibuat (lihat pages/Reseller.jsx).
-              const tokoGudang = tokoShopeeGudang(master);
-              if (!tokoGudang) {
+              const tujuanCair = cariTujuanPencairan(master, data.tujuan);
+              if (!tujuanCair) {
                 throw new Error(
-                  'Toko Shopee "Gudang" belum ada di master data — buat dulu lewat menu Marketplace → Shopee → Tambah Toko (nama persis "Gudang"), baru catat pembayaran ini lagi.'
+                  "Toko marketplace tujuan pencairan belum dipilih / belum ada — buat dulu lewat menu Marketplace → Tambah Toko, lalu catat pembayaran ini lagi."
                 );
               }
+              ingatTujuanPencairan(data.tujuan);
               await sb("marketplace_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
-                  platform: "shopee",
-                  toko: tokoGudang.kode,
+                  platform: tujuanCair.platform,
+                  toko: tujuanCair.toko,
                   tipe: "pemasukan",
                   tanggal: new Date().toISOString().slice(0, 10),
                   jumlah: jumlahDiterima,

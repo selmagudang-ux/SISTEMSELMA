@@ -5,7 +5,7 @@ import {
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, InputTanggal, InputRupiah } from "../components/ui";
 import {
   sb, sbAll, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
-  tokoShopeeGudang,
+  daftarTujuanPencairan, cariTujuanPencairan, tujuanPencairanDefault, ingatTujuanPencairan,
 } from "../lib/api";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 import { isSuperadminLike } from "../lib/constants";
@@ -62,7 +62,7 @@ import { newItemRow, ItemRow } from "./Grosir";
 // pesanan dibuat (di sini) MAUPUN pelunasan sisa piutang belakangan (modal
 // grosir-bayar-hutang, metode "Pencairan Marketplace" — lihat ModalRouter)
 // sama-sama ditampung dulu sebagai "pemasukan" di saldo toko Shopee
-// "Gudang" (tabel marketplace_transaksi, lewat tokoShopeeGudang() di
+// toko marketplace pilihan (default "Gudang"; tabel marketplace_transaksi, lewat daftarTujuanPencairan() di
 // lib/api.js) — pola yang SAMA PERSIS dengan pemasukan/pencairan toko
 // marketplace lain (lihat Penjualanmarketplace.jsx). Baru pindah ke
 // Keuangan belakangan saat admin klik "Cairkan" di toko Gudang itu.
@@ -1317,7 +1317,9 @@ function SemuaPesananResellerCekout({ pesananCekout, pelangganGrosir, pembayaran
 export function BuatPesananResellerCekout({
   pelangganGrosir, produkManualGrosir, skuMaster, penempatan, pesananGrosir, master, reload, showToast, onClose,
 }) {
-  const tokoGudang = tokoShopeeGudang(master);
+  const daftarTujuan = daftarTujuanPencairan(master);
+  const [tujuan, setTujuan] = useState(() => tujuanPencairanDefault(master));
+  const tujuanObj = cariTujuanPencairan(master, tujuan);
   const [nomorPesanan, setNomorPesanan] = useState("");
   const [tanggal, setTanggal] = useState(() => new Date().toISOString().slice(0, 10));
   const [pelangganId, setPelangganId] = useState("");
@@ -1392,10 +1394,11 @@ export function BuatPesananResellerCekout({
   };
 
   const errors = rows.map(rowError);
-  // Kalau ada nominal cair tapi toko Shopee "Gudang" belum ada di master
-  // data, tahan submit dulu — daripada uangnya kesimpan sebagai "cair" di
-  // grosir_pembayaran tapi tidak kelihatan saldonya di manapun.
-  const butuhTokoGudang = jumlahCairNum > 0.0001 && !tokoGudang;
+  // Kalau ada nominal cair tapi belum ada toko marketplace tujuan (belum ada
+  // toko sama sekali di PT ini, atau belum dipilih), tahan submit dulu —
+  // daripada uangnya kesimpan sebagai "cair" di grosir_pembayaran tapi tidak
+  // kelihatan saldonya di manapun.
+  const butuhTujuan = jumlahCairNum > 0.0001 && !tujuanObj;
   const canSubmit =
     !!nomorPesananTrim &&
     !nomorBentrok &&
@@ -1403,7 +1406,7 @@ export function BuatPesananResellerCekout({
     !pelangganBaruBentrok &&
     rows.length > 0 &&
     errors.every((e) => !e) &&
-    !butuhTokoGudang &&
+    !butuhTujuan &&
     !saving;
 
   const resetForm = () => {
@@ -1503,19 +1506,20 @@ export function BuatPesananResellerCekout({
       //     Baru pindah ke Keuangan belakangan saat admin "Cairkan" saldo
       //     toko itu (menu Marketplace → Shopee → Gudang). `canSubmit`
       //     sudah menahan submit kalau toko ini belum ada & jumlahCairNum >
-      //     0, jadi `tokoGudang` di sini seharusnya selalu ada.
-      if (jumlahCairNum > 0.0001 && tokoGudang) {
+      //     0, jadi `tujuanObj` di sini seharusnya selalu ada.
+      if (jumlahCairNum > 0.0001 && tujuanObj) {
         await sb("marketplace_transaksi", {
           method: "POST",
           body: JSON.stringify({
-            platform: "shopee",
-            toko: tokoGudang.kode,
+            platform: tujuanObj.platform,
+            toko: tujuanObj.toko,
             tipe: "pemasukan",
             tanggal,
             jumlah: jumlahCairNum,
             keterangan: `Cair pesanan reseller cekout ${nomorPesananTrim}`,
           }),
         });
+        ingatTujuanPencairan(tujuan);
       }
 
       // 2c. Kelebihan cair (kalau ada) langsung jadi saldo deposit pelanggan.
@@ -1562,8 +1566,8 @@ export function BuatPesananResellerCekout({
       <div className="flex items-start gap-2 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[11px] px-3 py-2 rounded-lg mb-3">
         <Wallet size={13} className="mt-0.5 shrink-0" />
         Isi nominal yang benar-benar <span className="font-semibold">cair dari marketplace</span> untuk pesanan
-        ini — otomatis ditampung dulu sebagai saldo di toko Shopee <span className="font-semibold">"Gudang"</span>
-        {" "}(Marketplace → Shopee), bukan langsung ke Keuangan. Kalau cair lebih besar dari total, kelebihannya
+        ini — otomatis ditampung dulu sebagai saldo di <span className="font-semibold">toko marketplace yang kamu pilih</span>
+        {" "}(Marketplace → pilih platform → toko), bukan langsung ke Keuangan. Kalau cair lebih besar dari total, kelebihannya
         otomatis jadi <span className="font-semibold">saldo deposit</span> pelanggan. Kalau kurang (atau belum
         cair sama sekali), sisanya tetap tercatat sebagai piutang, dilunasi belakangan lewat "Catat Pembayaran"
         di detail pesanan.
@@ -1686,11 +1690,21 @@ export function BuatPesananResellerCekout({
             <InputRupiah value={jumlahCair} onChange={setJumlahCair} placeholder="0" />
           </Field>
 
-          {butuhTokoGudang && (
+          {jumlahCairNum > 0.0001 && daftarTujuan.length > 0 && (
+            <Field label="Cair ke Toko Marketplace">
+              <select className={inputClass} value={tujuan} onChange={(e) => setTujuan(e.target.value)}>
+                {daftarTujuan.map((d) => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {butuhTujuan && daftarTujuan.length === 0 && (
             <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] px-3 py-2 rounded-lg mb-3">
               <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              Toko Shopee "Gudang" belum ada di master data — nominal cair ini tidak bisa ditampung ke saldo
-              marketplace. Buat dulu lewat menu Marketplace → Shopee → Tambah Toko (nama persis "Gudang").
+              Belum ada toko marketplace di PT ini — nominal cair ini tidak bisa ditampung ke saldo
+              marketplace. Buat dulu lewat menu Marketplace → (Shopee/TikTok/Lazada) → Tambah Toko.
             </div>
           )}
 
