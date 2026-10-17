@@ -1268,16 +1268,23 @@ function DashboardGudang({
   // Dipisah dari skuMaster sendiri (bukan cuma alias) supaya ini hanya
   // dihitung ulang kalau skuMaster benar-benar berubah — bukan tiap kali
   // qDataBarang berubah (user mengetik di kotak pencarian di bawah).
-  const { skuAktif, totalStokSemua, jumlahPerubahanHargaSemua, kategoriOptionsDataBarang } = useMemo(() => {
+  const { skuAktif, totalStokSemua, nilaiStokBeli, jumlahPerubahanHargaSemua, kategoriOptionsDataBarang } = useMemo(() => {
     const skuAktif = skuMaster.filter((s) => !s.nonaktif);
     const totalStokSemua = skuAktif.reduce((sum, s) => sum + (Number(s.stok) || 0), 0);
+    // Nilai stok (harga beli) = stok x Harga Asli tiap SKU aktif. Stok minus
+    // dihitung 0 supaya tidak mengurangi total. Harga Asli = harga beli di
+    // Master Barang (untuk barang pelengkap = harga beli yang diisi manual).
+    const nilaiStokBeli = skuAktif.reduce(
+      (sum, s) => sum + Math.max(Number(s.stok) || 0, 0) * (Number(s.harga_asli) || 0),
+      0
+    );
     const jumlahPerubahanHargaSemua = skuAktif.filter(
       (s) => s.harga_asli_baru != null && s.harga_asli_baru !== s.harga_asli
     ).length;
     const kategoriOptionsDataBarang = Array.from(
       new Set(skuAktif.map((s) => s.kategori).filter(Boolean))
     ).sort();
-    return { skuAktif, totalStokSemua, jumlahPerubahanHargaSemua, kategoriOptionsDataBarang };
+    return { skuAktif, totalStokSemua, nilaiStokBeli, jumlahPerubahanHargaSemua, kategoriOptionsDataBarang };
   }, [skuMaster]);
 
   const MAX_TAMPIL_DATA_BARANG = 12;
@@ -1381,9 +1388,10 @@ function DashboardGudang({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b border-slate-800">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4 border-b border-slate-800">
             <StatCard label="Total SKU Aktif" value={skuAktif.length} icon={Boxes} accent="text-amber-400" iconColor="text-amber-500" />
             <StatCard label="Total Stok" value={totalStokSemua} icon={Package} accent="text-sky-400" iconColor="text-sky-500" />
+            <StatCard label="Nilai Stok (harga beli)" value={fmtRp(nilaiStokBeli)} icon={Wallet} accent="text-emerald-400" iconColor="text-emerald-500" />
             <StatCard label="Ada Perubahan Harga" value={jumlahPerubahanHargaSemua} icon={DollarSign} accent="text-red-400" iconColor="text-red-500" />
             <StatCard label="Kategori" value={kategoriOptionsDataBarang.length} icon={Tag} accent="text-teal-400" iconColor="text-teal-500" />
           </div>
