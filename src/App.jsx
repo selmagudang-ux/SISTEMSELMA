@@ -802,13 +802,14 @@ function MainApp({ session, onLogout }) {
     setPtLihat(baru);
     // Data gudang, grosir & marketplace dibaca per PT di server (aturEntitasBaca), jadi ketiganya
     // harus ditarik ulang saat PT yang dilihat berganti (keuangan disaring di klien, tidak perlu).
-    if (baru !== "GABUNGAN") await runLoaders([loadCore, loadGrosir, loadMarketplace], true);
+    // Absensi ikut ditarik ulang: loadAbsensi membaca PT yang sedang dilihat (lihat di bawah).
+    if (baru !== "GABUNGAN") await runLoaders([loadCore, loadGrosir, loadMarketplace, loadAbsensi], true);
   };
   useEffect(() => {
     if (nav.menu !== "dashboard" && ptLihat && ptLihat !== PT_AWAL) {
       aturEntitasBaca(null);
       setPtLihat(PT_AWAL);
-      runLoaders([loadCore, loadGrosir, loadMarketplace], true);
+      runLoaders([loadCore, loadGrosir, loadMarketplace, loadAbsensi], true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav.menu]);
@@ -907,9 +908,12 @@ function MainApp({ session, onLogout }) {
     // Teruskan `force` ke listAbsensi/listKaryawan juga (lib/absensi.js
     // sekarang punya cache singkat sendiri) — supaya "Muat ulang" manual
     // benar-benar narik data baru, bukan ikut kena cache 45 detik di sana.
-    // Ringkasan absensi di Dashboard memakai perusahaan akun sendiri (bukan pilihan di halaman Absensi).
-    const entSendiri = session.entitas || ENTITAS_DEFAULT;
-    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(force, entSendiri), listKaryawan(force, entSendiri)]);
+    // Ringkasan absensi di Dashboard mengikuti PT yang sedang dilihat: akun biasa = PT sendiri;
+    // akun Holding (Pemilik/Super Appa) yang memilih PT lain = PT pilihannya (entitasBacaSaatIni
+    // membaca override dari aturEntitasBaca, jadi nilainya selalu terbaru walau callback ini stabil).
+    // Bukan pilihan di halaman Absensi (halaman itu punya pemilih perusahaan sendiri).
+    const entLihat = entitasBacaSaatIni() || session.entitas || ENTITAS_DEFAULT;
+    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(force, entLihat), listKaryawan(force, entLihat)]);
     setAbsensiRows(absensiRes || []);
     setKaryawanList(karyawanRes || []);
     tandaiSudahDimuat("absensi");

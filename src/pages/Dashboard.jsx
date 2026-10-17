@@ -195,12 +195,11 @@ export default function Dashboard({
   // PT selain SELMA: data gudang, penjualan (grosir/reseller/marketplace, kolom entitas),
   // keuangan (lewat rekening) dan absensi (kolom entitas di tabel absensi & karyawan) sudah
   // dipisah per PT.
-  // Tab Absensi: App.jsx memuat absensi milik PT akun yang login (session.entitas), jadi tab ini
-  // hanya muncul kalau PT yang sedang dilihat = PT akun sendiri. Akun Holding yang memilih PT lain
-  // di dropdown tidak mendapat tab ini (datanya bukan milik PT yang dipilih).
-  // Gabungan semua PT: hanya Keuangan (data gudang/penjualan tiap PT tidak dijumlahkan).
+  // Tab Absensi: App.jsx (loadAbsensi) memuat absensi PT yang sedang dilihat — PT akun sendiri,
+  // atau PT pilihan akun Holding di dropdown — jadi tab ini tampil untuk PT mana pun yang dipilih.
+  // Gabungan semua PT: hanya Keuangan (data gudang/penjualan/absensi tiap PT tidak dijumlahkan).
   const bukanOps = gabungan || entAktif !== ENTITAS_DEFAULT;
-  const absensiBolehTampil = !gabungan && entAktif === entitas;
+  const absensiBolehTampil = !gabungan;
   const tabsTersedia = gabungan
     ? TABS.filter((t) => t.key === "keuangan")
     : bukanOps
@@ -288,7 +287,7 @@ export default function Dashboard({
         }
       />
 
-      <div className={`grid grid-cols-2 ${bukanOps ? "sm:grid-cols-2" : "sm:grid-cols-4"} gap-3 mb-5`}>
+      <div className={`grid grid-cols-2 ${tabsTersedia.length >= 4 ? "sm:grid-cols-4" : "sm:grid-cols-2"} gap-3 mb-5`}>
         {tabsTersedia.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
