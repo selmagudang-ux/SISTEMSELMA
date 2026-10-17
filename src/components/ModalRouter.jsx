@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadmin
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT,
+  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT, rekeningEntitasSesi,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -1468,7 +1468,7 @@ export default function ModalRouter({
   if (modal.type === "marketplace-pencairan") {
     // modal.platform, modal.toko (kode toko), modal.tokoLabel, modal.saldo
     // (saldo toko ini saat tombol diklik)
-    const rekeningList = master?.rekening || [];
+    const rekeningList = rekeningEntitasSesi(master);
     const iklanBelum = iklanBelumTercatat(marketplaceTransaksi, modal.platform, modal.toko || null);
     const totalIklanBelum = iklanBelum.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 

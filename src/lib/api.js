@@ -2091,6 +2091,13 @@ export function lingkupEntitas(transaksi, master, kodeEntitas) {
   return { transaksi: trx, master: { ...master, rekening } };
 }
 
+// Daftar rekening yang boleh dipilih di form penjualan (pembayaran grosir/reseller, deposit,
+// pencairan marketplace): hanya rekening milik PT akun yang login. master.rekening berisi
+// rekening SEMUA PT, jadi tanpa ini Alivia melihat rekening Selma di dropdown (dan sebaliknya).
+export function rekeningEntitasSesi(master) {
+  return lingkupEntitas([], master || {}, entitasSesi()).master.rekening || [];
+}
+
 // Rekening TETAP (mis. "BCA a/n Sandi Purwoto" untuk Pesan Barang, "Petty Cash" untuk
 // ongkir) harus milik ENTITAS akun yang sedang login. Transaksi tidak punya kolom
 // entitas — ia ikut entitas rekeningnya — jadi kalau akun PT lain (mis. Alivia)

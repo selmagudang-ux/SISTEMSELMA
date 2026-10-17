@@ -8,6 +8,7 @@ import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, Mod
 import {
   sb, sbAll, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
+  rekeningEntitasSesi,
 } from "../lib/api";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 
@@ -1064,7 +1065,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
 
   const pelangganOptions = pelangganGrosir.map((p) => ({ value: p.id, label: `${p.nama} (${p.kode})` }));
 
-  const daftarRekening = master?.rekening || [];
+  const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
   const kategoriGrosirObj =

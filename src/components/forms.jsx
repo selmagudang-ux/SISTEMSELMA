@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
-import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS } from "../lib/api";
+import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, rekeningEntitasSesi } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { isSuperadminLike, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
@@ -3963,7 +3963,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
 
-  const daftarRekening = master?.rekening || [];
+  const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
   const isReseller = pesanan.jenis_transaksi === "reseller";
@@ -4119,7 +4119,7 @@ export function EditPembayaranForm({ pembayaran, pesanan, keuanganRow, master, o
   const [rekening, setRekening] = useState(keuanganRow?.rekening || "");
   const [catatan, setCatatan] = useState(pembayaran.catatan || "");
 
-  const daftarRekening = master?.rekening || [];
+  const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
   const isReseller = pesanan.jenis_transaksi === "reseller";
@@ -4237,7 +4237,7 @@ export function BayarHutangPelangganForm({
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
 
-  const daftarRekening = master?.rekening || [];
+  const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
   const labelKategoriDipakai = isReseller
@@ -4414,7 +4414,7 @@ export function CairkanDepositForm({
   const [fotoBukti, setFotoBukti] = useState(null);
   const [konfirmasiHapusId, setKonfirmasiHapusId] = useState(null);
 
-  const daftarRekening = master?.rekening || [];
+  const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriKeluar = master?.kategori_keluar || [];
   const rekeningOptions = daftarRekening.map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
   const kategoriObj = cariKategoriByLabelBayar(daftarKategoriKeluar, kategoriLabel);
