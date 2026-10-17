@@ -2333,14 +2333,16 @@ export const daftarGaji = (passwordAdmin, filter = {}) =>
 // baris: [{ karyawan_id (uuid), periode ("YYYY-MM"), nominal (angka), catatan?, rekening_sumber? }]
 // Hasil: [{ index, ok, id?, tindakan?: "dibuat"|"diperbarui", error? }] — per baris,
 // jadi sebagian bisa berhasil dan sebagian gagal.
-export const simpanDraftGaji = (passwordAdmin, baris) =>
-  gajiAdmin("simpan_draft", passwordAdmin, { baris }).then((r) => r.hasil || []);
+// entitas (opsional): hanya dipakai Super Appa untuk memilih perusahaan; akun lain selalu
+// memakai perusahaan akunnya sendiri di server.
+export const simpanDraftGaji = (passwordAdmin, baris, entitas) =>
+  gajiAdmin("simpan_draft", passwordAdmin, { baris, entitas }).then((r) => r.hasil || []);
 
 // Ubah nominal/catatan/rekening satu draft = simpan draft untuk karyawan+periode
 // yang sama (server memperbarui draft yang sudah ada). Gaji yang sudah
 // diserahkan/diterima tidak bisa diubah; batalkan dulu bila perlu.
-export async function ubahDraftGaji(passwordAdmin, baris) {
-  const hasil = await simpanDraftGaji(passwordAdmin, [baris]);
+export async function ubahDraftGaji(passwordAdmin, baris, entitas) {
+  const hasil = await simpanDraftGaji(passwordAdmin, [baris], entitas);
   if (!hasil[0]?.ok) throw new Error(hasil[0]?.error || "Gagal menyimpan draft gaji.");
   return hasil[0];
 }

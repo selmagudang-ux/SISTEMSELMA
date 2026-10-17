@@ -7,9 +7,9 @@ import {
 } from "../components/ui";
 import {
   fmtRp, cekPasswordAdmin, daftarGaji, simpanDraftGaji, serahkanGaji,
-  batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, ENTITAS_DEFAULT,
+  batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, kodeHoldingPasti,
 } from "../lib/api";
-import { listKaryawan } from "../lib/absensi";
+import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
 
 const STATUS_WARNA = { draft: "slate", diserahkan: "amber", diterima: "emerald", batal: "red" };
 const STATUS_LABEL = { draft: "Draft", diserahkan: "Diserahkan", diterima: "Diterima", batal: "Batal" };
@@ -113,11 +113,18 @@ async function unduhGambarQr(data) {
 
 export default function Penggajian({ session, master, showToast }) {
   const readOnly = session?.role === "owner"; // owner hanya melihat
-  // Gaji SELMA hanya boleh keluar dari rekening entitas OPS (bukan rekening Holding).
+  // Penggajian dipisah per perusahaan. Akun biasa memakai perusahaannya sendiri; Super Appa
+  // memilih perusahaan lewat dropdown (pilihan yang sama dengan menu Absensi). Gaji hanya boleh
+  // keluar dari rekening milik perusahaan itu — server menolak rekening perusahaan lain.
+  const [ent, setEnt] = useState(() => entitasAbsensi());
+  const kodeHolding = kodeHoldingPasti(master?.entitas, master?.entitas_set);
+  const daftarPT = (master?.entitas || []).filter((e) => e.kode !== kodeHolding);
+  const bolehPilihPT = session?.role === "superappa" && daftarPT.length > 1;
+  const namaPT = (master?.entitas || []).find((e) => e.kode === ent)?.label || ent;
   const rekeningList = useMemo(
-    () => lingkupEntitas([], master || {}, ENTITAS_DEFAULT).master.rekening || [],
+    () => lingkupEntitas([], master || {}, ent).master.rekening || [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [master?.rekening, master?.rekening_entitas, master?.entitas]
+    [master?.rekening, master?.rekening_entitas, master?.entitas, ent]
   );
 
   // Password admin hanya disimpan di memori halaman ini (hilang saat pindah menu / refresh).
@@ -162,7 +169,7 @@ export default function Penggajian({ session, master, showToast }) {
     if (!kata) return;
     setMemuat(true);
     try {
-      const [g, k] = await Promise.all([daftarGaji(kata), listKaryawan(true, "OPS")]);
+      const [g, k] = await Promise.all([daftarGaji(kata, { entitas: ent }), listKaryawan(true, ent)]);
       setGaji(g || []);
       setKaryawan(k || []);
     } catch (e) {
@@ -170,7 +177,21 @@ export default function Penggajian({ session, master, showToast }) {
     } finally {
       setMemuat(false);
     }
-  }, [pw, tanganiError]);
+  }, [pw, tanganiError, ent]);
+
+  const gantiPT = (kode) => {
+    pilihEntitasAbsensi(kode);
+    setEnt(kode);
+    setRekening("");
+    setEdit({});
+    setGaji([]);
+    setKaryawan([]);
+  };
+  // Muat ulang data setiap perusahaan berganti (setelah password terbuka).
+  useEffect(() => {
+    if (pw) muat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ent]);
 
   const buka = async (e) => {
     e.preventDefault();
@@ -236,7 +257,7 @@ export default function Penggajian({ session, master, showToast }) {
         catatan: edit[k.id].catatan || null,
         rekening_sumber: rekening || null,
       }));
-      const hasil = await simpanDraftGaji(pw, baris);
+      const hasil = await simpanDraftGaji(pw, baris, ent);
       const ok = hasil.filter((h) => h.ok);
       const gagal = hasil.filter((h) => !h.ok);
       // Baris yang berhasil dibersihkan dari "perubahan lokal" (datanya kini dari server).
@@ -377,11 +398,20 @@ export default function Penggajian({ session, master, showToast }) {
     <div>
       <PageHeader
         title="Penggajian"
-        description={readOnly ? "Mode lihat saja (Owner)." : "Siapkan gaji, serahkan lewat QR, karyawan memindai dari HP."}
+        description={readOnly ? `Mode lihat saja (Owner) — ${namaPT}.` : `Gaji karyawan ${namaPT}: siapkan, serahkan lewat QR, karyawan memindai dari HP.`}
         action={
-          <button className={btnOutlined} onClick={() => muat()} disabled={memuat}>
-            <RefreshCw size={14} className={memuat ? "animate-spin" : ""} /> Muat ulang
-          </button>
+          <div className="flex items-center gap-2">
+            {bolehPilihPT && (
+              <select value={ent} onChange={(e) => gantiPT(e.target.value)} className={`${inputClass} w-auto`} aria-label="Perusahaan">
+                {daftarPT.map((e) => (
+                  <option key={e.kode} value={e.kode}>{e.label}</option>
+                ))}
+              </select>
+            )}
+            <button className={btnOutlined} onClick={() => muat()} disabled={memuat}>
+              <RefreshCw size={14} className={memuat ? "animate-spin" : ""} /> Muat ulang
+            </button>
+          </div>
         }
       />
 
