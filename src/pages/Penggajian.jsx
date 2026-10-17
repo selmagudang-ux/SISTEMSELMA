@@ -162,7 +162,7 @@ export default function Penggajian({ session, master, showToast }) {
     if (!kata) return;
     setMemuat(true);
     try {
-      const [g, k] = await Promise.all([daftarGaji(kata), listKaryawan(true)]);
+      const [g, k] = await Promise.all([daftarGaji(kata), listKaryawan(true, "OPS")]);
       setGaji(g || []);
       setKaryawan(k || []);
     } catch (e) {

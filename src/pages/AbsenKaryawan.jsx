@@ -40,7 +40,10 @@ export function FormAbsen({ session, onLogout }) {
 
   useEffect(() => {
     getAbsensiSettings()
-      .then(setSettings)
+      .then((s) => {
+        if (s) setSettings(s);
+        else setError("Pengaturan absensi perusahaan Anda belum diatur. Hubungi admin.");
+      })
       .catch(() => setError("Gagal memuat pengaturan absensi."));
   }, []);
 

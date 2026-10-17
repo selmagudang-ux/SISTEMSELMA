@@ -691,6 +691,9 @@ const MENU_PT_LAIN = [
   "keuangan", "chat", "panduan",
   "persetujuan-restock", "barang-datang", "data-barang", "sku-harga", "stok", "rak",
   "cetak-label", "foto", "marketplace",
+  // Absensi dipisah per PT lewat kolom entitas di karyawan/absensi/absensi_settings (absensi_per_pt.sql).
+  // Penggajian TIDAK ikut: gaji masih khusus Selma (rekening sumber harus entitas OPS).
+  "absensi",
   // Grup PENJUALAN (di sidebar PT selain Selma, grup "Store Selma" tampil sebagai "Store <nama PT>").
   "grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller",
 ];

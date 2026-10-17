@@ -11,6 +11,52 @@ import { sb, sbAll, SUPABASE_URL, SUPABASE_ANON_KEY } from "./api";
 // =========================================================
 
 const SESSION_KEY = "selma_absen_session";
+const SESSION_ADMIN_KEY = "selma_session";
+const PILIHAN_ENTITAS_KEY = "selma-absensi-ent";
+const ENTITAS_BAWAAN = "OPS";
+
+// =========================================================
+// ABSENSI PER ENTITAS (perusahaan)
+// Tabel karyawan, absensi, dan absensi_settings punya kolom `entitas` (lihat
+// absensi_per_pt.sql). Semua baca/tulis di file ini memakai entitas yang sedang
+// dikelola, dicari urut:
+//   1. Super Appa : perusahaan yang dipilih di halaman Absensi (sessionStorage),
+//   2. akun admin : perusahaan akunnya sendiri,
+//   3. karyawan   : perusahaan karyawan itu (dikirim verify-login-karyawan),
+//   4. kosong     : OPS (Selma).
+// Sengaja tidak lewat TABEL_PER_PT di api.js: Super Appa perlu MENULIS ke perusahaan
+// yang dipilih, sedangkan TABEL_PER_PT selalu menulis ke perusahaan akun sendiri.
+// =========================================================
+function bacaSesi(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function entitasAbsensi() {
+  const admin = bacaSesi(SESSION_ADMIN_KEY);
+  if (admin) {
+    if (admin.role === "superappa") {
+      try {
+        const pilih = sessionStorage.getItem(PILIHAN_ENTITAS_KEY);
+        if (pilih) return pilih;
+      } catch { /* abaikan */ }
+    }
+    return admin.entitas || ENTITAS_BAWAAN;
+  }
+  return bacaSesi(SESSION_KEY)?.entitas || ENTITAS_BAWAAN;
+}
+
+// Dipakai halaman Absensi (khusus Super Appa) untuk berpindah perusahaan.
+export function pilihEntitasAbsensi(kode) {
+  try {
+    if (kode) sessionStorage.setItem(PILIHAN_ENTITAS_KEY, kode);
+    else sessionStorage.removeItem(PILIHAN_ENTITAS_KEY);
+  } catch { /* abaikan */ }
+}
 
 // ---- Hash password (pola sama seperti auth.js: SHA-256 hex) ----
 export async function sha256Hex(text) {
@@ -59,7 +105,7 @@ export async function loginKaryawan(idKaryawan, password) {
   const user = await res.json().catch(() => null);
   if (!res.ok || !user) throw new Error(user?.error || "Gagal login");
 
-  const session = { id: user.id, id_karyawan: user.id_karyawan, nama: user.nama };
+  const session = { id: user.id, id_karyawan: user.id_karyawan, nama: user.nama, entitas: user.entitas || ENTITAS_BAWAAN };
   setAbsenSession(session);
   return session;
 }
@@ -92,15 +138,17 @@ export async function gantiPasswordKaryawan(karyawanId, passwordLama, passwordBa
 // force=true (dipakai tiap kali setelah simpan/hapus/edit) selalu lewati
 // cache supaya perubahan sendiri langsung kelihatan.
 const ABSEN_CACHE_TTL_MS = 45_000;
-let _karyawanCache = { data: null, at: 0 };
-let _absensiCache = { data: null, at: 0 };
+// Cache dicatat per entitas supaya berpindah perusahaan tidak menampilkan data perusahaan lain.
+let _karyawanCache = { data: null, at: 0, ent: null };
+let _absensiCache = { data: null, at: 0, ent: null };
 
-export async function listKaryawan(force = false) {
-  if (!force && _karyawanCache.data && Date.now() - _karyawanCache.at < ABSEN_CACHE_TTL_MS) {
+// entitas: kosong = perusahaan yang sedang dikelola (lihat entitasAbsensi di atas).
+export async function listKaryawan(force = false, entitas = entitasAbsensi()) {
+  if (!force && _karyawanCache.data && _karyawanCache.ent === entitas && Date.now() - _karyawanCache.at < ABSEN_CACHE_TTL_MS) {
     return _karyawanCache.data;
   }
-  const data = await sbAll("karyawan?select=*&order=nama");
-  _karyawanCache = { data, at: Date.now() };
+  const data = await sbAll(`karyawan?select=*&entitas=eq.${encodeURIComponent(entitas)}&order=nama`);
+  _karyawanCache = { data, at: Date.now(), ent: entitas };
   return data;
 }
 
@@ -108,7 +156,7 @@ export async function tambahKaryawan({ id_karyawan, nama, password }) {
   const password_hash = await sha256Hex(password);
   return sb("karyawan", {
     method: "POST",
-    body: JSON.stringify({ id_karyawan: (id_karyawan || "").trim(), nama, password_hash }),
+    body: JSON.stringify({ id_karyawan: (id_karyawan || "").trim(), nama, password_hash, entitas: entitasAbsensi() }),
   });
 }
 
@@ -160,15 +208,32 @@ export async function hapusKaryawan(id) {
 }
 
 // ---- Pengaturan absensi (lokasi kantor, radius, jam standar) ----
-export async function getAbsensiSettings() {
-  const rows = await sb("absensi_settings?select=*&id=eq.1");
+// Satu baris pengaturan per perusahaan. Selma (OPS) memakai baris lama (id=1); perusahaan
+// lain belum punya baris sampai pertama kali disimpan di Absensi > Pengaturan (null = belum diatur).
+export async function getAbsensiSettings(entitas = entitasAbsensi()) {
+  const rows = await sb(`absensi_settings?select=*&entitas=eq.${encodeURIComponent(entitas)}&order=id&limit=1`);
   return (rows || [])[0] || null;
 }
 
-export async function updateAbsensiSettings(patch) {
-  return sb("absensi_settings?id=eq.1", {
-    method: "PATCH",
-    body: JSON.stringify(patch),
+export async function updateAbsensiSettings(patch, entitas = entitasAbsensi()) {
+  const ada = await getAbsensiSettings(entitas);
+  if (ada) {
+    return sb(`absensi_settings?id=eq.${ada.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  }
+  // Perusahaan ini belum punya baris: buat baru. jam_masuk_standar/jam_pulang_standar adalah
+  // kolom lama (dipakai daftarShift sebagai cadangan), diisi dari shift pertama.
+  const shift1 = Array.isArray(patch.shift_list) ? patch.shift_list[0] : null;
+  return sb("absensi_settings", {
+    method: "POST",
+    body: JSON.stringify({
+      jam_masuk_standar: shift1?.jam_masuk || "08:00",
+      jam_pulang_standar: shift1?.jam_pulang || "17:00",
+      ...patch,
+      entitas,
+    }),
   });
 }
 
@@ -261,6 +326,7 @@ export async function submitAbsen({ karyawan, tipe, lat, lng, settings, shift })
   await sb("absensi", {
     method: "POST",
     body: JSON.stringify({
+      entitas: karyawan.entitas || entitasAbsensi(),
       karyawan_id: karyawan.id,
       nama: karyawan.nama,
       id_karyawan: karyawan.id_karyawan,
@@ -298,8 +364,8 @@ function awalRentangAbsensiDefault() {
   return keTanggalStr(d);
 }
 
-export async function listAbsensi(force = false) {
-  if (!force && _absensiCache.data && Date.now() - _absensiCache.at < ABSEN_CACHE_TTL_MS) {
+export async function listAbsensi(force = false, entitas = entitasAbsensi()) {
+  if (!force && _absensiCache.data && _absensiCache.ent === entitas && Date.now() - _absensiCache.at < ABSEN_CACHE_TTL_MS) {
     return _absensiCache.data;
   }
   // Dibatasi ke bulan berjalan + 1 bulan sebelumnya (BUKAN seluruh histori
@@ -314,8 +380,8 @@ export async function listAbsensi(force = false) {
   // lama, tambah parameter rentang tanggal custom di sini alih-alih
   // menghapus batasnya sepenuhnya.
   const batasAwal = awalRentangAbsensiDefault();
-  const data = await sbAll(`absensi?select=*&tanggal=gte.${batasAwal}&order=tanggal.desc,jam.desc`);
-  _absensiCache = { data, at: Date.now() };
+  const data = await sbAll(`absensi?select=*&entitas=eq.${encodeURIComponent(entitas)}&tanggal=gte.${batasAwal}&order=tanggal.desc,jam.desc`);
+  _absensiCache = { data, at: Date.now(), ent: entitas };
   return data;
 }
 
@@ -355,6 +421,7 @@ export async function simpanAbsensiManual({ karyawanId, idKaryawan, nama, tangga
   return sb("absensi", {
     method: "POST",
     body: JSON.stringify({
+      entitas: entitasAbsensi(),
       karyawan_id: karyawanId,
       nama,
       id_karyawan: idKaryawan,
@@ -394,6 +461,7 @@ export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, t
   await sb("absensi", {
     method: "POST",
     body: JSON.stringify({
+      entitas: entitasAbsensi(),
       karyawan_id: karyawanId,
       nama,
       id_karyawan: idKaryawan,
@@ -419,6 +487,7 @@ export async function simpanAbsensiManualMasuk({ karyawanId, idKaryawan, nama, t
     await sb("absensi", {
       method: "POST",
       body: JSON.stringify({
+        entitas: entitasAbsensi(),
         karyawan_id: karyawanId,
         nama,
         id_karyawan: idKaryawan,

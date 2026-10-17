@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight, Pencil, Stethoscope, Clock } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
-import { downloadCsv } from "../lib/api";
+import { downloadCsv, kodeHoldingPasti } from "../lib/api";
 import {
   listKaryawan,
   tambahKaryawan,
@@ -22,6 +22,8 @@ import {
   getAbsensiSettings,
   updateAbsensiSettings,
   daftarShift,
+  entitasAbsensi,
+  pilihEntitasAbsensi,
 } from "../lib/absensi";
 
 // Hanya superadmin, superappa, & owner yang boleh: (1) mengedit/menandai
@@ -60,18 +62,39 @@ function singkatManual(tipe) {
   return tipe === "Tanpa Keterangan" ? "TK" : tipe;
 }
 
-export default function Absensi({ sub, showToast, session }) {
+export default function Absensi({ sub, showToast, session, master }) {
   const s = sub || "rekap";
   const role = session?.role;
+  // Absensi dipisah per perusahaan. Akun biasa otomatis memakai perusahaannya sendiri; Super Appa
+  // (lintas perusahaan) memilih perusahaan yang dikelola lewat dropdown di kanan atas.
+  const [ent, setEnt] = useState(() => entitasAbsensi());
+  const kodeHolding = kodeHoldingPasti(master?.entitas, master?.entitas_set);
+  const daftarPT = (master?.entitas || []).filter((e) => e.kode !== kodeHolding);
+  const bolehPilih = role === "superappa" && daftarPT.length > 1;
+  const namaPT = (master?.entitas || []).find((e) => e.kode === ent)?.label || ent;
+  const ganti = (kode) => {
+    pilihEntitasAbsensi(kode);
+    setEnt(kode);
+  };
   return (
     <div>
       <PageHeader
         title="Absensi"
-        description="Kelola absen karyawan — rekap kehadiran, data akun karyawan, dan pengaturan lokasi kantor."
+        description={`Kelola absen karyawan ${namaPT} — rekap kehadiran, data akun karyawan, dan pengaturan lokasi kantor.`}
+        action={
+          bolehPilih ? (
+            <select value={ent} onChange={(e) => ganti(e.target.value)} className={`${inputClass} w-auto`} aria-label="Perusahaan">
+              {daftarPT.map((e) => (
+                <option key={e.kode} value={e.kode}>{e.label}</option>
+              ))}
+            </select>
+          ) : null
+        }
       />
-      {s === "rekap" && <RekapAbsensi showToast={showToast} role={role} />}
-      {s === "karyawan" && <DataKaryawan showToast={showToast} role={role} />}
-      {s === "pengaturan" && <PengaturanAbsensi showToast={showToast} />}
+      {/* key=ent: berpindah perusahaan memuat ulang semua tab dari nol. */}
+      {s === "rekap" && <RekapAbsensi key={ent} showToast={showToast} role={role} />}
+      {s === "karyawan" && <DataKaryawan key={ent} showToast={showToast} role={role} />}
+      {s === "pengaturan" && <PengaturanAbsensi key={ent} showToast={showToast} />}
     </div>
   );
 }
@@ -1081,7 +1104,20 @@ function PengaturanAbsensi({ showToast }) {
 
   useEffect(() => {
     getAbsensiSettings()
-      .then((s) => setForm({ ...s, shift_list: daftarShift(s) }))
+      .then((s) =>
+        // Perusahaan yang belum pernah menyimpan pengaturan: mulai dari isian kosong,
+        // baris barunya dibuat saat disimpan (lihat updateAbsensiSettings).
+        setForm({
+          office_lat: "",
+          office_lng: "",
+          radius_meter: 100,
+          toleransi_telat_menit: 0,
+          min_lembur_menit: 60,
+          ...(s || {}),
+          shift_list: daftarShift(s),
+          _baru: !s,
+        })
+      )
       .catch((e) => showToast?.(e.message || "Gagal memuat pengaturan", "err"));
   }, []);
 
@@ -1121,6 +1157,10 @@ function PengaturanAbsensi({ showToast }) {
       showToast?.("Tiap shift wajib punya nama, jam masuk, dan jam pulang.", "err");
       return;
     }
+    if (!String(form.office_lat).trim() || !String(form.office_lng).trim()) {
+      showToast?.("Latitude dan longitude kantor wajib diisi.", "err");
+      return;
+    }
     setSaving(true);
     try {
       await updateAbsensiSettings({
@@ -1131,6 +1171,7 @@ function PengaturanAbsensi({ showToast }) {
         toleransi_telat_menit: Number(form.toleransi_telat_menit),
         min_lembur_menit: Number(form.min_lembur_menit),
       });
+      setForm((f) => ({ ...f, _baru: false }));
       showToast?.("Pengaturan absensi disimpan.");
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan pengaturan", "err");
@@ -1143,6 +1184,11 @@ function PengaturanAbsensi({ showToast }) {
 
   return (
     <div className="max-w-xl bg-slate-900/50 border border-slate-800 rounded-xl p-5 space-y-4">
+      {form._baru && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 text-amber-400 text-xs px-3 py-2">
+          Perusahaan ini belum punya pengaturan absensi. Isi lokasi kantor dan shift, lalu simpan — karyawan baru bisa absen setelah itu.
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Latitude Kantor">
           <input className={inputClass} value={form.office_lat} onChange={(e) => set("office_lat", e.target.value)} />

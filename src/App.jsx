@@ -900,7 +900,9 @@ function MainApp({ session, onLogout }) {
     // Teruskan `force` ke listAbsensi/listKaryawan juga (lib/absensi.js
     // sekarang punya cache singkat sendiri) — supaya "Muat ulang" manual
     // benar-benar narik data baru, bukan ikut kena cache 45 detik di sana.
-    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(force), listKaryawan(force)]);
+    // Ringkasan absensi di Dashboard memakai perusahaan akun sendiri (bukan pilihan di halaman Absensi).
+    const entSendiri = session.entitas || ENTITAS_DEFAULT;
+    const [absensiRes, karyawanRes] = await Promise.all([listAbsensi(force, entSendiri), listKaryawan(force, entSendiri)]);
     setAbsensiRows(absensiRes || []);
     setKaryawanList(karyawanRes || []);
     tandaiSudahDimuat("absensi");
@@ -1466,7 +1468,7 @@ function MainApp({ session, onLogout }) {
                 <Penggajian session={session} master={master} showToast={showToast} />
               )}
               {nav.menu === "absensi" && (
-                <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} />
+                <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} master={master} />
               )}
               {nav.menu === "pengaturan" && (
                 <Pengaturan settings={settings} reload={reloadCurrentMenu} showToast={showToast} session={session} />
