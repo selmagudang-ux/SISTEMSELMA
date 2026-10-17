@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2 } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, bukanLabaRugi } from "../lib/api";
+import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, bukanLabaRugi, pengaturanEntitas } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
@@ -901,6 +901,82 @@ function KartuPerusahaan({ e, rekening, master, reload, showToast }) {
         </button>
         {kodeAda && <span className="text-[11px] text-red-400">Kode rekening sudah dipakai.</span>}
       </div>
+      <ProfilPerusahaan e={e} master={master} isDefault={isDefault} reload={reload} showToast={showToast} />
+    </div>
+  );
+}
+
+// Profil perusahaan: nama di kop nota & laporan, alamat kop, nama store, dan penanda Holding.
+// Disimpan di master_data tipe "entitas_set" (lihat pengaturanEntitas di lib/api.js) — perusahaan
+// baru cukup diisi di sini, tanpa ubah kode. Kosong = bawaan (OPS: kop Selma; lainnya: nama perusahaan).
+function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
+  const awal = pengaturanEntitas(master, e.kode);
+  const [namaUsaha, setNamaUsaha] = useState(awal.nama_usaha || "");
+  const [alamat, setAlamat] = useState((awal.alamat || "").split("|").join("\n"));
+  const [namaStore, setNamaStore] = useState(awal.nama_store || "");
+  const [holding, setHolding] = useState(awal.jenis === "holding");
+  const [saving, setSaving] = useState(false);
+
+  const simpan = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const baris = master.entitas_set || [];
+      const tulis = async (kodeEnt, kunci, isi) => {
+        const kodeBaris = `${kodeEnt}:${kunci}`;
+        const ada = baris.find((m) => m.kode === kodeBaris);
+        if (ada && isi) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: isi }) });
+        else if (ada && !isi) await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+        else if (!ada && isi) await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_set", kode: kodeBaris, label: isi }) });
+      };
+      await tulis(e.kode, "nama_usaha", namaUsaha.trim());
+      await tulis(e.kode, "alamat", alamat.split("\n").map((x) => x.trim()).filter(Boolean).join("|"));
+      await tulis(e.kode, "nama_store", namaStore.trim());
+      await tulis(e.kode, "jenis", holding ? "holding" : "");
+      // Hanya satu perusahaan yang boleh bertanda Holding.
+      if (holding) {
+        for (const m of baris) {
+          if (m.label === "holding" && String(m.kode).endsWith(":jenis") && m.kode !== `${e.kode}:jenis`) {
+            await sb(`master_data?id=eq.${m.id}`, { method: "DELETE" });
+          }
+        }
+      }
+      showToast?.(`Profil ${e.label} disimpan`);
+      await reload?.();
+    } catch (err) {
+      showToast?.(err.message || "Gagal menyimpan profil", "err");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-800">
+      <div className="text-xs text-slate-300 mb-2">Profil perusahaan</div>
+      <div className="grid sm:grid-cols-2 gap-x-3">
+        <Field label="Nama usaha (kop nota & laporan)">
+          <input className={inputClass} value={namaUsaha} onChange={(x) => setNamaUsaha(x.target.value)} placeholder={isDefault ? "SELMA ACC BANDUNG" : e.label} />
+        </Field>
+        <Field label="Nama store (judul grup penjualan)">
+          <input className={inputClass} value={namaStore} onChange={(x) => setNamaStore(x.target.value)} placeholder={isDefault ? "Store Selma" : `Store ${e.label}`} />
+        </Field>
+      </div>
+      <Field label="Alamat kop nota (satu baris per baris)">
+        <textarea className={inputClass} rows={3} value={alamat} onChange={(x) => setAlamat(x.target.value)} placeholder={isDefault ? "Kosong = alamat bawaan Selma" : "Jl. ...\nKota ..."} />
+      </Field>
+      {!isDefault && (
+        <label className="flex items-center gap-2 text-[11px] text-slate-300 mb-3">
+          <input type="checkbox" checked={holding} onChange={(x) => setHolding(x.target.checked)} />
+          Perusahaan ini adalah Holding
+        </label>
+      )}
+      <button
+        onClick={simpan}
+        disabled={saving}
+        className="text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950"
+      >
+        {saving ? "Menyimpan…" : "Simpan profil"}
+      </button>
     </div>
   );
 }

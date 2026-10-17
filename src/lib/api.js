@@ -156,11 +156,14 @@ export function namaTokoEntitas(master) {
   return namaEntitasSesi(master).replace(/^\s*(pt|cv)\.?\s+/i, "").trim();
 }
 
-// Kop nota/label grosir untuk PT selain Selma: nama PT-nya saja, tanpa alamat Selma.
-// Selma (OPS) mengembalikan undefined supaya NotaGrosir.jsx memakai kop bawaannya.
+// Kop nota/label grosir per perusahaan, dari profil (nama_usaha + alamat) yang diisi di Kelola
+// Perusahaan; belum diisi -> nama perusahaan saja tanpa alamat.
 export function identitasNotaEntitas(master) {
-  if (entitasSesi() === ENTITAS_DEFAULT) return undefined;
-  return { nama: namaEntitasSesi(master).toUpperCase(), alamat: [] };
+  const kode = entitasSesi();
+  const s = pengaturanEntitas(master, kode);
+  // Selma tanpa profil terisi memakai kop bawaan di NotaGrosir.jsx.
+  if (kode === ENTITAS_DEFAULT && !s.nama_usaha && !s.alamat) return undefined;
+  return { nama: namaUsahaEntitas(master, kode).toUpperCase(), alamat: alamatEntitas(master, kode) };
 }
 
 export function terapkanEntitasPT(path, method, body) {
@@ -209,7 +212,7 @@ function entitasAktif() {
 function bolehWalauReadOnly(path, method, opts = {}) {
   if (method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path)) return true;
   // Pemilik membukukan entitas Holding sendiri (akun kas, transaksi, dst).
-  if (roleSaatIni() === "owner" && entitasAktif() === ENTITAS_HOLDING && /^(keuangan_transaksi|master_data)(\?|$)/.test(path)) return true;
+  if (roleSaatIni() === "owner" && entitasAktif() && entitasAktif() === kodeHoldingSaatIni() && /^(keuangan_transaksi|master_data)(\?|$)/.test(path)) return true;
   if (roleSaatIni() === "owner" && /^keuangan_transaksi(\?|$)/.test(path)) {
     if (method === "POST") {
       try {
@@ -2057,9 +2060,70 @@ export const ENTITAS_HOLDING = "HOLD";
 
 // Kode entitas Holding: "HOLD" kalau ada, kalau tidak entitas pertama selain default.
 // Kosong = entitas belum diatur (SQL fase 4 belum dijalankan).
-export function kodeEntitasHolding(entitasList) {
+export function kodeEntitasHolding(entitasList, setList) {
   const l = entitasList || [];
-  return l.find((e) => e.kode === ENTITAS_HOLDING)?.kode || l.find((e) => e.kode !== ENTITAS_DEFAULT)?.kode || "";
+  return kodeHoldingPasti(l, setList) || l.find((e) => e.kode !== ENTITAS_DEFAULT)?.kode || "";
+}
+
+// =========================================================
+// PROFIL / PENGATURAN PERUSAHAAN (entitas) — diatur Super Appa di Perusahaan Grup > Kelola
+// Perusahaan, JANGAN di-hardcode per perusahaan. Disimpan di master_data tipe "entitas_set":
+//   kode = "<ENTITAS>:<kunci>", label = isinya (pola sama dengan rekening_peran).
+// Kunci yang dipakai:
+//   nama_usaha : nama di kop nota/label & laporan PDF   (kosong -> nama perusahaan; OPS -> kop Selma)
+//   alamat     : baris alamat kop nota, dipisah "|"
+//   nama_store : judul grup/kartu toko                   (kosong -> "Store <nama tanpa PT/CV>")
+//   jenis      : "holding" menandai entitas Holding      (kosong -> kode "HOLD" seperti dulu)
+// Perusahaan baru cukup diisi di layar itu, tanpa ubah kode.
+// =========================================================
+let profilTerdaftar = { entitas: [], set: [] };
+// Dipanggil App tiap master dimuat, supaya fungsi di luar React (mis. penjaga request di sb())
+// tahu entitas mana yang Holding.
+export function daftarkanProfilEntitas(master) {
+  profilTerdaftar = { entitas: master?.entitas || [], set: master?.entitas_set || [] };
+}
+export function pengaturanEntitas(master, kode) {
+  const hasil = {};
+  (master?.entitas_set || []).forEach((m) => {
+    const k = String(m.kode || "");
+    const i = k.indexOf(":");
+    if (i > 0 && k.slice(0, i) === kode) hasil[k.slice(i + 1)] = m.label;
+  });
+  return hasil;
+}
+// Kode entitas Holding TANPA tebakan: yang bertanda jenis=holding, lalu kode "HOLD"; kosong
+// kalau tidak ada. (kodeEntitasHolding di atas menambah tebakan "entitas pertama selain default".)
+export function kodeHoldingPasti(entitasList, setList) {
+  const l = entitasList ?? profilTerdaftar.entitas;
+  const st = setList ?? profilTerdaftar.set;
+  const bertanda = (st || [])
+    .filter((m) => m.label === "holding" && String(m.kode).endsWith(":jenis"))
+    .map((m) => String(m.kode).slice(0, -":jenis".length))
+    .find((k) => (l || []).some((e) => e.kode === k));
+  if (bertanda) return bertanda;
+  return (l || []).find((e) => e.kode === ENTITAS_HOLDING)?.kode || "";
+}
+export function kodeHoldingSaatIni() {
+  return kodeHoldingPasti(profilTerdaftar.entitas, profilTerdaftar.set);
+}
+const NAMA_USAHA_OPS = "SELMA ACC BANDUNG";
+export function namaUsahaEntitas(master, kode) {
+  const k = kode || ENTITAS_DEFAULT;
+  const dipilih = pengaturanEntitas(master, k).nama_usaha;
+  if (dipilih) return dipilih;
+  if (k === ENTITAS_DEFAULT) return NAMA_USAHA_OPS;
+  return String((master?.entitas || []).find((e) => e.kode === k)?.label || k);
+}
+export function alamatEntitas(master, kode) {
+  const a = pengaturanEntitas(master, kode || ENTITAS_DEFAULT).alamat;
+  return a ? String(a).split("|").map((x) => x.trim()).filter(Boolean) : [];
+}
+export function namaStoreEntitas(master, kode) {
+  const k = kode || ENTITAS_DEFAULT;
+  const dipilih = pengaturanEntitas(master, k).nama_store;
+  if (dipilih) return dipilih;
+  if (k === ENTITAS_DEFAULT) return "Store Selma";
+  return `Store ${namaUsahaEntitas(master, k).replace(/^\s*(pt|cv)\.?\s+/i, "").trim()}`;
 }
 export const PENANDA_ANTAR_ENTITAS = {
   modal: "Modal",
@@ -2196,12 +2260,13 @@ export async function cariAtauBuatRekeningTetap(master, labelTetap, suggestKodeF
 // transfer ke Holding tetap dihitung sebagai uang keluar dari gabungan PT.
 export function lingkupGabunganPT(transaksi, master) {
   const entitasList = master?.entitas || [];
-  if (entitasList.length < 2 || !entitasList.some((e) => e.kode === ENTITAS_HOLDING)) return { transaksi, master };
+  const kodeH = kodeHoldingPasti(entitasList, master?.entitas_set);
+  if (entitasList.length < 2 || !kodeH) return { transaksi, master };
   const peta = petaEntitasRekening(master.rekening_entitas);
   const entDari = (kode) => entitasDariRekening(peta, entitasList, kode);
-  const rekening = (master.rekening || []).filter((r) => entDari(r.kode) !== ENTITAS_HOLDING);
+  const rekening = (master.rekening || []).filter((r) => entDari(r.kode) !== kodeH);
   rekening.__batasi = true;
-  const sentuh = (t) => entDari(t.rekening) !== ENTITAS_HOLDING || (t.tipe === "transfer" && entDari(t.rekening_tujuan) !== ENTITAS_HOLDING);
+  const sentuh = (t) => entDari(t.rekening) !== kodeH || (t.tipe === "transfer" && entDari(t.rekening_tujuan) !== kodeH);
   const trx = (transaksi || []).filter(sentuh);
   trx.__saring = sentuh;
   return { transaksi: trx, master: { ...master, rekening } };

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
-import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, namaTokoEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
+import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
@@ -683,6 +683,7 @@ function MainApp({ session, onLogout }) {
     setSuppliers(data.suppliers || []);
     setSkuMaster(data.skuMaster || []);
     setRak(data.rak || []);
+    daftarkanProfilEntitas(data.masterGrouped || {});
     setMaster(lingkupTokoMarketplace(data.masterGrouped || {}, entitasBacaSaatIni()));
     setSettings(data.settings || null);
     setPenempatan(data.penempatan || []);
@@ -1170,8 +1171,8 @@ function MainApp({ session, onLogout }) {
         onLogout={onLogout}
         setModal={setModal}
         namaToko={
-          session.entitas && session.entitas !== ENTITAS_DEFAULT && session.entitas !== ENTITAS_HOLDING
-            ? `Store ${namaTokoEntitas(master)}`
+          session.entitas && session.entitas !== ENTITAS_HOLDING && session.entitas !== kodeHoldingPasti(master?.entitas, master?.entitas_set)
+            ? namaStoreEntitas(master, session.entitas)
             : null
         }
         menuLabel={menuLabel}

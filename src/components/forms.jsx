@@ -5499,7 +5499,7 @@ export function MarketplaceTokoForm({ platform, toko, kodeBaru, onClose, onSubmi
           className={inputClass}
           value={nama}
           onChange={(e) => setNama(e.target.value)}
-          placeholder={`mis. ${PLATFORM_LABEL_FORM[platform] || "Toko"} Selma Official`}
+          placeholder={`mis. ${PLATFORM_LABEL_FORM[platform] || "Toko"} Official`}
           autoFocus
         />
       </Field>

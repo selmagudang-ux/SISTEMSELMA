@@ -42,7 +42,7 @@ import {
   lingkupEntitas,
   lingkupGabunganPT,
   ENTITAS_DEFAULT,
-  ENTITAS_HOLDING,
+  kodeHoldingPasti, namaUsahaEntitas, namaStoreEntitas,
 } from "../lib/api";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
@@ -202,17 +202,12 @@ export default function Dashboard({
     ? TABS.filter((t) => t.key === "gudang" || t.key === "penjualan" || t.key === "keuangan")
     : TABS;
   const tab = tabsTersedia.some((t) => t.key === tabPilih) ? tabPilih : tabsTersedia[0].key;
-  const namaPerusahaan = gabungan
-    ? "Gabungan semua PT"
-    : entAktif !== ENTITAS_DEFAULT
-    ? ((master.entitas || []).find((e) => e.kode === entAktif)?.label || entAktif)
-    : "SELMA ACC BANDUNG";
-  const daftarPT = (master.entitas || []).filter((e) => e.kode !== ENTITAS_HOLDING);
+  const namaPerusahaan = gabungan ? "Gabungan semua PT" : namaUsahaEntitas(master, entAktif);
+  const kodeHoldingDash = kodeHoldingPasti(master.entitas, master.entitas_set);
+  const daftarPT = (master.entitas || []).filter((e) => e.kode !== kodeHoldingDash);
   // Nama kartu/grup toko di Dashboard Penjualan: "Store Selma" untuk SELMA, "Store <nama PT>"
   // (tanpa awalan PT/CV) untuk PT lain — sama dengan judul grup di sidebar.
-  const namaStore = entAktif !== ENTITAS_DEFAULT
-    ? `Store ${namaPerusahaan.replace(/^\s*(pt|cv)\.?\s+/i, "").trim()}`
-    : "Store Selma";
+  const namaStore = namaStoreEntitas(master, entAktif);
 
   // Filter periode global "Bulan & Tahun" — dipakai oleh ringkasan yang
   // sifatnya berbasis periode (Keuangan, Grosir, Monitoring, Absensi). Default

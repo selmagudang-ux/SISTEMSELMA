@@ -109,7 +109,7 @@ const SECTIONS = [
   },
   {
     key: "grosir",
-    label: "Grosir (Store Selma)",
+    label: "Grosir (Store)",
     icon: Store,
     ringkasan: "Buat & kelola pesanan grosir, cetak Nota/Label, dan Laporan Grosir.",
     poin: [

@@ -13,6 +13,7 @@ import {
   entitasDariRekening,
   ENTITAS_DEFAULT,
   kodeEntitasHolding,
+  namaUsahaEntitas,
   LOKASI_TANPA,
   kasDariRekening,
   kasTerkait,
@@ -314,7 +315,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     }
     if (tab === "laporan") {
       return bungkus(
-        <LaporanKeuangan keuanganTransaksi={lingkup.transaksi} marketplaceTransaksi={marketplaceTransaksi} pesananMasuk={pesananMasuk} master={lingkup.master} reload={reload} showToast={showToast} />,
+        <LaporanKeuangan keuanganTransaksi={lingkup.transaksi} marketplaceTransaksi={marketplaceTransaksi} pesananMasuk={pesananMasuk} master={lingkup.master} entitasKode={kodeAktif} reload={reload} showToast={showToast} />,
         barTab
       );
     }
@@ -358,6 +359,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
         marketplaceTransaksi={marketplaceTransaksi}
         pesananMasuk={pesananMasuk}
         master={lingkup.master}
+        entitasKode={kodeAktif}
         reload={reload}
         showToast={showToast}
       />
@@ -1496,7 +1498,7 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
 // pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
 // narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
 // ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
-function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, reload, showToast }) {
+function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, entitasKode, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
@@ -1667,7 +1669,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
         />
       </div>
 
-      <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} />
+      <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} entitasKode={entitasKode} />
 
       {detailKategori && detailKategori.isGrup && (
         <DetailKelompokModal
@@ -1781,7 +1783,7 @@ function BarisBulananPohon({ d, depth, seksi, terbuka, toggle }) {
   );
 }
 
-function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
+function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master, entitasKode }) {
   // App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya; laporan
   // bulanan/tahunan butuh seluruh histori, jadi data lamanya ditarik sendiri.
   const { data: keuanganTransaksi, status: errLama } = useKeuanganRentang(keuanganDimuat, null);
@@ -1815,9 +1817,10 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master }) {
   const semuaTerbukaBulanan = semuaKunciBulanan.length > 0 && semuaKunciBulanan.every((k) => terbuka.has(k));
   const dataTahunan = rekapTahunanData(keuanganTransaksi, tahunMulai, 6);
 
-  const unduhBulanan = () => generateLaporanBulananPdf({ tahun, data: dataBulanan });
+  const namaUsaha = namaUsahaEntitas(master, entitasKode || ENTITAS_DEFAULT);
+  const unduhBulanan = () => generateLaporanBulananPdf({ tahun, data: dataBulanan, namaUsaha });
   const unduhTahunan = () =>
-    generateLaporanTahunanPdf({ tahunList: dataTahunan.tahunList, perTahun: dataTahunan.perTahun });
+    generateLaporanTahunanPdf({ tahunList: dataTahunan.tahunList, perTahun: dataTahunan.perTahun, namaUsaha });
 
   return (
     <div className="rounded-xl border border-slate-800 mb-5 overflow-hidden">
