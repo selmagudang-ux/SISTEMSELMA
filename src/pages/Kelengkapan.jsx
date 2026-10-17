@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Plus, Pencil, Trash2, Search, AlertTriangle, PackageCheck, ClipboardCheck, ShoppingCart } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, AlertTriangle, PackageCheck, ClipboardCheck, ShoppingCart, ArrowRight } from "lucide-react";
 import {
   ModalShell,
   Field,
@@ -12,8 +12,8 @@ import {
   inputClass,
   formatTanggalID,
 } from "../components/ui";
-import { sb, sbAll, fmtRp, nextKode } from "../lib/api";
-import { isSuperadminLike } from "../lib/constants";
+import { sb, sbAll, fmtRp, nextKode, sbUploadFoto, kompresFotoProduk } from "../lib/api";
+import { isSuperadminLike, STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 
 // =========================================================
 // KELENGKAPAN (sub-menu Pengadaan Barang)
@@ -43,10 +43,57 @@ const LABEL_TIPE = {
   koreksi: { label: "Koreksi", color: "slate" },
 };
 
+// ---------------------------------------------------------
+// TAHAPAN + RIWAYAT HARGA (lihat kelengkapan_tahapan.sql)
+// Tahapan sama dengan alur Master Barang: Buat SKU -> Rak -> Verifikasi Foto
+// -> Marketplace -> Selesai. Bedanya, tidak ada "Menunggu Harga" karena harga
+// kelengkapan diisi manual. Tiap perubahan harga beli/grosir/ecer dicatat di
+// tabel kelengkapan_harga_riwayat.
+// ---------------------------------------------------------
+const STAGE_KLG = ["sku", "rak", "verifikasi", "marketplace", "selesai"];
+// Barang tanpa kolom stage (SQL belum dijalankan / data lama) dianggap selesai.
+const tahapDari = (p) => (STAGE_KLG.includes(p?.stage) ? p.stage : "selesai");
+
+const KOLOM_HARGA = [
+  { key: "harga_beli", label: "Beli" },
+  { key: "harga_grosir", label: "Grosir" },
+  { key: "harga_ecer", label: "Ecer" },
+];
+const hargaBerubah = (lama, baru) => KOLOM_HARGA.some((h) => (Number(lama?.[h.key]) || 0) !== (Number(baru?.[h.key]) || 0));
+
+// PATCH yang ditolak RLS tidak melempar error (hasilnya [] saja) — anggap gagal.
+async function patchKlg(id, data) {
+  const res = await sb(`kelengkapan?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  if (Array.isArray(res) && res.length === 0) {
+    throw new Error("Perubahan tidak tersimpan: data tidak ditemukan atau Anda tidak punya izin.");
+  }
+  return res;
+}
+
+async function catatRiwayatHarga(id, lama, baru, keterangan, oleh) {
+  const row = { kelengkapan_id: id, keterangan: (keterangan || "").trim() || null, diubah_oleh: oleh || null };
+  KOLOM_HARGA.forEach(({ key }) => {
+    row[`${key}_lama`] = lama ? Number(lama[key]) || 0 : null;
+    row[`${key}_baru`] = Number(baru[key]) || 0;
+  });
+  await sb("kelengkapan_harga_riwayat", { method: "POST", body: JSON.stringify(row) });
+}
+
+function BannerSql() {
+  return (
+    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs px-4 py-3 mb-4">
+      Fitur ini belum aktif di database. Jalankan <span className="font-mono">kelengkapan_tahapan.sql</span> di
+      Supabase (SQL Editor) dulu, lalu muat ulang halaman.
+    </div>
+  );
+}
+
 export default function Kelengkapan({ showToast, session }) {
   const [tab, setTab] = useState("stok");
   const [stok, setStok] = useState([]);
   const [mutasi, setMutasi] = useState([]);
+  const [riwayatHarga, setRiwayatHarga] = useState([]);
+  const [tahapSiap, setTahapSiap] = useState(true); // false = SQL tahapan/riwayat harga belum dijalankan
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const bisaUbahRiwayat = isSuperadminLike(session?.role);
@@ -61,7 +108,25 @@ export default function Kelengkapan({ showToast, session }) {
         sbAll("kelengkapan_stok?select=*&order=nama"),
         sb("kelengkapan_mutasi?select=*&order=tanggal.desc,id.desc&limit=200"),
       ]);
-      setStok(s || []);
+      // Kolom tahapan dibaca dari tabel dasarnya (bukan dari view kelengkapan_stok,
+      // yang tidak ikut berubah saat kolom baru ditambah). Dipisah supaya halaman
+      // tetap jalan walau SQL tahapan belum dijalankan.
+      let tahap = {};
+      let rh = [];
+      let siap = true;
+      try {
+        const [t, h] = await Promise.all([
+          sbAll("kelengkapan?select=id,stage,rak_code,foto_url,marketplace_status,marketplace_uploaded_at&order=id"),
+          sb("kelengkapan_harga_riwayat?select=*&order=created_at.desc,id.desc&limit=300"),
+        ]);
+        tahap = Object.fromEntries((t || []).map((r) => [r.id, r]));
+        rh = h || [];
+      } catch {
+        siap = false;
+      }
+      setTahapSiap(siap);
+      setRiwayatHarga(rh);
+      setStok((s || []).map((p) => ({ ...p, ...(tahap[p.id] || {}) })));
       setMutasi(m || []);
     } catch (e) {
       toastRef.current?.(e.message || "Gagal memuat data kelengkapan", "err");
@@ -86,7 +151,7 @@ export default function Kelengkapan({ showToast, session }) {
     <div>
       <PageHeader
         title="Kelengkapan"
-        description="Barang kelengkapan yang ikut dijual (box, kantong, kartu, dll) — SKU dan harga sendiri, terpisah dari Master Barang. Catat pembelian di sini; stok bertambah otomatis."
+        description="Barang kelengkapan yang ikut dijual (box, kantong, kartu, dll) — SKU dan harga sendiri, terpisah dari Master Barang, dengan tahapan yang sama (SKU, Rak, Foto, Marketplace). Catat pembelian di sini; stok bertambah otomatis."
         action={
           <div className="flex gap-2">
             <button
@@ -109,6 +174,8 @@ export default function Kelengkapan({ showToast, session }) {
       <div className="flex flex-wrap gap-1.5 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
         {[
           { key: "stok", label: "Stok & Harga" },
+          { key: "tahapan", label: "Tahapan" },
+          { key: "harga", label: "Riwayat Harga" },
           { key: "pembelian", label: "Pembelian" },
           { key: "riwayat", label: "Riwayat Stok" },
         ].map((t) => (
@@ -127,7 +194,11 @@ export default function Kelengkapan({ showToast, session }) {
       {loading ? (
         <div className="text-sm text-slate-500 py-10 text-center">Memuat…</div>
       ) : tab === "stok" ? (
-        <TabStok stok={stok} setModal={setModal} />
+        <TabStok stok={stok} setModal={setModal} siap={tahapSiap} />
+      ) : tab === "tahapan" ? (
+        <TabTahapan stok={stok} siap={tahapSiap} session={session} showToast={showToast} setModal={setModal} />
+      ) : tab === "harga" ? (
+        <TabRiwayatHarga riwayat={riwayatHarga} stok={stok} siap={tahapSiap} />
       ) : tab === "pembelian" ? (
         <TabRiwayat
           mutasi={mutasi.filter((m) => m.tipe === "beli" || m.tipe === "retur_beli")}
@@ -141,7 +212,10 @@ export default function Kelengkapan({ showToast, session }) {
       )}
 
       {modal?.type === "barang" && (
-        <FormBarang barang={modal.item} stok={stok} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
+        <FormBarang barang={modal.item} stok={stok} session={session} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
+      )}
+      {modal?.type === "lanjut" && (
+        <FormLanjut barang={modal.item} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
       )}
       {modal?.type === "beli" && (
         <FormBeli barang={modal.item} stok={aktif} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
@@ -165,7 +239,7 @@ export default function Kelengkapan({ showToast, session }) {
 // ---------------------------------------------------------
 // TAB: STOK & HARGA
 // ---------------------------------------------------------
-function TabStok({ stok, setModal }) {
+function TabStok({ stok, setModal, siap }) {
   const [q, setQ] = useState("");
   const [tampilNonaktif, setTampilNonaktif] = useState(false);
   const filtered = stok.filter((p) => {
@@ -213,6 +287,9 @@ function TabStok({ stok, setModal }) {
                     <span className="text-sm text-slate-200">{p.nama}</span>
                     {p.aktif === false && <Badge color="slate">Nonaktif</Badge>}
                     {habisP && p.aktif !== false && <Badge color="red">Habis</Badge>}
+                    {siap && p.aktif !== false && tahapDari(p) !== "selesai" && (
+                      <Badge color={STAGE_META[tahapDari(p)].color}>{STAGE_META[tahapDari(p)].label}</Badge>
+                    )}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     {p.sku} · beli {fmtRp(p.harga_beli)} · grosir {fmtRp(p.harga_grosir)} · ecer {fmtRp(p.harga_ecer)}
@@ -304,7 +381,7 @@ function TabRiwayat({ mutasi, stok, bisaUbah, setModal, kosong }) {
 // ---------------------------------------------------------
 // FORM: TAMBAH / EDIT KELENGKAPAN
 // ---------------------------------------------------------
-function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
+function FormBarang({ barang, stok, session, onClose, onSaved, showToast }) {
   const [nama, setNama] = useState(barang?.nama || "");
   const [satuan, setSatuan] = useState(barang?.satuan || "pcs");
   const [hargaBeli, setHargaBeli] = useState(barang?.harga_beli ?? "");
@@ -312,7 +389,10 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
   const [hargaEcer, setHargaEcer] = useState(barang?.harga_ecer ?? "");
   const [aktif, setAktif] = useState(barang ? barang.aktif !== false : true);
   const [stokAwal, setStokAwal] = useState("");
+  const [alasan, setAlasan] = useState("");
   const [saving, setSaving] = useState(false);
+  const hargaDiubah =
+    !!barang && hargaBerubah(barang, { harga_beli: hargaBeli, harga_grosir: hargaGrosir, harga_ecer: hargaEcer });
 
   const simpan = async () => {
     const namaTrim = nama.trim();
@@ -332,8 +412,16 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
         aktif,
       };
       if (barang) {
-        await sb(`kelengkapan?id=eq.${barang.id}`, { method: "PATCH", body: JSON.stringify(data) });
-        await onSaved("Kelengkapan diperbarui");
+        await patchKlg(barang.id, data);
+        let gagalRiwayat = false;
+        if (hargaDiubah) {
+          try {
+            await catatRiwayatHarga(barang.id, barang, data, alasan, session?.username);
+          } catch {
+            gagalRiwayat = true;
+          }
+        }
+        await onSaved("Kelengkapan diperbarui" + (gagalRiwayat ? " — tapi riwayat harga gagal dicatat (cek kelengkapan_tahapan.sql)" : ""));
       } else {
         const res = await sb("kelengkapan", { method: "POST", body: JSON.stringify({ ...data, sku: nextKode(stok, "sku", "KLG-") }) });
         const baru = Array.isArray(res) ? res[0] : res;
@@ -343,7 +431,15 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
             body: JSON.stringify({ kelengkapan_id: baru.id, tipe: "koreksi", jumlah: Number(stokAwal), tanggal: todayIso(), keterangan: "Stok awal" }),
           });
         }
-        await onSaved("Kelengkapan ditambahkan");
+        let gagalRiwayat = false;
+        if (baru?.id && (data.harga_beli || data.harga_grosir || data.harga_ecer)) {
+          try {
+            await catatRiwayatHarga(baru.id, null, data, "Harga awal", session?.username);
+          } catch {
+            gagalRiwayat = true;
+          }
+        }
+        await onSaved("Kelengkapan ditambahkan" + (gagalRiwayat ? " — tapi riwayat harga gagal dicatat (cek kelengkapan_tahapan.sql)" : ""));
       }
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan", "err");
@@ -388,6 +484,13 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
           <InputRupiah value={hargaEcer} onChange={setHargaEcer} />
         </Field>
       </div>
+      {hargaDiubah && (
+        <div className="mt-3">
+          <Field label="Alasan perubahan harga (opsional)">
+            <input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. harga supplier naik" className={inputClass} />
+          </Field>
+        </div>
+      )}
       {barang && (
         <label className="flex items-center gap-2 text-xs text-slate-300 mt-3 cursor-pointer">
           <input type="checkbox" checked={aktif} onChange={(e) => setAktif(e.target.checked)} />
@@ -622,5 +725,284 @@ function KonfirmasiHapusMutasi({ mutasi, barang, onClose, onSaved, showToast }) 
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------
+// TAB: TAHAPAN (sama dengan Alur Barang di Master Barang)
+// ---------------------------------------------------------
+function TabTahapan({ stok, siap, session, showToast, setModal }) {
+  const aktifList = useMemo(() => stok.filter((p) => p.aktif !== false), [stok]);
+  const hitung = useMemo(
+    () => Object.fromEntries(STAGE_KLG.map((s) => [s, aktifList.filter((p) => tahapDari(p) === s).length])),
+    [aktifList]
+  );
+  const [stage, setStage] = useState(() => STAGE_KLG.find((s) => s !== "selesai" && hitung[s] > 0) || "selesai");
+
+  if (!siap) return <BannerSql />;
+
+  const daftar = aktifList.filter((p) => tahapDari(p) === stage);
+
+  const lanjut = (p) => {
+    const st = tahapDari(p);
+    if (!canAdvanceStage(session?.role, st)) {
+      showToast?.(
+        `Anda tidak bisa melanjutkan ke tahap selanjutnya. Hanya role ${roleLabel(STAGE_ROLE[st])} (atau Owner/Superadmin) yang bisa melanjutkan.`,
+        "err"
+      );
+      return;
+    }
+    setModal({ type: "lanjut", item: p });
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-4">
+        {STAGE_KLG.map((s) => {
+          const meta = STAGE_META[s];
+          const c = COLOR[meta.color];
+          const aktifChip = stage === s;
+          return (
+            <button
+              key={s}
+              onClick={() => setStage(s)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition ${
+                aktifChip ? `${c.bg} ${c.text} ring-1 ${c.ring} border-transparent` : "border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {meta.label}
+              <span className={`text-[11px] px-1.5 rounded-full ${aktifChip ? "bg-black/20" : "bg-slate-800"}`}>{hitung[s]}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {daftar.length === 0 ? (
+        <EmptyState label={`Tidak ada kelengkapan di tahap ${STAGE_META[stage].label}.`} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {daftar.map((p, i) => (
+            <div key={p.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                {p.foto_url && <img src={p.foto_url} alt={p.sku} className="w-10 h-10 rounded-md object-cover border border-slate-800 flex-shrink-0" />}
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-200 truncate">{p.nama}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {p.sku} · rak {p.rak_code || "belum ada"} · ecer {fmtRp(p.harga_ecer)}
+                  </div>
+                </div>
+              </div>
+              {stage !== "selesai" && (
+                <button
+                  onClick={() => lanjut(p)}
+                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg flex-shrink-0"
+                >
+                  Lanjut <ArrowRight size={13} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// FORM: LANJUT KE TAHAP BERIKUTNYA (isi form tergantung tahap saat ini)
+//   sku         -> konfirmasi SKU & harga           -> rak
+//   rak         -> pilih rak                        -> verifikasi
+//   verifikasi  -> unggah foto                      -> marketplace
+//   marketplace -> tandai sudah upload              -> selesai
+// ---------------------------------------------------------
+function FormLanjut({ barang, onClose, onSaved, showToast }) {
+  const stage = tahapDari(barang);
+  const meta = STAGE_META[stage];
+  const [rakList, setRakList] = useState(null);
+  const [rak, setRak] = useState(barang.rak_code || "");
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (stage !== "rak") return undefined;
+    let batal = false;
+    sbAll("rak?select=id,code&order=code")
+      .then((r) => !batal && setRakList(r || []))
+      .catch(() => !batal && setRakList([]));
+    return () => {
+      batal = true;
+    };
+  }, [stage]);
+
+  const bisaSimpan = !saving && (stage === "sku" || stage === "marketplace" || (stage === "rak" && !!rak) || (stage === "verifikasi" && !!file));
+  const tombol = {
+    sku: "Konfirmasi & lanjut ke Rak",
+    rak: "Simpan & lanjut ke Verifikasi Foto",
+    verifikasi: "Unggah & lanjut ke Marketplace",
+    marketplace: "Tandai sudah upload — selesai",
+  }[stage];
+
+  const simpan = async () => {
+    setSaving(true);
+    try {
+      let pesan = "";
+      if (stage === "sku") {
+        await patchKlg(barang.id, { stage: "rak" });
+        pesan = "SKU dikonfirmasi — lanjut ke Rak";
+      } else if (stage === "rak") {
+        await patchKlg(barang.id, { rak_code: rak, stage: "verifikasi" });
+        pesan = "Kelengkapan ditempatkan di rak";
+      } else if (stage === "verifikasi") {
+        const kecil = await kompresFotoProduk(file);
+        const ext = (kecil.name.split(".").pop() || "jpg").toLowerCase();
+        const url = await sbUploadFoto(kecil, `${barang.sku}.${ext}`);
+        await patchKlg(barang.id, { foto_url: url, stage: "marketplace" });
+        pesan = "Foto verifikasi tersimpan";
+      } else if (stage === "marketplace") {
+        await patchKlg(barang.id, { marketplace_status: "sudah", marketplace_uploaded_at: new Date().toISOString(), stage: "selesai" });
+        pesan = "Ditandai sudah upload — selesai!";
+      }
+      await onSaved(pesan);
+    } catch (e) {
+      showToast?.(e.message || "Gagal menyimpan", "err");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title={`${meta.label} — ${barang.sku}`} onClose={onClose}>
+      <div className="text-sm text-slate-200 mb-3">{barang.nama}</div>
+
+      {stage === "sku" && (
+        <div>
+          <div className="rounded-lg border border-slate-800 overflow-hidden text-xs">
+            {[["SKU", barang.sku], ["Satuan", barang.satuan], ["Harga beli", fmtRp(barang.harga_beli)], ["Harga grosir", fmtRp(barang.harga_grosir)], ["Harga ecer", fmtRp(barang.harga_ecer)]].map(([l, v], i) => (
+              <div key={l} className={`flex justify-between px-3 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+                <span className="text-slate-500">{l}</span>
+                <span className="text-slate-200 font-mono">{v}</span>
+              </div>
+            ))}
+          </div>
+          {!(Number(barang.harga_ecer) > 0) && (
+            <div className="text-[11px] text-amber-400 mt-2">Harga ecer masih 0. Ubah lewat tombol Edit di tab Stok &amp; Harga kalau memang perlu diisi.</div>
+          )}
+        </div>
+      )}
+
+      {stage === "rak" && (
+        <Field label="Rak">
+          {rakList === null ? (
+            <div className="text-xs text-slate-500">Memuat daftar rak…</div>
+          ) : rakList.length === 0 ? (
+            <div className="text-xs text-amber-400">Belum ada rak terdaftar. Tambahkan rak di menu Rak dulu.</div>
+          ) : (
+            <select value={rak} onChange={(e) => setRak(e.target.value)} className={inputClass}>
+              <option value="">Pilih rak…</option>
+              {rakList.map((r) => (
+                <option key={r.id} value={r.code}>
+                  {r.code}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+      )}
+
+      {stage === "verifikasi" && (
+        <Field label="Foto kelengkapan">
+          <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} className={inputClass} />
+        </Field>
+      )}
+
+      {stage === "marketplace" && (
+        <div>
+          {barang.foto_url && <img src={barang.foto_url} alt={barang.sku} className="w-full max-h-48 object-contain rounded-lg border border-slate-800 bg-slate-950 mb-3" />}
+          <div className="text-xs text-slate-400">Tandai bahwa kelengkapan ini sudah diupload ke marketplace. Tahapnya akan selesai.</div>
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-5">
+        <button onClick={onClose} className="flex-1 border border-slate-700 text-slate-300 text-sm py-2.5 rounded-lg hover:bg-slate-800">
+          Batal
+        </button>
+        <button
+          onClick={simpan}
+          disabled={!bisaSimpan}
+          className="flex-[2] bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+        >
+          {saving ? "Menyimpan…" : tombol}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ---------------------------------------------------------
+// TAB: RIWAYAT HARGA
+// ---------------------------------------------------------
+function TabRiwayatHarga({ riwayat, stok, siap }) {
+  const [q, setQ] = useState("");
+  const nama = useMemo(() => Object.fromEntries(stok.map((p) => [p.id, p])), [stok]);
+  if (!siap) return <BannerSql />;
+
+  const daftar = riwayat.filter((r) => {
+    const s = q.trim().toLowerCase();
+    if (!s) return true;
+    const p = nama[r.kelengkapan_id];
+    return !!p && (p.nama.toLowerCase().includes(s) || p.sku.toLowerCase().includes(s));
+  });
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm mb-4">
+        <Search size={14} className="text-slate-500" />
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cari nama atau SKU…"
+          className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+        />
+      </div>
+
+      {daftar.length === 0 ? (
+        <EmptyState label={riwayat.length === 0 ? "Belum ada perubahan harga yang tercatat." : "Tidak ada yang cocok."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {daftar.map((r, i) => {
+            const p = nama[r.kelengkapan_id];
+            const waktu = r.created_at
+              ? new Date(r.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })
+              : "";
+            return (
+              <div key={r.id} className={`px-4 py-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <span className="text-sm text-slate-200">
+                    {p?.nama || `#${r.kelengkapan_id}`} <span className="text-[11px] text-slate-500">{p?.sku}</span>
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {waktu}
+                    {r.diubah_oleh ? ` · ${r.diubah_oleh}` : ""}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-xs text-slate-400">
+                  {KOLOM_HARGA.map(({ key, label }) => {
+                    const lama = r[`${key}_lama`];
+                    const baru = r[`${key}_baru`];
+                    if (lama != null && Number(lama) === Number(baru)) return null;
+                    return (
+                      <span key={key}>
+                        {label}: {lama != null && <span className="text-slate-500">{fmtRp(lama)} → </span>}
+                        <span className="text-slate-100">{fmtRp(baru)}</span>
+                      </span>
+                    );
+                  })}
+                </div>
+                {r.keterangan && <div className="text-[11px] text-slate-500 mt-1">{r.keterangan}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
