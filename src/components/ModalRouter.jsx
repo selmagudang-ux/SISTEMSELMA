@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadmin
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap,
+  detailModelPesanan, tokoShopeeGudang, iklanBelumTercatat, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -1369,11 +1369,16 @@ export default function ModalRouter({
     // sudah ada) — kalau kosong berarti mode TAMBAH baru.
     const tipeMaster = `toko_${modal.platform}`;
     const isEdit = !!modal.toko;
+    // Toko dimiliki per PT (pemetaan master_data tipe "toko_entitas", lihat lingkupTokoMarketplace
+    // di lib/api.js). Kode toko harus unik di SEMUA PT (master_data tidak punya kolom entitas),
+    // jadi PT selain Selma memakai awalan sendiri: "TOKO-ALV-0001" vs "TOKO-0001" milik Selma.
+    const entToko = entitasSesi();
+    const awalanKodeToko = entToko === ENTITAS_DEFAULT ? "TOKO-" : `TOKO-${String(entToko).replace(/[^A-Za-z0-9]/g, "").toUpperCase()}-`;
     return (
       <MarketplaceTokoForm
         platform={modal.platform}
         toko={modal.toko}
-        kodeBaru={isEdit ? null : nextKode(master?.[tipeMaster] || [], "kode", "TOKO-")}
+        kodeBaru={isEdit ? null : nextKode(master?.[tipeMaster] || [], "kode", awalanKodeToko)}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -1385,16 +1390,28 @@ export default function ModalRouter({
             // "Toko A" dan "toko a " dianggap sama. Waktu EDIT, toko yang lagi
             // diedit sendiri dikecualikan dari pengecekan ini (boleh "ganti
             // nama" ke nama yang persis sama seperti sebelumnya).
-            const existing = await sb(
+            const existingSemua = await sb(
               `master_data?tipe=eq.${tipeMaster}&select=id,kode,label`
             );
+            // Nama toko hanya dibandingkan dengan toko PT yang sama (PT lain boleh punya
+            // toko bernama sama), tapi KODE dicek di semua PT karena kode harus unik.
+            const petaToko = {};
+            ((await sb(`master_data?tipe=eq.toko_entitas&select=kode,label`)) || []).forEach((m) => {
+              petaToko[m.kode] = m.label;
+            });
+            const existing = (existingSemua || []).filter(
+              (m) => (petaToko[`${modal.platform}:${m.kode}`] || ENTITAS_DEFAULT) === entToko
+            );
             const namaBaru = data.nama.trim().toLowerCase();
-            const bentrok = (existing || []).find(
+            const bentrok = existing.find(
               (m) => (m.label || "").trim().toLowerCase() === namaBaru && m.kode !== data.kode
             );
             if (bentrok) {
               throw new Error(`Toko "${data.nama}" sudah ada di master data (kode: ${bentrok.kode}).`);
             }
+            // Kode toko baru dihitung ulang dari SEMUA toko (bukan cuma milik PT ini) supaya tidak
+            // bentrok kalau toko baru saja dibuat dari device/tab lain.
+            const kodeToko = isEdit ? data.kode : nextKode(existingSemua || [], "kode", awalanKodeToko);
             if (isEdit) {
               await sb(`master_data?tipe=eq.${tipeMaster}&kode=eq.${data.kode}`, {
                 method: "PATCH",
@@ -1403,8 +1420,15 @@ export default function ModalRouter({
             } else {
               await sb("master_data", {
                 method: "POST",
-                body: JSON.stringify({ tipe: tipeMaster, kode: data.kode, label: data.nama }),
+                body: JSON.stringify({ tipe: tipeMaster, kode: kodeToko, label: data.nama }),
               });
+              // Catat pemilik toko untuk PT selain Selma (Selma = tanpa pemetaan).
+              if (entToko !== ENTITAS_DEFAULT) {
+                await sb("master_data", {
+                  method: "POST",
+                  body: JSON.stringify({ tipe: "toko_entitas", kode: `${modal.platform}:${kodeToko}`, label: entToko }),
+                });
+              }
             }
           }, isEdit ? "Nama toko diperbarui" : "Toko ditambahkan")
         }
@@ -2149,6 +2173,7 @@ export default function ModalRouter({
           totalDibayar={totalDibayar}
           sisaHutang={sisaHutang}
           pembayaran={pembayaran}
+          identitas={identitasNotaEntitas(master)}
           onClose={close}
         />
       </Suspense>
@@ -2167,6 +2192,7 @@ export default function ModalRouter({
           pelanggan={pelanggan}
           toko={toko}
           tokoOptions={tokoGrosir}
+          identitas={identitasNotaEntitas(master)}
           onGantiToko={async (tokoId) => {
             // Ganti toko pengirim langsung dari dialog cetak label, tanpa
             // lewat form Edit Pesanan. Disimpan ke pesanan (bukan cuma

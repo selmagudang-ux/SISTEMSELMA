@@ -682,14 +682,17 @@ export function bisaTransferAntarEntitas(role) {
 
 // Akun yang terikat ke PT selain Selma (entitas bukan "OPS") hanya boleh menu yang
 // datanya SUDAH dipisah per PT: Keuangan (lewat rekening), grup OPERASIONAL/gudang
-// (kolom entitas, lihat TABEL_PER_PT di api.js), Chat, Panduan. Dashboard, grosir,
-// penjualan, absensi, dll belum dipisah, jadi disembunyikan dulu.
+// (kolom entitas, lihat TABEL_PER_PT di api.js), grup PENJUALAN (Store, Marketplace,
+// Reseller, Master Data Grosir — juga lewat kolom entitas, lihat penjualan_per_pt.sql),
+// Chat, Panduan. Dashboard, absensi, dll belum dipisah, jadi disembunyikan dulu.
 // Pemilik, Pemegang Saham, dan Super Appa lintas entitas (tidak dibatasi).
 const ROLE_LINTAS_ENTITAS = ["superappa", "owner", "pemegang_saham"];
 const MENU_PT_LAIN = [
   "keuangan", "chat", "panduan",
   "persetujuan-restock", "barang-datang", "data-barang", "sku-harga", "stok", "rak",
   "cetak-label", "foto", "marketplace",
+  // Grup PENJUALAN (di sidebar PT selain Selma, grup "Store Selma" tampil sebagai "Store <nama PT>").
+  "grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller",
 ];
 export function allowedMenus(role, entitas) {
   const menus = ROLE_MENUS[role] || ["dashboard"];

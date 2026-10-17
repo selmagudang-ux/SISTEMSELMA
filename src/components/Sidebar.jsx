@@ -138,6 +138,14 @@ function NavNode({ node, active, expanded, toggle, go, badges }) {
   );
 }
 
+// Ganti label grup "Store Selma" (key "store-selma-group") dengan label PT akun yang login.
+function gantiLabelStore(nodes, label) {
+  return nodes.map((n) => {
+    if (n.key === "store-selma-group") return { ...n, label };
+    return n.children ? { ...n, children: gantiLabelStore(n.children, label) } : n;
+  });
+}
+
 export default function Sidebar({
   active,
   onNavigate,
@@ -148,6 +156,7 @@ export default function Sidebar({
   user,
   onLogout,
   setModal,
+  namaToko,
 }) {
   const [expanded, setExpanded] = useState(() => new Set(navAncestorKeys(active.menu)));
 
@@ -177,7 +186,9 @@ export default function Sidebar({
 
   // Hanya tampilkan menu (dan group yang masih punya isi) yang diizinkan
   // untuk role user yang sedang login.
-  const visibleNav = filterNavByAllowed(NAV, allowedMenuKeys, user?.role);
+  const visibleNavAsli = filterNavByAllowed(NAV, allowedMenuKeys, user?.role);
+  // PT selain Selma (mis. Alivia): grup "Store Selma" tampil sebagai "Store <nama PT>".
+  const visibleNav = namaToko ? gantiLabelStore(visibleNavAsli, namaToko) : visibleNavAsli;
 
   return (
     <>

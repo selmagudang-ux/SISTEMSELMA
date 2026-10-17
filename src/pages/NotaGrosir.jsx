@@ -10,6 +10,9 @@ const ALAMAT_TOKO = [
   "Situsaeur, Bojongloa Kidul",
   "Kota Bandung, Jawa Barat 40234",
 ];
+// Kop nota/label bawaan = Selma. PT lain (mis. Alivia) mengirim `identitas`
+// ({ nama, alamat: [] }) dari ModalRouter supaya tidak ikut mencetak nama & alamat Selma.
+const IDENTITAS_SELMA = { nama: NAMA_TOKO, alamat: ALAMAT_TOKO };
 
 // =========================================================
 // CETAK NOTA PESANAN GROSIR
@@ -31,7 +34,7 @@ const ALAMAT_TOKO = [
 //    tingginya oleh JS, baru "dipindah" ke posisi normal khusus saat print
 //    lewat CSS media print (bukan lewat re-render React).
 // =========================================================
-export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, onClose }) {
+export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, identitas = IDENTITAS_SELMA, onClose }) {
   const p = pesanan;
   const printRef = useRef(null);
   const [printing, setPrinting] = useState(false);
@@ -72,7 +75,7 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
             </button>
           </div>
           <div className="p-5 flex justify-center bg-slate-100">
-            <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} />
+            <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} identitas={identitas} />
           </div>
           <div className="px-5 pb-5 pt-3">
             <button
@@ -102,7 +105,7 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
           }
         `}</style>
         <div ref={printRef} className="ss-nota-print">
-          <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} />
+          <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} identitas={identitas} />
         </div>
       </div>
     </Fragment>
@@ -111,7 +114,7 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
 
 // Isi nota — dipakai baik untuk preview di layar maupun untuk area cetak
 // sesungguhnya, supaya keduanya selalu identik.
-function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran }) {
+function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, identitas = IDENTITAS_SELMA }) {
   // Field metode_bayar di header pesanan cuma keisi kalau pesanan lunas
   // LANGSUNG saat dibuat. Kalau lunasnya belakangan lewat "Catat Pembayaran"
   // (cicil/nyusul), header itu tetap kosong walau status_bayar sudah
@@ -124,12 +127,12 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang,
 
   return (
     <div className="font-mono text-[12px] leading-snug text-black bg-white" style={{ width: "72mm" }}>
-      <h2 className="text-center text-[15px] font-bold my-1 tracking-wide">{NAMA_TOKO}</h2>
+      <h2 className="text-center text-[15px] font-bold my-1 tracking-wide">{identitas.nama}</h2>
       <p className="text-center my-0.5">
-        {ALAMAT_TOKO.map((line, i) => (
+        {identitas.alamat.map((line, i) => (
           <span key={i}>
             {line}
-            {i < ALAMAT_TOKO.length - 1 && <br />}
+            {i < identitas.alamat.length - 1 && <br />}
           </span>
         ))}
       </p>
@@ -215,7 +218,7 @@ function NotaIsi({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang,
 // penerima (data Pelanggan: nama, alamat, kota, WA). Daftar isi barang
 // sengaja tidak ditampilkan di label ini.
 // =========================================================
-export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, onGantiToko, detailItems, onClose }) {
+export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, onGantiToko, detailItems, identitas = IDENTITAS_SELMA, onClose }) {
   const p = pesanan;
   const printRef = useRef(null);
   const [printing, setPrinting] = useState(false);
@@ -288,7 +291,7 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, on
             </label>
           </div>
           <div className="p-5 flex justify-center bg-slate-100">
-            <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} />
+            <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} identitas={identitas} />
           </div>
           <div className="px-5 pb-5 pt-3">
             <button
@@ -315,7 +318,7 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, on
           }
         `}</style>
         <div ref={printRef} className="ss-label-print">
-          <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} />
+          <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} identitas={identitas} />
         </div>
       </div>
     </Fragment>
@@ -324,13 +327,13 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, on
 
 // Isi label — dipakai baik untuk preview di layar maupun area cetak sesungguhnya.
 // Format ringkas: cuma PENGIRIM dan PENERIMA — muat di kertas 100x150mm.
-function LabelIsi({ pesanan: p, pelanggan, toko, detailItems }) {
+function LabelIsi({ pesanan: p, pelanggan, toko, detailItems, identitas = IDENTITAS_SELMA }) {
   // Kalau pesanan tidak punya Toko Pengirim (opsional saat buat pesanan),
   // pakai identitas toko utama sebagai pengirim default.
-  const namaPengirim = toko ? toko.nama_toko : NAMA_TOKO;
+  const namaPengirim = toko ? toko.nama_toko : identitas.nama;
   const alamatPengirim = toko
     ? [toko.alamat, toko.telepon ? `Telp: ${toko.telepon}` : null].filter(Boolean)
-    : [...ALAMAT_TOKO];
+    : [...identitas.alamat];
 
   return (
     <div

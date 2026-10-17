@@ -113,6 +113,14 @@ export const TABEL_PER_PT = new Set([
   "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",
   // View stok barang habis pakai (perlengkapan + mutasi) — wajib punya kolom entitas.
   "perlengkapan_stok",
+  // Penjualan (menu PENJUALAN: Store/Grosir, Toko Offline, Marketplace, Reseller, Master Data
+  // Grosir). Kolom entitas ditambah lewat penjualan_per_pt.sql — JALANKAN SQL ITU DULU sebelum
+  // deploy versi ini, kalau tidak semua halaman penjualan Selma error "column entitas does not exist".
+  // grosir_detail_pesanan sengaja tidak ada: baris anak, selalu diakses lewat pesanan_id milik PT-nya.
+  "grosir_pelanggan", "grosir_toko", "grosir_produk_manual", "grosir_pesanan",
+  "grosir_pembayaran", "grosir_deposit",
+  "marketplace_transaksi", "marketplace_iklan", "marketplace_penjualan",
+  "marketplace_produk_map", "marketplace_sku_alias",
 ]);
 
 // Pemilik/Super Appa (akun Holding) boleh MELIHAT data gudang PT lain di Dashboard.
@@ -133,6 +141,26 @@ export function entitasSesi() {
   } catch {
     return ENTITAS_DEFAULT;
   }
+}
+
+// Nama tampilan entitas akun yang login (master_data tipe "entitas", kolom label);
+// kalau belum ada di master, pakai kodenya.
+export function namaEntitasSesi(master) {
+  const k = entitasSesi();
+  return String((master?.entitas || []).find((e) => e.kode === k)?.label || k);
+}
+
+// Nama untuk judul grup "Store <nama>" di sidebar. Awalan badan usaha (PT/CV) dibuang
+// supaya "PT Alivia" jadi "Store Alivia".
+export function namaTokoEntitas(master) {
+  return namaEntitasSesi(master).replace(/^\s*(pt|cv)\.?\s+/i, "").trim();
+}
+
+// Kop nota/label grosir untuk PT selain Selma: nama PT-nya saja, tanpa alamat Selma.
+// Selma (OPS) mengembalikan undefined supaya NotaGrosir.jsx memakai kop bawaannya.
+export function identitasNotaEntitas(master) {
+  if (entitasSesi() === ENTITAS_DEFAULT) return undefined;
+  return { nama: namaEntitasSesi(master).toUpperCase(), alamat: [] };
 }
 
 export function terapkanEntitasPT(path, method, body) {
@@ -1231,6 +1259,26 @@ export function iklanBelumTercatat(marketplaceTransaksi, platform, toko) {
 export function tokoShopeeGudang(master) {
   const daftar = master?.toko_shopee || [];
   return daftar.find((t) => (t.label || "").trim().toLowerCase() === "gudang") || null;
+}
+
+// Toko marketplace per PT. master_data tidak punya kolom entitas, jadi pemilik toko dicatat
+// lewat baris pemetaan master_data tipe "toko_entitas" (kode = "<platform>:<kode toko>",
+// label = kode entitas) — pola yang sama dengan "rekening_entitas". Toko tanpa pemetaan
+// = milik entitas default (OPS/Selma), jadi toko lama tidak perlu dimigrasi.
+export const PLATFORM_MARKETPLACE = ["shopee", "tiktok", "lazada"];
+export function lingkupTokoMarketplace(master, kodeEntitas) {
+  if (!master) return master;
+  const peta = {};
+  (master.toko_entitas || []).forEach((m) => {
+    peta[m.kode] = m.label;
+  });
+  const hasil = { ...master };
+  PLATFORM_MARKETPLACE.forEach((pf) => {
+    const daftar = master[`toko_${pf}`];
+    if (!daftar) return;
+    hasil[`toko_${pf}`] = daftar.filter((t) => (peta[`${pf}:${t.kode}`] || ENTITAS_DEFAULT) === (kodeEntitas || ENTITAS_DEFAULT));
+  });
+  return hasil;
 }
 
 // Daftar toko untuk satu platform (dari master_data tipe "toko_<platform>"),

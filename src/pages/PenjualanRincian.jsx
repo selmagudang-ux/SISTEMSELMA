@@ -579,7 +579,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     const master = skuMap.get(normSku(skuSistem));
     if (!master) { showToast?.("SKU itu tidak ada di Master Barang (SKU & Harga)", "error"); return false; }
     try {
-      await sbTulis("marketplace_sku_alias?on_conflict=platform,referensi", {
+      await sbTulis("marketplace_sku_alias?on_conflict=entitas,platform,referensi", {
         method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
         body: JSON.stringify({ platform, referensi: normSku(ref), sku: master.sku }),
       });
@@ -1343,7 +1343,7 @@ function PanelImportMassUpdate({ platform, tokoKode, tabelAda, jumlahTersimpan, 
       const baris = preview.baris.map((b) => ({ platform, toko: tokoKode, ...b, diperbarui: sekarang }));
       for (let i = 0; i < baris.length; i += 500) {
         setStatus(`Menyimpan… ${Math.min(i + 500, baris.length)}/${baris.length}`);
-        await sbTulis("marketplace_produk_map?on_conflict=platform,toko,kode_produk,kode_variasi", {
+        await sbTulis("marketplace_produk_map?on_conflict=entitas,platform,toko,kode_produk,kode_variasi", {
           method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baris.slice(i, i + 500)),
         });
       }
@@ -1491,7 +1491,7 @@ function PanelImport({ platform, tokoKode, tokoLabel, filterToko, skuMap, aliasM
       const { baris, existingByOrder, iklan } = preview;
       for (let i = 0; i < baris.length; i += 400) {
         setStatus(`Menyimpan penjualan… ${Math.min(i + 400, baris.length)}/${baris.length}`);
-        await sbTulis("marketplace_penjualan?on_conflict=platform,toko,no_pesanan,no_baris", {
+        await sbTulis("marketplace_penjualan?on_conflict=entitas,platform,toko,no_pesanan,no_baris", {
           method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baris.slice(i, i + 400)),
         });
       }
