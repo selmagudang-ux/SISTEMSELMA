@@ -208,6 +208,11 @@ export default function Dashboard({
     ? ((master.entitas || []).find((e) => e.kode === entAktif)?.label || entAktif)
     : "SELMA ACC BANDUNG";
   const daftarPT = (master.entitas || []).filter((e) => e.kode !== ENTITAS_HOLDING);
+  // Nama kartu/grup toko di Dashboard Penjualan: "Store Selma" untuk SELMA, "Store <nama PT>"
+  // (tanpa awalan PT/CV) untuk PT lain — sama dengan judul grup di sidebar.
+  const namaStore = entAktif !== ENTITAS_DEFAULT
+    ? `Store ${namaPerusahaan.replace(/^\s*(pt|cv)\.?\s+/i, "").trim()}`
+    : "Store Selma";
 
   // Filter periode global "Bulan & Tahun" — dipakai oleh ringkasan yang
   // sifatnya berbasis periode (Keuangan, Grosir, Monitoring, Absensi). Default
@@ -323,6 +328,7 @@ export default function Dashboard({
         />
       ) : tab === "penjualan" ? (
         <DashboardPenjualan
+          namaStore={namaStore}
           pesananGrosir={pesananGrosir}
           pembayaranGrosir={pembayaranGrosir}
           depositGrosir={depositGrosir}
@@ -2460,7 +2466,7 @@ function BarisPelangganRinci({ d, terbuka, onToggle, setModal }) {
   );
 }
 
-function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, setModal, tahun, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayaranGrosir, depositGrosir, pelangganGrosir, keuanganTransaksi, marketplaceTransaksi, master, onNavigate, setModal, tahun, periodeDari, periodeSampai, periodeLabel }) {
   // Cuma pesanan Grosir asli — Reseller Toko/Cekout belum ditampilkan di
   // kartu Dashboard Penjualan ini (kartu "Reseller" masih "Segera Hadir"),
   // riwayat & angkanya sendiri tetap ada di menu Reseller.
@@ -2728,7 +2734,7 @@ function DashboardPenjualan({ pesananGrosir, pembayaranGrosir, depositGrosir, pe
           <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
             <Store size={17} />
           </div>
-          <div className="text-base font-semibold text-slate-100">Store Selma</div>
+          <div className="text-base font-semibold text-slate-100">{namaStore}</div>
           <div className="text-[11px] text-slate-500 mt-1">Grosir & Toko Offline</div>
         </button>
 
