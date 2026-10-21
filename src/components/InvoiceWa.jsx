@@ -154,7 +154,7 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
   // PDF dibuat di browser. HP: lembar "Bagikan" terbuka dengan PDF sudah terlampir (pilih WhatsApp
   // lalu kontaknya). Komputer/browser tanpa fitur itu: PDF terunduh + WhatsApp terbuka dengan teks,
   // lalu lampirkan PDF-nya (klip kertas) di WhatsApp.
-  const kirimPdf = async () => {
+  const buatFilePdf = () => {
     const { blob, nama } = buatPdfInvoice({
       jenis,
       namaUsaha,
@@ -163,23 +163,38 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
       rekeningLabel,
       pesanan: baris.map((b) => ({ ...b, items: (detail || {})[b.id] || [] })),
     });
-    const file = new File([blob], nama, { type: "application/pdf" });
-    if (navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], text: pesan });
-        return;
-      } catch (e) {
-        if (e?.name === "AbortError") return;
-      }
-    }
+    return { blob, nama, file: new File([blob], nama, { type: "application/pdf" }) };
+  };
+  const unduh = ({ blob, nama }) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = nama;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+  // Menu "Bagikan" bawaan hanya dipakai di HP/tablet (di Windows isinya aplikasi lain, bukan WA Web).
+  const perangkatSentuh = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+
+  const kirimPdf = async () => {
+    const f = buatFilePdf();
+    if (perangkatSentuh && navigator.canShare?.({ files: [f.file] })) {
+      try {
+        await navigator.share({ files: [f.file], text: pesan });
+        return;
+      } catch (e) {
+        if (e?.name === "AbortError") return;
+      }
+    }
+    // Komputer: unduh PDF + buka WhatsApp Web berisi nomor & teks, lalu lampirkan PDF-nya.
+    unduh(f);
     window.open(linkWa(wa, pesan), "_blank", "noopener");
-    setInfo(`PDF "${nama}" sudah terunduh. Di WhatsApp yang terbuka, lampirkan file itu (ikon klip) lalu kirim.`);
+    setInfo(`PDF "${f.nama}" sudah terunduh. Di WhatsApp Web yang terbuka: klik ikon klip (+) > Dokumen, pilih file itu, lalu kirim.`);
+  };
+  const unduhSaja = () => {
+    const f = buatFilePdf();
+    unduh(f);
+    setInfo(`PDF "${f.nama}" sudah terunduh.`);
   };
 
   return (
@@ -235,6 +250,15 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
           </button>
           <button
             type="button"
+            disabled={detail === null}
+            onClick={unduhSaja}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-40 px-3 py-2 text-sm font-medium"
+          >
+            <FileText size={15} />
+            Unduh PDF
+          </button>
+          <button
+            type="button"
             disabled={!siap || detail === null}
             onClick={kirimPdf}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 px-4 py-2 text-sm font-medium text-white"
@@ -254,8 +278,8 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
         )}
         {info && <p className="text-xs text-emerald-400">{info}</p>}
         <p className="text-[11px] text-slate-500">
-          PDF berisi nomor pesanan dan rincian barang. Di HP, PDF langsung terlampir lewat menu Bagikan
-          (pilih WhatsApp lalu kontaknya). Di komputer, PDF terunduh dan WhatsApp terbuka untuk Anda lampirkan.
+          PDF berisi nomor pesanan dan rincian barang. Di HP, tombol Kirim PDF membuka menu Bagikan dengan PDF
+          terlampir. Di komputer, PDF terunduh dan WhatsApp Web terbuka untuk Anda lampirkan.
         </p>
       </div>
     </ModalShell>
