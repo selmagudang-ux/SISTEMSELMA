@@ -35,7 +35,7 @@ export function applyTheme(pref) {
     meta.name = "theme-color";
     document.head.appendChild(meta);
   }
-  meta.content = t === "light" ? "#e4e8ef" : "#181a21";
+  meta.content = t === "light" ? "#e3e9e2" : "#181a21";
   return t;
 }
 

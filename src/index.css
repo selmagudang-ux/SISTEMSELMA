@@ -51,38 +51,38 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --shadow: 30 40 70;
+  --shadow: 30 55 40;
 
   /* Skala slate DIBALIK: 950 = latar halaman, 900 = kartu, 50 = teks paling gelap.
-     Abu kebiruan netral (serasi dengan tema gelap), redup (bukan putih terang),
-     kartu lebih terang dari latar + garis tegas, teks gelap kebiruan yang jelas. */
-  --slate-50: 17 21 30;
-  --slate-100: 28 33 45;
-  --slate-200: 42 48 62;
-  --slate-300: 62 70 86;
-  --slate-400: 84 93 110;
-  --slate-500: 104 114 132;
-  --slate-600: 134 143 160;
-  --slate-700: 200 207 218;
-  --slate-800: 218 224 233;
-  --slate-900: 244 246 249;
-  --slate-950: 228 232 239;
+     Tema "hijau sage": hijau pucat yang teduh untuk mata, kartu lebih terang
+     dari latar, teks hijau-kehitaman yang jelas. */
+  --slate-50: 17 24 19;
+  --slate-100: 31 42 34;
+  --slate-200: 45 58 49;
+  --slate-300: 62 76 66;
+  --slate-400: 82 97 87;
+  --slate-500: 98 112 102;
+  --slate-600: 131 145 135;
+  --slate-700: 197 207 196;
+  --slate-800: 213 221 212;
+  --slate-900: 243 246 242;
+  --slate-950: 227 233 226;
 
-  --md-surface-dim: 218 223 232;
-  --md-surface: 228 232 239;
-  --md-surface-bright: 248 249 251;
-  --md-container-lowest: 248 249 251;
-  --md-container-low: 237 240 246;
-  --md-container: 244 246 249;
-  --md-container-high: 230 234 241;
-  --md-container-highest: 220 225 234;
-  --md-outline: 176 184 198;
-  --md-outline-variant: 207 213 224;
-  --md-on-surface: 28 33 45;
-  --md-on-surface-variant: 84 93 110;
+  --md-surface-dim: 216 223 215;
+  --md-surface: 227 233 226;
+  --md-surface-bright: 248 250 247;
+  --md-container-lowest: 248 250 247;
+  --md-container-low: 235 240 234;
+  --md-container: 243 246 242;
+  --md-container-high: 224 231 223;
+  --md-container-highest: 214 222 213;
+  --md-outline: 172 184 171;
+  --md-outline-variant: 205 214 204;
+  --md-on-surface: 31 42 34;
+  --md-on-surface-variant: 98 112 102;
   --md-primary: 168 98 0;
   --md-on-primary: 255 255 255;
-  --md-primary-container: 252 228 185;
+  --md-primary-container: 250 228 189;
   --md-on-primary-container: 84 50 0;
   --md-error: 179 38 30;
   --md-on-error: 255 255 255;
