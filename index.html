@@ -4,8 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SELMA ERP</title>
+    <script>
+      // Pasang tema sebelum halaman digambar supaya tidak berkedip.
+      // Pilihan tersimpan di localStorage "selma-theme" (light | dark | kosong = otomatis).
+      (function () {
+        var t = "dark";
+        try {
+          var p = localStorage.getItem("selma-theme");
+          t = p === "light" || p === "dark" ? p : (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
     <style>
-      html, body { margin: 0; background: #020617; }
+      html, body { margin: 0; background: #181a21; }
+      html[data-theme="light"], html[data-theme="light"] body { background: #f7f5f2; }
+      html[data-theme="light"] #boot { color: #6f6a63; }
+      html[data-theme="light"] #boot .spin { border-color: #ddd7ce; border-top-color: #d98a00; }
       #boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font-family: system-ui, sans-serif; color: #94a3b8; font-size: 14px; }
       #boot .spin { width: 22px; height: 22px; border: 3px solid #334155; border-top-color: #f59e0b; border-radius: 50%; animation: bootspin 0.8s linear infinite; }
       #boot button { display: none; background: #f59e0b; color: #0f172a; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; }

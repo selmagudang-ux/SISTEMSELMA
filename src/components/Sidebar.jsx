@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
 import { NAV, roleLabel, navAncestorKeys, filterNavByAllowed } from "../lib/constants";
 import { rippleEffect, iconBtnClass } from "./ui";
+import ThemeToggle from "./ThemeToggle";
 
 // Tombol untuk node "menu" (punya key yang dipakai sebagai nav.menu) — dipakai
 // baik untuk item top-level (Dashboard, Laporan, Pengaturan) MAUPUN untuk menu
@@ -236,6 +237,11 @@ export default function Sidebar({
             <NavNode key={item.key} node={item} active={active} expanded={expanded} toggle={toggle} go={go} badges={badges} />
           ))}
         </nav>
+
+        <div className="mx-3 mt-1 mb-2 px-1 flex items-center justify-between">
+          <span className="text-[11px] text-md-on-surface-variant">Tampilan</span>
+          <ThemeToggle />
+        </div>
 
         {user && (
           <div className="mx-3 mb-3 mt-1 pt-3 border-t border-md-outline-variant flex items-center gap-2.5">

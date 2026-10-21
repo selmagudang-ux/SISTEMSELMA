@@ -52,7 +52,7 @@ export const fabClass =
 // puluhan tempat (forms.jsx, semua halaman) — jadi cukup ubah di sini,
 // tampilannya berubah otomatis di seluruh aplikasi tanpa sentuh file lain.
 export const inputClass =
-  "w-full bg-md-container-highest border-0 border-b-2 border-md-outline-variant rounded-t-md-sm px-3 pt-2.5 pb-2 text-sm text-md-on-surface outline-none transition-colors focus:border-md-primary placeholder:text-md-on-surface-variant/70";
+  "w-full bg-md-container-high/70 border border-md-outline-variant rounded-md-md px-3.5 py-2.5 text-sm text-md-on-surface outline-none transition focus:border-md-primary focus:ring-4 focus:ring-md-primary/15 placeholder:text-md-on-surface-variant/70";
 
 // Chip Material (dipakai di Badge di bawah, atau langsung untuk filter/tag).
 export function chipClass(color = "slate") {
@@ -72,7 +72,7 @@ export function chipClass(color = "slate") {
 
 export function ModalShell({ title, onClose, children, maxWidth }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-40 p-4">
       <div
         className={`bg-md-container-high rounded-md-xl shadow-elevation-3 w-full ${maxWidth || "max-w-md"} max-h-[85vh] overflow-y-auto`}
       >

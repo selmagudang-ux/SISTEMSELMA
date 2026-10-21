@@ -1,8 +1,109 @@
-@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* =========================================================
+   PALET TEMA (format "R G B" supaya bisa dipakai dengan opacity: bg-slate-900/50)
+   :root                -> GELAP soft (abu kebiruan, kontras lembut)
+   [data-theme="light"] -> TERANG soft (krem hangat, kartu putih)
+   Ganti angka di sini kalau mau menyetel warna.
+   ========================================================= */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --shadow: 0 0 0;
+
+  --slate-50: 246 247 249;
+  --slate-100: 236 238 242;
+  --slate-200: 221 224 231;
+  --slate-300: 197 201 211;
+  --slate-400: 169 174 187;
+  --slate-500: 139 145 161;
+  --slate-600: 98 104 120;
+  --slate-700: 62 67 80;
+  --slate-800: 43 47 58;
+  --slate-900: 32 35 44;
+  --slate-950: 24 26 33;
+
+  --md-surface-dim: 19 20 26;
+  --md-surface: 24 26 33;
+  --md-surface-bright: 55 58 68;
+  --md-container-lowest: 15 16 21;
+  --md-container-low: 29 31 39;
+  --md-container: 33 36 45;
+  --md-container-high: 41 44 55;
+  --md-container-highest: 50 54 66;
+  --md-outline: 76 81 96;
+  --md-outline-variant: 46 50 61;
+  --md-on-surface: 232 234 240;
+  --md-on-surface-variant: 164 169 183;
+  --md-primary: 247 190 92;
+  --md-on-primary: 69 43 0;
+  --md-primary-container: 94 64 14;
+  --md-on-primary-container: 255 224 178;
+  --md-error: 255 180 171;
+  --md-on-error: 105 0 5;
+  --md-error-container: 120 30 30;
+  --md-on-error-container: 255 218 214;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --shadow: 70 50 20;
+
+  /* Skala slate DIBALIK: 950 = latar halaman, 900 = kartu, 50 = teks paling gelap */
+  --slate-50: 21 20 18;
+  --slate-100: 33 31 28;
+  --slate-200: 47 44 40;
+  --slate-300: 67 63 58;
+  --slate-400: 90 85 79;
+  --slate-500: 112 107 99;
+  --slate-600: 143 138 130;
+  --slate-700: 221 215 206;
+  --slate-800: 239 235 230;
+  --slate-900: 255 255 255;
+  --slate-950: 247 245 242;
+
+  --md-surface-dim: 239 236 231;
+  --md-surface: 247 245 242;
+  --md-surface-bright: 255 255 255;
+  --md-container-lowest: 255 255 255;
+  --md-container-low: 251 249 246;
+  --md-container: 255 255 255;
+  --md-container-high: 243 239 233;
+  --md-container-highest: 236 231 224;
+  --md-outline: 207 200 190;
+  --md-outline-variant: 231 225 216;
+  --md-on-surface: 38 35 31;
+  --md-on-surface-variant: 107 102 94;
+  --md-primary: 184 110 0;
+  --md-on-primary: 255 255 255;
+  --md-primary-container: 255 231 194;
+  --md-on-primary-container: 92 56 0;
+  --md-error: 186 26 26;
+  --md-on-error: 255 255 255;
+  --md-error-container: 255 218 214;
+  --md-on-error-container: 122 10 10;
+}
+
+/* Area "kertas" (mis. modal Nota/Label di NotaGrosir) harus tetap terang apa
+   pun temanya — dikembalikan ke skala slate Tailwind asli. */
+.theme-paper {
+  --slate-50: 248 250 252;
+  --slate-100: 241 245 249;
+  --slate-200: 226 232 240;
+  --slate-300: 203 213 225;
+  --slate-400: 148 163 184;
+  --slate-500: 100 116 139;
+  --slate-600: 71 85 105;
+  --slate-700: 51 65 85;
+  --slate-800: 30 41 59;
+  --slate-900: 15 23 42;
+  --slate-950: 2 6 23;
+  color-scheme: light;
+}
 
 @layer base {
   html,
@@ -15,6 +116,7 @@
   }
   html {
     overflow-x: hidden;
+    background: rgb(var(--slate-950));
   }
   /* PENTING: di body & wrapper root pakai "clip", BUKAN "hidden".
      overflow-x: hidden bikin elemen itu jadi scroll container sendiri,
@@ -22,14 +124,24 @@
      dan ikut ter-scroll bareng halaman. "clip" tetap memotong konten yang
      melebar tapi tidak membuat scroll container. */
   body {
-    @apply font-sans;
+    @apply font-sans antialiased;
     overflow-x: clip;
+    background: rgb(var(--slate-950));
+    color: rgb(var(--md-on-surface));
   }
   /* Fokus keyboard ala Material (state layer, bukan outline browser default). */
   :focus-visible {
     outline: 2px solid theme(colors.md.primary);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 6px;
+  }
+  /* Scrollbar tipis & lembut */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--md-outline)) transparent;
+  }
+  ::selection {
+    background: rgb(var(--md-primary) / 0.28);
   }
 }
 
@@ -55,4 +167,56 @@
       opacity: 0;
     }
   }
+}
+
+/* =========================================================
+   PENYESUAIAN TEMA TERANG
+   Warna aksen "400/300" (amber, hijau, merah, biru, dst) dirancang untuk
+   latar gelap — di latar krem/putih terlalu pucat. Di tema terang, TEKS
+   dengan warna itu dipekatkan supaya tetap terbaca.
+   ========================================================= */
+[data-theme="light"] .text-amber-300,
+[data-theme="light"] .text-amber-400 { color: #a35f00; }
+[data-theme="light"] .text-amber-500 { color: #b36b00; }
+[data-theme="light"] .text-emerald-300,
+[data-theme="light"] .text-emerald-400,
+[data-theme="light"] .text-emerald-500 { color: #167a4a; }
+[data-theme="light"] .text-red-300,
+[data-theme="light"] .text-red-400,
+[data-theme="light"] .text-red-500 { color: #c62d2d; }
+[data-theme="light"] .text-sky-300,
+[data-theme="light"] .text-sky-400 { color: #0b72a8; }
+[data-theme="light"] .text-violet-300,
+[data-theme="light"] .text-violet-400 { color: #6d4bd1; }
+[data-theme="light"] .text-pink-300,
+[data-theme="light"] .text-pink-400 { color: #c02672; }
+[data-theme="light"] .text-rose-300,
+[data-theme="light"] .text-rose-400 { color: #be123c; }
+[data-theme="light"] .text-teal-300,
+[data-theme="light"] .text-teal-400,
+[data-theme="light"] .text-teal-500 { color: #0f766e; }
+[data-theme="light"] .text-orange-300,
+[data-theme="light"] .text-orange-400 { color: #c2570c; }
+[data-theme="light"] .text-indigo-400 { color: #4f46e5; }
+
+/* Teks gelap di atas tombol amber/hijau tetap gelap (di tema terang,
+   slate-950 itu warna krem, bukan gelap). */
+[data-theme="light"] .text-slate-950 { color: #2a2118; }
+
+/* Tab aktif "bg-slate-800 text-white": di tema terang latarnya krem muda,
+   jadi teksnya harus gelap. Begitu juga hover:text-white pada tombol ikon. */
+[data-theme="light"] .bg-slate-800.text-white { color: rgb(var(--slate-100)); }
+[data-theme="light"] .hover\:text-white:hover:not([class*="hover:bg-red"]) { color: rgb(var(--slate-100)); }
+
+/* Kartu (border + rounded + latar putih/semi) di tema terang diberi
+   bayangan tipis supaya terasa "melayang" lembut, bukan rata. */
+[data-theme="light"] .border[class*="bg-slate-900"][class*="rounded-"],
+[data-theme="light"] .border[class*="bg-md-container"][class*="rounded-"] {
+  box-shadow: 0 1px 2px rgb(var(--shadow) / 0.04), 0 8px 24px -10px rgb(var(--shadow) / 0.12);
+}
+[data-theme="light"] aside {
+  border-right: 1px solid rgb(var(--md-outline-variant));
+}
+@media (max-width: 1023px) {
+  [data-theme="light"] aside { border-right: 0; }
 }

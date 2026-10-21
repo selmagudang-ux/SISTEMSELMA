@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Warehouse, Loader2, AlertCircle } from "lucide-react";
 import { unifiedLogin } from "../lib/unifiedLogin";
+import ThemeToggle from "../components/ThemeToggle";
 
 // Satu halaman login untuk semua orang — admin/role SELMA maupun karyawan
 // absen. Sistem otomatis mendeteksi jenis akunnya dari username/ID yang
@@ -28,7 +29,8 @@ export default function Login({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
+    <div className="relative min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
+      <div className="absolute top-4 right-4"><ThemeToggle /></div>
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-6">
           <div className="w-12 h-12 rounded-xl bg-amber-500 flex items-center justify-center mb-3">

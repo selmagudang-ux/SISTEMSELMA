@@ -67,7 +67,7 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
     <Fragment>
       {/* ====== Modal preview — disembunyikan total saat print ====== */}
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 print:hidden">
-        <div className="bg-white text-slate-900 rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+        <div className="theme-paper bg-white text-slate-900 rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white">
             <h3 className="font-semibold text-sm">Preview Nota</h3>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-900">
@@ -263,7 +263,7 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, on
   return (
     <Fragment>
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4 print:hidden">
-        <div className="bg-white text-slate-900 rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+        <div className="theme-paper bg-white text-slate-900 rounded-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 sticky top-0 bg-white">
             <h3 className="font-semibold text-sm">Preview Label Pengiriman</h3>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-900">
