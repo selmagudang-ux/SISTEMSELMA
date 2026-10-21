@@ -6,7 +6,9 @@ import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, Mod
 import {
   sb, sbAll, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
   daftarTujuanPencairan, cariTujuanPencairan, tujuanPencairanDefault, ingatTujuanPencairan,
+  rincianDepositPelanggan,
 } from "../lib/api";
+import { InvoiceWaModal, TombolKirimWa } from "../components/InvoiceWa";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 import { isSuperadminLike } from "../lib/constants";
 import { newItemRow, ItemRow } from "./Grosir";
@@ -85,7 +87,7 @@ export default function Reseller({
   sub,
   pelangganGrosir, produkManualGrosir, skuMaster, penempatan,
   pesananGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
-  session, reload, showToast, setModal,
+  session, master, reload, showToast, setModal,
 }) {
   const pesananReseller = (pesananGrosir || []).filter((p) => p.jenis_transaksi === "reseller");
   const pesananCekout = (pesananGrosir || []).filter((p) => p.jenis_transaksi === "reseller_cekout");
@@ -100,6 +102,7 @@ export default function Reseller({
         depositGrosir={depositGrosir}
         keuanganTransaksi={keuanganTransaksi}
         session={session}
+        master={master}
         reload={reload}
         showToast={showToast}
         setModal={setModal}
@@ -299,9 +302,10 @@ function SemuaPesananReseller({ pesananReseller, pelangganGrosir, pembayaranGros
 // =========================================================
 function PencairanDanPenagihanReseller({
   pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
-  session, reload, showToast, setModal,
+  session, master, reload, showToast, setModal,
 }) {
   const [tab, setTab] = useState("penagihan");
+  const [invoiceWa, setInvoiceWa] = useState(null); // {jenis, pelanggan, baris}
 
   const TABS = [
     { key: "penagihan", label: "Penagihan Hutang" },
@@ -331,6 +335,7 @@ function PencairanDanPenagihanReseller({
           pelangganGrosir={pelangganGrosir}
           depositGrosir={depositGrosir}
           setModal={setModal}
+          onKirimWa={setInvoiceWa}
         />
       ) : tab === "riwayat" ? (
         <RiwayatPenagihanPencairan
@@ -350,6 +355,17 @@ function PencairanDanPenagihanReseller({
           pelangganGrosir={pelangganGrosir}
           pembayaranGrosir={pembayaranGrosir}
           setModal={setModal}
+          onKirimWa={setInvoiceWa}
+        />
+      )}
+
+      {invoiceWa && (
+        <InvoiceWaModal
+          jenis={invoiceWa.jenis}
+          pelanggan={invoiceWa.pelanggan}
+          baris={invoiceWa.baris}
+          master={master}
+          onClose={() => setInvoiceWa(null)}
         />
       )}
     </div>
@@ -633,7 +649,7 @@ function RiwayatPenagihanPencairan({
 // ModalRouter) yang melunasi pesanan reseller pelanggan itu dari yang
 // paling lama dulu — sama pola dengan "Bayar Hutang" di Pelanggan Grosir.
 // =========================================================
-function PenagihanHutangReseller({ pesananReseller, pelangganGrosir, pembayaranGrosir, setModal }) {
+function PenagihanHutangReseller({ pesananReseller, pelangganGrosir, pembayaranGrosir, setModal, onKirimWa }) {
   const [q, setQ] = useState("");
   const { isKamis, nextKamis, hariIniLabel } = infoKamis();
   const hutangMap = totalHutangPerPelanggan(pesananReseller, pembayaranGrosir);
@@ -696,22 +712,47 @@ function PenagihanHutangReseller({ pesananReseller, pelangganGrosir, pembayaranG
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {daftar.map((x, i) => (
-            <button
+            <div
               key={x.pelanggan.id}
-              onClick={() => setModal({ type: "reseller-bayar-hutang-pelanggan", item: x.pelanggan })}
-              className={`w-full flex items-center justify-between px-4 py-2.5 text-left ${
-                i % 2 ? "bg-slate-950" : "bg-slate-900"
-              } hover:bg-slate-800/60`}
+              className={`flex items-center gap-2 pr-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"} hover:bg-slate-800/60`}
             >
-              <div className="min-w-0">
-                <div className="text-sm text-slate-200 truncate">{x.pelanggan.nama}</div>
-                <div className="text-[11px] text-slate-500 truncate">
-                  {x.pelanggan.kode}
-                  {x.pelanggan.wa ? ` · ${x.pelanggan.wa}` : ""}
+              <button
+                onClick={() => setModal({ type: "reseller-bayar-hutang-pelanggan", item: x.pelanggan })}
+                className="flex-1 min-w-0 flex items-center justify-between px-4 py-2.5 text-left"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-200 truncate">{x.pelanggan.nama}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {x.pelanggan.kode}
+                    {x.pelanggan.wa ? ` · ${x.pelanggan.wa}` : ""}
+                  </div>
                 </div>
-              </div>
-              <div className="text-sm font-semibold text-red-400 flex-shrink-0 ml-2">{fmtRp(x.sisa)}</div>
-            </button>
+                <div className="text-sm font-semibold text-red-400 flex-shrink-0 ml-2">{fmtRp(x.sisa)}</div>
+              </button>
+              <TombolKirimWa
+                onClick={() =>
+                  onKirimWa({
+                    jenis: "penagihan",
+                    pelanggan: x.pelanggan,
+                    // Pesanan reseller aktif pelanggan ini yang masih ada sisa, terlama dulu
+                    // (urutan sama dengan pelunasan di modal bayar hutang).
+                    baris: pesananReseller
+                      .filter((ps) => ps.pelanggan_id === x.pelanggan.id && ps.status !== "Batal")
+                      .map((ps) => ({
+                        id: ps.id,
+                        nomor_pesanan: ps.nomor_pesanan,
+                        tanggal: ps.tanggal,
+                        created_at: ps.created_at,
+                        total: Number(ps.total) || 0,
+                        dibayar: Math.max(0, (Number(ps.total) || 0) - sisaHutangPesanan(ps, pembayaranGrosir)),
+                        sisa: sisaHutangPesanan(ps, pembayaranGrosir),
+                      }))
+                      .filter((b) => b.sisa > 0.0001)
+                      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+                  })
+                }
+              />
+            </div>
           ))}
         </div>
       )}
@@ -736,7 +777,7 @@ function PenagihanHutangReseller({ pesananReseller, pelangganGrosir, pembayaranG
 // "Reseller Checkout Toko Gudang", sumber dana/rekening bebas dipilih),
 // bukan pemasukan seperti Penagihan Hutang.
 // =========================================================
-function PencairanResellerCekout({ pesananCekout, pelangganGrosir, depositGrosir, setModal }) {
+function PencairanResellerCekout({ pesananCekout, pelangganGrosir, depositGrosir, setModal, onKirimWa }) {
   const [q, setQ] = useState("");
   const depositMap = totalDepositPerPelanggan(depositGrosir);
   const pelangganCekoutIds = new Set((pesananCekout || []).map((p) => p.pelanggan_id));
@@ -783,22 +824,37 @@ function PencairanResellerCekout({ pesananCekout, pelangganGrosir, depositGrosir
       ) : (
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           {daftar.map((x, i) => (
-            <button
+            <div
               key={x.pelanggan.id}
-              onClick={() => setModal({ type: "reseller-cekout-cairkan-deposit", item: x.pelanggan })}
-              className={`w-full flex items-center justify-between px-4 py-2.5 text-left ${
-                i % 2 ? "bg-slate-950" : "bg-slate-900"
-              } hover:bg-slate-800/60`}
+              className={`flex items-center gap-2 pr-3 ${i % 2 ? "bg-slate-950" : "bg-slate-900"} hover:bg-slate-800/60`}
             >
-              <div className="min-w-0">
-                <div className="text-sm text-slate-200 truncate">{x.pelanggan.nama}</div>
-                <div className="text-[11px] text-slate-500 truncate">
-                  {x.pelanggan.kode}
-                  {x.pelanggan.wa ? ` · ${x.pelanggan.wa}` : ""}
+              <button
+                onClick={() => setModal({ type: "reseller-cekout-cairkan-deposit", item: x.pelanggan })}
+                className="flex-1 min-w-0 flex items-center justify-between px-4 py-2.5 text-left"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-200 truncate">{x.pelanggan.nama}</div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {x.pelanggan.kode}
+                    {x.pelanggan.wa ? ` · ${x.pelanggan.wa}` : ""}
+                  </div>
                 </div>
-              </div>
-              <div className="text-sm font-semibold text-emerald-400 flex-shrink-0 ml-2">{fmtRp(x.saldo)}</div>
-            </button>
+                <div className="text-sm font-semibold text-emerald-400 flex-shrink-0 ml-2">{fmtRp(x.saldo)}</div>
+              </button>
+              <TombolKirimWa
+                onClick={() =>
+                  onKirimWa({
+                    jenis: "pencairan",
+                    pelanggan: x.pelanggan,
+                    // Rincian yang sama dengan daftar di form Cairkan (sisa per pesanan, terlama dulu).
+                    baris: rincianDepositPelanggan(x.pelanggan.id, depositGrosir, pesananCekout).map((b) => {
+                      const ps = pesananCekout.find((c) => c.nomor_pesanan === b.nomor_pesanan);
+                      return { ...b, id: ps?.id, tanggal: ps?.tanggal };
+                    }),
+                  })
+                }
+              />
+            </div>
           ))}
         </div>
       )}

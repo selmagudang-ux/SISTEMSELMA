@@ -1432,6 +1432,7 @@ function MainApp({ session, onLogout }) {
                   depositGrosir={depositGrosir}
                   keuanganTransaksi={keuanganTransaksi}
                   session={session}
+                  master={master}
                   reload={reloadCurrentMenu}
                   showToast={showToast}
                   setModal={setModal}
