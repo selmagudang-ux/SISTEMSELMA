@@ -31,12 +31,20 @@ export function linkWa(wa, pesan) {
   return `https://wa.me/${nomorWaLink(wa)}?text=${encodeURIComponent(pesan)}`;
 }
 
-// baris: [{nomor_pesanan, created_at, sisa}]
-export function susunPesanTagihan({ namaUsaha, pelanggan, baris, rekeningLabel }) {
+const rincianBaris = (baris, items) =>
+  baris
+    .map((b, i) => {
+      const brg = ((items || {})[b.id] || [])
+        .map((d) => `   - ${d.nama_produk} ${d.qty} x ${fmtRp(d.harga)} = ${fmtRp(d.subtotal)}`)
+        .join("\n");
+      return `${i + 1}. *${b.nomor_pesanan}* (${tglId(b.tanggal || b.created_at)})${brg ? `\n${brg}` : ""}\n   Sisa: ${fmtRp(b.sisa)}`;
+    })
+    .join("\n\n");
+
+// baris: [{id, nomor_pesanan, created_at, sisa}], items: {pesanan_id: [barang]}
+export function susunPesanTagihan({ namaUsaha, pelanggan, baris, rekeningLabel, items }) {
   const total = baris.reduce((a, b) => a + (Number(b.sisa) || 0), 0);
-  const rincian = baris
-    .map((b, i) => `${i + 1}. ${b.nomor_pesanan} (${tglId(b.created_at)}) — ${fmtRp(b.sisa)}`)
-    .join("\n");
+  const rincian = rincianBaris(baris, items);
   return [
     `*INVOICE PENAGIHAN*`,
     namaUsaha,
@@ -55,11 +63,9 @@ export function susunPesanTagihan({ namaUsaha, pelanggan, baris, rekeningLabel }
 }
 
 // baris: [{nomor_pesanan, created_at, sisa}] dari rincianDepositPelanggan
-export function susunPesanPencairan({ namaUsaha, pelanggan, baris, rekeningLabel }) {
+export function susunPesanPencairan({ namaUsaha, pelanggan, baris, rekeningLabel, items }) {
   const total = baris.reduce((a, b) => a + (Number(b.sisa) || 0), 0);
-  const rincian = baris
-    .map((b, i) => `${i + 1}. ${b.nomor_pesanan} (${tglId(b.created_at)}) — ${fmtRp(b.sisa)}`)
-    .join("\n");
+  const rincian = rincianBaris(baris, items);
   return [
     `*INVOICE PENCAIRAN*`,
     namaUsaha,
@@ -105,21 +111,10 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
   const [wa, setWa] = useState(pelanggan.wa || "");
   const rekeningLabel = daftarRekening.find((r) => r.kode === rekening)?.label || "";
 
-  const susun = jenis === "penagihan" ? susunPesanTagihan : susunPesanPencairan;
-  const otomatis = useMemo(
-    () => susun({ namaUsaha, pelanggan, baris, rekeningLabel }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [namaUsaha, pelanggan, baris, rekeningLabel, jenis]
-  );
-  // Teks bisa diedit admin; kalau pilihan rekening berubah, teks disusun ulang.
-  const [edit, setEdit] = useState(null);
-  const pesan = edit?.dasar === otomatis ? edit.teks : otomatis;
-
-  const siap = Boolean(nomorWaLink(wa)) && baris.length > 0;
-
   // Rincian barang tiap pesanan (grosir_detail_pesanan) ditarik on-demand saat modal dibuka.
   const [detail, setDetail] = useState(null); // {pesanan_id: [items]} | null = memuat
   const [info, setInfo] = useState("");
+  const [errDetail, setErrDetail] = useState("");
   useEffect(() => {
     const ids = baris.map((b) => b.id).filter(Boolean);
     if (!ids.length) {
@@ -134,11 +129,27 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
         (rows || []).forEach((r) => (peta[r.pesanan_id] ||= []).push(r));
         setDetail(peta);
       })
-      .catch(() => !batal && setDetail({}));
+      .catch((e) => {
+        if (batal) return;
+        setErrDetail(e?.message || "Gagal memuat rincian barang");
+        setDetail({});
+      });
     return () => {
       batal = true;
     };
   }, [baris]);
+
+  const susun = jenis === "penagihan" ? susunPesanTagihan : susunPesanPencairan;
+  const otomatis = useMemo(
+    () => susun({ namaUsaha, pelanggan, baris, rekeningLabel, items: detail }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [namaUsaha, pelanggan, baris, rekeningLabel, jenis, detail]
+  );
+  // Teks bisa diedit admin; kalau pilihan rekening berubah, teks disusun ulang.
+  const [edit, setEdit] = useState(null);
+  const pesan = edit?.dasar === otomatis ? edit.teks : otomatis;
+
+  const siap = Boolean(nomorWaLink(wa)) && baris.length > 0;
 
   // PDF dibuat di browser. HP: lembar "Bagikan" terbuka dengan PDF sudah terlampir (pilih WhatsApp
   // lalu kontaknya). Komputer/browser tanpa fitur itu: PDF terunduh + WhatsApp terbuka dengan teks,
@@ -232,6 +243,15 @@ export function InvoiceWaModal({ jenis, pelanggan, baris, master, onClose }) {
             {detail === null ? "Memuat rincian…" : "Kirim PDF"}
           </button>
         </div>
+        {detail !== null && (
+          <p className={`text-xs ${errDetail || Object.keys(detail).length === 0 ? "text-amber-400" : "text-slate-500"}`}>
+            {errDetail
+              ? `Rincian barang gagal dimuat: ${errDetail}`
+              : Object.keys(detail).length === 0
+                ? "Rincian barang tidak ditemukan untuk pesanan ini — PDF hanya berisi nomor pesanan dan nominal."
+                : `Rincian barang termuat: ${Object.keys(detail).length} pesanan, ${Object.values(detail).reduce((a, r) => a + r.length, 0)} barang.`}
+          </p>
+        )}
         {info && <p className="text-xs text-emerald-400">{info}</p>}
         <p className="text-[11px] text-slate-500">
           PDF berisi nomor pesanan dan rincian barang. Di HP, PDF langsung terlampir lewat menu Bagikan
