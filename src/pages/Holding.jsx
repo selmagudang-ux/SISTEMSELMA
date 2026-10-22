@@ -198,6 +198,16 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
       e.kasJenis[jenis] = (e.kasJenis[jenis] || 0) + s;
     });
     const ember = (kode, tanggal) => perEnt[kode] && perEnt[kode].bulan[(tanggal || "").slice(0, 7)];
+    // 5 transaksi terakhir per entitas (semua jenis, berdasarkan rekening asal), tidak terikat bulan yang dipilih.
+    const terakhir = Object.fromEntries(ents.map((e) => [e.kode, []]));
+    semua.forEach((t) => {
+      const lst = terakhir[k.entDari(t.rekening)];
+      if (lst) lst.push(t);
+    });
+    const urut = (a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""));
+    Object.keys(terakhir).forEach((kode) => {
+      terakhir[kode] = terakhir[kode].sort(urut).slice(0, 5);
+    });
     semua.forEach((t) => {
       if (bukanLabaRugi(t)) return; // prive/dividen & pinjaman pemilik bukan laba rugi
       if (t.tipe === "masuk" || t.tipe === "keluar") {
@@ -226,7 +236,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
         }
       }
     });
-    return { perEnt, daftarBulan, pinjaman: posisiPinjaman(semua, k) };
+    return { perEnt, daftarBulan, terakhir, pinjaman: posisiPinjaman(semua, k) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [semua, master.rekening, master.rekening_entitas, master.entitas, master.kas_grup, keuanganTransaksi]);
 
@@ -400,7 +410,50 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
         })}
       </div>
 
-      {/* 3. Tren 6 bulan */}
+      {/* 3. Transaksi terakhir per perusahaan */}
+      <div className="text-sm font-semibold text-slate-200 mb-2">5 transaksi terakhir</div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
+        {ents.map((e) => {
+          const daftar = data.terakhir[e.kode] || [];
+          return (
+            <div key={e.kode} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Building2 size={13} className="text-slate-500" />
+                <div className="text-xs font-semibold text-slate-200 truncate">{e.label}</div>
+              </div>
+              {daftar.length === 0 ? (
+                <div className="text-xs text-slate-500 py-2">Belum ada transaksi.</div>
+              ) : (
+                <div className="divide-y divide-slate-800/70">
+                  {daftar.map((t) => {
+                    const masuk = t.tipe === "masuk";
+                    const transfer = t.tipe === "transfer";
+                    const kat = (master[masuk ? "kategori_masuk" : "kategori_keluar"] || []).find((x) => x.kode === t.kategori)?.label;
+                    const judul = t.keterangan || (transfer ? `Transfer ke ${k.labelRek(t.rekening_tujuan)}` : kat || "—");
+                    return (
+                      <div key={t.id} className="flex items-center justify-between gap-3 py-2">
+                        <div className="min-w-0">
+                          <div className="text-xs text-slate-200 truncate">{judul}</div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {formatTanggalID(t.tanggal)}
+                            {!transfer && kat ? ` · ${kat}` : ""}
+                            {transfer ? " · Transfer" : ""}
+                          </div>
+                        </div>
+                        <div className={`text-xs font-medium whitespace-nowrap ${transfer ? "text-slate-300" : masuk ? "text-emerald-400" : "text-red-400"}`}>
+                          {masuk ? "+" : transfer ? "" : "−"}{fmtRp(t.jumlah)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 4. Tren 6 bulan */}
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-slate-200">Laba gabungan 6 bulan</div>
         <div className="text-[11px] text-slate-500">Klik batang untuk ganti bulan</div>
