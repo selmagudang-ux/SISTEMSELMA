@@ -329,6 +329,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
 
       {/* 4. Dua tabel padat sejajar: per perusahaan & transaksi terakhir */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
+      <div className="space-y-3 min-w-0">
         <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
           <div className="text-xs text-slate-400 px-3 pt-3 pb-2">Per perusahaan · {labelBulan(bulanPilih)}</div>
           <div className="overflow-x-auto">
@@ -381,6 +382,48 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
             </div>
           )}
         </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
+          <div className="text-xs text-slate-400 px-3 pt-3 pb-2">Saldo per rekening · saat ini</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[340px]">
+              <thead>
+                <tr className="text-[11px] text-slate-500 border-y border-slate-800">
+                  <th className="px-2.5 py-2 font-medium text-left">Rekening</th>
+                  <th className="px-2.5 py-2 font-medium text-left">Jenis</th>
+                  <th className={th}>Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ents.map((e) => {
+                  const rek = k.rekeningList.filter((r) => k.entDari(r.kode) === e.kode).sort(k.urutKas);
+                  return (
+                    <Fragment key={e.kode}>
+                      <tr className="bg-slate-800/30">
+                        <td colSpan={2} className="px-2.5 py-1 text-[11px] font-semibold text-slate-300">{e.label}</td>
+                        <td className={`${td} text-[11px] font-semibold ${warna(data.perEnt[e.kode].kas)}`}>{fmtRp(data.perEnt[e.kode].kas)}</td>
+                      </tr>
+                      {rek.length === 0 && (
+                        <tr><td colSpan={3} className="px-2.5 py-1.5 text-slate-500">Belum ada rekening.</td></tr>
+                      )}
+                      {rek.map((r) => {
+                        const sal = k.saldoMap.get(r.kode) || 0;
+                        return (
+                          <tr key={r.kode} className="border-b border-slate-800/60">
+                            <td className="px-2.5 py-1.5 text-slate-200">{r.label || r.kode}</td>
+                            <td className="px-2.5 py-1.5 text-slate-500">{LABEL_KAS[k.kasDari(r.kode)] || ""}</td>
+                            <td className={`${td} ${warna(sal)}`}>{fmtRp(sal)}</td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
           <div className="text-xs text-slate-400 px-3 pt-3 pb-2">5 transaksi terakhir per perusahaan</div>
