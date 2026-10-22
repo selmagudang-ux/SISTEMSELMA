@@ -144,11 +144,11 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
   const ents = k.entitasList;
   const bulanIni = hariIniLokal().slice(0, 7);
   const [bulanPilih, setBulanPilih] = useState(bulanIni);
-  const [terbuka, setTerbuka] = useState(() => new Set());
+  const [tertutup, setTertutup] = useState(() => new Set()); // default: semua PT terbuka
   const [lihatAngka, setLihatAngka] = useState(false);
   const [lihatCara, setLihatCara] = useState(false);
   const toggle = (kode) =>
-    setTerbuka((s) => {
+    setTertutup((s) => {
       const n = new Set(s);
       if (n.has(kode)) n.delete(kode);
       else n.add(kode);
@@ -363,10 +363,19 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
       </div>
 
       {/* 2. Per perusahaan — satu baris ringkas, klik untuk rincian */}
-      <div className="text-sm font-semibold text-slate-200 mb-2">Per perusahaan</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-semibold text-slate-200">Per perusahaan</div>
+        <button
+          type="button"
+          onClick={() => setTertutup(tertutup.size < ents.length ? new Set(ents.map((e) => e.kode)) : new Set())}
+          className="text-[11px] text-amber-400 hover:text-amber-300"
+        >
+          {tertutup.size < ents.length ? "Ciutkan semua" : "Buka semua"}
+        </button>
+      </div>
       <div className="rounded-xl border border-slate-800 bg-slate-900 divide-y divide-slate-800 mb-5">
         {semuaRingkas.map(({ e, r }) => {
-          const buka = terbuka.has(e.kode);
+          const buka = !tertutup.has(e.kode);
           const kas = data.perEnt[e.kode].kas;
           return (
             <div key={e.kode}>
