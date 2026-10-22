@@ -144,7 +144,6 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
   const ents = k.entitasList;
   const bulanIni = hariIniLokal().slice(0, 7);
   const [bulanPilih, setBulanPilih] = useState(bulanIni);
-  const [pilih, setPilih] = useState("GAB"); // tampilan grafik & donat: gabungan atau kode entitas
   const [lihatAngka, setLihatAngka] = useState(false);
   const [lihatCara, setLihatCara] = useState(false);
 
@@ -252,12 +251,29 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
   const labaEnt = (kode, b) => ringkas(kode, b).laba;
   const semuaRingkas = ents.map((e) => ({ e, r: ringkas(e.kode, bulanPilih) }));
 
-  // Pilihan tampilan untuk grafik & donat: gabungan semua PT, atau satu PT.
-  const pilihAktif = pilih === "GAB" || !data.perEnt[pilih] ? "GAB" : pilih;
-  const trxDonat = pilihAktif === "GAB" ? ents.flatMap((e) => (data.perEnt[e.kode].bulan[bulanPilih] || KOSONG).trx) : (data.perEnt[pilihAktif].bulan[bulanPilih] || KOSONG).trx;
-  const keluarB = breakdownPengeluaranKategori(trxDonat, master.kategori_keluar || []);
-  const masukB = breakdownPemasukanKategori(trxDonat, master.kategori_masuk || []);
-  const namaPilih = pilihAktif === "GAB" ? "Gabungan grup" : ents.find((e) => e.kode === pilihAktif)?.label || pilihAktif;
+  // Satu baris panel (grafik laba + donat pemasukan + donat pengeluaran) untuk gabungan atau satu PT.
+  const panelUntuk = (kode, nama) => {
+    const gab2 = kode === "GAB";
+    const trx = gab2 ? ents.flatMap((e) => (data.perEnt[e.kode].bulan[bulanPilih] || KOSONG).trx) : (data.perEnt[kode].bulan[bulanPilih] || KOSONG).trx;
+    const keluarB = breakdownPengeluaranKategori(trx, master.kategori_keluar || []);
+    const masukB = breakdownPemasukanKategori(trx, master.kategori_masuk || []);
+    return (
+      <div key={kode} className="mb-4">
+        <div className="flex items-center gap-2 mb-1.5">
+          <Building2 size={13} className={gab2 ? "text-amber-400" : "text-slate-500"} />
+          <div className="text-xs font-semibold text-slate-200">{nama}</div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+            <div className="text-xs text-slate-400 mb-2">Laba (rugi) 6 bulan</div>
+            <GrafikLaba bulanList={bulan6} nilaiBulan={(b) => (gab2 ? labaBulan(b) : labaEnt(kode, b))} terpilih={bulanPilih} onPilih={setBulanPilih} />
+          </div>
+          <BreakdownKategori kelas="mb-0" total={masukB.total} data={masukB.data} judul="Pemasukan per kategori" kosong="Belum ada pemasukan bulan ini." />
+          <BreakdownKategori kelas="mb-0" total={keluarB.total} data={keluarB.data} judul="Pengeluaran per kategori" kosong="Belum ada pengeluaran bulan ini." />
+        </div>
+      </div>
+    );
+  };
 
   const Kpi = ({ label, nilai: v, sub, subWarna, aksen }) => (
     <div className={`rounded-xl border px-3 py-2.5 ${aksen ? "border-amber-500/30 bg-amber-500/5" : "border-slate-800 bg-slate-900"}`}>
@@ -302,30 +318,9 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
         />
       </div>
 
-      {/* 2. Pilih tampilan: gabungan / per PT — mengatur grafik & donat di bawah */}
-      <div className="flex items-center gap-1.5 flex-wrap mb-2">
-        <span className="text-[11px] text-slate-500 mr-1">Tampilkan</span>
-        {[{ kode: "GAB", label: "Gabungan" }, ...ents].map((e) => (
-          <button
-            key={e.kode}
-            type="button"
-            onClick={() => setPilih(e.kode)}
-            className={`px-2.5 py-1 rounded-full text-[11px] border transition ${pilihAktif === e.kode ? "border-amber-500/50 bg-amber-500/10 text-amber-300" : "border-slate-800 text-slate-400 hover:border-slate-700"}`}
-          >
-            {e.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 3. Tiga panel sejajar: tren laba, pemasukan, pengeluaran */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-          <div className="text-xs text-slate-400 mb-2">Laba (rugi) 6 bulan · {namaPilih}</div>
-          <GrafikLaba bulanList={bulan6} nilaiBulan={(b) => (pilihAktif === "GAB" ? labaBulan(b) : labaEnt(pilihAktif, b))} terpilih={bulanPilih} onPilih={setBulanPilih} />
-        </div>
-        <BreakdownKategori kelas="mb-0" tanpaScroll total={masukB.total} data={masukB.data} judul={`Pemasukan per kategori · ${namaPilih}`} kosong="Belum ada pemasukan bulan ini." />
-        <BreakdownKategori kelas="mb-0" tanpaScroll total={keluarB.total} data={keluarB.data} judul={`Pengeluaran per kategori · ${namaPilih}`} kosong="Belum ada pengeluaran bulan ini." />
-      </div>
+      {/* 2. Panel per entitas: gabungan dulu, lalu tiap PT — semua langsung tampil */}
+      {panelUntuk("GAB", "Gabungan grup")}
+      {ents.map((e) => panelUntuk(e.kode, e.label))}
 
       {/* 4. Dua tabel padat sejajar: per perusahaan & transaksi terakhir */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
