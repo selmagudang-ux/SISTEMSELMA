@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
-import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown } from "lucide-react";
+import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
 import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
@@ -322,13 +322,24 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
     return <DonatMini key={kode} judul={nama} sorot={gab2} total={bd.total} data={bd.data} />;
   };
 
-  const Kpi = ({ label, nilai: v, sub, subWarna, aksen }) => (
-    <div className={`rounded-xl border px-3 py-2.5 ${aksen ? "border-amber-500/30 bg-amber-500/5" : "border-slate-800 bg-slate-900"}`}>
-      <div className="text-[11px] text-slate-500 truncate">{label}</div>
-      <div className="text-base font-semibold leading-tight mt-0.5 truncate">{v}</div>
-      {sub && <div className={`text-[10px] mt-0.5 truncate ${subWarna || "text-slate-500"}`}>{sub}</div>}
-    </div>
-  );
+  // Kalimat ringkas "sekilas" dari angka bulan terpilih (gabungan grup).
+  const trxGab = ents.flatMap((e) => (data.perEnt[e.kode].bulan[bulanPilih] || KOSONG).trx);
+  const bdKeluarGab = breakdownPengeluaranKategori(trxGab, master.kategori_keluar || []);
+  const bdMasukGab = breakdownPemasukanKategori(trxGab, master.kategori_masuk || []);
+  const maxBar = Math.max(1, ...semuaRingkas.flatMap(({ r }) => [r.masuk, r.keluar]));
+  const wawasan = [];
+  if (selisih !== null && selisih !== 0)
+    wawasan.push(`Laba ${selisih > 0 ? "naik" : "turun"} ${fmtSingkat(Math.abs(selisih))} dibanding ${labelBulan(bulanSebelum)}.`);
+  if (bdKeluarGab.data[0])
+    wawasan.push(`Pengeluaran terbesar: ${bdKeluarGab.data[0].label} (${Math.round(bdKeluarGab.data[0].persen)}% dari semua pengeluaran).`);
+  if (bdMasukGab.data[0])
+    wawasan.push(`Pemasukan terbesar: ${bdMasukGab.data[0].label} (${Math.round(bdMasukGab.data[0].persen)}%).`);
+  const rugi = semuaRingkas.filter(({ r }) => r.laba < 0);
+  if (rugi.length > 0) wawasan.push(`Perlu perhatian: ${rugi.map(({ e }) => e.label).join(", ")} rugi bulan ini.`);
+  else if (semuaRingkas.length > 1) {
+    const top = [...semuaRingkas].sort((x, y) => y.r.laba - x.r.laba)[0];
+    wawasan.push(`${top.e.label} menyumbang laba terbesar: ${fmtSingkat(top.r.laba)}.`);
+  }
 
   // Pemasukan/pengeluaran/laba gabungan & per PT di tabel bawah.
   const th = "px-2.5 py-2 font-medium text-right whitespace-nowrap";
@@ -349,98 +360,102 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
         </select>
       </div>
 
-      {/* 1. Kartu angka mungil */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-3">
-        <Kpi aksen label="Total kas saat ini" nilai={<span className={warna(kasGab)}>{fmtRp(kasGab)}</span>} />
-        <Kpi label="Bank" nilai={<span className={warna(kasBank)}>{fmtRp(kasBank)}</span>} />
-        <Kpi label="Kas Kecil" nilai={<span className={warna(kasKecil)}>{fmtRp(kasKecil)}</span>} />
-        <Kpi label="Pemasukan" nilai={<span className="text-emerald-400">{fmtRp(gab.masuk)}</span>} />
-        <Kpi label="Pengeluaran" nilai={<span className="text-red-400">{fmtRp(gab.keluar)}</span>} />
-        <Kpi
-          aksen
-          label="Laba (rugi)"
-          nilai={<span className={warna(gab.laba)}>{fmtRp(gab.laba)}</span>}
-          sub={selisih !== null && selisih !== 0 ? `${selisih > 0 ? "▲" : "▼"} ${fmtSingkat(Math.abs(selisih))} dari ${labelBulan(bulanSebelum)}${margin !== null ? ` · margin ${margin.toFixed(1)}%` : ""}` : margin !== null ? `margin ${margin.toFixed(1)}%` : null}
-          subWarna={selisih > 0 ? "text-emerald-400" : selisih < 0 ? "text-red-400" : ""}
-        />
-      </div>
-
-      {/* 2. Satu baris: grafik laba (kiri) + donat semua entitas berdampingan (kanan) */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(280px,1fr)_3fr] gap-3 mb-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-          <div className="text-xs text-slate-400 mb-2">Laba gabungan 6 bulan</div>
-          <GrafikLaba bulanList={bulan6} nilaiBulan={labaBulan} terpilih={bulanPilih} onPilih={setBulanPilih} />
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="text-xs text-slate-400">Per kategori · {labelBulan(bulanPilih)}</div>
-            <div className="inline-flex rounded-full border border-slate-800 p-0.5 text-[11px]">
-              {[["masuk", "Pemasukan"], ["keluar", "Pengeluaran"]].map(([v, l]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setJenisDonat(v)}
-                  className={`px-2.5 py-0.5 rounded-full transition ${jenisDonat === v ? (v === "masuk" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300") : "text-slate-500 hover:text-slate-300"}`}
-                >
-                  {l}
-                </button>
-              ))}
+      {/* 1. Hero: laba bulan ini + total kas, lalu kalimat ringkas "sekilas" */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
+        <div className="lg:col-span-2 rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent p-4 sm:p-5">
+          <div className="flex items-center gap-2 text-xs text-amber-300/90">
+            {gab.laba < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
+            Laba (rugi) {labelBulan(bulanPilih)} · seluruh grup
+          </div>
+          <div className="flex items-end flex-wrap gap-x-3 gap-y-1 mt-1">
+            <div className={`text-3xl sm:text-4xl font-bold tracking-tight ${warna(gab.laba)}`}>{fmtRp(gab.laba)}</div>
+            {selisih !== null && selisih !== 0 && (
+              <span className={`mb-1 text-[11px] px-2 py-0.5 rounded-full ${selisih > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"}`}>
+                {selisih > 0 ? "▲" : "▼"} {fmtSingkat(Math.abs(selisih))} vs {labelBulan(bulanSebelum)}
+              </span>
+            )}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] text-slate-500">Pemasukan</div>
+              <div className="text-base sm:text-lg font-semibold text-emerald-400">{fmtRp(gab.masuk)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-500">Pengeluaran</div>
+              <div className="text-base sm:text-lg font-semibold text-red-400">{fmtRp(gab.keluar)}</div>
             </div>
           </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
-            {donatUntuk("GAB", "Gabungan grup")}
-            {ents.map((e) => donatUntuk(e.kode, e.label))}
+          <div className="mt-3">
+            <div className="h-2 rounded-full bg-emerald-400/30 overflow-hidden">
+              <div className="h-full rounded-full bg-red-400/80" style={{ width: `${gab.masuk > 0 ? Math.min(100, (gab.keluar / gab.masuk) * 100) : 0}%` }} />
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {gab.masuk > 0 ? `Pengeluaran memakai ${Math.round((gab.keluar / gab.masuk) * 100)}% dari pemasukan` : "Belum ada pemasukan bulan ini"}
+              {margin !== null ? ` · margin laba ${margin.toFixed(1)}%` : ""}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-sky-500/25 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent p-4 sm:p-5">
+          <div className="flex items-center gap-2 text-xs text-sky-300/90"><Wallet size={14} /> Total kas saat ini</div>
+          <div className={`text-2xl sm:text-3xl font-bold tracking-tight mt-1 ${warna(kasGab)}`}>{fmtRp(kasGab)}</div>
+          <div className="mt-4 flex h-2 rounded-full overflow-hidden bg-slate-800">
+            <div className="bg-sky-400" style={{ width: `${kasGab > 0 ? Math.max(0, Math.min(100, (kasBank / kasGab) * 100)) : 0}%` }} />
+            <div className="bg-violet-400 flex-1" />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+            <div><span className="inline-block w-2 h-2 rounded-sm bg-sky-400 mr-1.5" /><span className="text-slate-500">Bank</span><div className="text-slate-200 font-medium">{fmtRp(kasBank)}</div></div>
+            <div><span className="inline-block w-2 h-2 rounded-sm bg-violet-400 mr-1.5" /><span className="text-slate-500">Kas Kecil</span><div className="text-slate-200 font-medium">{fmtRp(kasKecil)}</div></div>
           </div>
         </div>
       </div>
 
-      {/* 4. Dua tabel padat sejajar: per perusahaan & transaksi terakhir */}
+      {wawasan.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 mb-3">
+          {wawasan.map((w, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/40 px-3 py-2.5">
+              <Lightbulb size={14} className="shrink-0 mt-0.5 text-amber-400" />
+              <div className="text-[11px] leading-snug text-slate-300">{w}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 2. Perbandingan antar perusahaan + grafik laba */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
-      <div className="space-y-3 min-w-0">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
-          <div className="text-xs text-slate-400 px-3 pt-3 pb-2">Per perusahaan · {labelBulan(bulanPilih)}</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[460px]">
-              <thead>
-                <tr className="text-[11px] text-slate-500 border-y border-slate-800">
-                  <th className="px-2.5 py-2 font-medium text-left">Perusahaan</th>
-                  <th className={th}>Total kas</th>
-                  <th className={th}>Pemasukan</th>
-                  <th className={th}>Pengeluaran</th>
-                  <th className={th}>Laba</th>
-                </tr>
-              </thead>
-              <tbody>
-                {semuaRingkas.map(({ e, r }) => {
-                  const kas = data.perEnt[e.kode].kas;
-                  return (
-                    <tr key={e.kode} className="border-b border-slate-800/60">
-                      <td className="px-2.5 py-1.5 text-slate-200">
-                        {onBuka ? (
-                          <button type="button" onClick={() => onBuka(e.kode)} title={`${labelBuka} ${e.label}`} className="hover:text-amber-300 text-left">{e.label} →</button>
-                        ) : (
-                          e.label
-                        )}
-                      </td>
-                      <td className={`${td} ${warna(kas)}`}>{fmtRp(kas)}</td>
-                      <td className={`${td} text-emerald-400`}>{fmtRp(r.masuk)}</td>
-                      <td className={`${td} text-red-400`}>{fmtRp(r.keluar)}</td>
-                      <td className={`${td} font-medium ${warna(r.laba)}`}>{fmtRp(r.laba)}</td>
-                    </tr>
-                  );
-                })}
-                <tr className="font-semibold bg-slate-800/30">
-                  <td className="px-2.5 py-1.5 text-slate-100">Gabungan</td>
-                  <td className={`${td} ${warna(kasGab)}`}>{fmtRp(kasGab)}</td>
-                  <td className={`${td} text-emerald-400`}>{fmtRp(gab.masuk)}</td>
-                  <td className={`${td} text-red-400`}>{fmtRp(gab.keluar)}</td>
-                  <td className={`${td} ${warna(gab.laba)}`}>{fmtRp(gab.laba)}</td>
-                </tr>
-              </tbody>
-            </table>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+          <div className="text-xs text-slate-400 mb-3">Perbandingan perusahaan · {labelBulan(bulanPilih)}</div>
+          <div className="space-y-3.5">
+            {semuaRingkas.map(({ e, r }) => {
+              const kas = data.perEnt[e.kode].kas;
+              const mrg = r.masuk > 0 ? (r.laba / r.masuk) * 100 : null;
+              return (
+                <div key={e.kode}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    {onBuka ? (
+                      <button type="button" onClick={() => onBuka(e.kode)} title={`${labelBuka} ${e.label}`} className="text-sm font-semibold text-slate-100 hover:text-amber-300 text-left truncate">{e.label} →</button>
+                    ) : (
+                      <div className="text-sm font-semibold text-slate-100 truncate">{e.label}</div>
+                    )}
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.laba < 0 ? "bg-red-500/15 text-red-300" : "bg-emerald-500/15 text-emerald-300"}`}>{fmtSingkat(r.laba)}</span>
+                  </div>
+                  <div className="mt-1.5 space-y-1">
+                    {[[r.masuk, "bg-emerald-400/80", "text-emerald-400"], [r.keluar, "bg-red-400/80", "text-red-400"]].map(([v, bar, tx], i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+                          <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.max(v > 0 ? 2 : 0, (v / maxBar) * 100)}%` }} />
+                        </div>
+                        <span className={`w-20 text-right text-[11px] ${tx}`}>{fmtSingkat(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-1">Kas {fmtSingkat(kas)}{mrg !== null ? ` · margin ${mrg.toFixed(1)}%` : ""}</div>
+                </div>
+              );
+            })}
           </div>
           {ents.some((e) => (data.pinjaman[e.kode] || 0) !== 0) && (
-            <div className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+            <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-500">
               Pinjaman antar PT:{" "}
               {ents
                 .filter((e) => (data.pinjaman[e.kode] || 0) !== 0)
@@ -449,7 +464,38 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
             </div>
           )}
         </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+          <div className="text-xs text-slate-400 mb-2">Laba gabungan 6 bulan</div>
+          <GrafikLaba bulanList={bulan6} nilaiBulan={labaBulan} terpilih={bulanPilih} onPilih={setBulanPilih} />
+        </div>
+      </div>
 
+      {/* 3. Donat per kategori, semua entitas berdampingan */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3 mb-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-xs text-slate-400">Per kategori · {labelBulan(bulanPilih)}</div>
+          <div className="inline-flex rounded-full border border-slate-800 p-0.5 text-[11px]">
+            {[["masuk", "Pemasukan"], ["keluar", "Pengeluaran"]].map(([v, l]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setJenisDonat(v)}
+                className={`px-2.5 py-0.5 rounded-full transition ${jenisDonat === v ? (v === "masuk" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300") : "text-slate-500 hover:text-slate-300"}`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))" }}>
+          {donatUntuk("GAB", "Gabungan grup")}
+          {ents.map((e) => donatUntuk(e.kode, e.label))}
+        </div>
+      </div>
+
+      {/* 4. Dua tabel padat sejajar: per perusahaan & transaksi terakhir */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
+      <div className="space-y-3 min-w-0">
         <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
           <div className="text-xs text-slate-400 px-3 pt-3 pb-2">Saldo per rekening · saat ini</div>
           <div className="overflow-x-auto">
