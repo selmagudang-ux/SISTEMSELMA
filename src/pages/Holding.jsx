@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
 import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
@@ -144,16 +144,9 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
   const ents = k.entitasList;
   const bulanIni = hariIniLokal().slice(0, 7);
   const [bulanPilih, setBulanPilih] = useState(bulanIni);
-  const [tertutup, setTertutup] = useState(() => new Set()); // default: semua PT terbuka
+  const [pilih, setPilih] = useState("GAB"); // tampilan grafik & donat: gabungan atau kode entitas
   const [lihatAngka, setLihatAngka] = useState(false);
   const [lihatCara, setLihatCara] = useState(false);
-  const toggle = (kode) =>
-    setTertutup((s) => {
-      const n = new Set(s);
-      if (n.has(kode)) n.delete(kode);
-      else n.add(kode);
-      return n;
-    });
 
   const data = useMemo(() => {
     // 7 bulan: 6 yang ditampilkan + 1 bulan sebelumnya untuk pembanding "naik/turun".
@@ -249,68 +242,34 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
       { masuk: 0, keluar: 0, laba: 0 }
     );
   const kasGab = ents.reduce((a, e) => a + data.perEnt[e.kode].kas, 0);
+  const kasBank = ents.reduce((a, e) => a + (data.perEnt[e.kode].kasJenis[KAS_BANK] || 0), 0);
+  const kasKecil = ents.reduce((a, e) => a + (data.perEnt[e.kode].kasJenis[KAS_KECIL] || 0), 0);
   const gab = gabungan(bulanPilih);
   const gabLalu = bulanSebelum ? gabungan(bulanSebelum) : null;
   const selisih = gabLalu ? gab.laba - gabLalu.laba : null;
   const margin = gab.masuk > 0 ? (gab.laba / gab.masuk) * 100 : null;
   const labaBulan = (b) => gabungan(b).laba;
   const labaEnt = (kode, b) => ringkas(kode, b).laba;
-
   const semuaRingkas = ents.map((e) => ({ e, r: ringkas(e.kode, bulanPilih) }));
-  const labaTertinggi = Math.max(1, ...semuaRingkas.map(({ r }) => Math.abs(r.laba)));
 
-  const Rincian = ({ e, r }) => {
-    const d = data.perEnt[e.kode];
-    const trx = (d.bulan[bulanPilih] || KOSONG).trx;
-    const keluar = breakdownPengeluaranKategori(trx, master.kategori_keluar || []);
-    const masuk = breakdownPemasukanKategori(trx, master.kategori_masuk || []);
-    const pinjam = data.pinjaman[e.kode] || 0;
-    const mrg = r.masuk > 0 ? (r.laba / r.masuk) * 100 : null;
-    return (
-      <div className="px-4 pb-4 pt-3 border-t border-slate-800/70">
-        <div className="grid gap-5 sm:grid-cols-2 mb-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Posisi kas saat ini</div>
-            <div className="text-xs space-y-1">
-              <div className="flex justify-between"><span className="text-slate-400">{LABEL_KAS[KAS_BANK]}</span><span className={warna(d.kasJenis[KAS_BANK])}>{fmtRp(d.kasJenis[KAS_BANK])}</span></div>
-              <div className="flex justify-between"><span className="text-slate-400">{LABEL_KAS[KAS_KECIL]}</span><span className={warna(d.kasJenis[KAS_KECIL])}>{fmtRp(d.kasJenis[KAS_KECIL])}</span></div>
-              <div className="flex justify-between border-t border-slate-800 pt-1 font-medium"><span className="text-slate-300">Total</span><span className={warna(d.kas)}>{fmtRp(d.kas)}</span></div>
-            </div>
-            {pinjam !== 0 && (
-              <div className="mt-3 text-[11px] text-slate-400">
-                {pinjam > 0 ? "Piutang pinjaman antar perusahaan" : "Utang pinjaman antar perusahaan"}: <span className="text-amber-400">{fmtRp(Math.abs(pinjam))}</span>
-              </div>
-            )}
-          </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Bulan {labelBulan(bulanPilih)}</div>
-            <div className="text-xs space-y-1">
-              <div className="flex justify-between"><span className="text-slate-400">Pemasukan</span><span className="text-emerald-400">{fmtRp(r.masuk)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-400">Pengeluaran</span><span className="text-red-400">{fmtRp(r.keluar)}</span></div>
-              {r.dividen > 0 && <div className="flex justify-between"><span className="text-slate-400">Dividen diterima</span><span className="text-slate-200">{fmtRp(r.dividen)}</span></div>}
-              <div className="flex justify-between border-t border-slate-800 pt-1 font-medium"><span className="text-slate-300">Laba (rugi)</span><span className={warna(r.laba)}>{fmtRp(r.laba)}</span></div>
-              {mrg !== null && <div className="flex justify-between"><span className="text-slate-500">Margin</span><span className="text-slate-400">{mrg.toFixed(1)}%</span></div>}
-            </div>
-          </div>
-        </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div>
-            <BreakdownKategori total={keluar.total} data={keluar.data} judul="Pengeluaran per kategori" kosong="Belum ada pengeluaran bulan ini." />
-            {r.antarKeluar > 0 && <div className="text-[11px] text-slate-500 -mt-3 mb-3">Belum termasuk biaya antar perusahaan {fmtRp(r.antarKeluar)}.</div>}
-          </div>
-          <div>
-            <BreakdownKategori total={masuk.total} data={masuk.data} judul="Pemasukan per kategori" kosong="Belum ada pemasukan bulan ini." />
-            {r.antarMasuk > 0 && <div className="text-[11px] text-slate-500 -mt-3 mb-3">Belum termasuk biaya antar perusahaan {fmtRp(r.antarMasuk)}.</div>}
-          </div>
-        </div>
-        {onBuka && (
-          <button onClick={() => onBuka(e.kode)} className="text-[11px] text-amber-400 hover:text-amber-300">
-            {labelBuka} {e.label} →
-          </button>
-        )}
-      </div>
-    );
-  };
+  // Pilihan tampilan untuk grafik & donat: gabungan semua PT, atau satu PT.
+  const pilihAktif = pilih === "GAB" || !data.perEnt[pilih] ? "GAB" : pilih;
+  const trxDonat = pilihAktif === "GAB" ? ents.flatMap((e) => (data.perEnt[e.kode].bulan[bulanPilih] || KOSONG).trx) : (data.perEnt[pilihAktif].bulan[bulanPilih] || KOSONG).trx;
+  const keluarB = breakdownPengeluaranKategori(trxDonat, master.kategori_keluar || []);
+  const masukB = breakdownPemasukanKategori(trxDonat, master.kategori_masuk || []);
+  const namaPilih = pilihAktif === "GAB" ? "Gabungan grup" : ents.find((e) => e.kode === pilihAktif)?.label || pilihAktif;
+
+  const Kpi = ({ label, nilai: v, sub, subWarna, aksen }) => (
+    <div className={`rounded-xl border px-3 py-2.5 ${aksen ? "border-amber-500/30 bg-amber-500/5" : "border-slate-800 bg-slate-900"}`}>
+      <div className="text-[11px] text-slate-500 truncate">{label}</div>
+      <div className="text-base font-semibold leading-tight mt-0.5 truncate">{v}</div>
+      {sub && <div className={`text-[10px] mt-0.5 truncate ${subWarna || "text-slate-500"}`}>{sub}</div>}
+    </div>
+  );
+
+  // Pemasukan/pengeluaran/laba gabungan & per PT di tabel bawah.
+  const th = "px-2.5 py-2 font-medium text-right whitespace-nowrap";
+  const td = "px-2.5 py-1.5 text-right whitespace-nowrap";
 
   return (
     <div>
@@ -319,7 +278,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
 
       {/* Pilih bulan */}
       <div className="flex items-center justify-between gap-3 mb-3">
-        <div className="text-xs text-slate-500">Dipilih: <span className="text-slate-300">{labelBulan(bulanPilih)}</span></div>
+        <div className="text-xs text-slate-500">Gabungan grup · <span className="text-slate-300">{labelBulan(bulanPilih)}</span></div>
         <select value={bulanPilih} onChange={(ev) => setBulanPilih(ev.target.value)} className={`${inputClass} w-auto text-xs py-1.5`} aria-label="Pilih bulan">
           {[...bulan6].reverse().map((b) => (
             <option key={b} value={b}>{labelBulan(b)}</option>
@@ -327,154 +286,165 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
         </select>
       </div>
 
-      {/* 1. Ringkasan gabungan — 4 angka saja */}
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 mb-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Building2 size={14} className="text-amber-400" />
-          <div className="text-sm font-semibold text-slate-100">Gabungan grup</div>
+      {/* 1. Kartu angka mungil */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 mb-3">
+        <Kpi aksen label="Total kas saat ini" nilai={<span className={warna(kasGab)}>{fmtRp(kasGab)}</span>} />
+        <Kpi label="Bank" nilai={<span className={warna(kasBank)}>{fmtRp(kasBank)}</span>} />
+        <Kpi label="Kas Kecil" nilai={<span className={warna(kasKecil)}>{fmtRp(kasKecil)}</span>} />
+        <Kpi label="Pemasukan" nilai={<span className="text-emerald-400">{fmtRp(gab.masuk)}</span>} />
+        <Kpi label="Pengeluaran" nilai={<span className="text-red-400">{fmtRp(gab.keluar)}</span>} />
+        <Kpi
+          aksen
+          label="Laba (rugi)"
+          nilai={<span className={warna(gab.laba)}>{fmtRp(gab.laba)}</span>}
+          sub={selisih !== null && selisih !== 0 ? `${selisih > 0 ? "▲" : "▼"} ${fmtSingkat(Math.abs(selisih))} dari ${labelBulan(bulanSebelum)}${margin !== null ? ` · margin ${margin.toFixed(1)}%` : ""}` : margin !== null ? `margin ${margin.toFixed(1)}%` : null}
+          subWarna={selisih > 0 ? "text-emerald-400" : selisih < 0 ? "text-red-400" : ""}
+        />
+      </div>
+
+      {/* 2. Pilih tampilan: gabungan / per PT — mengatur grafik & donat di bawah */}
+      <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <span className="text-[11px] text-slate-500 mr-1">Tampilkan</span>
+        {[{ kode: "GAB", label: "Gabungan" }, ...ents].map((e) => (
+          <button
+            key={e.kode}
+            type="button"
+            onClick={() => setPilih(e.kode)}
+            className={`px-2.5 py-1 rounded-full text-[11px] border transition ${pilihAktif === e.kode ? "border-amber-500/50 bg-amber-500/10 text-amber-300" : "border-slate-800 text-slate-400 hover:border-slate-700"}`}
+          >
+            {e.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 3. Tiga panel sejajar: tren laba, pemasukan, pengeluaran */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 p-3">
+          <div className="text-xs text-slate-400 mb-2">Laba (rugi) 6 bulan · {namaPilih}</div>
+          <GrafikLaba bulanList={bulan6} nilaiBulan={(b) => (pilihAktif === "GAB" ? labaBulan(b) : labaEnt(pilihAktif, b))} terpilih={bulanPilih} onPilih={setBulanPilih} />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3">
-          <div>
-            <div className="text-[11px] text-slate-500">Total kas saat ini</div>
-            <div className={`text-lg sm:text-xl font-semibold ${warna(kasGab)}`}>{fmtRp(kasGab)}</div>
+        <BreakdownKategori kelas="mb-0" total={masukB.total} data={masukB.data} judul={`Pemasukan per kategori · ${namaPilih}`} kosong="Belum ada pemasukan bulan ini." />
+        <BreakdownKategori kelas="mb-0" total={keluarB.total} data={keluarB.data} judul={`Pengeluaran per kategori · ${namaPilih}`} kosong="Belum ada pengeluaran bulan ini." />
+      </div>
+
+      {/* 4. Dua tabel padat sejajar: per perusahaan & transaksi terakhir */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mb-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
+          <div className="text-xs text-slate-400 px-3 pt-3 pb-2">Per perusahaan · {labelBulan(bulanPilih)}</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[460px]">
+              <thead>
+                <tr className="text-[11px] text-slate-500 border-y border-slate-800">
+                  <th className="px-2.5 py-2 font-medium text-left">Perusahaan</th>
+                  <th className={th}>Total kas</th>
+                  <th className={th}>Pemasukan</th>
+                  <th className={th}>Pengeluaran</th>
+                  <th className={th}>Laba</th>
+                </tr>
+              </thead>
+              <tbody>
+                {semuaRingkas.map(({ e, r }) => {
+                  const kas = data.perEnt[e.kode].kas;
+                  return (
+                    <tr key={e.kode} className="border-b border-slate-800/60">
+                      <td className="px-2.5 py-1.5 text-slate-200">
+                        {onBuka ? (
+                          <button type="button" onClick={() => onBuka(e.kode)} title={`${labelBuka} ${e.label}`} className="hover:text-amber-300 text-left">{e.label} →</button>
+                        ) : (
+                          e.label
+                        )}
+                      </td>
+                      <td className={`${td} ${warna(kas)}`}>{fmtRp(kas)}</td>
+                      <td className={`${td} text-emerald-400`}>{fmtRp(r.masuk)}</td>
+                      <td className={`${td} text-red-400`}>{fmtRp(r.keluar)}</td>
+                      <td className={`${td} font-medium ${warna(r.laba)}`}>{fmtRp(r.laba)}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="font-semibold bg-slate-800/30">
+                  <td className="px-2.5 py-1.5 text-slate-100">Gabungan</td>
+                  <td className={`${td} ${warna(kasGab)}`}>{fmtRp(kasGab)}</td>
+                  <td className={`${td} text-emerald-400`}>{fmtRp(gab.masuk)}</td>
+                  <td className={`${td} text-red-400`}>{fmtRp(gab.keluar)}</td>
+                  <td className={`${td} ${warna(gab.laba)}`}>{fmtRp(gab.laba)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-          <div>
-            <div className="text-[11px] text-slate-500">Pemasukan</div>
-            <div className="text-lg sm:text-xl font-semibold text-emerald-400">{fmtRp(gab.masuk)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-500">Pengeluaran</div>
-            <div className="text-lg sm:text-xl font-semibold text-red-400">{fmtRp(gab.keluar)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-500">Laba (rugi)</div>
-            <div className={`text-lg sm:text-xl font-semibold ${warna(gab.laba)}`}>{fmtRp(gab.laba)}</div>
-          </div>
-        </div>
-        <div className="mt-3 text-[11px] text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
-          {margin !== null && <span>Margin {margin.toFixed(1)}%</span>}
-          {selisih !== null && selisih !== 0 && (
-            <span className={selisih > 0 ? "text-emerald-400" : "text-red-400"}>
-              {selisih > 0 ? "▲" : "▼"} {fmtSingkat(Math.abs(selisih))} dibanding {labelBulan(bulanSebelum)}
-            </span>
+          {ents.some((e) => (data.pinjaman[e.kode] || 0) !== 0) && (
+            <div className="px-3 py-2 text-[11px] text-slate-500 border-t border-slate-800">
+              Pinjaman antar PT:{" "}
+              {ents
+                .filter((e) => (data.pinjaman[e.kode] || 0) !== 0)
+                .map((e) => `${e.label} ${data.pinjaman[e.kode] > 0 ? "piutang" : "utang"} ${fmtRp(Math.abs(data.pinjaman[e.kode]))}`)
+                .join(" · ")}
+            </div>
           )}
-          <span>Dividen &amp; biaya antar perusahaan sudah dieliminasi</span>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
+          <div className="text-xs text-slate-400 px-3 pt-3 pb-2">5 transaksi terakhir per perusahaan</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[460px]">
+              <thead>
+                <tr className="text-[11px] text-slate-500 border-y border-slate-800">
+                  <th className="px-2.5 py-2 font-medium text-left">Tanggal</th>
+                  <th className="px-2.5 py-2 font-medium text-left">Keterangan</th>
+                  <th className={th}>Nominal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ents.map((e) => {
+                  const daftar = data.terakhir[e.kode] || [];
+                  return (
+                    <Fragment key={e.kode}>
+                      <tr className="bg-slate-800/30">
+                        <td colSpan={3} className="px-2.5 py-1 text-[11px] font-semibold text-slate-300">{e.label}</td>
+                      </tr>
+                      {daftar.length === 0 && (
+                        <tr><td colSpan={3} className="px-2.5 py-1.5 text-slate-500">Belum ada transaksi.</td></tr>
+                      )}
+                      {daftar.map((t) => {
+                        const masuk = t.tipe === "masuk";
+                        const transfer = t.tipe === "transfer";
+                        const kat = (master[masuk ? "kategori_masuk" : "kategori_keluar"] || []).find((x) => x.kode === t.kategori)?.label;
+                        const judul = t.keterangan || (transfer ? `Transfer ke ${k.labelRek(t.rekening_tujuan)}` : kat || "—");
+                        return (
+                          <tr key={t.id} className="border-b border-slate-800/60">
+                            <td className="px-2.5 py-1.5 text-slate-400 whitespace-nowrap">{formatTanggalID(t.tanggal)}</td>
+                            <td className="px-2.5 py-1.5 text-slate-200 max-w-[220px] truncate" title={judul}>
+                              {judul}
+                              {transfer && <span className="ml-1.5 text-[10px] text-slate-500">Transfer</span>}
+                            </td>
+                            <td className={`${td} font-medium ${transfer ? "text-slate-300" : masuk ? "text-emerald-400" : "text-red-400"}`}>
+                              {masuk ? "+" : transfer ? "" : "−"}{fmtRp(t.jumlah)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      {/* 2. Per perusahaan — satu baris ringkas, klik untuk rincian */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold text-slate-200">Per perusahaan</div>
-        <button
-          type="button"
-          onClick={() => setTertutup(tertutup.size < ents.length ? new Set(ents.map((e) => e.kode)) : new Set())}
-          className="text-[11px] text-amber-400 hover:text-amber-300"
-        >
-          {tertutup.size < ents.length ? "Ciutkan semua" : "Buka semua"}
-        </button>
-      </div>
-      <div className="rounded-xl border border-slate-800 bg-slate-900 divide-y divide-slate-800 mb-5">
-        {semuaRingkas.map(({ e, r }) => {
-          const buka = !tertutup.has(e.kode);
-          const kas = data.perEnt[e.kode].kas;
-          return (
-            <div key={e.kode}>
-              <button type="button" onClick={() => toggle(e.kode)} aria-expanded={buka} className="w-full text-left px-4 py-3 hover:bg-slate-800/40 transition">
-                <div className="flex items-center gap-3">
-                  <ChevronDown size={16} className={`shrink-0 text-slate-500 transition-transform ${buka ? "rotate-180" : ""}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-slate-100 truncate">{e.label}</div>
-                    <div className="text-[11px] text-slate-500">Kas {fmtSingkat(kas)}</div>
-                  </div>
-                  <div className="hidden md:block w-28 text-right">
-                    <div className="text-[10px] text-slate-500">Pemasukan</div>
-                    <div className="text-xs text-emerald-400">{fmtSingkat(r.masuk)}</div>
-                  </div>
-                  <div className="hidden md:block w-28 text-right">
-                    <div className="text-[10px] text-slate-500">Pengeluaran</div>
-                    <div className="text-xs text-red-400">{fmtSingkat(r.keluar)}</div>
-                  </div>
-                  <div className="w-28 text-right">
-                    <div className="text-[10px] text-slate-500">Laba (rugi)</div>
-                    <div className={`text-sm font-semibold ${warna(r.laba)}`}>{fmtSingkat(r.laba)}</div>
-                  </div>
-                </div>
-                <div className="mt-2 ml-7 h-1 rounded-full bg-slate-800 overflow-hidden">
-                  <div className={`h-full rounded-full ${r.laba < 0 ? "bg-red-400/70" : "bg-emerald-400/70"}`} style={{ width: `${Math.max(2, (Math.abs(r.laba) / labaTertinggi) * 100)}%` }} />
-                </div>
-              </button>
-              {buka && <Rincian e={e} r={r} />}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 3. Transaksi terakhir per perusahaan */}
-      <div className="text-sm font-semibold text-slate-200 mb-2">5 transaksi terakhir</div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-5">
-        {ents.map((e) => {
-          const daftar = data.terakhir[e.kode] || [];
-          return (
-            <div key={e.kode} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Building2 size={13} className="text-slate-500" />
-                <div className="text-xs font-semibold text-slate-200 truncate">{e.label}</div>
-              </div>
-              {daftar.length === 0 ? (
-                <div className="text-xs text-slate-500 py-2">Belum ada transaksi.</div>
-              ) : (
-                <div className="divide-y divide-slate-800/70">
-                  {daftar.map((t) => {
-                    const masuk = t.tipe === "masuk";
-                    const transfer = t.tipe === "transfer";
-                    const kat = (master[masuk ? "kategori_masuk" : "kategori_keluar"] || []).find((x) => x.kode === t.kategori)?.label;
-                    const judul = t.keterangan || (transfer ? `Transfer ke ${k.labelRek(t.rekening_tujuan)}` : kat || "—");
-                    return (
-                      <div key={t.id} className="flex items-center justify-between gap-3 py-2">
-                        <div className="min-w-0">
-                          <div className="text-xs text-slate-200 truncate">{judul}</div>
-                          <div className="text-[11px] text-slate-500 truncate">
-                            {formatTanggalID(t.tanggal)}
-                            {!transfer && kat ? ` · ${kat}` : ""}
-                            {transfer ? " · Transfer" : ""}
-                          </div>
-                        </div>
-                        <div className={`text-xs font-medium whitespace-nowrap ${transfer ? "text-slate-300" : masuk ? "text-emerald-400" : "text-red-400"}`}>
-                          {masuk ? "+" : transfer ? "" : "−"}{fmtRp(t.jumlah)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 4. Tren 6 bulan */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold text-slate-200">Laba gabungan 6 bulan</div>
-        <div className="text-[11px] text-slate-500">Klik batang untuk ganti bulan</div>
-      </div>
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <GrafikLaba bulanList={bulan6} nilaiBulan={labaBulan} terpilih={bulanPilih} onPilih={setBulanPilih} />
-      </div>
-
-      <button type="button" onClick={() => setLihatAngka((v) => !v)} className="mt-3 text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1">
+      <button type="button" onClick={() => setLihatAngka((v) => !v)} className="text-xs text-amber-400 hover:text-amber-300 inline-flex items-center gap-1">
         <ChevronDown size={13} className={`transition-transform ${lihatAngka ? "rotate-180" : ""}`} />
-        {lihatAngka ? "Sembunyikan" : "Lihat"} tabel laba per perusahaan
+        {lihatAngka ? "Sembunyikan" : "Lihat"} tabel laba per bulan
       </button>
       {lihatAngka && (
         <div className="rounded-xl border border-slate-800 overflow-x-auto mt-2">
-          <table className="w-full text-sm min-w-[480px]">
+          <table className="w-full text-xs min-w-[480px]">
             <thead>
               <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800">
-                <th className="px-4 py-2.5 font-medium">Bulan</th>
+                <th className="px-3 py-2 font-medium">Bulan</th>
                 {ents.map((e) => (
-                  <th key={e.kode} className="px-2 py-2.5 font-medium text-right">{e.label}</th>
+                  <th key={e.kode} className={th}>{e.label}</th>
                 ))}
-                <th className="px-4 py-2.5 font-medium text-right text-amber-400">Gabungan</th>
+                <th className={`${th} text-amber-400`}>Gabungan</th>
               </tr>
             </thead>
             <tbody>
@@ -482,12 +452,12 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
                 const total = labaBulan(b);
                 return (
                   <tr key={b} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2 text-slate-300">{labelBulan(b)}</td>
+                    <td className="px-3 py-1.5 text-slate-300">{labelBulan(b)}</td>
                     {ents.map((e) => {
                       const v = labaEnt(e.kode, b);
-                      return <td key={e.kode} className={`px-2 py-2 text-right whitespace-nowrap ${v < 0 ? "text-red-400" : ""}`}>{fmtRp(v)}</td>;
+                      return <td key={e.kode} className={`${td} ${v < 0 ? "text-red-400" : ""}`}>{fmtRp(v)}</td>;
                     })}
-                    <td className={`px-4 py-2 text-right whitespace-nowrap font-semibold ${total < 0 ? "text-red-400" : ""}`}>{fmtRp(total)}</td>
+                    <td className={`${td} font-semibold ${total < 0 ? "text-red-400" : ""}`}>{fmtRp(total)}</td>
                   </tr>
                 );
               })}
@@ -501,7 +471,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
       </button>
       {lihatCara && (
         <div className="text-[11px] text-slate-500 mt-1">
-          Laba per perusahaan = pemasukan − pengeluaran tercatat di Keuangan + dividen yang diterima dari perusahaan lain + biaya antar perusahaan (sebagai pemasukan penerima / pengeluaran pembayar). Kolom Gabungan membuang dividen dan biaya antar perusahaan agar tidak dihitung ganda. Modal dan pinjaman tidak dihitung sebagai laba. Saldo kas selalu posisi saat ini, bukan posisi akhir bulan yang dipilih. Lihat tab Konsolidasi untuk rinciannya.
+          Laba per perusahaan = pemasukan − pengeluaran tercatat di Keuangan + dividen yang diterima dari perusahaan lain + biaya antar perusahaan (sebagai pemasukan penerima / pengeluaran pembayar). Baris Gabungan membuang dividen dan biaya antar perusahaan agar tidak dihitung ganda. Modal dan pinjaman tidak dihitung sebagai laba. Saldo kas selalu posisi saat ini, bukan posisi akhir bulan yang dipilih. Donat per kategori hanya memuat transaksi biasa (tanpa biaya antar perusahaan). Lihat tab Konsolidasi untuk rinciannya.
         </div>
       )}
     </div>

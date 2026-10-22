@@ -549,12 +549,12 @@ function potonganDonat(cx, cy, rLuar, rDalam, sudutAwal, sudutAkhir) {
 // daftar persentase. Kategori di luar 6 besar digabung jadi "Lainnya" di donat
 // (biar potongannya tidak terlalu tipis/rapat), tapi daftar di sisi kanan
 // tetap menampilkan semua kategori.
-export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick }) {
+export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick, kelas = "mb-5" }) {
   const [hover, setHover] = useState(null);
 
   if (total === 0 || data.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-800 p-6 text-center text-slate-500 text-sm mb-5">
+      <div className={`rounded-xl border border-slate-800 p-6 text-center text-slate-500 text-sm ${kelas}`}>
         {kosong || "Belum ada transaksi pada rentang ini untuk ditampilkan."}
       </div>
     );
@@ -581,7 +581,7 @@ export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick 
   const aktif = hover !== null ? arcs[hover] : null;
 
   return (
-    <div className="rounded-xl border border-slate-800 p-4 mb-5 bg-slate-900/30">
+    <div className={`rounded-xl border border-slate-800 p-4 bg-slate-900/30 ${kelas}`}>
       <div className="text-xs text-slate-400 mb-3">{judul || "Per Kategori"}</div>
       <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
         <div className="relative shrink-0">
