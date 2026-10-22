@@ -323,8 +323,8 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
           <div className="text-xs text-slate-400 mb-2">Laba (rugi) 6 bulan · {namaPilih}</div>
           <GrafikLaba bulanList={bulan6} nilaiBulan={(b) => (pilihAktif === "GAB" ? labaBulan(b) : labaEnt(pilihAktif, b))} terpilih={bulanPilih} onPilih={setBulanPilih} />
         </div>
-        <BreakdownKategori kelas="mb-0" total={masukB.total} data={masukB.data} judul={`Pemasukan per kategori · ${namaPilih}`} kosong="Belum ada pemasukan bulan ini." />
-        <BreakdownKategori kelas="mb-0" total={keluarB.total} data={keluarB.data} judul={`Pengeluaran per kategori · ${namaPilih}`} kosong="Belum ada pengeluaran bulan ini." />
+        <BreakdownKategori kelas="mb-0" tanpaScroll total={masukB.total} data={masukB.data} judul={`Pemasukan per kategori · ${namaPilih}`} kosong="Belum ada pemasukan bulan ini." />
+        <BreakdownKategori kelas="mb-0" tanpaScroll total={keluarB.total} data={keluarB.data} judul={`Pengeluaran per kategori · ${namaPilih}`} kosong="Belum ada pengeluaran bulan ini." />
       </div>
 
       {/* 4. Dua tabel padat sejajar: per perusahaan & transaksi terakhir */}

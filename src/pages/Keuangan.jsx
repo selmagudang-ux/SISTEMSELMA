@@ -549,7 +549,7 @@ function potonganDonat(cx, cy, rLuar, rDalam, sudutAwal, sudutAkhir) {
 // daftar persentase. Kategori di luar 6 besar digabung jadi "Lainnya" di donat
 // (biar potongannya tidak terlalu tipis/rapat), tapi daftar di sisi kanan
 // tetap menampilkan semua kategori.
-export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick, kelas = "mb-5" }) {
+export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick, kelas = "mb-5", tanpaScroll = false }) {
   const [hover, setHover] = useState(null);
 
   if (total === 0 || data.length === 0) {
@@ -614,7 +614,7 @@ export function BreakdownKategori({ total, data, judul, kosong, onKategoriClick,
           </div>
         </div>
 
-        <div className="w-full flex-1 space-y-2 max-h-52 overflow-y-auto pr-1">
+        <div className={`w-full flex-1 space-y-2 pr-1 ${tanpaScroll ? "" : "max-h-52 overflow-y-auto"}`}>
           {data.map((d, i) => {
             const warna = i < TOP_N ? WARNA_KATEGORI[i % WARNA_KATEGORI.length] : WARNA_LAINNYA;
             const idxSlice = i < TOP_N ? i : arcs.length - 1;
