@@ -4,6 +4,7 @@ import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, form
 import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
+import { BreakdownKategori } from "./Keuangan";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
 
 // =========================================================
@@ -90,21 +91,6 @@ const fmtSingkat = (n) => {
   return fmtRp(v);
 };
 const KOSONG = { masuk: 0, keluar: 0, dividen: 0, antarMasuk: 0, antarKeluar: 0, trx: [] };
-
-// Baris kecil "label ..... nilai" + batang persen, dipakai untuk 5 kategori teratas.
-function BarisKategori({ label, jumlah, persen, warna }) {
-  return (
-    <div className="mb-2 last:mb-0">
-      <div className="flex justify-between gap-3 text-xs">
-        <span className="text-slate-300 truncate">{label}</span>
-        <span className="text-slate-400 whitespace-nowrap">{fmtRp(jumlah)} · {Math.round(persen)}%</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-slate-800 mt-1 overflow-hidden">
-        <div className={`h-full rounded-full ${warna}`} style={{ width: `${Math.min(100, Math.max(2, persen))}%` }} />
-      </div>
-    </div>
-  );
-}
 
 // Grafik batang laba (rugi) per bulan — sederhana: satu seri, batang merah kalau rugi.
 function GrafikLaba({ bulanList, nilaiBulan, terpilih, onPilih }) {
@@ -281,43 +267,47 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
     const pinjam = data.pinjaman[e.kode] || 0;
     const mrg = r.masuk > 0 ? (r.laba / r.masuk) * 100 : null;
     return (
-      <div className="px-4 pb-4 pt-1 border-t border-slate-800/70 grid gap-5 md:grid-cols-3">
-        <div>
-          <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Posisi kas saat ini</div>
-          <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-slate-400">{LABEL_KAS[KAS_BANK]}</span><span className={warna(d.kasJenis[KAS_BANK])}>{fmtRp(d.kasJenis[KAS_BANK])}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">{LABEL_KAS[KAS_KECIL]}</span><span className={warna(d.kasJenis[KAS_KECIL])}>{fmtRp(d.kasJenis[KAS_KECIL])}</span></div>
-            <div className="flex justify-between border-t border-slate-800 pt-1 font-medium"><span className="text-slate-300">Total</span><span className={warna(d.kas)}>{fmtRp(d.kas)}</span></div>
-          </div>
-          <div className="text-[11px] uppercase tracking-wide text-slate-500 mt-4 mb-2">Bulan {labelBulan(bulanPilih)}</div>
-          <div className="text-xs space-y-1">
-            <div className="flex justify-between"><span className="text-slate-400">Pemasukan</span><span className="text-emerald-400">{fmtRp(r.masuk)}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">Pengeluaran</span><span className="text-red-400">{fmtRp(r.keluar)}</span></div>
-            {r.dividen > 0 && <div className="flex justify-between"><span className="text-slate-400">Dividen diterima</span><span className="text-slate-200">{fmtRp(r.dividen)}</span></div>}
-            <div className="flex justify-between border-t border-slate-800 pt-1 font-medium"><span className="text-slate-300">Laba (rugi)</span><span className={warna(r.laba)}>{fmtRp(r.laba)}</span></div>
-            {mrg !== null && <div className="flex justify-between"><span className="text-slate-500">Margin</span><span className="text-slate-400">{mrg.toFixed(1)}%</span></div>}
-          </div>
-          {pinjam !== 0 && (
-            <div className="mt-3 text-[11px] text-slate-400">
-              {pinjam > 0 ? "Piutang pinjaman antar perusahaan" : "Utang pinjaman antar perusahaan"}: <span className="text-amber-400">{fmtRp(Math.abs(pinjam))}</span>
+      <div className="px-4 pb-4 pt-3 border-t border-slate-800/70">
+        <div className="grid gap-5 sm:grid-cols-2 mb-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Posisi kas saat ini</div>
+            <div className="text-xs space-y-1">
+              <div className="flex justify-between"><span className="text-slate-400">{LABEL_KAS[KAS_BANK]}</span><span className={warna(d.kasJenis[KAS_BANK])}>{fmtRp(d.kasJenis[KAS_BANK])}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">{LABEL_KAS[KAS_KECIL]}</span><span className={warna(d.kasJenis[KAS_KECIL])}>{fmtRp(d.kasJenis[KAS_KECIL])}</span></div>
+              <div className="flex justify-between border-t border-slate-800 pt-1 font-medium"><span className="text-slate-300">Total</span><span className={warna(d.kas)}>{fmtRp(d.kas)}</span></div>
             </div>
-          )}
+            {pinjam !== 0 && (
+              <div className="mt-3 text-[11px] text-slate-400">
+                {pinjam > 0 ? "Piutang pinjaman antar perusahaan" : "Utang pinjaman antar perusahaan"}: <span className="text-amber-400">{fmtRp(Math.abs(pinjam))}</span>
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Bulan {labelBulan(bulanPilih)}</div>
+            <div className="text-xs space-y-1">
+              <div className="flex justify-between"><span className="text-slate-400">Pemasukan</span><span className="text-emerald-400">{fmtRp(r.masuk)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Pengeluaran</span><span className="text-red-400">{fmtRp(r.keluar)}</span></div>
+              {r.dividen > 0 && <div className="flex justify-between"><span className="text-slate-400">Dividen diterima</span><span className="text-slate-200">{fmtRp(r.dividen)}</span></div>}
+              <div className="flex justify-between border-t border-slate-800 pt-1 font-medium"><span className="text-slate-300">Laba (rugi)</span><span className={warna(r.laba)}>{fmtRp(r.laba)}</span></div>
+              {mrg !== null && <div className="flex justify-between"><span className="text-slate-500">Margin</span><span className="text-slate-400">{mrg.toFixed(1)}%</span></div>}
+            </div>
+          </div>
         </div>
-        <div>
-          <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Pengeluaran terbesar</div>
-          {keluar.data.length === 0 ? <div className="text-xs text-slate-500">Belum ada pengeluaran.</div> : keluar.data.slice(0, 5).map((d2) => <BarisKategori key={d2.kode || "_"} label={d2.label} jumlah={d2.jumlah} persen={d2.persen} warna="bg-red-400/70" />)}
-          {r.antarKeluar > 0 && <div className="text-[11px] text-slate-500 mt-2">+ biaya antar perusahaan {fmtRp(r.antarKeluar)} (tidak masuk daftar)</div>}
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div>
+            <BreakdownKategori total={keluar.total} data={keluar.data} judul="Pengeluaran per kategori" kosong="Belum ada pengeluaran bulan ini." />
+            {r.antarKeluar > 0 && <div className="text-[11px] text-slate-500 -mt-3 mb-3">Belum termasuk biaya antar perusahaan {fmtRp(r.antarKeluar)}.</div>}
+          </div>
+          <div>
+            <BreakdownKategori total={masuk.total} data={masuk.data} judul="Pemasukan per kategori" kosong="Belum ada pemasukan bulan ini." />
+            {r.antarMasuk > 0 && <div className="text-[11px] text-slate-500 -mt-3 mb-3">Belum termasuk biaya antar perusahaan {fmtRp(r.antarMasuk)}.</div>}
+          </div>
         </div>
-        <div>
-          <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">Sumber pemasukan</div>
-          {masuk.data.length === 0 ? <div className="text-xs text-slate-500">Belum ada pemasukan.</div> : masuk.data.slice(0, 5).map((d2) => <BarisKategori key={d2.kode || "_"} label={d2.label} jumlah={d2.jumlah} persen={d2.persen} warna="bg-emerald-400/70" />)}
-          {r.antarMasuk > 0 && <div className="text-[11px] text-slate-500 mt-2">+ biaya antar perusahaan {fmtRp(r.antarMasuk)} (tidak masuk daftar)</div>}
-          {onBuka && (
-            <button onClick={() => onBuka(e.kode)} className="mt-4 text-[11px] text-amber-400 hover:text-amber-300">
-              {labelBuka} {e.label} →
-            </button>
-          )}
-        </div>
+        {onBuka && (
+          <button onClick={() => onBuka(e.kode)} className="text-[11px] text-amber-400 hover:text-amber-300">
+            {labelBuka} {e.label} →
+          </button>
+        )}
       </div>
     );
   };
