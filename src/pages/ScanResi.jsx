@@ -192,14 +192,14 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [dari, setDari] = useState(geserHari(hariIni(), -6));
   const [sampai, setSampai] = useState(hariIni());
   const [scans, setScans] = useState([]);
-  const [antrean, setAntrean] = useState(bacaAntrean); // scan yang belum terkirim ke server
-  const antreanRef = useRef(antrean);
+  const [belumKirim, setBelumKirim] = useState(bacaAntrean); // scan yang belum terkirim ke server
+  const belumKirimRef = useRef(belumKirim);
   const [infoKirim, setInfoKirim] = useState("");
   const setAntreanSync = useCallback((fn) => {
-    const baru = fn(antreanRef.current);
-    antreanRef.current = baru;
+    const baru = fn(belumKirimRef.current);
+    belumKirimRef.current = baru;
     simpanAntrean(baru);
-    setAntrean(baru);
+    setBelumKirim(baru);
   }, []);
   const [cancelRows, setCancelRows] = useState([]);
   const [memuat, setMemuat] = useState(true);
@@ -276,13 +276,13 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   // Scan dari server + scan yang masih menunggu terkirim (ditandai tertunda).
   const gabungScan = useMemo(() => {
     const sudah = new Set(scans.map((x) => x.resi));
-    const tertunda = antrean
+    const tertunda = belumKirim
       .filter((a) => !sudah.has(a.resi) && a.tanggal >= rentang[0] && a.tanggal <= rentang[1])
       .map((a) => ({ ...a, id: `t-${a.resi}`, tertunda: true }))
       .reverse();
     return [...tertunda, ...scans];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scans, antrean, rentang[0], rentang[1]]);
+  }, [scans, belumKirim, rentang[0], rentang[1]]);
   const rows = useMemo(
     () =>
       gabungScan.map((s) => {
@@ -316,8 +316,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     if (sedangKirim.current) return;
     sedangKirim.current = true;
     try {
-      while (antreanRef.current.length) {
-        const it = antreanRef.current[0];
+      while (belumKirimRef.current.length) {
+        const it = belumKirimRef.current[0];
         const buang = () => setAntreanSync((a) => a.filter((x) => x.resi !== it.resi));
         try {
           const hasilPost = await sb("resi_scan", {
@@ -358,11 +358,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   useEffect(() => {
     kirimAntrean();
     const t = setInterval(() => {
-      if (antreanRef.current.length) kirimAntrean();
+      if (belumKirimRef.current.length) kirimAntrean();
     }, INTERVAL_KIRIM_MS);
     const saatOnline = () => kirimAntrean();
     const saatTutup = (e) => {
-      if (antreanRef.current.length) {
+      if (belumKirimRef.current.length) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -398,7 +398,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       bip("dup");
       return;
     }
-    const tunda = antreanRef.current.find((x) => x.resi === resi);
+    const tunda = belumKirimRef.current.find((x) => x.resi === resi);
     if (tunda) {
       setHasil({ tipe: "dup", resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
       bip("dup");
@@ -653,11 +653,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
               </div>
-              {antrean.length > 0 && (
+              {belumKirim.length > 0 && (
                 <div className="rounded-lg bg-amber-500/15 text-amber-200 text-sm p-3 flex items-center gap-2">
                   <CloudOff size={16} className="shrink-0" />
                   <span className="flex-1">
-                    {antrean.length} resi tersimpan di perangkat ini, belum terkirim ke server
+                    {belumKirim.length} resi tersimpan di perangkat ini, belum terkirim ke server
                     {infoKirim ? ` (${infoKirim})` : ""}. Dikirim otomatis begitu jaringan pulih; tetap aman kalau halaman ditutup.
                   </span>
                   <button type="button" onClick={kirimAntrean} className={btnText}>Kirim sekarang</button>
