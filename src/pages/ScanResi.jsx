@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScanLine, Trash2, Upload, RefreshCw, Volume2, VolumeX, AlertTriangle,
-  CheckCircle2, Ban, Download, Search, Copy,
+  CheckCircle2, Ban, Download, Search, Copy, CloudOff,
 } from "lucide-react";
 import {
   PageHeader, EmptyState, StatCard, Badge, Field, InputTanggal, inputClass,
@@ -36,6 +36,28 @@ const BATAS_BARIS = 300;
 const PLATFORM = ["Shopee", "TikTok Shop", "Lazada", "Tokopedia", "Lainnya"];
 const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at";
 const KOLOM_CANCEL = "id,resi,no_pesanan,platform,alasan,created_at";
+
+// ---- ANTREAN OFFLINE ----
+// Tiap scan langsung tercatat di perangkat ini (localStorage) lalu dikirim ke server di
+// belakang layar dan diulang otomatis sampai berhasil. Jadi scanning tetap lancar walau
+// sinyal putus / lambat, dan tidak ada resi yang hilang kalau halaman ditutup.
+const KUNCI_ANTREAN = "selma-scan-resi-antrean";
+const INTERVAL_KIRIM_MS = 8000;
+function bacaAntrean() {
+  try {
+    const a = JSON.parse(localStorage.getItem(KUNCI_ANTREAN) || "[]");
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+function simpanAntrean(a) {
+  try {
+    localStorage.setItem(KUNCI_ANTREAN, JSON.stringify(a));
+  } catch {
+    // penyimpanan penuh / diblokir — antrean tetap jalan di memori
+  }
+}
 
 const hariIni = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
 const geserHari = (ymd, n) => {
@@ -170,6 +192,15 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [dari, setDari] = useState(geserHari(hariIni(), -6));
   const [sampai, setSampai] = useState(hariIni());
   const [scans, setScans] = useState([]);
+  const [antrean, setAntrean] = useState(bacaAntrean); // scan yang belum terkirim ke server
+  const antreanRef = useRef(antrean);
+  const [infoKirim, setInfoKirim] = useState("");
+  const setAntreanSync = useCallback((fn) => {
+    const baru = fn(antreanRef.current);
+    antreanRef.current = baru;
+    simpanAntrean(baru);
+    setAntrean(baru);
+  }, []);
   const [cancelRows, setCancelRows] = useState([]);
   const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
@@ -242,16 +273,26 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   }, [sub, hari, muatScan]);
 
   const cancelMap = useMemo(() => new Map(cancelRows.map((r) => [r.resi, r])), [cancelRows]);
+  // Scan dari server + scan yang masih menunggu terkirim (ditandai tertunda).
+  const gabungScan = useMemo(() => {
+    const sudah = new Set(scans.map((x) => x.resi));
+    const tertunda = antrean
+      .filter((a) => !sudah.has(a.resi) && a.tanggal >= rentang[0] && a.tanggal <= rentang[1])
+      .map((a) => ({ ...a, id: `t-${a.resi}`, tertunda: true }))
+      .reverse();
+    return [...tertunda, ...scans];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scans, antrean, rentang[0], rentang[1]]);
   const rows = useMemo(
     () =>
-      scans.map((s) => {
+      gabungScan.map((s) => {
         const c = cancelMap.get(s.resi);
         // Resi yang dulu tersimpan "Lainnya" dihitung ulang dengan pola terbaru, jadi kalau pola
         // ekspedisi diperbaiki, scan lama ikut benar tanpa perlu update database.
         const ekspedisi = s.ekspedisi === "LAINNYA" ? deteksiEkspedisi(s.resi) : s.ekspedisi;
         return { ...s, ekspedisi, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at) };
       }),
-    [scans, cancelMap]
+    [gabungScan, cancelMap]
   );
   const terlanjur = useMemo(() => rows.filter((r) => r.terlanjur), [rows]);
 
@@ -269,6 +310,73 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const antrean = useRef(Promise.resolve());
   const ref = useRef({});
   ref.current = { scans, cancelMap, suara, hari, operator };
+
+  const sedangKirim = useRef(false);
+  const kirimAntrean = useCallback(async () => {
+    if (sedangKirim.current) return;
+    sedangKirim.current = true;
+    try {
+      while (antreanRef.current.length) {
+        const it = antreanRef.current[0];
+        const buang = () => setAntreanSync((a) => a.filter((x) => x.resi !== it.resi));
+        try {
+          const hasilPost = await sb("resi_scan", {
+            method: "POST",
+            body: JSON.stringify({
+              resi: it.resi, ekspedisi: it.ekspedisi, tanggal: it.tanggal,
+              created_at: it.created_at, discan_oleh: it.discan_oleh,
+            }),
+          });
+          const baris = Array.isArray(hasilPost) ? hasilPost[0] : hasilPost;
+          if (baris && baris.tanggal === ref.current.hari) setScans((l) => [baris, ...l.filter((x) => x.id !== baris.id)]);
+          buang();
+        } catch (e) {
+          if (e.pgCode === "23505") {
+            // Sudah ada di server: scan sebelumnya yang timeout (sebenarnya tersimpan), atau
+            // sudah di-scan dari perangkat lain. Keduanya tidak perlu dikirim lagi.
+            buang();
+            toast(`Resi ${it.resi} ternyata sudah pernah di-scan (mungkin dari perangkat lain).`, "err");
+            if (ref.current.suara) bunyi("dup");
+            continue;
+          }
+          if (e.pgCode) {
+            buang();
+            toast(`Resi ${it.resi} ditolak server: ${e.message}`, "err");
+            continue;
+          }
+          // Tanpa kode database = masalah jaringan / timeout: simpan di antrean, coba lagi nanti.
+          setInfoKirim(e.message || "jaringan bermasalah");
+          return;
+        }
+      }
+      setInfoKirim("");
+    } finally {
+      sedangKirim.current = false;
+    }
+  }, [setAntreanSync, toast]);
+
+  useEffect(() => {
+    kirimAntrean();
+    const t = setInterval(() => {
+      if (antreanRef.current.length) kirimAntrean();
+    }, INTERVAL_KIRIM_MS);
+    const saatOnline = () => kirimAntrean();
+    const saatTutup = (e) => {
+      if (antreanRef.current.length) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("online", saatOnline);
+    document.addEventListener("visibilitychange", saatOnline);
+    window.addEventListener("beforeunload", saatTutup);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("online", saatOnline);
+      document.removeEventListener("visibilitychange", saatOnline);
+      window.removeEventListener("beforeunload", saatTutup);
+    };
+  }, [kirimAntrean]);
 
   const kerjakanScan = useCallback(async (raw) => {
     const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op } = ref.current;
@@ -290,45 +398,31 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       bip("dup");
       return;
     }
-    const ekspedisi = deteksiEkspedisi(resi);
-    try {
-      const hasilPost = await sb("resi_scan", {
-        method: "POST",
-        body: JSON.stringify({ resi, ekspedisi, discan_oleh: op }),
-      });
-      const baris = Array.isArray(hasilPost) ? hasilPost[0] : hasilPost;
-      if (baris && baris.tanggal === hariAktif) setScans((lama) => [baris, ...lama.filter((x) => x.id !== baris.id)]);
-      const c = cmap.get(resi);
-      if (c) {
-        setHasil({
-          tipe: "cancel", resi, ekspedisi,
-          info: [c.platform, c.no_pesanan && `Pesanan ${c.no_pesanan}`, c.alasan].filter(Boolean).join(" · ") || "Pesanan sudah dibatalkan.",
-        });
-        bip("cancel");
-      } else {
-        setHasil({
-          tipe: "ok", resi, ekspedisi,
-          info: ekspedisi === "LAINNYA" ? "Ekspedisi belum dikenali — bisa dikoreksi manual di daftar bawah." : "",
-        });
-        bip("ok");
-      }
-    } catch (e) {
-      if (e.pgCode === "23505") {
-        let info = "Resi ini sudah pernah di-scan.";
-        try {
-          const [lama] = (await sb(`resi_scan?select=tanggal,created_at&resi=eq.${encodeURIComponent(resi)}&limit=1`)) || [];
-          if (lama) info = `Sudah di-scan ${formatTanggalID(lama.tanggal)} pukul ${jam(lama.created_at)}.`;
-        } catch {
-          // pakai pesan umum
-        }
-        setHasil({ tipe: "dup", resi, ekspedisi, info });
-        bip("dup");
-      } else {
-        setHasil({ tipe: "err", resi, ekspedisi, info: `Gagal menyimpan: ${e.message}. Scan ulang resi ini.` });
-        bip("dup");
-      }
+    const tunda = antreanRef.current.find((x) => x.resi === resi);
+    if (tunda) {
+      setHasil({ tipe: "dup", resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
+      bip("dup");
+      return;
     }
-  }, []);
+    const ekspedisi = deteksiEkspedisi(resi);
+    // Catat dulu di perangkat ini, kirim ke server di belakang layar (lihat ANTREAN OFFLINE).
+    setAntreanSync((a) => [...a, { resi, ekspedisi, tanggal: hariAktif, discan_oleh: op, created_at: new Date().toISOString() }]);
+    kirimAntrean();
+    const c = cmap.get(resi);
+    if (c) {
+      setHasil({
+        tipe: "cancel", resi, ekspedisi,
+        info: [c.platform, c.no_pesanan && `Pesanan ${c.no_pesanan}`, c.alasan].filter(Boolean).join(" · ") || "Pesanan sudah dibatalkan.",
+      });
+      bip("cancel");
+    } else {
+      setHasil({
+        tipe: "ok", resi, ekspedisi,
+        info: ekspedisi === "LAINNYA" ? "Ekspedisi belum dikenali — bisa dikoreksi manual di daftar bawah." : "",
+      });
+      bip("ok");
+    }
+  }, [kirimAntrean, setAntreanSync]);
 
   // Antrean berurutan: scanner cepat tidak membuat dua scan saling menimpa.
   const prosesScan = useCallback(
@@ -378,6 +472,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
 
   const hapusScan = async (r) => {
     if (!window.confirm(`Hapus scan resi ${r.resi}?`)) return;
+    if (r.tertunda) {
+      setAntreanSync((a) => a.filter((x) => x.resi !== r.resi));
+      return;
+    }
     try {
       await sb(`resi_scan?id=eq.${r.id}`, { method: "DELETE", prefer: "return=minimal" });
       setScans((l) => l.filter((x) => x.id !== r.id));
@@ -387,6 +485,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   };
 
   const koreksiEkspedisi = async (r, ekspedisi) => {
+    if (r.tertunda) {
+      setAntreanSync((a) => a.map((x) => (x.resi === r.resi ? { ...x, ekspedisi } : x)));
+      return;
+    }
     try {
       await sb(`resi_scan?id=eq.${r.id}`, { method: "PATCH", body: JSON.stringify({ ekspedisi }), prefer: "return=minimal" });
       setScans((l) => l.map((x) => (x.id === r.id ? { ...x, ekspedisi } : x)));
@@ -551,6 +653,16 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
               </div>
+              {antrean.length > 0 && (
+                <div className="rounded-lg bg-amber-500/15 text-amber-200 text-sm p-3 flex items-center gap-2">
+                  <CloudOff size={16} className="shrink-0" />
+                  <span className="flex-1">
+                    {antrean.length} resi tersimpan di perangkat ini, belum terkirim ke server
+                    {infoKirim ? ` (${infoKirim})` : ""}. Dikirim otomatis begitu jaringan pulih; tetap aman kalau halaman ditutup.
+                  </span>
+                  <button type="button" onClick={kirimAntrean} className={btnText}>Kirim sekarang</button>
+                </div>
+              )}
               <KartuHasil hasil={hasil} />
             </div>
             <div className="grid grid-cols-3 lg:grid-cols-1 gap-3">
@@ -634,6 +746,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                       </td>
                       <td className="px-2 py-2">
                         {r.cancel ? <Badge color="red">{r.terlanjur ? "Cancel · terlanjur" : "Cancel"}</Badge> : <Badge color="emerald">Valid</Badge>}
+                        {r.tertunda && <span className="ml-1 text-[10px] text-amber-300 whitespace-nowrap">menunggu kirim</span>}
                       </td>
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{r.discan_oleh}</td>
                       <td className="px-3 py-2 text-right">
