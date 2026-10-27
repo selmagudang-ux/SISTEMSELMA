@@ -334,33 +334,6 @@ export const NAV = [
           },
         ],
       },
-      // Baru — beda dari menu "Marketplace" di group "ADMIN MARKETPLACE"
-      // (yang urusannya upload produk). Ini khusus input keuangan: pemasukan
-      // bulanan & pengeluaran iklan PER platform, plus pencairan saldo ke
-      // Keuangan. Key sengaja dibedakan ("penjualan-marketplace") supaya
-      // tidak bentrok dengan key "marketplace" yang sudah dipakai. Tiap
-      // platform (shopee/tiktok/lazada) submenu sendiri, tapi dirender satu
-      // komponen yang sama (lihat pages/Penjualanmarketplace.jsx) — sub
-      // dipakai buat filter platform-nya.
-      {
-        key: "penjualan-marketplace", label: "Marketplace", icon: ShoppingBag,
-        children: [
-          { key: "shopee", label: "Shopee" },
-          { key: "tiktok", label: "TikTok" },
-          { key: "lazada", label: "Lazada" },
-        ],
-      },
-      // Baru — Scan Resi: scan resi paket yang mau dikirim, hitung per ekspedisi, dan
-      // otomatis pisahkan resi pesanan yang CANCEL. Halaman: pages/ScanResi.jsx
-      // (tabel resi_scan & resi_cancel, lihat scan_resi.sql).
-      {
-        key: "scan-resi", label: "Scan Resi", icon: ScanLine,
-        children: [
-          { key: "scan", label: "Scan Resi" },
-          { key: "cancel", label: "Daftar Cancel" },
-          { key: "rekap", label: "Rekap" },
-        ],
-      },
       // Baru — Reseller Toko (sistem hutang) & Reseller Cekout (sistem
       // piutang), datanya numpang di data Pelanggan Grosir yang sudah ada.
       // Halaman "segera hadir" dulu.
@@ -388,6 +361,33 @@ export const NAV = [
         children: [
           { key: "pelanggan", label: "Pelanggan", icon: UserRound },
           { key: "toko", label: "Toko Pengirim", icon: Truck },
+        ],
+      },
+      // Baru — beda dari menu "Marketplace" di group "ADMIN MARKETPLACE"
+      // (yang urusannya upload produk). Ini khusus input keuangan: pemasukan
+      // bulanan & pengeluaran iklan PER platform, plus pencairan saldo ke
+      // Keuangan. Key sengaja dibedakan ("penjualan-marketplace") supaya
+      // tidak bentrok dengan key "marketplace" yang sudah dipakai. Tiap
+      // platform (shopee/tiktok/lazada) submenu sendiri, tapi dirender satu
+      // komponen yang sama (lihat pages/Penjualanmarketplace.jsx) — sub
+      // dipakai buat filter platform-nya.
+      {
+        key: "penjualan-marketplace", label: "Marketplace", icon: ShoppingBag,
+        children: [
+          { key: "shopee", label: "Shopee" },
+          { key: "tiktok", label: "TikTok" },
+          { key: "lazada", label: "Lazada" },
+        ],
+      },
+      // Baru — Scan Resi: scan resi paket yang mau dikirim, hitung per ekspedisi, dan
+      // otomatis pisahkan resi pesanan yang CANCEL. Halaman: pages/ScanResi.jsx
+      // (tabel resi_scan & resi_cancel, lihat scan_resi.sql).
+      {
+        key: "scan-resi", label: "Scan Resi", icon: ScanLine,
+        children: [
+          { key: "scan", label: "Scan Resi" },
+          { key: "cancel", label: "Daftar Cancel" },
+          { key: "rekap", label: "Rekap" },
         ],
       },
     ],
@@ -755,11 +755,11 @@ export const FITUR_ENTITAS = [
   { grup: "Penjualan", fitur: [
     { key: "grosir", label: "Grosir" },
     { key: "toko-offline", label: "Toko Offline" },
-    { key: "penjualan-marketplace", label: "Marketplace (penjualan)" },
     { key: "reseller", label: "Reseller" },
-    { key: "scan-resi", label: "Scan Resi" },
     { key: "pelanggan", label: "Pelanggan" },
     { key: "toko", label: "Toko Pengirim" },
+    { key: "penjualan-marketplace", label: "Marketplace (penjualan)" },
+    { key: "scan-resi", label: "Scan Resi" },
   ] },
   { grup: "Keuangan & SDM", fitur: [
     { key: "keuangan", label: "Keuangan" },
