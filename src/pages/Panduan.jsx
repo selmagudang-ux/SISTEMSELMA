@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   ChevronDown, Truck, ClipboardList, Tag, BarChart3, MapPin, Printer, Camera,
   ShoppingBag, Store, Home, Globe, Users, Landmark, CalendarClock, Settings,
-  LayoutDashboard, BookOpen, Search,
+  LayoutDashboard, BookOpen, Search, ScanLine,
 } from "lucide-react";
 import { PageHeader } from "../components/ui";
 import { isSuperadminLike } from "../lib/constants";
@@ -161,6 +161,17 @@ const SECTIONS = [
     ],
   },
   {
+    key: "scan-resi",
+    label: "Scan Resi",
+    icon: ScanLine,
+    ringkasan: "Scan resi paket yang mau dikirim, hitung per ekspedisi, dan pisahkan otomatis resi yang cancel.",
+    poin: [
+      "Scan Resi: arahkan scanner barcode (atau tombol Kamera) ke resi, hasilnya langsung muncul — hijau OK, kuning kalau resi sudah pernah di-scan, MERAH kalau pesanannya cancel (jangan dikirim). Ekspedisi terbaca otomatis dari nomor resi dan dihitung di tabel rekap.",
+      "Daftar Cancel: tempel nomor resi pesanan yang dibatalkan, atau upload file export pesanan dari Shopee/TikTok/Lazada. Kalau ada resi yang ternyata sudah terlanjur di-scan, muncul peringatan merah supaya paketnya ditarik.",
+      "Rekap: jumlah resi valid dan cancel per ekspedisi untuk rentang tanggal tertentu, bisa diekspor ke Excel.",
+    ],
+  },
+  {
     key: "keuangan",
     label: "Keuangan",
     icon: Landmark,
@@ -214,7 +225,7 @@ const ROLE_SECTIONS = {
   gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
   pemotretan: ["foto"],
   marketplace: ["marketplace"],
-  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller"],
+  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi"],
   keuangan: ["keuangan"],
 };
 

@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
-  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle,
+  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle, ScanLine,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -350,6 +350,17 @@ export const NAV = [
           { key: "lazada", label: "Lazada" },
         ],
       },
+      // Baru — Scan Resi: scan resi paket yang mau dikirim, hitung per ekspedisi, dan
+      // otomatis pisahkan resi pesanan yang CANCEL. Halaman: pages/ScanResi.jsx
+      // (tabel resi_scan & resi_cancel, lihat scan_resi.sql).
+      {
+        key: "scan-resi", label: "Scan Resi", icon: ScanLine,
+        children: [
+          { key: "scan", label: "Scan Resi" },
+          { key: "cancel", label: "Daftar Cancel" },
+          { key: "rekap", label: "Rekap" },
+        ],
+      },
       // Baru — Reseller Toko (sistem hutang) & Reseller Cekout (sistem
       // piutang), datanya numpang di data Pelanggan Grosir yang sudah ada.
       // Halaman "segera hadir" dulu.
@@ -630,7 +641,7 @@ export const ROLE_MENUS = {
   // ditambah 2 menu baru satu domain (Marketplace-keuangan & Reseller) yang
   // untuk sementara masih halaman "segera hadir". Sesuaikan lagi kalau
   // aksesnya mau dibedakan per menu.
-  grosir: ["grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller", "chat", "panduan"],
+  grosir: ["grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "chat", "panduan"],
   // Admin Keuangan: hanya menu "Keuangan" (Transaksi + Rekening & Kategori),
   // sama seperti pola role operasional lain — tidak dapat "dashboard" (langsung
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
@@ -698,7 +709,7 @@ const MENU_PT_LAIN = [
   // Pengaturan per PT (rumus harga, pembersih data PT-nya sendiri) — Kelola User tetap hanya untuk Selma/Super Appa.
   "pengaturan",
   // Grup PENJUALAN (di sidebar PT selain Selma, grup "Store Selma" tampil sebagai "Store <nama PT>").
-  "grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller",
+  "grosir", "pelanggan", "toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi",
 ];
 // fiturMati = daftar key menu yang DIMATIKAN untuk perusahaan akun ini (lihat
 // FITUR_ENTITAS & fiturMatiEntitas di bawah). Super Appa tidak pernah disaring,
@@ -746,6 +757,7 @@ export const FITUR_ENTITAS = [
     { key: "toko-offline", label: "Toko Offline" },
     { key: "penjualan-marketplace", label: "Marketplace (penjualan)" },
     { key: "reseller", label: "Reseller" },
+    { key: "scan-resi", label: "Scan Resi" },
     { key: "pelanggan", label: "Pelanggan" },
     { key: "toko", label: "Toko Pengirim" },
   ] },
