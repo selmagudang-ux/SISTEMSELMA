@@ -246,7 +246,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     () =>
       scans.map((s) => {
         const c = cancelMap.get(s.resi);
-        return { ...s, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at) };
+        // Resi yang dulu tersimpan "Lainnya" dihitung ulang dengan pola terbaru, jadi kalau pola
+        // ekspedisi diperbaiki, scan lama ikut benar tanpa perlu update database.
+        const ekspedisi = s.ekspedisi === "LAINNYA" ? deteksiEkspedisi(s.resi) : s.ekspedisi;
+        return { ...s, ekspedisi, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at) };
       }),
     [scans, cancelMap]
   );

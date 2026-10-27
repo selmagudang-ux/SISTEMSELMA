@@ -12,7 +12,8 @@ export const POLA_EKSPEDISI = [
   { kode: "SPX", label: "SPX (Shopee Xpress)", pola: /^SPX/ },
   { kode: "NINJA", label: "Ninja Xpress", pola: /^(NLID|NVID|NINJA)/ },
   { kode: "IDEXPRESS", label: "ID Express", pola: /^IDE/ },
-  { kode: "JNT", label: "J&T Express", pola: /^(JP|JT|JD|JX|JO|JB)\d{8,}$/ },
+  // J&T: dua huruf berawalan J + angka (JP, JT, JD, JX, JO, JB, JY, dst — contoh JY2009085725).
+  { kode: "JNT", label: "J&T Express", pola: /^J[A-Z]\d{8,}$/ },
   { kode: "JNE", label: "JNE", pola: /^(CM\d{6,}|JNE|TLJ[A-Z]|\d{16})/ },
   { kode: "SICEPAT", label: "SiCepat", pola: /^00\d{10}$/ },
   { kode: "ANTERAJA", label: "AnterAja", pola: /^(AA\d{8,}|1\d{11,13})$/ },
