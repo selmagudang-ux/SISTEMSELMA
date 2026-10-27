@@ -470,6 +470,57 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const totalValid = rows.filter((r) => !r.cancel).length;
   const totalCancel = rows.length - totalValid;
 
+  // ---- hapus massal: HANYA role superappa ----
+  const bisaHapusMassal = session?.role === "superappa";
+  const [pilih, setPilih] = useState(() => new Set());
+  const [sedangHapus, setSedangHapus] = useState(false);
+  const terpilih = useMemo(() => tampil.filter((r) => pilih.has(r.id)), [tampil, pilih]);
+  const semuaTerpilih = tampil.length > 0 && terpilih.length === tampil.length;
+  const togglePilih = (id) =>
+    setPilih((lama) => {
+      const baru = new Set(lama);
+      if (baru.has(id)) baru.delete(id);
+      else baru.add(id);
+      return baru;
+    });
+  const pilihSemua = () => setPilih(semuaTerpilih ? new Set() : new Set(tampil.map((r) => r.id)));
+
+  const hapusTerpilih = async () => {
+    if (!bisaHapusMassal || !terpilih.length || sedangHapus) return;
+    if (!window.confirm(`Hapus ${terpilih.length} hasil scan yang dipilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+    setSedangHapus(true);
+    try {
+      const tunda = terpilih.filter((r) => r.tertunda);
+      const server = terpilih.filter((r) => !r.tertunda);
+      if (tunda.length) {
+        const resiTunda = new Set(tunda.map((r) => r.resi));
+        setAntreanSync((a) => a.filter((x) => !resiTunda.has(x.resi)));
+      }
+      const terhapus = new Set();
+      try {
+        for (let i = 0; i < server.length; i += 100) {
+          const potong = server.slice(i, i + 100);
+          await sb(`resi_scan?id=in.(${potong.map((r) => r.id).join(",")})`, { method: "DELETE", prefer: "return=minimal" });
+          potong.forEach((r) => terhapus.add(r.id));
+        }
+      } finally {
+        // Yang sudah terhapus tetap dibuang dari layar walau putaran berikutnya gagal.
+        if (terhapus.size) setScans((l) => l.filter((x) => !terhapus.has(x.id)));
+        setPilih((lama) => {
+          const baru = new Set(lama);
+          terhapus.forEach((id) => baru.delete(id));
+          tunda.forEach((r) => baru.delete(r.id));
+          return baru;
+        });
+      }
+      toast(`${tunda.length + server.length} hasil scan dihapus.`);
+    } catch (e) {
+      toast(`Sebagian gagal dihapus: ${e.message}`, "err");
+    } finally {
+      setSedangHapus(false);
+    }
+  };
+
   const hapusScan = async (r) => {
     if (!window.confirm(`Hapus scan resi ${r.resi}?`)) return;
     if (r.tertunda) {
@@ -723,6 +774,29 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             </div>
           </div>
 
+          {bisaHapusMassal && tampil.length > 0 && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md-lg border border-md-outline-variant px-3 py-2 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={semuaTerpilih} onChange={pilihSemua} />
+                Pilih semua ({tampil.length})
+              </label>
+              {terpilih.length > 0 && (
+                <>
+                  <span className="text-md-on-surface-variant">{terpilih.length} dipilih</span>
+                  <button type="button" onClick={() => setPilih(new Set())} className={btnText}>Batal pilih</button>
+                  <button
+                    type="button"
+                    onClick={hapusTerpilih}
+                    disabled={sedangHapus}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-red-600 text-white px-3 py-1.5 text-xs font-medium disabled:opacity-60"
+                  >
+                    <Trash2 size={14} /> {sedangHapus ? "Menghapus…" : `Hapus ${terpilih.length} terpilih`}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {memuat ? (
             <div className="text-sm text-md-on-surface-variant py-8 text-center">Memuat…</div>
           ) : tampil.length === 0 ? (
@@ -732,7 +806,12 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
               <table className="w-full text-sm">
                 <tbody>
                   {tampil.slice(0, BATAS_BARIS).map((r) => (
-                    <tr key={r.id} className={`border-b border-md-outline-variant last:border-0 ${r.cancel ? "bg-red-600/10" : ""}`}>
+                    <tr key={r.id} className={`border-b border-md-outline-variant last:border-0 ${r.cancel ? "bg-red-600/10" : ""} ${pilih.has(r.id) ? "bg-md-primary/10" : ""}`}>
+                      {bisaHapusMassal && (
+                        <td className="pl-3 py-2 w-8">
+                          <input type="checkbox" checked={pilih.has(r.id)} onChange={() => togglePilih(r.id)} aria-label={`Pilih ${r.resi}`} />
+                        </td>
+                      )}
                       <td className="px-4 py-2 text-xs text-md-on-surface-variant whitespace-nowrap">{jam(r.created_at)}</td>
                       <td className="px-2 py-2 font-mono text-md-on-surface">{r.resi}</td>
                       <td className="px-2 py-2">
