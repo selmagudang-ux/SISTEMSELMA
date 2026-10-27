@@ -538,7 +538,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   spellCheck={false}
                   className={`${inputClass} font-mono text-base`}
                 />
-                <TombolScanKamera continuous label="Kamera" judul="Scan Resi" onDetect={prosesScan} />
+                <TombolScanKamera continuous format="resi" label="Kamera" judul="Scan Resi" onDetect={prosesScan} />
                 <button type="button" onClick={gantiSuara} className="px-3 rounded-lg border border-md-outline-variant text-md-on-surface-variant" aria-label="Suara">
                   {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>

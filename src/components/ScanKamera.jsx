@@ -10,6 +10,9 @@ import { ScanLine, X, Loader2 } from "lucide-react";
 //                       dikirim ke onDetect (cocok untuk hitung +1 tiap scan).
 export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128" }) {
   const isQr = format === "qr";
+  // format="resi": resi paket — baca banyak jenis barcode (bukan cuma Code 128) dan minta kamera
+  // resolusi tinggi + fokus otomatis, karena barcode di label resi kecil & rapat.
+  const isResi = format === "resi";
   const videoRef = useRef(null);
   const onDetectRef = useRef(onDetect);
   const onCloseRef = useRef(onClose);
@@ -39,12 +42,28 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         if (batal) return;
 
         const hints = new Map();
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [isQr ? BarcodeFormat.QR_CODE : BarcodeFormat.CODE_128]);
+        hints.set(
+          DecodeHintType.POSSIBLE_FORMATS,
+          isQr
+            ? [BarcodeFormat.QR_CODE]
+            : isResi
+            ? [
+                BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.ITF,
+                BarcodeFormat.CODABAR, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
+                BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX,
+              ]
+            : [BarcodeFormat.CODE_128]
+        );
         hints.set(DecodeHintType.TRY_HARDER, true);
         const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80 });
 
         controls = await reader.decodeFromConstraints(
-          { video: { facingMode: { ideal: "environment" } } },
+          {
+            video: {
+              facingMode: { ideal: "environment" },
+              ...(isResi ? { width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: "continuous" }] } : {}),
+            },
+          },
           videoRef.current,
           (result) => {
             if (!result || batal) return;
@@ -87,7 +106,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         // sudah berhenti
       }
     };
-  }, [continuous, isQr]);
+  }, [continuous, isQr, isResi]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4">
@@ -129,6 +148,8 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
             )
           ) : isQr ? (
             "Arahkan kamera ke QR sampai terbaca."
+          ) : isResi ? (
+            "Dekatkan kamera 15–25 cm, barcode sejajar garis merah, cahaya cukup."
           ) : (
             "Arahkan garis merah ke barcode di stiker."
           )}
