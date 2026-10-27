@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   ChevronDown, Truck, ClipboardList, Tag, BarChart3, MapPin, Printer, Camera,
   ShoppingBag, Store, Home, Globe, Users, Landmark, CalendarClock, Settings,
-  LayoutDashboard, BookOpen, Search, ScanLine,
+  LayoutDashboard, BookOpen, Search, ScanLine, ListOrdered,
 } from "lucide-react";
 import { PageHeader } from "../components/ui";
 import { isSuperadminLike } from "../lib/constants";
@@ -172,6 +172,17 @@ const SECTIONS = [
     ],
   },
   {
+    key: "urut-resi",
+    label: "Urut Resi",
+    icon: ListOrdered,
+    ringkasan: "Upload PDF resi dari Shopee/TikTok Shop/Tokopedia, otomatis diurutkan per produk supaya packing lebih cepat.",
+    poin: [
+      "Upload satu atau beberapa PDF resi (J&T, GTL, SPX). Resi ganda dilewati, resi yang lebih dari 1 halaman tetap digabung.",
+      "Pilih urutan: per produk (kategori lalu kode), per kurir lalu produk, atau per kode rak gudang.",
+      "Ringkasan packing menampilkan total pcs per produk/ukuran; klik Download PDF terurut untuk mencetak.",
+    ],
+  },
+  {
     key: "keuangan",
     label: "Keuangan",
     icon: Landmark,
@@ -225,7 +236,7 @@ const ROLE_SECTIONS = {
   gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
   pemotretan: ["foto"],
   marketplace: ["marketplace"],
-  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi"],
+  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi"],
   keuangan: ["keuangan"],
 };
 
