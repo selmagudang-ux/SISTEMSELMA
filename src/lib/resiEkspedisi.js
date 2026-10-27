@@ -14,7 +14,7 @@
 export const POLA_EKSPEDISI = [
   // --- kurir marketplace ---
   { kode: "SPX", label: "SPX (Shopee Xpress)", pola: /^SPX/ },                       // SPXID + 12 angka
-  { kode: "GTL", label: "GTL (GoTo Logistics / Tokopedia)", pola: /^TKGTL/ },        // TKGTL-000002123456
+  { kode: "GTL", label: "GTL (GoTo Logistics / Tokopedia)", pola: /^(TKGTL|GTL)/ },  // GTL7215070350 (resi asli toko ini), TKGTL-000002123456
   { kode: "TKP", label: "Kurir Rekomendasi Tokopedia", pola: /^TKP01/ },             // TKP01-GM1FD123
   { kode: "LEX", label: "Lazada Express (LEX)", pola: /^LX[A-Z]{2}-?\d+/ },          // LXAD-2302808969
   // --- kurir nasional ---
