@@ -8,23 +8,52 @@
 // polanya di bawah (urutan penting: yang paling spesifik di atas).
 // =========================================================
 
+// Urutan penting: yang paling spesifik di atas. Pola dicocokkan ke resi yang sudah dinormalisasi
+// (huruf besar). Sumber format: contoh resi yang dipakai situs pelacak (cek-resi.org, dll) +
+// resi asli dari label J&T milik toko ini (JY…); BUKAN dokumentasi resmi ekspedisi.
 export const POLA_EKSPEDISI = [
-  { kode: "SPX", label: "SPX (Shopee Xpress)", pola: /^SPX/ },
-  { kode: "NINJA", label: "Ninja Xpress", pola: /^(NLID|NVID|NINJA)/ },
-  { kode: "IDEXPRESS", label: "ID Express", pola: /^IDE/ },
-  // J&T: dua huruf berawalan J + angka (JP, JT, JD, JX, JO, JB, JY, dst — contoh JY2009085725).
-  { kode: "JNT", label: "J&T Express", pola: /^J[A-Z]\d{8,}$/ },
-  { kode: "JNE", label: "JNE", pola: /^(CM\d{6,}|JNE|TLJ[A-Z]|\d{16})/ },
-  { kode: "SICEPAT", label: "SiCepat", pola: /^00\d{10}$/ },
-  { kode: "ANTERAJA", label: "AnterAja", pola: /^(AA\d{8,}|1\d{11,13})$/ },
-  { kode: "LION", label: "Lion Parcel", pola: /^(LP|LNP)\d/ },
-  { kode: "POS", label: "Pos Indonesia", pola: /^(P\d{12,}|[A-Z]{2}\d{9}ID)$/ },
+  // --- kurir marketplace ---
+  { kode: "SPX", label: "SPX (Shopee Xpress)", pola: /^SPX/ },                       // SPXID + 12 angka
+  { kode: "GTL", label: "GTL (GoTo Logistics / Tokopedia)", pola: /^TKGTL/ },        // TKGTL-000002123456
+  { kode: "TKP", label: "Kurir Rekomendasi Tokopedia", pola: /^TKP01/ },             // TKP01-GM1FD123
+  { kode: "LEX", label: "Lazada Express (LEX)", pola: /^LX[A-Z]{2}-?\d+/ },          // LXAD-2302808969
+  // --- kurir nasional ---
+  { kode: "NINJA", label: "Ninja Xpress", pola: /^(NLID|NJV|NVID|NINJA)/ },          // NLIDAP1198604122, NJVTT00089949722
+  { kode: "IDEXPRESS", label: "ID Express", pola: /^ID[VDES]\d{12}$/ },              // IDD150963332202
+  { kode: "SPX", label: "SPX (Shopee Xpress)", pola: /^ID\d{12}$/ },                 // format lama SPX: ID + 12 angka
+  { kode: "JX", label: "JX Express", pola: /^JX[A-Z]+\d+/ },                         // JXPOP01675206525
+  { kode: "JNT", label: "J&T Express", pola: /^J[A-Z]\d{8,}$/ },                     // JP/JD/JO/JX/JB/JY + 10 angka
+  { kode: "JNE", label: "JNE", pola: /^(CGK|TJE|JNAC|JNE|CM\d|TLJ[A-Z])/ },          // TJE1552766682341, JNAC-0005177888
+  { kode: "SICEPAT", label: "SiCepat", pola: /^00\d{10}$/ },                         // 12 angka diawali 00
+  { kode: "ANTERAJA", label: "AnterAja", pola: /^(1[01]\d{12}|BLIAJS\d+)$/ },        // 14 angka (10/11…), Same Day BLIAJS…
+  { kode: "JNE", label: "JNE", pola: /^\d{15,16}$/ },                               // 15–16 angka
+  { kode: "POS", label: "Pos Indonesia / EMS", pola: /^(P\d{13}|[A-Z]{2}\d{9}ID)$/ }, // P + 13 angka; EE…ID
+  { kode: "LION", label: "Lion Parcel", pola: /^(\d{2}LP\d+|LP\d+|88-\d{2}-\d+)/ },  // 11LP1715223403123
+  { kode: "INDOPAKET", label: "Indopaket", pola: /^IP\d{13}$/ },                      // IP2210614091516
+  { kode: "WAHANA", label: "Wahana", pola: /^(?=[A-Z0-9]{8}$)(?=.*[A-Z])(?=.*\d)/ },  // LN2U66CX (8 karakter)
+  { kode: "SAP", label: "SAP Express", pola: /^[A-Z]{3}\d{13}$/ },                   // TGR1100067556864
+  { kode: "INDAH", label: "Indah Logistik Cargo", pola: /^[A-Z]{3}\d[A-Z]{2,3}\d+$/ }, // SGN1CS20303123
+];
+
+// Hanya angka tanpa awalan — formatnya sama antar kurir (12 angka dipakai J&T Cargo, TIKI, JET,
+// RPX, Rosalia, dst), jadi TIDAK bisa ditebak otomatis. Masuk "Lainnya" lalu dipilih manual
+// lewat dropdown di daftar scan.
+export const EKSPEDISI_MANUAL = [
+  { kode: "JNTCARGO", label: "J&T Cargo" },
+  { kode: "TIKI", label: "TIKI" },
+  { kode: "JET", label: "JET Express" },
+  { kode: "RPX", label: "RPX" },
 ];
 
 export const EKSPEDISI_LAINNYA = { kode: "LAINNYA", label: "Lainnya (belum dikenali)" };
 
 // Daftar lengkap untuk dropdown (koreksi manual) & urutan tampil rekap.
-export const DAFTAR_EKSPEDISI = [...POLA_EKSPEDISI, EKSPEDISI_LAINNYA];
+// (kode yang sama di beberapa pola, mis. SPX/JNE, hanya ditampilkan satu kali)
+export const DAFTAR_EKSPEDISI = [
+  ...POLA_EKSPEDISI.filter((e, i, a) => a.findIndex((x) => x.kode === e.kode) === i),
+  ...EKSPEDISI_MANUAL,
+  EKSPEDISI_LAINNYA,
+];
 
 export const labelEkspedisi = (kode) => DAFTAR_EKSPEDISI.find((e) => e.kode === kode)?.label || kode;
 
