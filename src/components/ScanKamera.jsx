@@ -10,7 +10,7 @@ import { ScanLine, X, Loader2 } from "lucide-react";
 //                       dikirim ke onDetect (cocok untuk hitung +1 tiap scan).
 export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128" }) {
   const isQr = format === "qr";
-  // format="resi": resi paket — baca banyak jenis barcode (bukan cuma Code 128) dan minta kamera
+  // format="resi": resi paket — baca barcode garis (Code 128/39/93, ITF, Codabar; QR & EAN tidak) dan minta kamera
   // resolusi tinggi + fokus otomatis, karena barcode di label resi kecil & rapat.
   const isResi = format === "resi";
   const videoRef = useRef(null);
@@ -48,9 +48,10 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
             ? [BarcodeFormat.QR_CODE]
             : isResi
             ? [
+                // Hanya barcode garis (resi). QR / DataMatrix / EAN (barcode produk) sengaja
+                // tidak dibaca supaya tidak ikut tersimpan sebagai "resi".
                 BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.ITF,
-                BarcodeFormat.CODABAR, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
-                BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX,
+                BarcodeFormat.CODABAR,
               ]
             : [BarcodeFormat.CODE_128]
         );

@@ -67,6 +67,14 @@ export function normalisasiResi(raw) {
   return /^[A-Z0-9\-_.]{6,40}$/.test(s) ? s : "";
 }
 
+// Hasil scan yang jelas BUKAN resi: hanya angka dan kurang dari 10 digit (mis. 11117728 —
+// biasanya QR / barcode lain di paket). Resi asli minimal 10 digit angka (SiCepat 12,
+// AnterAja 14, JNE 15–16) atau berawalan huruf (JY…, SPXID…, TKGTL…).
+export function bukanResi(resi) {
+  const r = normalisasiResi(resi);
+  return /^\d{1,9}$/.test(r);
+}
+
 export function deteksiEkspedisi(resi) {
   const r = normalisasiResi(resi);
   return (POLA_EKSPEDISI.find((e) => e.pola.test(r)) || EKSPEDISI_LAINNYA).kode;

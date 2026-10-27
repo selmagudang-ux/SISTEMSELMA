@@ -11,7 +11,7 @@ import { TombolScanKamera } from "../components/ScanKamera";
 import { sb, sbAll } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
 import {
-  DAFTAR_EKSPEDISI, labelEkspedisi, normalisasiResi, deteksiEkspedisi,
+  DAFTAR_EKSPEDISI, labelEkspedisi, normalisasiResi, deteksiEkspedisi, bukanResi,
   parseTeksResi, parseFileCancel,
 } from "../lib/resiEkspedisi";
 
@@ -276,6 +276,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     const resi = normalisasiResi(raw);
     if (!resi) {
       setHasil({ tipe: "err", resi: String(raw).trim().slice(0, 60), info: "Bukan format resi yang valid (6–40 karakter huruf/angka)." });
+      bip("dup");
+      return;
+    }
+    if (bukanResi(resi)) {
+      setHasil({ tipe: "err", resi, info: "Ini bukan nomor resi (hanya angka pendek) — kemungkinan QR/barcode lain di paket. TIDAK disimpan. Arahkan ke barcode resi (garis)." });
       bip("dup");
       return;
     }
