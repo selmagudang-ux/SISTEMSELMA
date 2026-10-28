@@ -65,6 +65,8 @@ const geserHari = (ymd, n) => {
   d.setDate(d.getDate() + n);
   return d.toLocaleDateString("en-CA");
 };
+// Tanggal (WIB) dari timestamp ISO — dipakai untuk filter daftar cancel per hari.
+const tglWIB = (iso) => (iso ? new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" }) : "");
 const jam = (iso) =>
   iso ? new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: "Asia/Jakarta" }) : "";
 
@@ -659,10 +661,17 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     }
   };
 
+  // Filter tanggal daftar cancel: default hari ini, bisa pilih hari lain atau semua tanggal.
+  const [tglCancel, setTglCancel] = useState(hariIni());
+  const [semuaTglCancel, setSemuaTglCancel] = useState(false);
+  const cancelPerTanggal = useMemo(
+    () => (semuaTglCancel ? cancelRows : cancelRows.filter((r) => tglWIB(r.created_at) === tglCancel)),
+    [cancelRows, tglCancel, semuaTglCancel]
+  );
   const cancelTampil = useMemo(() => {
     const q = cariCancel.trim().toUpperCase();
-    return q ? cancelRows.filter((r) => r.resi.includes(q) || (r.no_pesanan || "").toUpperCase().includes(q)) : cancelRows;
-  }, [cancelRows, cariCancel]);
+    return q ? cancelPerTanggal.filter((r) => r.resi.includes(q) || (r.no_pesanan || "").toUpperCase().includes(q)) : cancelPerTanggal;
+  }, [cancelPerTanggal, cariCancel]);
 
   // ---------------- render ----------------
   const tombolMuat = (
@@ -903,15 +912,38 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             </div>
           )}
 
-          <div className="flex items-center gap-3">
-            <div className="text-sm text-md-on-surface-variant">{cancelRows.length} resi cancel ({HARI_RIWAYAT_CANCEL} hari terakhir)</div>
-            <div className="relative ml-auto w-64">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-48">
+              <Field label="Tanggal">
+                <InputTanggal value={tglCancel} onChange={(v) => { if (v) { setTglCancel(v); setSemuaTglCancel(false); } }} />
+              </Field>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                type="button"
+                onClick={() => { setTglCancel(hariIni()); setSemuaTglCancel(false); }}
+                className={`text-xs px-3 py-1.5 rounded-full border ${!semuaTglCancel && tglCancel === hariIni() ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+              >
+                Hari ini
+              </button>
+              <button
+                type="button"
+                onClick={() => setSemuaTglCancel(true)}
+                className={`text-xs px-3 py-1.5 rounded-full border ${semuaTglCancel ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+              >
+                Semua ({HARI_RIWAYAT_CANCEL} hari)
+              </button>
+            </div>
+            <div className="mb-3 text-sm text-md-on-surface-variant">
+              {cancelPerTanggal.length} resi cancel {semuaTglCancel ? `(${HARI_RIWAYAT_CANCEL} hari terakhir)` : `pada ${formatTanggalID(tglCancel)}`}
+            </div>
+            <div className="relative mb-3 ml-auto w-64">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
               <input value={cariCancel} onChange={(e) => setCariCancel(e.target.value)} placeholder="Cari resi / no. pesanan" className={`${inputClass} pl-9`} />
             </div>
           </div>
           {cancelTampil.length === 0 ? (
-            <EmptyState label="Belum ada resi cancel." />
+            <EmptyState label={semuaTglCancel ? "Belum ada resi cancel." : "Tidak ada resi cancel pada tanggal ini."} />
           ) : (
             <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
               <table className="w-full text-sm">
@@ -921,7 +953,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                       <td className="px-4 py-2 font-mono text-md-on-surface">{r.resi}</td>
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant">{labelEkspedisi(deteksiEkspedisi(r.resi))}</td>
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{[r.platform, r.no_pesanan].filter(Boolean).join(" · ")}</td>
-                      <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{formatTanggalID(r.created_at?.slice(0, 10))}</td>
+                      <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{formatTanggalID(tglWIB(r.created_at))}</td>
                       <td className="px-3 py-2 text-right">
                         <button type="button" onClick={() => hapusCancel(r)} className="text-md-on-surface-variant hover:text-red-400" aria-label="Hapus">
                           <Trash2 size={14} />
