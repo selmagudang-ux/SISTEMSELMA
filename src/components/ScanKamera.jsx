@@ -35,6 +35,77 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
         if (!navigator.mediaDevices?.getUserMedia) {
           throw new Error("Kamera tidak didukung. Pakai browser terbaru lewat HTTPS, atau aplikasi Android.");
         }
+        const tangani = (teks) => {
+          const sekarang = Date.now();
+          const terakhirLihat = terlihat.get(teks) || 0;
+          terlihat.set(teks, sekarang);
+          if (sekarang - terakhirLihat < 1200) return;
+          setTerakhir(teks);
+          try {
+            navigator.vibrate?.(60);
+          } catch {
+            // abaikan kalau perangkat tidak mendukung getar
+          }
+          onDetectRef.current?.(teks);
+          if (!continuous) onCloseRef.current?.();
+        };
+
+        // JALUR CEPAT (Chrome/Edge Android): pembaca barcode bawaan browser (BarcodeDetector) jauh
+        // lebih cepat & tahan barcode kecil dibanding zxing. Kalau tidak tersedia, pakai zxing.
+        if (isResi && typeof window.BarcodeDetector === "function") {
+          let detektor = null;
+          try {
+            const didukung = (await window.BarcodeDetector.getSupportedFormats?.()) || [];
+            const mau = ["code_128", "code_39", "code_93", "itf", "codabar"].filter((f) => didukung.includes(f));
+            if (mau.length) detektor = new window.BarcodeDetector({ formats: mau });
+          } catch {
+            detektor = null;
+          }
+          if (detektor) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                facingMode: { ideal: "environment" },
+                width: { ideal: 1920 }, height: { ideal: 1080 },
+                advanced: [{ focusMode: "continuous" }],
+              },
+            });
+            if (batal) {
+              stream.getTracks().forEach((t) => t.stop());
+              return;
+            }
+            const v = videoRef.current;
+            v.srcObject = stream;
+            await v.play().catch(() => {});
+            let berhenti = false;
+            let gagalBeruntun = 0;
+            let timer = null;
+            const putar = async () => {
+              if (berhenti || batal) return;
+              try {
+                if (v.readyState >= 2) {
+                  const hasil = await detektor.detect(v);
+                  gagalBeruntun = 0;
+                  if (hasil.length) tangani(hasil[0].rawValue);
+                }
+              } catch {
+                gagalBeruntun += 1;
+              }
+              timer = setTimeout(putar, 40);
+            };
+            controls = {
+              stop: () => {
+                berhenti = true;
+                clearTimeout(timer);
+                stream.getTracks().forEach((t) => t.stop());
+                if (v) v.srcObject = null;
+              },
+            };
+            putar();
+            setStatus("ready");
+            return;
+          }
+        }
+
         const [{ BrowserMultiFormatReader }, { DecodeHintType, BarcodeFormat }] = await Promise.all([
           import("@zxing/browser"),
           import("@zxing/library"),
@@ -56,7 +127,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
             : [BarcodeFormat.CODE_128]
         );
         hints.set(DecodeHintType.TRY_HARDER, true);
-        const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80 });
+        const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 40 });
 
         controls = await reader.decodeFromConstraints(
           {
@@ -68,19 +139,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
           videoRef.current,
           (result) => {
             if (!result || batal) return;
-            const teks = result.getText();
-            const sekarang = Date.now();
-            const terakhirLihat = terlihat.get(teks) || 0;
-            terlihat.set(teks, sekarang);
-            if (sekarang - terakhirLihat < 1200) return;
-            setTerakhir(teks);
-            try {
-              navigator.vibrate?.(60);
-            } catch {
-              // abaikan kalau perangkat tidak mendukung getar
-            }
-            onDetectRef.current?.(teks);
-            if (!continuous) onCloseRef.current?.();
+            tangani(result.getText());
           }
         );
         if (batal) controls.stop();

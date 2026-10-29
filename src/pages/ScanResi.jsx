@@ -319,6 +319,34 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     sedangKirim.current = true;
     try {
       while (belumKirimRef.current.length) {
+        // Kirim BANYAK resi sekaligus (1 request) supaya antrean cepat habis walau sinyal lambat.
+        // Kalau ada yang ditolak (mis. duplikat), jatuh ke pengiriman satu-satu di bawah.
+        if (belumKirimRef.current.length > 1) {
+          const paket = belumKirimRef.current.slice(0, 50);
+          try {
+            const hasilBatch = await sb("resi_scan", {
+              method: "POST",
+              body: JSON.stringify(paket.map((it) => ({
+                resi: it.resi, ekspedisi: it.ekspedisi, tanggal: it.tanggal,
+                created_at: it.created_at, discan_oleh: it.discan_oleh,
+              }))),
+            });
+            const resiTerkirim = new Set(paket.map((x) => x.resi));
+            const barisBaru = (Array.isArray(hasilBatch) ? hasilBatch : []).filter((b) => b.tanggal === ref.current.hari);
+            if (barisBaru.length) {
+              const idBaru = new Set(barisBaru.map((b) => b.id));
+              setScans((l) => [...barisBaru.reverse(), ...l.filter((x) => !idBaru.has(x.id))]);
+            }
+            setAntreanSync((a) => a.filter((x) => !resiTerkirim.has(x.resi)));
+            continue;
+          } catch (e) {
+            if (!e.pgCode) {
+              setInfoKirim(e.message || "jaringan bermasalah");
+              return;
+            }
+            // ditolak database -> lanjut kirim satu-satu supaya yang bermasalah bisa dipilah
+          }
+        }
         const it = belumKirimRef.current[0];
         const buang = () => setAntreanSync((a) => a.filter((x) => x.resi !== it.resi));
         try {
