@@ -525,12 +525,16 @@ export function Combobox({ value, onChange, options, placeholder, tipe, reload }
 // master-data yang bisa bikin kode baru). Dipakai untuk semua dropdown pilihan
 // referensi di aplikasi ini: Rak, Alasan Barang Keluar, Role User, Warna Label, dst.
 // options: [{ value, label }]
+const BATAS_PILIHAN_SELECT = 60;
 export function SearchableSelect({ value, onChange, options, placeholder, disabled, compact }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
-  const selectedOption = options.find((o) => String(o.value) === String(value));
+  const selectedOption = useMemo(
+    () => options.find((o) => String(o.value) === String(value)),
+    [options, value]
+  );
 
   useEffect(() => {
     const onClickOutside = (e) => {
@@ -544,11 +548,19 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
   }, []);
 
   const q = query.trim().toLowerCase();
-  const filtered = q
-    ? options.filter(
-        (o) => o.label.toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q)
-      )
-    : options;
+  // Daftar pilihan bisa ribuan SKU. Menggambar semuanya jadi ribuan tombol DOM
+  // bikin kotak terasa berat saat difokus / diketik, jadi yang ditampilkan
+  // dibatasi BATAS_PILIHAN teratas; sisanya muncul begitu pencarian dipersempit.
+  // Perhitungan hanya jalan saat kotak terbuka (tidak ikut tiap render form).
+  const { tampil, totalCocok } = useMemo(() => {
+    if (!open) return { tampil: [], totalCocok: 0 };
+    const hasil = q
+      ? options.filter(
+          (o) => o.label.toLowerCase().includes(q) || String(o.value).toLowerCase().includes(q)
+        )
+      : options;
+    return { tampil: hasil.slice(0, BATAS_PILIHAN_SELECT), totalCocok: hasil.length };
+  }, [open, options, q]);
 
   const commit = (opt) => {
     onChange(opt.value);
@@ -577,8 +589,8 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
       />
       {open && (
         <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-md-container-highest border border-md-outline-variant rounded-md-md shadow-lg">
-          {filtered.length > 0 ? (
-            filtered.map((o) => (
+          {tampil.length > 0 ? (
+            tampil.map((o) => (
               <button
                 key={o.value}
                 type="button"
@@ -593,6 +605,11 @@ export function SearchableSelect({ value, onChange, options, placeholder, disabl
             ))
           ) : (
             <div className="px-3 py-2 text-xs text-md-on-surface-variant">Tidak ada yang cocok.</div>
+          )}
+          {totalCocok > tampil.length && (
+            <div className="px-3 py-2 text-xs text-md-on-surface-variant border-t border-md-outline-variant">
+              Menampilkan {tampil.length} dari {totalCocok} — ketik lebih spesifik untuk mempersempit.
+            </div>
           )}
         </div>
       )}

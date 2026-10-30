@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Search, Plus, ShoppingCart, AlertTriangle, CalendarClock, Wallet, Trash2, X,
 } from "lucide-react";
@@ -917,9 +917,13 @@ export function BuatPesananReseller({
       ];
     });
   };
-  const quickAddSkuOptions = skuMaster
-    .filter((s) => !s.nonaktif && s.siapGrosir)
-    .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
+  const quickAddSkuOptions = useMemo(
+    () =>
+      skuMaster
+        .filter((s) => !s.nonaktif && s.siapGrosir)
+        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` })),
+    [skuMaster]
+  );
 
   const qtyTerpakaiPerSku = (skuKey, kecualiKey) =>
     rows
@@ -1420,9 +1424,13 @@ export function BuatPesananResellerCekout({
       ];
     });
   };
-  const quickAddSkuOptions = skuMaster
-    .filter((s) => !s.nonaktif && s.siapGrosir)
-    .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
+  const quickAddSkuOptions = useMemo(
+    () =>
+      skuMaster
+        .filter((s) => !s.nonaktif && s.siapGrosir)
+        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` })),
+    [skuMaster]
+  );
 
   const qtyTerpakaiPerSku = (skuKey, kecualiKey) =>
     rows

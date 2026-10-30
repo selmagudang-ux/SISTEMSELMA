@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, memo, useMemo, useState } from "react";
 import {
   Search, Plus, Minus, Pencil, Trash2, X, ShoppingCart,
   TrendingUp, Wallet, Download, CalendarRange, BarChart3, Receipt,
@@ -1107,9 +1107,13 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   };
   // Hanya SKU yang alur barangnya sudah tahap "Selesai" (= sudah diupload ke
   // marketplace) yang boleh dipilih untuk pesanan grosir baru.
-  const quickAddSkuOptions = skuMaster
-    .filter((s) => !s.nonaktif && s.siapGrosir)
-    .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
+  const quickAddSkuOptions = useMemo(
+    () =>
+      skuMaster
+        .filter((s) => !s.nonaktif && s.siapGrosir)
+        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` })),
+    [skuMaster]
+  );
 
   // Total qty per SKU yang sudah dipakai di baris lain — supaya validasi stok
   // benar walau SKU yang sama dipilih di lebih dari satu baris.
@@ -1495,20 +1499,41 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   );
 }
 
-export function ItemRow({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
+// Baris item dipakai di 5 form (Grosir & Reseller: buat + edit). Dibungkus memo supaya
+// mengetik di satu baris TIDAK menggambar ulang semua baris lain. onChange/onRemove
+// sengaja diabaikan di pembanding: di semua pemakai keduanya hanya memanggil
+// updateRow/removeRow(key) yang memakai setRows(prev => ...), jadi versi lama aman dipakai.
+export const ItemRow = memo(
+  ItemRowImpl,
+  (a, b) =>
+    a.row === b.row &&
+    a.error === b.error &&
+    a.skuMaster === b.skuMaster &&
+    a.produkManualGrosir === b.produkManualGrosir
+);
+
+function ItemRowImpl({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
   // SKU nonaktif (bekas "dihapus") atau yang alur barangnya belum "Selesai"
   // (belum diupload ke marketplace) tidak boleh dipilih buat pesanan baru,
   // tapi baris pesanan lama yang sudah pakai SKU itu tetap tampil apa adanya.
-  const skuOptions = skuMaster
-    .filter((s) => s.sku === row.sku || (!s.nonaktif && s.siapGrosir))
-    .map((s) => ({
-      value: s.sku,
-      label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}${s.nonaktif ? " · (nonaktif)" : ""}`,
-    }));
-  const manualOptions = produkManualGrosir.map((p) => ({
-    value: p.id,
-    label: `${p.nama_produk} · ${fmtRp(p.harga || 0)}`,
-  }));
+  const skuOptions = useMemo(
+    () =>
+      skuMaster
+        .filter((s) => s.sku === row.sku || (!s.nonaktif && s.siapGrosir))
+        .map((s) => ({
+          value: s.sku,
+          label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}${s.nonaktif ? " · (nonaktif)" : ""}`,
+        })),
+    [skuMaster, row.sku]
+  );
+  const manualOptions = useMemo(
+    () =>
+      produkManualGrosir.map((p) => ({
+        value: p.id,
+        label: `${p.nama_produk} · ${fmtRp(p.harga || 0)}`,
+      })),
+    [produkManualGrosir]
+  );
 
   const pickSku = (sku) => {
     const s = skuMaster.find((x) => x.sku === sku);
@@ -1653,14 +1678,23 @@ export function EditPesananForm({
   // Stok "seolah pesanan ini belum ada" — qty asli pesanan ini dikembalikan
   // dulu secara virtual ke stok saat ini, supaya validasi qty di form edit
   // tidak salah anggap stok kurang gara-gara qty lama sudah kepotong.
-  const originalQtyPerSku = {};
-  (detailItems || []).forEach((d) => {
-    if (d.sumber_produk === "sku" && d.sku) {
-      originalQtyPerSku[d.sku] = (originalQtyPerSku[d.sku] || 0) + Number(d.qty || 0);
-    }
-  });
-  const editableSkuMaster = (skuMaster || []).map((s) =>
-    originalQtyPerSku[s.sku] ? { ...s, stok: (Number(s.stok) || 0) + originalQtyPerSku[s.sku] } : s
+  // Di-memo supaya referensinya stabil antar render (kalau tidak, memo ItemRow & daftar
+  // pilihan SKU ikut dihitung ulang tiap ketukan).
+  const originalQtyPerSku = useMemo(() => {
+    const m = {};
+    (detailItems || []).forEach((d) => {
+      if (d.sumber_produk === "sku" && d.sku) {
+        m[d.sku] = (m[d.sku] || 0) + Number(d.qty || 0);
+      }
+    });
+    return m;
+  }, [detailItems]);
+  const editableSkuMaster = useMemo(
+    () =>
+      (skuMaster || []).map((s) =>
+        originalQtyPerSku[s.sku] ? { ...s, stok: (Number(s.stok) || 0) + originalQtyPerSku[s.sku] } : s
+      ),
+    [skuMaster, originalQtyPerSku]
   );
 
   // Tambah cepat: sama seperti di Buat Pesanan — cari SKU sekali langsung
@@ -1681,9 +1715,13 @@ export function EditPesananForm({
       ];
     });
   };
-  const quickAddSkuOptions = editableSkuMaster
-    .filter((s) => !s.nonaktif && s.siapGrosir)
-    .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` }));
+  const quickAddSkuOptions = useMemo(
+    () =>
+      editableSkuMaster
+        .filter((s) => !s.nonaktif && s.siapGrosir)
+        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` })),
+    [editableSkuMaster]
+  );
 
   const addRow = (sumberProduk) => setRows((prev) => [...prev, newItemRow(sumberProduk)]);
   const removeRow = (key) => setRows((prev) => prev.filter((r) => r._key !== key));
