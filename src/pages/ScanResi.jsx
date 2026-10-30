@@ -723,7 +723,23 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     setLaporanOrderan("");
     try {
       const hasilBaca = await parseFileOrderan(f);
-      setDraftOrderan({ ...hasilBaca, nama: f.name });
+      // Import ke-2 (dst.) di hari yang sama: resi yang SUDAH ada di orderan hari ini tapi TIDAK
+      // ada lagi di file baru = pesanan hilang dari "Untuk Dikirim" (umumnya dibatalkan pembeli).
+      // Diusulkan masuk daftar cancel, tapi user yang konfirmasi. Resi yang sudah di-scan tidak
+      // dicentang otomatis: bisa jadi paketnya sudah diambil kurir (status pindah dari "Untuk Dikirim").
+      let hilang = [];
+      if (hasilBaca.baris.length) {
+        const resiBaru = new Set(hasilBaca.baris.map((b) => b.resi));
+        const sudahScan = new Set(rows.map((r) => r.resi));
+        hilang = orderanRows
+          .filter((o) => o.tanggal === hari && !resiBaru.has(o.resi) && !cancelMap.has(o.resi))
+          .map((o) => ({ resi: o.resi, order_id: o.order_id, sudahScan: sudahScan.has(o.resi) }));
+      }
+      setDraftOrderan({
+        ...hasilBaca, nama: f.name, hilang,
+        hilangPilih: new Set(hilang.filter((h) => !h.sudahScan).map((h) => h.resi)),
+        totalLama: orderanRows.filter((o) => o.tanggal === hari).length,
+      });
     } catch (err) {
       setDraftOrderan(null);
       toast(err.message, "err");
@@ -748,9 +764,39 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         });
         n += (res || []).length;
       }
+      // Resi hilang yang dicentang -> daftar cancel (platform TikTok Shop, alasan otomatis).
+      const pilihCancel = (draftOrderan.hilang || []).filter((h) => draftOrderan.hilangPilih?.has(h.resi));
+      let nCancel = 0;
+      let nTerlanjur = 0;
+      if (pilihCancel.length) {
+        const simpanan = [];
+        for (let i = 0; i < pilihCancel.length; i += 500) {
+          const potong = pilihCancel.slice(i, i + 500).map((h) => ({
+            resi: h.resi, no_pesanan: h.order_id, platform: "TikTok Shop",
+            alasan: "Hilang dari import orderan terbaru (otomatis)",
+          }));
+          const res = await sb("resi_cancel?on_conflict=entitas,resi", {
+            method: "POST",
+            body: JSON.stringify(potong),
+            prefer: "resolution=ignore-duplicates,return=representation",
+          });
+          simpanan.push(...(res || []));
+        }
+        nCancel = simpanan.length;
+        nTerlanjur = pilihCancel.filter((h) => h.sudahScan).length;
+        setCancelRows((l) => {
+          const ada = new Set(l.map((r) => r.id));
+          return [...simpanan.filter((r) => !ada.has(r.id)), ...l];
+        });
+        if (simpanan.length) {
+          lastCancel.current = simpanan.reduce((a, r) => (r.created_at > a ? r.created_at : a), lastCancel.current || "");
+        }
+      }
       await muatOrderan();
       setLaporanOrderan(
         `${n} resi orderan disimpan untuk ${formatTanggalID(hari)} (yang sudah ada diperbarui).` +
+          (nCancel ? ` ${nCancel} resi yang hilang dari file baru dimasukkan ke daftar cancel.` : "") +
+          (nTerlanjur ? ` ${nTerlanjur} di antaranya sudah di-scan — cek/tarik paketnya.` : "") +
           (draftOrderan.tanpaResi ? ` ${draftOrderan.tanpaResi} pesanan belum punya resi — import ulang nanti setelah resinya terbit.` : "")
       );
       setDraftOrderan(null);
@@ -961,17 +1007,59 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             )}
 
             {draftOrderan && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-md-container-high p-3 text-sm text-md-on-surface">
-                <span>
-                  {draftOrderan.nama}: {draftOrderan.baris.length} resi · {draftOrderan.totalPcs} pcs terbaca
-                  {draftOrderan.tanpaResi ? ` · ${draftOrderan.tanpaResi} pesanan belum punya resi (dilewati)` : ""}
-                  {draftOrderan.diabaikanBatal ? ` · ${draftOrderan.diabaikanBatal} baris batal diabaikan` : ""}
-                  {` · akan disimpan untuk ${formatTanggalID(hari)}`}.
-                </span>
-                <button type="button" onClick={simpanOrderan} disabled={!draftOrderan.baris.length || menyimpanOrderan} className={`${btnFilled} ml-auto`}>
-                  {menyimpanOrderan ? "Menyimpan…" : `Simpan ${draftOrderan.baris.length} orderan`}
-                </button>
-                <button type="button" onClick={() => setDraftOrderan(null)} className={btnText}>Batal</button>
+              <div className="rounded-lg bg-md-container-high p-3 text-sm text-md-on-surface space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>
+                    {draftOrderan.nama}: {draftOrderan.baris.length} resi · {draftOrderan.totalPcs} pcs terbaca
+                    {draftOrderan.tanpaResi ? ` · ${draftOrderan.tanpaResi} pesanan belum punya resi (dilewati)` : ""}
+                    {draftOrderan.diabaikanBatal ? ` · ${draftOrderan.diabaikanBatal} baris batal diabaikan` : ""}
+                    {` · akan disimpan untuk ${formatTanggalID(hari)}`}.
+                  </span>
+                  <button type="button" onClick={simpanOrderan} disabled={!draftOrderan.baris.length || menyimpanOrderan} className={`${btnFilled} ml-auto`}>
+                    {menyimpanOrderan
+                      ? "Menyimpan…"
+                      : `Simpan ${draftOrderan.baris.length} orderan${draftOrderan.hilangPilih?.size ? ` + ${draftOrderan.hilangPilih.size} cancel` : ""}`}
+                  </button>
+                  <button type="button" onClick={() => setDraftOrderan(null)} className={btnText}>Batal</button>
+                </div>
+
+                {draftOrderan.hilang?.length > 0 && (
+                  <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 p-3 space-y-2">
+                    <div className="font-medium text-amber-100">
+                      {draftOrderan.hilang.length} resi ada di import sebelumnya tapi tidak ada di file ini
+                    </div>
+                    <div className="text-xs text-md-on-surface-variant">
+                      Biasanya pesanannya dibatalkan pembeli. Resi yang dicentang akan masuk daftar cancel. Yang sudah di-scan tidak dicentang otomatis,
+                      karena bisa jadi paketnya sudah diambil kurir (hilang dari "Untuk Dikirim" karena sudah dikirim).
+                    </div>
+                    {draftOrderan.totalLama > 0 && draftOrderan.hilang.length > draftOrderan.totalLama / 2 && (
+                      <div className="text-xs font-medium text-red-300">
+                        Hati-hati: lebih dari separuh orderan hilang. Pastikan ini file "Untuk Dikirim" yang lengkap, bukan file yang terfilter.
+                      </div>
+                    )}
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {draftOrderan.hilang.map((h) => (
+                        <label key={h.resi} className="flex items-center gap-2 text-xs cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={draftOrderan.hilangPilih.has(h.resi)}
+                            onChange={(e) =>
+                              setDraftOrderan((d) => {
+                                const s = new Set(d.hilangPilih);
+                                if (e.target.checked) s.add(h.resi);
+                                else s.delete(h.resi);
+                                return { ...d, hilangPilih: s };
+                              })
+                            }
+                          />
+                          <span className="font-mono">{h.resi}</span>
+                          {h.order_id && <span className="text-md-on-surface-variant">· {h.order_id}</span>}
+                          {h.sudahScan && <span className="text-amber-300">· sudah di-scan</span>}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
