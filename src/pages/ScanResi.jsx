@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScanLine, Trash2, Upload, RefreshCw, Volume2, VolumeX, AlertTriangle,
-  CheckCircle2, Ban, Download, Search, Copy, CloudOff,
+  CheckCircle2, Ban, Download, Search, Copy, CloudOff, Package, FileSpreadsheet,
 } from "lucide-react";
 import {
   PageHeader, EmptyState, StatCard, Badge, Field, InputTanggal, inputClass,
@@ -10,6 +10,7 @@ import {
 import { TombolScanKamera } from "../components/ScanKamera";
 import { sb, sbAll } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
+import { parseFileOrderan, ringkasBarang } from "../lib/resiOrderan";
 import {
   DAFTAR_EKSPEDISI, labelEkspedisi, normalisasiResi, deteksiEkspedisi, bukanResi,
   parseTeksResi, parseFileCancel,
@@ -27,6 +28,12 @@ import {
 //
 // Sub-menu: "scan" (scan + rekap hari ini), "cancel" (daftar & input cancel),
 // "rekap" (rekap rentang tanggal + export Excel).
+//
+// ORDERAN (tabel resi_barang, lihat scan_resi_barang.sql): file export TikTok Shop "Untuk Dikirim"
+// di-import di halaman Scan, lalu tiap resi yang di-scan dicocokkan dengan orderan — barang & qty
+// ikut tampil, resi yang tidak ada di orderan diberi peringatan (tetap tercatat), dan rekap
+// menampilkan orderan yang BELUM di-scan. Orderan yang resinya ada di daftar cancel tidak dihitung
+// sebagai "harus dikirim". Kalau belum ada orderan sama sekali, scan jalan seperti biasa.
 // =========================================================
 
 const HARI_RIWAYAT_CANCEL = 90; // daftar cancel yang dimuat ke layar (hari terakhir)
@@ -36,6 +43,8 @@ const BATAS_BARIS = 300;
 const PLATFORM = ["Shopee", "TikTok Shop", "Lazada", "Tokopedia", "Lainnya"];
 const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at";
 const KOLOM_CANCEL = "id,resi,no_pesanan,platform,alasan,created_at";
+const KOLOM_ORDERAN = "resi,order_id,platform,barang,total_qty,tanggal";
+const HARI_ORDERAN = 7; // orderan yang dimuat untuk pencocokan: sampai 7 hari sebelum tanggal yang dibuka
 
 // ---- ANTREAN OFFLINE ----
 // Tiap scan langsung tercatat di perangkat ini (localStorage) lalu dikirim ke server di
@@ -79,6 +88,7 @@ function bunyi(tipe) {
       ok: [{ f: 880, d: 0.08, t: "sine" }],
       dup: [{ f: 330, d: 0.12, t: "square" }, { f: 330, d: 0.12, t: "square", jeda: 0.08 }],
       cancel: [{ f: 220, d: 0.35, t: "sawtooth" }, { f: 180, d: 0.45, t: "sawtooth", jeda: 0.05 }],
+      asing: [{ f: 440, d: 0.18, t: "triangle" }, { f: 300, d: 0.25, t: "triangle", jeda: 0.06 }],
     }[tipe] || [];
     let t0 = audioCtx.currentTime;
     pola.forEach((n) => {
@@ -165,6 +175,7 @@ function KartuHasil({ hasil }) {
     ok: { box: "bg-emerald-500/15 border-emerald-400/50 text-emerald-200", Ikon: CheckCircle2, judul: "OK — Valid" },
     cancel: { box: "bg-red-600/25 border-red-500 text-red-100", Ikon: Ban, judul: "CANCEL — JANGAN DIKIRIM" },
     dup: { box: "bg-amber-500/20 border-amber-400/60 text-amber-100", Ikon: AlertTriangle, judul: "SUDAH PERNAH DI-SCAN" },
+    asing: { box: "bg-amber-500/20 border-amber-400/60 text-amber-100", Ikon: AlertTriangle, judul: "TIDAK ADA DI ORDERAN" },
     err: { box: "bg-md-error-container border-red-400/60 text-md-on-error-container", Ikon: AlertTriangle, judul: "GAGAL" },
   }[hasil.tipe];
   const { Ikon } = gaya;
@@ -173,14 +184,33 @@ function KartuHasil({ hasil }) {
       <div className="flex items-center gap-3">
         <Ikon size={hasil.tipe === "cancel" ? 36 : 28} />
         <div className="min-w-0">
-          <div className={`font-bold ${hasil.tipe === "cancel" ? "text-2xl" : "text-lg"}`}>{gaya.judul}</div>
+          <div className={`font-bold ${hasil.tipe === "cancel" ? "text-2xl" : "text-lg"}`}>{hasil.tipe === "ok" && hasil.barang?.length ? "OK — Sesuai orderan" : gaya.judul}</div>
           <div className="font-mono text-sm break-all">{hasil.resi}</div>
         </div>
       </div>
       <div className="mt-2 text-sm">
         {hasil.ekspedisi && <span className="mr-3 font-medium">{labelEkspedisi(hasil.ekspedisi)}</span>}
+        {hasil.orderId && <span className="mr-3 text-xs opacity-80">Pesanan {hasil.orderId}</span>}
         {hasil.info}
       </div>
+      {hasil.barang?.length > 0 && (
+        <div className="mt-3 rounded-md bg-black/20 p-3 space-y-2">
+          {hasil.barang.map((b, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-base break-words">{[b.sku, b.variasi].filter(Boolean).join(" · ") || b.nama}</div>
+                {(b.sku || b.variasi) && <div className="text-xs opacity-80 break-words">{b.nama}</div>}
+              </div>
+              <div className="text-xl font-bold shrink-0">×{b.qty}</div>
+            </div>
+          ))}
+          {hasil.barang.length > 1 && (
+            <div className="text-xs opacity-80 pt-1 border-t border-white/10">
+              {hasil.barang.length} jenis barang · total {hasil.barang.reduce((a, b) => a + b.qty, 0)} pcs
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -204,6 +234,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     setBelumKirim(baru);
   }, []);
   const [cancelRows, setCancelRows] = useState([]);
+  const [orderanRows, setOrderanRows] = useState([]);
+  const [orderanGalat, setOrderanGalat] = useState("");
   const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState("");
   const lastCancel = useRef(null);
@@ -226,6 +258,20 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     lastCancel.current = rows?.[0]?.created_at || batas;
   }, []);
 
+  // Orderan (resi -> barang) hanya dimuat SEKALI per buka halaman / ganti tanggal / "Muat ulang"
+  // (tidak di-poll) supaya hemat egress; pencocokan saat scan dikerjakan di perangkat.
+  const muatOrderan = useCallback(async () => {
+    try {
+      const rows = await sbAll(
+        `resi_barang?select=${KOLOM_ORDERAN}&tanggal=gte.${geserHari(hari, -HARI_ORDERAN)}&tanggal=lte.${hari}&order=tanggal.desc,id.asc`
+      );
+      setOrderanRows(rows || []);
+      setOrderanGalat("");
+    } catch (e) {
+      setOrderanGalat(e.message || "Gagal memuat orderan.");
+    }
+  }, [hari]);
+
   const muatSemua = useCallback(async () => {
     setMemuat(true);
     setGalat("");
@@ -242,6 +288,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   useEffect(() => {
     muatSemua();
   }, [muatSemua]);
+
+  useEffect(() => {
+    if (sub === "scan") muatOrderan();
+  }, [sub, muatOrderan]);
 
   // Ambil resi cancel yang BARU masuk dari perangkat lain (incremental), dan segarkan scan
   // dari perangkat lain — tanpa menarik ulang seluruh daftar.
@@ -275,6 +325,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   }, [sub, hari, muatScan]);
 
   const cancelMap = useMemo(() => new Map(cancelRows.map((r) => [r.resi, r])), [cancelRows]);
+  const orderanMap = useMemo(() => new Map(orderanRows.map((o) => [o.resi, o])), [orderanRows]);
+  const adaOrderan = orderanRows.length > 0;
   // Scan dari server + scan yang masih menunggu terkirim (ditandai tertunda).
   const gabungScan = useMemo(() => {
     const sudah = new Set(scans.map((x) => x.resi));
@@ -289,12 +341,16 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     () =>
       gabungScan.map((s) => {
         const c = cancelMap.get(s.resi);
+        const o = orderanMap.get(s.resi) || null;
         // Resi yang dulu tersimpan "Lainnya" dihitung ulang dengan pola terbaru, jadi kalau pola
         // ekspedisi diperbaiki, scan lama ikut benar tanpa perlu update database.
         const ekspedisi = s.ekspedisi === "LAINNYA" ? deteksiEkspedisi(s.resi) : s.ekspedisi;
-        return { ...s, ekspedisi, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at) };
+        return {
+          ...s, ekspedisi, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at),
+          orderan: o, asing: adaOrderan && !c && !o,
+        };
       }),
-    [gabungScan, cancelMap]
+    [gabungScan, cancelMap, orderanMap, adaOrderan]
   );
   const terlanjur = useMemo(() => rows.filter((r) => r.terlanjur), [rows]);
 
@@ -311,7 +367,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const inputRef = useRef(null);
   const antrean = useRef(Promise.resolve());
   const ref = useRef({});
-  ref.current = { scans, cancelMap, suara, hari, operator };
+  ref.current = { scans, cancelMap, suara, hari, operator, orderanMap, adaOrderan };
 
   const sedangKirim = useRef(false);
   const kirimAntrean = useCallback(async () => {
@@ -409,7 +465,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   }, [kirimAntrean]);
 
   const kerjakanScan = useCallback(async (raw) => {
-    const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op } = ref.current;
+    const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op, orderanMap: omap, adaOrderan: adaO } = ref.current;
     const bip = (t) => bunyiAktif && bunyi(t);
     const resi = normalisasiResi(raw);
     if (!resi) {
@@ -439,15 +495,23 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     setAntreanSync((a) => [...a, { resi, ekspedisi, tanggal: hariAktif, discan_oleh: op, created_at: new Date().toISOString() }]);
     kirimAntrean();
     const c = cmap.get(resi);
+    const o = omap.get(resi);
     if (c) {
       setHasil({
-        tipe: "cancel", resi, ekspedisi,
+        tipe: "cancel", resi, ekspedisi, barang: o?.barang,
         info: [c.platform, c.no_pesanan && `Pesanan ${c.no_pesanan}`, c.alasan].filter(Boolean).join(" · ") || "Pesanan sudah dibatalkan.",
       });
       bip("cancel");
+    } else if (adaO && !o) {
+      // Orderan sudah di-import tapi resi ini tidak ada di dalamnya: tetap dicatat, hanya diperingatkan.
+      setHasil({
+        tipe: "asing", resi, ekspedisi,
+        info: "Resi ini tidak ada di daftar orderan — cek paketnya (salah paket?) atau file orderan terbaru belum di-import. Tetap tercatat.",
+      });
+      bip("asing");
     } else {
       setHasil({
-        tipe: "ok", resi, ekspedisi,
+        tipe: "ok", resi, ekspedisi, barang: o?.barang, orderId: o?.order_id,
         info: ekspedisi === "LAINNYA" ? "Ekspedisi belum dikenali — bisa dikoreksi manual di daftar bawah." : "",
       });
       bip("ok");
@@ -482,6 +546,30 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       // abaikan
     }
   };
+
+  // ---------------- pencocokan dengan orderan (hanya halaman Scan) ----------------
+  // Orderan "tanggal yang dibuka" dibandingkan dengan resi yang sudah di-scan (termasuk yang masih
+  // antre kirim). Orderan yang resinya cancel dikeluarkan dari hitungan "harus dikirim".
+  const cocok = useMemo(() => {
+    if (sub !== "scan" || !adaOrderan) return null;
+    const batch = orderanRows.filter((o) => o.tanggal === hari);
+    const sudahSet = new Set(rows.map((r) => r.resi));
+    const aktif = batch.filter((o) => !cancelMap.has(o.resi));
+    const belum = aktif
+      .filter((o) => !sudahSet.has(o.resi))
+      .map((o) => ({ ...o, ekspedisi: deteksiEkspedisi(o.resi) }))
+      .sort((a, b) => a.ekspedisi.localeCompare(b.ekspedisi) || a.resi.localeCompare(b.resi));
+    return {
+      batch, sudahSet,
+      total: batch.length,
+      cancel: batch.length - aktif.length,
+      aktif: aktif.length,
+      sudah: aktif.length - belum.length,
+      belum,
+      asing: rows.filter((r) => r.asing),
+    };
+  }, [sub, adaOrderan, orderanRows, hari, rows, cancelMap]);
+  const [bukaBelum, setBukaBelum] = useState(false);
 
   // ---------------- daftar scan: filter & aksi ----------------
   const [filter, setFilter] = useState("semua");
@@ -580,7 +668,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
 
   const exportExcel = () => {
     const nama = sub === "rekap" ? `${dari}_sd_${sampai}` : hari;
-    downloadXlsx(`scan-resi-${nama}.xlsx`, [
+    const lembar = [
       {
         name: "Rekap",
         columns: [
@@ -595,14 +683,83 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
           { key: "tanggal", label: "Tanggal" }, { key: "jam", label: "Jam" }, { key: "resi", label: "Resi" },
           { key: "ekspedisi", label: "Ekspedisi" }, { key: "status", label: "Status" },
           { key: "oleh", label: "Discan oleh" }, { key: "pesanan", label: "No. Pesanan (cancel)" },
+          { key: "barang", label: "Barang (orderan)" },
         ],
         rows: [...rows].reverse().map((r) => ({
           tanggal: r.tanggal, jam: jam(r.created_at), resi: r.resi, ekspedisi: labelEkspedisi(r.ekspedisi),
-          status: r.cancel ? (r.terlanjur ? "CANCEL (terlanjur di-scan)" : "CANCEL") : "Valid",
+          status: r.cancel ? (r.terlanjur ? "CANCEL (terlanjur di-scan)" : "CANCEL") : r.asing ? "Tidak ada di orderan" : "Valid",
           oleh: r.discan_oleh || "", pesanan: r.infoCancel?.no_pesanan || "",
+          barang: r.orderan ? ringkasBarang(r.orderan.barang) : "",
         })),
       },
-    ]).catch((e) => toast(e.message, "err"));
+    ];
+    if (cocok && cocok.total) {
+      lembar.push({
+        name: "Orderan",
+        columns: [
+          { key: "resi", label: "Resi" }, { key: "ekspedisi", label: "Ekspedisi" }, { key: "pesanan", label: "No. Pesanan" },
+          { key: "barang", label: "Barang" }, { key: "qty", label: "Qty" }, { key: "status", label: "Status" },
+        ],
+        rows: cocok.batch.map((o) => ({
+          resi: o.resi, ekspedisi: labelEkspedisi(deteksiEkspedisi(o.resi)), pesanan: o.order_id || "",
+          barang: ringkasBarang(o.barang), qty: o.total_qty,
+          status: cancelMap.has(o.resi) ? "CANCEL" : cocok.sudahSet.has(o.resi) ? "Sudah di-scan" : "Belum di-scan",
+        })),
+      });
+    }
+    downloadXlsx(`scan-resi-${nama}.xlsx`, lembar).catch((e) => toast(e.message, "err"));
+  };
+
+  // ---------------- orderan: import ----------------
+  const [draftOrderan, setDraftOrderan] = useState(null);
+  const [menyimpanOrderan, setMenyimpanOrderan] = useState(false);
+  const [laporanOrderan, setLaporanOrderan] = useState("");
+  const fileOrderanRef = useRef(null);
+
+  const pilihFileOrderan = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setLaporanOrderan("");
+    try {
+      const hasilBaca = await parseFileOrderan(f);
+      setDraftOrderan({ ...hasilBaca, nama: f.name });
+    } catch (err) {
+      setDraftOrderan(null);
+      toast(err.message, "err");
+    }
+  };
+
+  const simpanOrderan = async () => {
+    if (!draftOrderan?.baris.length || menyimpanOrderan) return;
+    setMenyimpanOrderan(true);
+    try {
+      let n = 0;
+      for (let i = 0; i < draftOrderan.baris.length; i += 300) {
+        const potong = draftOrderan.baris.slice(i, i + 300).map((b) => ({
+          resi: b.resi, order_id: b.order_id, platform: b.platform,
+          barang: b.barang, total_qty: b.total_qty, tanggal: hari,
+        }));
+        // Resi yang sudah ada diperbarui (tidak digandakan). select=id supaya respons kecil.
+        const res = await sb("resi_barang?on_conflict=entitas,resi&select=id", {
+          method: "POST",
+          body: JSON.stringify(potong),
+          prefer: "resolution=merge-duplicates,return=representation",
+        });
+        n += (res || []).length;
+      }
+      await muatOrderan();
+      setLaporanOrderan(
+        `${n} resi orderan disimpan untuk ${formatTanggalID(hari)} (yang sudah ada diperbarui).` +
+          (draftOrderan.tanpaResi ? ` ${draftOrderan.tanpaResi} pesanan belum punya resi — import ulang nanti setelah resinya terbit.` : "")
+      );
+      setDraftOrderan(null);
+      toast(`${n} resi orderan disimpan.`);
+    } catch (e) {
+      toast(e.message, "err");
+    } finally {
+      setMenyimpanOrderan(false);
+    }
   };
 
   // ---------------- cancel: input ----------------
@@ -703,14 +860,14 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
 
   // ---------------- render ----------------
   const tombolMuat = (
-    <button type="button" onClick={muatSemua} className={btnOutlined} disabled={memuat}>
+    <button type="button" onClick={() => { muatSemua(); if (sub === "scan") muatOrderan(); }} className={btnOutlined} disabled={memuat}>
       <RefreshCw size={14} className={memuat ? "animate-spin" : ""} /> Muat ulang
     </button>
   );
 
   const judul = { scan: "Scan Resi", cancel: "Daftar Resi Cancel", rekap: "Rekap Scan Resi" }[sub] || "Scan Resi";
   const deskripsi = {
-    scan: "Scan resi paket yang mau dikirim. Resi dihitung per ekspedisi, dan resi yang pesanannya cancel langsung ditandai merah.",
+    scan: "Scan resi paket yang mau dikirim. Resi dihitung per ekspedisi, dicocokkan dengan orderan (barang ikut tampil), dan resi yang pesanannya cancel langsung ditandai merah.",
     cancel: "Masukkan resi pesanan yang dibatalkan (tempel / upload export marketplace). Resi ini otomatis terfilter saat di-scan.",
     rekap: "Rekap jumlah resi per ekspedisi untuk rentang tanggal, bisa diekspor ke Excel.",
   }[sub];
@@ -784,6 +941,127 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             <button type="button" onClick={exportExcel} disabled={!rows.length} className={`${btnOutlined} mb-3`}>
               <Download size={14} /> Export Excel
             </button>
+          </div>
+
+          <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-md-on-surface">
+                <Package size={16} /> Orderan untuk dikirim · {formatTanggalID(hari)}
+              </div>
+              <input ref={fileOrderanRef} type="file" accept=".xlsx,.xls,.csv" onChange={pilihFileOrderan} className="hidden" />
+              <button type="button" onClick={() => fileOrderanRef.current?.click()} className={`${btnOutlined} ml-auto`}>
+                <FileSpreadsheet size={14} /> Import orderan (TikTok Shop .xlsx)
+              </button>
+            </div>
+
+            {orderanGalat && (
+              <div className="rounded-lg bg-md-error-container text-md-on-error-container text-sm p-3">
+                Orderan belum bisa dimuat: {orderanGalat}. Pastikan scan_resi_barang.sql sudah dijalankan. Scan tetap jalan seperti biasa, hanya tanpa pencocokan orderan.
+              </div>
+            )}
+
+            {draftOrderan && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-md-container-high p-3 text-sm text-md-on-surface">
+                <span>
+                  {draftOrderan.nama}: {draftOrderan.baris.length} resi · {draftOrderan.totalPcs} pcs terbaca
+                  {draftOrderan.tanpaResi ? ` · ${draftOrderan.tanpaResi} pesanan belum punya resi (dilewati)` : ""}
+                  {draftOrderan.diabaikanBatal ? ` · ${draftOrderan.diabaikanBatal} baris batal diabaikan` : ""}
+                  {` · akan disimpan untuk ${formatTanggalID(hari)}`}.
+                </span>
+                <button type="button" onClick={simpanOrderan} disabled={!draftOrderan.baris.length || menyimpanOrderan} className={`${btnFilled} ml-auto`}>
+                  {menyimpanOrderan ? "Menyimpan…" : `Simpan ${draftOrderan.baris.length} orderan`}
+                </button>
+                <button type="button" onClick={() => setDraftOrderan(null)} className={btnText}>Batal</button>
+              </div>
+            )}
+
+            {laporanOrderan && (
+              <div className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-md-on-surface">{laporanOrderan}</div>
+            )}
+
+            {cocok && cocok.total > 0 ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <StatCard label="Harus dikirim (orderan)" value={cocok.aktif} icon={Package} />
+                  <StatCard label="Sudah di-scan" value={cocok.sudah} accent="text-emerald-300" icon={CheckCircle2} iconColor="text-emerald-300" />
+                  <StatCard
+                    label="Belum di-scan" value={cocok.belum.length}
+                    accent={cocok.belum.length ? "text-amber-300" : undefined} icon={ScanLine}
+                    iconColor={cocok.belum.length ? "text-amber-300" : undefined}
+                    onClick={() => setBukaBelum((v) => !v)}
+                  />
+                  <StatCard
+                    label="Scan tidak ada di orderan" value={cocok.asing.length}
+                    accent={cocok.asing.length ? "text-amber-300" : undefined} icon={AlertTriangle}
+                    iconColor={cocok.asing.length ? "text-amber-300" : undefined}
+                  />
+                </div>
+                {cocok.cancel > 0 && (
+                  <div className="text-xs text-md-on-surface-variant">
+                    {cocok.cancel} orderan sudah masuk daftar cancel — tidak dihitung sebagai "harus dikirim".
+                  </div>
+                )}
+                {cocok.belum.length === 0 && cocok.asing.length === 0 ? (
+                  <div className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm font-medium text-emerald-200">
+                    Cocok — semua {cocok.aktif} orderan sudah di-scan, tidak ada scan di luar orderan.
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 p-3 text-sm text-amber-100">
+                    Belum cocok: {cocok.belum.length} orderan belum di-scan, {cocok.asing.length} resi ter-scan tidak ada di orderan.
+                  </div>
+                )}
+                {cocok.asing.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {cocok.asing.map((r) => (
+                      <span key={r.id} className="font-mono text-xs bg-amber-500/20 text-amber-100 rounded-full px-2.5 py-1">
+                        {r.resi} · {labelEkspedisi(r.ekspedisi)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {cocok.belum.length > 0 && (
+                  <button type="button" onClick={() => setBukaBelum((v) => !v)} className={btnText}>
+                    {bukaBelum ? "Sembunyikan" : "Lihat"} daftar belum di-scan ({cocok.belum.length})
+                  </button>
+                )}
+                {bukaBelum && cocok.belum.length > 0 && (
+                  <div className="rounded-md-lg border border-md-outline-variant overflow-x-auto">
+                    <div className="flex items-center justify-between px-4 py-2 text-xs text-md-on-surface-variant">
+                      <span>{cocok.belum.length} resi belum di-scan</span>
+                      <button
+                        type="button"
+                        onClick={() => navigator.clipboard?.writeText(cocok.belum.map((o) => o.resi).join("\n"))}
+                        className={btnText}
+                      >
+                        <Copy size={13} /> Salin daftar resi
+                      </button>
+                    </div>
+                    <table className="w-full text-sm">
+                      <tbody>
+                        {cocok.belum.slice(0, BATAS_BARIS).map((o) => (
+                          <tr key={o.resi} className="border-t border-md-outline-variant">
+                            <td className="px-4 py-2 font-mono text-md-on-surface">{o.resi}</td>
+                            <td className="px-2 py-2 text-xs text-md-on-surface-variant whitespace-nowrap">{labelEkspedisi(o.ekspedisi)}</td>
+                            <td className="px-2 py-2 text-xs text-md-on-surface-variant">{ringkasBarang(o.barang)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {cocok.belum.length > BATAS_BARIS && (
+                      <div className="px-4 py-2 text-xs text-md-on-surface-variant border-t border-md-outline-variant">
+                        Menampilkan {BATAS_BARIS} dari {cocok.belum.length} — Export Excel (sheet "Orderan") untuk semuanya.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-md-on-surface-variant">
+                {adaOrderan
+                  ? "Belum ada orderan untuk tanggal ini — import file orderan untuk tanggal yang dipilih."
+                  : 'Belum ada orderan. Import file "Untuk Dikirim" dari TikTok Shop supaya hasil scan dicocokkan dengan orderan (barang ikut tampil).'}
+              </div>
+            )}
           </div>
 
           <TabelRekap rows={rows} aktif={ekspFilter} onPilih={setEkspFilter} />
@@ -860,8 +1138,17 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                           <span className="text-xs text-md-on-surface-variant">{labelEkspedisi(r.ekspedisi)}</span>
                         )}
                       </td>
+                      <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden lg:table-cell max-w-[260px] truncate" title={r.orderan ? ringkasBarang(r.orderan.barang) : undefined}>
+                        {r.orderan ? ringkasBarang(r.orderan.barang) : ""}
+                      </td>
                       <td className="px-2 py-2">
-                        {r.cancel ? <Badge color="red">{r.terlanjur ? "Cancel · terlanjur" : "Cancel"}</Badge> : <Badge color="emerald">Valid</Badge>}
+                        {r.cancel ? (
+                          <Badge color="red">{r.terlanjur ? "Cancel · terlanjur" : "Cancel"}</Badge>
+                        ) : r.asing ? (
+                          <Badge color="amber">Tdk di orderan</Badge>
+                        ) : (
+                          <Badge color="emerald">Valid</Badge>
+                        )}
                         {r.tertunda && <span className="ml-1 text-[10px] text-amber-300 whitespace-nowrap">menunggu kirim</span>}
                       </td>
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{r.discan_oleh}</td>

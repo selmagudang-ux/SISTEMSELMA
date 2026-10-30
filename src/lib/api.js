@@ -123,8 +123,9 @@ export const TABEL_PER_PT = new Set([
   "grosir_pembayaran", "grosir_deposit",
   "marketplace_transaksi", "marketplace_iklan", "marketplace_penjualan",
   "marketplace_produk_map", "marketplace_sku_alias",
-  // Scan Resi (pages/ScanResi.jsx) — kolom entitas dibuat di scan_resi.sql.
-  "resi_scan", "resi_cancel",
+  // Scan Resi (pages/ScanResi.jsx) — kolom entitas dibuat di scan_resi.sql;
+  // resi_barang (orderan resi -> barang) di scan_resi_barang.sql.
+  "resi_scan", "resi_cancel", "resi_barang",
 ]);
 
 // Pemilik/Super Appa (akun Holding) boleh MELIHAT data gudang PT lain di Dashboard.
