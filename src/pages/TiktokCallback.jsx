@@ -21,6 +21,8 @@ export default function TiktokCallback() {
 
     const params = new URLSearchParams(window.location.search);
     const kode = params.get("code");
+    // TikTok biasanya ikut mengirim app_key; dipakai server untuk memilih app yang tepat.
+    const appKey = params.get("app_key") || "";
     const galat = params.get("error") || params.get("error_description");
 
     // Buang kode dari address bar supaya tidak tertinggal di riwayat browser.
@@ -46,7 +48,7 @@ export default function TiktokCallback() {
             apikey: SUPABASE_ANON_KEY,
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ aksi: "tukar-kode", kode }),
+          body: JSON.stringify({ aksi: "tukar-kode", kode, app_key: appKey }),
         });
         const hasil = await res.json().catch(() => null);
         if (!res.ok || !hasil || hasil.error) {
