@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, AlertTriangle, Receipt, Package, XCircle, Printer } from "lucide-react";
+import { RefreshCw, AlertTriangle, Receipt, Package, XCircle, Printer, Truck } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnOutlined } from "../components/ui";
 import { fmtRp } from "../lib/api";
 import { panggilTiktok, normNamaToko } from "../lib/tiktokApi";
@@ -52,6 +52,9 @@ export default function TiktokPesanan({ toko, showToast }) {
   const [dipilih, setDipilih] = useState(new Set());
   const [mencetak, setMencetak] = useState(false);
   const [hasilResi, setHasilResi] = useState([]);
+  const [aturOrder, setAturOrder] = useState(null); // order_id yang sedang dikonfirmasi atur pengirimannya
+  const [metode, setMetode] = useState("PICKUP");
+  const [mengatur, setMengatur] = useState(false);
 
   const muat = useCallback(async () => {
     setMemuat(true);
@@ -107,6 +110,28 @@ export default function TiktokPesanan({ toko, showToast }) {
       showToast?.(e.message || "Gagal mengambil resi.", "error");
     } finally {
       setMencetak(false);
+    }
+  };
+
+  // Atur pengiriman ke TikTok: MENGUBAH status pesanan di Seller Center (tidak bisa dibatalkan dari sini).
+  const jalankanAtur = async () => {
+    if (!aturOrder) return;
+    setMengatur(true);
+    try {
+      const r = await panggilTiktok("atur-pengiriman", { shop_name: toko.label, order_id: aturOrder, metode, konfirmasi: true });
+      const gagal = (r.hasil || []).filter((h) => !h.ok);
+      if (gagal.length > 0) {
+        showToast?.(`Sebagian paket gagal diatur: ${gagal.map((g) => g.error).join(" | ")}`, "error");
+      } else {
+        showToast?.(`Pengiriman pesanan ${aturOrder} diatur (${metode === "PICKUP" ? "dijemput" : "drop-off"}).`);
+      }
+      setAturOrder(null);
+      try { await panggilTiktok("sinkron-pesanan", { shop_name: toko.label, hari: 7 }); } catch { /* status akan menyusul di sinkron berikutnya */ }
+      await muat();
+    } catch (e) {
+      showToast?.(e.message || "Gagal mengatur pengiriman.", "error");
+    } finally {
+      setMengatur(false);
     }
   };
 
@@ -171,6 +196,33 @@ export default function TiktokPesanan({ toko, showToast }) {
         <div className="mb-4 rounded-md-lg bg-red-500/10 border border-red-500/30 p-4 text-sm text-red-300 break-words">{galat}</div>
       )}
 
+      {aturOrder && (
+        <div className="mb-4 rounded-md-lg bg-amber-500/10 border border-amber-500/30 p-4 text-sm text-amber-300">
+          <div className="font-medium mb-2">
+            Atur pengiriman ke TikTok — pesanan <span className="font-mono">{aturOrder}</span>
+          </div>
+          <p className="mb-3">
+            Ini mengubah status pesanan di Seller Center TikTok dan tidak bisa dibatalkan dari sini. Pastikan barang sudah selesai dipacking.
+          </p>
+          <div className="flex flex-wrap items-center gap-4 mb-3">
+            <label className="flex items-center gap-2">
+              <input type="radio" name="metode-kirim" checked={metode === "PICKUP"} onChange={() => setMetode("PICKUP")} />
+              Dijemput kurir (PICKUP)
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="metode-kirim" checked={metode === "DROP_OFF"} onChange={() => setMetode("DROP_OFF")} />
+              Diantar sendiri ke titik drop-off (DROP_OFF)
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={jalankanAtur} className={btnFilled} disabled={mengatur}>
+              {mengatur ? "Memproses…" : "Ya, atur pengiriman"}
+            </button>
+            <button onClick={() => setAturOrder(null)} className={btnOutlined} disabled={mengatur}>Batal</button>
+          </div>
+        </div>
+      )}
+
       {hasilResi.length > 0 && (
         <div className="mb-4 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4 text-sm">
           <div className="font-medium mb-2">Hasil ambil resi</div>
@@ -230,9 +282,16 @@ export default function TiktokPesanan({ toko, showToast }) {
                   <td className="px-4 py-2.5 text-right font-medium">{fmtRp(p.total || 0)}</td>
                   <td className="px-4 py-2.5 text-right">
                     {STATUS_BISA_CETAK.has(p.status) ? (
-                      <button onClick={() => cetakResi([p.order_id])} className={btnOutlined} disabled={mencetak} title="Cetak resi">
-                        <Printer size={14} />
-                      </button>
+                      <div className="flex justify-end gap-1">
+                        {p.status === "AWAITING_SHIPMENT" && (
+                          <button onClick={() => setAturOrder(p.order_id)} className={btnOutlined} disabled={mengatur} title="Atur pengiriman ke TikTok">
+                            <Truck size={14} />
+                          </button>
+                        )}
+                        <button onClick={() => cetakResi([p.order_id])} className={btnOutlined} disabled={mencetak} title="Cetak resi">
+                          <Printer size={14} />
+                        </button>
+                      </div>
                     ) : (
                       <span className="text-md-on-surface-variant">—</span>
                     )}
