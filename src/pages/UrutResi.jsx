@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { ListOrdered, Upload, Download, Trash2, Loader2 } from "lucide-react";
 import { PageHeader, EmptyState, inputClass, btnFilled, btnOutlined } from "../components/ui";
 import { bacaPdfResi, urutkanResi, ringkasPacking, buatPdfTerurut, MODE_URUT } from "../lib/urutResi";
+import UrutResiTiktok from "./UrutResiTiktok";
 
 // =========================================================
 // URUT RESI — upload PDF resi (Shopee / TikTok Shop / Tokopedia), otomatis
@@ -69,6 +70,11 @@ export default function UrutResi({ showToast }) {
     });
   }
 
+  // Penyerahan dari panel "Ambil resi dari TikTok": selalu memanggil muat() versi terbaru
+  // supaya tidak memakai state lama setelah proses ambil yang memakan waktu.
+  const muatRef = useRef(null);
+  muatRef.current = muat;
+
   async function unduh() {
     setSibuk(true);
     try {
@@ -120,6 +126,8 @@ export default function UrutResi({ showToast }) {
         title="Urut Resi"
         description="Upload PDF resi (Shopee, TikTok Shop, Tokopedia — J&T, GTL, SPX). Otomatis diurutkan per produk supaya packing lebih cepat. File diproses di browser, tidak dikirim ke server."
       />
+
+      <UrutResiTiktok onFiles={(f) => muatRef.current(f)} />
 
       <div
         onDragOver={(e) => { e.preventDefault(); setSeret(true); }}
