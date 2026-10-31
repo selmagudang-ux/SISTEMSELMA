@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, AlertTriangle, Receipt, Package, XCircle } from "lucide-react";
+import { RefreshCw, AlertTriangle, Receipt, Package, XCircle, Printer } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnOutlined } from "../components/ui";
 import { fmtRp } from "../lib/api";
 import { panggilTiktok, normNamaToko } from "../lib/tiktokApi";
@@ -28,6 +28,9 @@ const STATUS_WARNA = {
   AWAITING_COLLECTION: "sky", IN_TRANSIT: "sky", DELIVERED: "emerald", COMPLETED: "emerald", CANCELLED: "red",
 };
 
+// Status pesanan yang labelnya bisa diminta (kurir diatur TikTok).
+const STATUS_BISA_CETAK = new Set(["AWAITING_SHIPMENT", "AWAITING_COLLECTION", "PARTIALLY_SHIPPING", "IN_TRANSIT"]);
+
 // Ringkas item: "SKU-A ×2, SKU-B" (tiap line item TikTok = 1 unit)
 function ringkasItem(items) {
   const per = new Map();
@@ -46,6 +49,9 @@ export default function TiktokPesanan({ toko, showToast }) {
   const [galat, setGalat] = useState("");
   const [memuat, setMemuat] = useState(false);
   const [sinkron, setSinkron] = useState(false);
+  const [dipilih, setDipilih] = useState(new Set());
+  const [mencetak, setMencetak] = useState(false);
+  const [hasilResi, setHasilResi] = useState([]);
 
   const muat = useCallback(async () => {
     setMemuat(true);
@@ -79,6 +85,41 @@ export default function TiktokPesanan({ toko, showToast }) {
     }
   };
 
+  // Cetak resi: URL label diambil dari TikTok saat diklik dan tidak disimpan di database.
+  const cetakResi = async (orderIds) => {
+    if (orderIds.length === 0) return;
+    // Satu pesanan: buka tab kosong SEKARANG (masih di dalam klik) supaya tidak diblokir browser.
+    const tab = orderIds.length === 1 ? window.open("", "_blank") : null;
+    setMencetak(true);
+    setHasilResi([]);
+    try {
+      const r = await panggilTiktok("cetak-resi", { shop_name: toko.label, order_ids: orderIds });
+      const hasil = r.hasil || [];
+      const berhasil = hasil.filter((h) => h.url);
+      if (tab && berhasil.length === 1) {
+        tab.location.href = berhasil[0].url;
+      } else {
+        tab?.close();
+      }
+      if (hasil.length > 1 || hasil.some((h) => h.error)) setHasilResi(hasil);
+    } catch (e) {
+      tab?.close();
+      showToast?.(e.message || "Gagal mengambil resi.", "error");
+    } finally {
+      setMencetak(false);
+    }
+  };
+
+  const bisaCetak = pesanan.filter((p) => STATUS_BISA_CETAK.has(p.status));
+  const semuaTerpilih = bisaCetak.length > 0 && bisaCetak.every((p) => dipilih.has(p.order_id));
+  const togglePilih = (id) =>
+    setDipilih((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  const togglePilihSemua = () => setDipilih(semuaTerpilih ? new Set() : new Set(bisaCetak.map((p) => p.order_id)));
+
   const ringkas = useMemo(() => {
     const batal = pesanan.filter((p) => p.status === "CANCELLED").length;
     const total = pesanan.filter((p) => p.status !== "CANCELLED").reduce((a, p) => a + (Number(p.total) || 0), 0);
@@ -105,6 +146,11 @@ export default function TiktokPesanan({ toko, showToast }) {
         <button onClick={muat} className={btnOutlined} disabled={memuat}>
           <RefreshCw size={14} /> Muat ulang
         </button>
+        {dipilih.size > 0 && (
+          <button onClick={() => cetakResi([...dipilih].slice(0, 20))} className={btnOutlined} disabled={mencetak}>
+            <Printer size={14} /> {mencetak ? "Mengambil…" : `Cetak Resi (${Math.min(dipilih.size, 20)})`}
+          </button>
+        )}
         <button onClick={jalankanSinkron} className={btnFilled} disabled={sinkron || belumTerhubung}>
           <RefreshCw size={14} className={sinkron ? "animate-spin" : ""} /> {sinkron ? "Menyinkron…" : "Sinkron dari TikTok"}
         </button>
@@ -125,6 +171,24 @@ export default function TiktokPesanan({ toko, showToast }) {
         <div className="mb-4 rounded-md-lg bg-red-500/10 border border-red-500/30 p-4 text-sm text-red-300 break-words">{galat}</div>
       )}
 
+      {hasilResi.length > 0 && (
+        <div className="mb-4 rounded-md-lg bg-md-container-low shadow-elevation-1 p-4 text-sm">
+          <div className="font-medium mb-2">Hasil ambil resi</div>
+          <ul className="space-y-1">
+            {hasilResi.map((h, i) => (
+              <li key={`${h.order_id}-${h.package_id || i}`} className="flex flex-wrap gap-2">
+                <span className="font-mono text-xs">{h.order_id}</span>
+                {h.url ? (
+                  <a href={h.url} target="_blank" rel="noreferrer" className="text-md-primary underline">Buka resi (PDF)</a>
+                ) : (
+                  <span className="text-red-300 break-words">{h.error}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-5">
         <StatCard label="Pesanan di periode ini" value={String(ringkas.jumlah)} icon={Receipt} accent="text-md-primary" />
         <StatCard label="Nilai pesanan (tanpa batal)" value={fmtRp(ringkas.total)} icon={Package} iconColor="text-emerald-400" />
@@ -138,23 +202,41 @@ export default function TiktokPesanan({ toko, showToast }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-md-on-surface-variant border-b border-md-outline-variant">
+                <th className="px-4 py-2.5 font-medium w-8">
+                  <input type="checkbox" checked={semuaTerpilih} onChange={togglePilihSemua} disabled={bisaCetak.length === 0} />
+                </th>
                 <th className="px-4 py-2.5 font-medium">Dibuat</th>
                 <th className="px-4 py-2.5 font-medium">No. Pesanan</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
                 <th className="px-4 py-2.5 font-medium">SKU</th>
                 <th className="px-4 py-2.5 font-medium">Resi</th>
                 <th className="px-4 py-2.5 font-medium text-right">Total</th>
+                <th className="px-4 py-2.5 font-medium text-right">Cetak</th>
               </tr>
             </thead>
             <tbody>
               {pesanan.map((p) => (
                 <tr key={p.order_id} className="border-b border-md-outline-variant last:border-0 align-top">
+                  <td className="px-4 py-2.5">
+                    {STATUS_BISA_CETAK.has(p.status) && (
+                      <input type="checkbox" checked={dipilih.has(p.order_id)} onChange={() => togglePilih(p.order_id)} />
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">{waktuID(p.create_time)}</td>
                   <td className="px-4 py-2.5 font-mono text-xs">{p.order_id}</td>
                   <td className="px-4 py-2.5"><Badge color={STATUS_WARNA[p.status] || "slate"}>{p.status || "—"}</Badge></td>
                   <td className="px-4 py-2.5 text-md-on-surface-variant max-w-xs">{ringkasItem(p.items)}</td>
                   <td className="px-4 py-2.5 text-md-on-surface-variant whitespace-nowrap">{p.resi || "—"}</td>
                   <td className="px-4 py-2.5 text-right font-medium">{fmtRp(p.total || 0)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {STATUS_BISA_CETAK.has(p.status) ? (
+                      <button onClick={() => cetakResi([p.order_id])} className={btnOutlined} disabled={mencetak} title="Cetak resi">
+                        <Printer size={14} />
+                      </button>
+                    ) : (
+                      <span className="text-md-on-surface-variant">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
