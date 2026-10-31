@@ -3,6 +3,7 @@ import { TrendingUp, Megaphone, Wallet, Plus, Banknote, Trash2, Store, ArrowLeft
 import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID } from "../components/ui";
 import { fmtRp, saldoMarketplace, daftarTokoMarketplace } from "../lib/api";
 import PenjualanRincian from "./PenjualanRincian";
+import TiktokPesanan, { TiktokBelumTerhubung } from "./TiktokPesanan";
 
 // =========================================================
 // MARKETPLACE (Shopee/TikTok/Lazada) — lihat catatan lengkap soal desain
@@ -101,6 +102,8 @@ function DaftarToko({ platform, label, daftarToko, onPilih, setModal }) {
           </button>
         }
       />
+
+      {platform === "tiktok" && <TiktokBelumTerhubung daftarToko={daftarToko} />}
 
       {daftarToko.length > 0 && (
         <div className="mb-4">
@@ -215,9 +218,9 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
         )}
       />
 
-      {platform === "shopee" && (
+      {(platform === "shopee" || platform === "tiktok") && (
         <div className="flex gap-1 mb-5 border-b border-md-outline-variant">
-          {[["saldo", "Saldo & Riwayat"], ["rincian", "Rincian Penjualan"]].map(([k, l]) => (
+          {[["saldo", "Saldo & Riwayat"], platform === "tiktok" ? ["pesanan", "Pesanan (API)"] : ["rincian", "Rincian Penjualan"]].map(([k, l]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -231,7 +234,9 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
         </div>
       )}
 
-      {tab === "rincian" && platform === "shopee" ? (
+      {tab === "pesanan" && platform === "tiktok" ? (
+        <TiktokPesanan toko={toko} showToast={showToast} />
+      ) : tab === "rincian" && platform === "shopee" ? (
         <PenjualanRincian platform={platform} toko={toko} skuMaster={skuMaster} showToast={showToast} />
       ) : (
       <>
