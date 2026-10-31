@@ -1442,6 +1442,63 @@ export default function ModalRouter({
     );
   }
 
+  // Hapus toko marketplace (master_data tipe "toko_<platform>" + pemetaan PT-nya).
+  // Hanya boleh kalau toko BELUM punya data apa pun, supaya saldo/penjualan/iklan yang
+  // sudah tercatat tidak menjadi yatim ("Tanpa Nama Toko") dan laporan tidak berubah.
+  if (modal.type === "hapus-marketplace-toko") {
+    const tk = modal.toko;
+    const namaPf = { shopee: "Shopee", tiktok: "TikTok", lazada: "Lazada" }[modal.platform] || modal.platform;
+    return (
+      <ModalShell title={`Hapus Toko — ${namaPf}`} onClose={close}>
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm px-4 py-3 rounded-lg mb-4">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <div>
+            Toko <span className="font-semibold">{tk.label}</span> akan dihapus dari daftar toko {namaPf}. Toko yang
+            sudah punya transaksi saldo, data penjualan, iklan, atau pemetaan produk tidak bisa dihapus — data itu
+            harus dihapus dulu. Tindakan ini tidak bisa dibatalkan.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={close}
+            disabled={saving}
+            className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            disabled={saving}
+            onClick={() =>
+              run(async () => {
+                const kodeEnc = encodeURIComponent(tk.kode);
+                const cek = [
+                  ["marketplace_transaksi", "transaksi saldo"],
+                  ["marketplace_penjualan", "data penjualan"],
+                  ["marketplace_iklan", "data iklan"],
+                  ["marketplace_produk_map", "pemetaan produk"],
+                ];
+                const terpakai = [];
+                for (const [tabel, nama] of cek) {
+                  const rows = await sb(`${tabel}?platform=eq.${modal.platform}&toko=eq.${kodeEnc}&select=platform&limit=1`);
+                  if (rows && rows.length > 0) terpakai.push(nama);
+                }
+                if (terpakai.length > 0) {
+                  throw new Error(`Toko "${tk.label}" belum bisa dihapus: masih punya ${terpakai.join(", ")}.`);
+                }
+                await sb(`master_data?tipe=eq.toko_${modal.platform}&kode=eq.${kodeEnc}`, { method: "DELETE" });
+                await sb(`master_data?tipe=eq.toko_entitas&kode=eq.${encodeURIComponent(`${modal.platform}:${tk.kode}`)}`, { method: "DELETE" });
+                if (typeof modal.onSelesai === "function") modal.onSelesai();
+              }, "Toko dihapus")
+            }
+            className="flex-1 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
+          >
+            {saving ? "Menghapus…" : "Hapus Toko"}
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
+
   if (modal.type === "marketplace-transaksi-form") {
     // modal.tipe = "pemasukan" | "iklan", modal.platform = "shopee"|"tiktok"|"lazada",
     // modal.toko = kode toko (dari master_data toko_<platform>) yang lagi dibuka

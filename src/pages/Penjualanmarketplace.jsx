@@ -139,6 +139,15 @@ function DaftarToko({ platform, label, daftarToko, onPilih, setModal }) {
                     <Pencil size={14} />
                   </button>
                 )}
+                {t.kode && (
+                  <button
+                    onClick={() => setModal({ type: "hapus-marketplace-toko", platform, toko: t })}
+                    className="p-1.5 text-md-on-surface-variant hover:text-red-400"
+                    title="Hapus toko"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
                 <button onClick={() => onPilih(t)} className="p-1.5 text-md-on-surface-variant">
                   <ChevronRight size={16} />
                 </button>
@@ -181,12 +190,20 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
           <ArrowLeft size={13} /> Daftar Toko {label}
         </button>
         {toko.kode && (
-          <button
-            onClick={() => setModal({ type: "marketplace-toko-form", platform, toko })}
-            className="flex items-center gap-1.5 text-xs text-md-on-surface-variant hover:text-md-on-surface"
-          >
-            <Pencil size={12} /> Ganti Nama Toko
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setModal({ type: "marketplace-toko-form", platform, toko })}
+              className="flex items-center gap-1.5 text-xs text-md-on-surface-variant hover:text-md-on-surface"
+            >
+              <Pencil size={12} /> Ganti Nama Toko
+            </button>
+            <button
+              onClick={() => setModal({ type: "hapus-marketplace-toko", platform, toko, onSelesai: onKembali })}
+              className="flex items-center gap-1.5 text-xs text-md-on-surface-variant hover:text-red-400"
+            >
+              <Trash2 size={12} /> Hapus Toko
+            </button>
+          </div>
         )}
       </div>
 
