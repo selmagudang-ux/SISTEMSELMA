@@ -35,10 +35,21 @@ window.addEventListener("vite:preloadError", (e) => {
   window.location.reload();
 });
 
+// Halaman callback otorisasi TikTok Shop berdiri sendiri (tanpa login SELMA).
+// Dimuat malas supaya tidak menambah bundle utama aplikasi.
+const TiktokCallback = React.lazy(() => import("./pages/TiktokCallback.jsx"));
+const adalahCallbackTiktok = window.location.pathname.replace(/\/+$/, "") === "/tiktok-callback";
+
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {adalahCallbackTiktok ? (
+        <React.Suspense fallback={null}>
+          <TiktokCallback />
+        </React.Suspense>
+      ) : (
+        <App />
+      )}
     </ErrorBoundary>
   </React.StrictMode>
 );

@@ -1,4 +1,7 @@
 {
+  "rewrites": [
+    { "source": "/tiktok-callback", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/index.html",
