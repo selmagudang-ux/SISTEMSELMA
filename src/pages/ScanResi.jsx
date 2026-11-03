@@ -11,6 +11,7 @@ import { TombolScanKamera } from "../components/ScanKamera";
 import { sb, sbAll } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
 import { parseFileOrderan, ringkasBarang } from "../lib/resiOrderan";
+import { ambilInfoPerangkat } from "../lib/infoPerangkat";
 import {
   DAFTAR_EKSPEDISI, labelEkspedisi, normalisasiResi, deteksiEkspedisi, bukanResi,
   parseTeksResi, parseFileCancel,
@@ -716,6 +717,33 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [laporanOrderan, setLaporanOrderan] = useState("");
   const fileOrderanRef = useRef(null);
 
+  // ---- Riwayat import (khusus superappa): siapa, kapan, file apa, dari perangkat mana ----
+  const bolehLihatLogImport = session?.role === "superappa";
+  const [bukaLogImport, setBukaLogImport] = useState(false);
+  const [logImport, setLogImport] = useState([]);
+  const [memuatLogImport, setMemuatLogImport] = useState(false);
+  const [galatLogImport, setGalatLogImport] = useState("");
+
+  const muatLogImport = useCallback(async () => {
+    if (!bolehLihatLogImport) return;
+    setMemuatLogImport(true);
+    setGalatLogImport("");
+    try {
+      const rows = await sb("resi_import_log?select=*&order=waktu.desc&limit=100");
+      setLogImport(rows || []);
+    } catch (e) {
+      const pesan = String(e?.message || e);
+      setGalatLogImport(
+        /resi_import_log|PGRST205|does not exist|404/i.test(pesan)
+          ? "Tabel log belum dibuat. Jalankan supabase/migrations/20261103_resi_import_log.sql di Supabase > SQL Editor, lalu klik Muat ulang."
+          : pesan
+      );
+      setLogImport([]);
+    } finally {
+      setMemuatLogImport(false);
+    }
+  }, [bolehLihatLogImport]);
+
   const pilihFileOrderan = async (e) => {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -749,6 +777,9 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const simpanOrderan = async () => {
     if (!draftOrderan?.baris.length || menyimpanOrderan) return;
     setMenyimpanOrderan(true);
+    // Untuk log: resi yang belum ada di orderan yang termuat = baru, sisanya diperbarui.
+    const sudahAdaSebelumnya = new Set(orderanRows.map((o) => o.resi));
+    const jumlahBaru = draftOrderan.baris.filter((b) => !sudahAdaSebelumnya.has(b.resi)).length;
     try {
       let n = 0;
       for (let i = 0; i < draftOrderan.baris.length; i += 300) {
@@ -799,6 +830,36 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
           (nTerlanjur ? ` ${nTerlanjur} di antaranya sudah di-scan — cek/tarik paketnya.` : "") +
           (draftOrderan.tanpaResi ? ` ${draftOrderan.tanpaResi} pesanan belum punya resi — import ulang nanti setelah resinya terbit.` : "")
       );
+      // Catat log import. Gagal mencatat TIDAK boleh menggagalkan import yang sudah tersimpan.
+      try {
+        const dev = await ambilInfoPerangkat();
+        await sb("resi_import_log", {
+          method: "POST",
+          prefer: "return=minimal",
+          body: JSON.stringify({
+            user_id: session?.id != null ? String(session.id) : null,
+            username: session?.username || null,
+            nama: session?.nama || null,
+            role: session?.role || null,
+            tanggal_orderan: hari,
+            nama_file: draftOrderan.nama,
+            jumlah_terbaca: draftOrderan.baris.length,
+            total_pcs: draftOrderan.totalPcs || 0,
+            resi_baru: jumlahBaru,
+            resi_diperbarui: Math.max(0, draftOrderan.baris.length - jumlahBaru),
+            tanpa_resi: draftOrderan.tanpaResi || 0,
+            batal_diabaikan: draftOrderan.diabaikanBatal || 0,
+            jumlah_hilang: draftOrderan.hilang?.length || 0,
+            jumlah_cancel: nCancel,
+            cancel_sudah_scan: nTerlanjur,
+            resi_cancel: pilihCancel.map((h) => h.resi),
+            ...dev,
+          }),
+        });
+        if (bolehLihatLogImport && bukaLogImport) muatLogImport();
+      } catch (errLog) {
+        console.warn("Log import gagal dicatat:", errLog?.message || errLog);
+      }
       setDraftOrderan(null);
       toast(`${n} resi orderan disimpan.`);
     } catch (e) {
@@ -1065,6 +1126,95 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
 
             {laporanOrderan && (
               <div className="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-md-on-surface">{laporanOrderan}</div>
+            )}
+
+            {bolehLihatLogImport && (
+              <div className="rounded-lg border border-md-outline-variant">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const buka = !bukaLogImport;
+                    setBukaLogImport(buka);
+                    if (buka) muatLogImport();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-md-on-surface text-left"
+                >
+                  <FileSpreadsheet size={14} /> Riwayat import orderan
+                  <span className="text-xs font-normal text-md-on-surface-variant">(khusus Super Appa)</span>
+                  <span className="ml-auto text-xs text-md-on-surface-variant">{bukaLogImport ? "Tutup" : "Buka"}</span>
+                </button>
+                {bukaLogImport && (
+                  <div className="border-t border-md-outline-variant p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-md-on-surface-variant">{logImport.length} import terakhir (maks. 100)</span>
+                      <button type="button" onClick={muatLogImport} disabled={memuatLogImport} className={`${btnText} ml-auto`}>
+                        <RefreshCw size={13} className={memuatLogImport ? "animate-spin" : ""} /> Muat ulang
+                      </button>
+                    </div>
+                    {galatLogImport && (
+                      <div className="rounded-lg bg-md-error-container text-md-on-error-container text-sm p-3">{galatLogImport}</div>
+                    )}
+                    {!galatLogImport && !memuatLogImport && logImport.length === 0 && (
+                      <div className="text-sm text-md-on-surface-variant">Belum ada import tercatat. Import yang disimpan mulai sekarang akan muncul di sini.</div>
+                    )}
+                    {logImport.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-md-on-surface-variant">
+                              <th className="px-2 py-1.5">Waktu</th>
+                              <th className="px-2 py-1.5">Oleh</th>
+                              <th className="px-2 py-1.5">Orderan</th>
+                              <th className="px-2 py-1.5">File</th>
+                              <th className="px-2 py-1.5">Resi</th>
+                              <th className="px-2 py-1.5">Perangkat</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {logImport.map((l) => (
+                              <tr key={l.id} className="border-t border-md-outline-variant align-top">
+                                <td className="px-2 py-1.5 whitespace-nowrap">
+                                  {new Date(l.waktu).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <div className="font-medium">{l.nama || l.username || "-"}</div>
+                                  <div className="text-md-on-surface-variant">{l.role}</div>
+                                </td>
+                                <td className="px-2 py-1.5 whitespace-nowrap">{l.tanggal_orderan ? formatTanggalID(l.tanggal_orderan) : "-"}</td>
+                                <td className="px-2 py-1.5 max-w-[180px] break-words">{l.nama_file}</td>
+                                <td className="px-2 py-1.5">
+                                  <div>{l.jumlah_terbaca} resi · {l.total_pcs} pcs</div>
+                                  <div className="text-md-on-surface-variant">
+                                    {l.resi_baru} baru · {l.resi_diperbarui} diperbarui
+                                    {l.tanpa_resi ? ` · ${l.tanpa_resi} tanpa resi` : ""}
+                                  </div>
+                                  {l.jumlah_hilang > 0 && (
+                                    <details className="text-amber-300">
+                                      <summary className="cursor-pointer">
+                                        {l.jumlah_hilang} hilang · {l.jumlah_cancel} masuk cancel{l.cancel_sudah_scan ? ` (${l.cancel_sudah_scan} sudah di-scan)` : ""}
+                                      </summary>
+                                      <div className="font-mono break-all text-md-on-surface-variant">{(l.resi_cancel || []).join(", ") || "-"}</div>
+                                    </details>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1.5">
+                                  <div className="font-medium">{l.tipe_perangkat ? `${l.tipe_perangkat} · ` : ""}{l.perangkat || "-"}</div>
+                                  <div className="text-md-on-surface-variant font-mono">ID {String(l.device_id || "-").slice(0, 8)}{l.ip ? ` · IP ${l.ip}` : ""}</div>
+                                  <details className="text-md-on-surface-variant">
+                                    <summary className="cursor-pointer">Detail</summary>
+                                    <div>Layar {l.layar || "-"} · {l.bahasa || "-"} · {l.zona_waktu || "-"}</div>
+                                    <div className="break-all">{l.user_agent}</div>
+                                  </details>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {cocok && cocok.total > 0 ? (
