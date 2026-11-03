@@ -159,22 +159,15 @@ const adaHargaBaruCheck = (s) => s.harga_asli_baru != null && s.harga_asli_baru 
 // bagian ke-3 kalau SKU dipecah per tanda "-".
 const modelFromSku = (sku) => (sku || "").split("-")[2] || "";
 
-function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast }) {
-  const isSuperadmin = isSuperadminLike(session?.role);
-
-  // ---- aturan layak jual di Marketplace ----
-  const kodePT = entitasSesi();
-  const setPT = useMemo(() => pengaturanEntitas(master, kodePT), [master, kodePT]);
-  const barisTersimpan = useMemo(() => bacaBarisMp(setPT), [setPT]);
-  const sigTersimpan = JSON.stringify(barisTersimpan);
-  const mpAktif = barisTersimpan.length ? barisTersimpan : null; // aturan baru berlaku setelah disimpan
+// Panel editor aturan biaya MP. State ketikan (draft) sengaja ada di komponen ini, bukan di MasterBarang,
+// supaya tiap ketukan tombol hanya merender ulang panel — bukan ribuan kartu SKU.
+function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersimpan, mpAktif, hitunganMp, reload, showToast }) {
   const [bukaMp, setBukaMp] = useState(false);
   const [draft, setDraft] = useState(() => (barisTersimpan.length ? barisTersimpan : bawaanDraft()));
   const [contohHarga, setContohHarga] = useState("18000");
+  const [contohHpp, setContohHpp] = useState("");
   const [simpanMp, setSimpanMp] = useState(false);
   const [hitungMpBusy, setHitungMpBusy] = useState(false);
-  const [filterMp, setFilterMp] = useState(""); // "" | "layak" | "rugi" | "kosong"
-  const infoMp = (s) => hitungMp(s, mpAktif);
   useEffect(() => {
     setDraft(barisTersimpan.length ? barisTersimpan : bawaanDraft());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -278,6 +271,220 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
       setHitungMpBusy(false);
     }
   };
+
+  return (
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 mb-4">
+        <button
+          type="button"
+          onClick={() => setBukaMp((v) => !v)}
+          className="w-full flex flex-wrap items-center gap-2 px-3 py-2 text-left text-sm text-slate-300"
+        >
+          <Store size={14} className="text-amber-400" />
+          <span className="font-medium">Aturan layak jual di Marketplace</span>
+          {mpAktif ? (
+            <span className="text-xs text-slate-500">
+              harga Tengah ·{" "}
+              <span className="text-emerald-400">{hitunganMp.layak} layak</span> ·{" "}
+              <span className="text-red-400">{hitunganMp.rugi} tidak layak</span>
+              {hitunganMp.kosong ? <> · <span className="text-slate-400">{hitunganMp.kosong} HPP/Tengah kosong</span></> : null}
+            </span>
+          ) : (
+            <span className="text-xs text-slate-500">belum aktif — buka, cek daftar biaya, lalu Simpan</span>
+          )}
+          <span className="ml-auto text-xs text-slate-500">{bukaMp ? "Tutup" : "Atur"}</span>
+        </button>
+        {bukaMp && (
+          <div className="border-t border-slate-800 p-3 space-y-3">
+            <p className="text-xs text-slate-500">
+              Barang <b className="text-slate-300">layak dijual di MP</b> kalau harga <b className="text-slate-300">Tengah</b> setelah dipotong semua biaya di bawah
+              masih sama dengan atau di atas <b className="text-slate-300">HPP</b> (tidak minus). Kolom <b className="text-slate-300">Nilai</b> adalah angka
+              rekomendasi sistem; isi <b className="text-slate-300">Ganti nilai</b> kalau admin ingin memakai angka lain.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <label className="flex items-center gap-2">
+                Contoh harga Tengah (Rp)
+                <input
+                  value={contohHarga}
+                  onChange={(e) => setContohHarga(e.target.value)}
+                  inputMode="numeric"
+                  className="w-28 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-sm text-slate-200 outline-none"
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                Contoh HPP (Rp)
+                <input
+                  value={contohHpp}
+                  onChange={(e) => setContohHpp(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="opsional"
+                  className="w-28 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-sm text-slate-200 outline-none"
+                />
+              </label>
+              {isSuperadmin && (
+                <button
+                  type="button"
+                  onClick={rekomendasiDariPenjualan}
+                  disabled={hitungMpBusy}
+                  className="border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg"
+                >
+                  {hitungMpBusy ? "Menghitung…" : "Ambil rekomendasi dari data penjualan MP"}
+                </button>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500">
+                    <th className="px-2 py-1.5 w-12">Aktif</th>
+                    <th className="px-2 py-1.5">Nama biaya</th>
+                    <th className="px-2 py-1.5 w-16">Jenis</th>
+                    <th className="px-2 py-1.5 w-28 text-right">Nilai</th>
+                    <th className="px-2 py-1.5 w-28 text-right">Ganti nilai</th>
+                    <th className="px-2 py-1.5 w-28 text-right">Biaya (Rp)</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {draft.map((r) => {
+                    const harga = angkaMp(contohHarga) || 0;
+                    const kecil = "w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1 text-sm text-right text-slate-200 outline-none disabled:opacity-60";
+                    return (
+                      <tr key={r.id} className={`border-t border-slate-800 ${r.a ? "" : "opacity-50"}`}>
+                        <td className="px-2 py-1.5">
+                          <input type="checkbox" checked={r.a} disabled={!isSuperadmin} onChange={(e) => ubahDraft(r.id, { a: e.target.checked })} className="accent-amber-500" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {r.bawaan ? (
+                            <span className="text-slate-200">{r.nama}</span>
+                          ) : (
+                            <input
+                              value={r.nama}
+                              disabled={!isSuperadmin}
+                              onChange={(e) => ubahDraft(r.id, { nama: e.target.value })}
+                              placeholder="Nama biaya"
+                              className="w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1 text-sm text-slate-200 outline-none disabled:opacity-60"
+                            />
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {r.bawaan ? (
+                            <span className="text-slate-400">{r.j}</span>
+                          ) : (
+                            <select
+                              value={r.j}
+                              disabled={!isSuperadmin}
+                              onChange={(e) => ubahDraft(r.id, { j: e.target.value })}
+                              className="bg-slate-900 border border-slate-800 rounded-md px-1 py-1 text-sm text-slate-200 outline-none"
+                            >
+                              <option value="%">%</option>
+                              <option value="Rp">Rp</option>
+                            </select>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {r.bawaan ? (
+                            <span className="text-slate-300">{Number(r.v).toLocaleString("id-ID", { minimumFractionDigits: r.j === "%" ? 2 : 0, maximumFractionDigits: 2 })}</span>
+                          ) : (
+                            <input value={r.v} disabled={!isSuperadmin} inputMode="decimal" onChange={(e) => ubahDraft(r.id, { v: e.target.value })} className={kecil} />
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          {r.bawaan ? (
+                            <input value={r.o} disabled={!isSuperadmin} inputMode="decimal" placeholder="—" onChange={(e) => ubahDraft(r.id, { o: e.target.value })} className={kecil} />
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5 text-right text-slate-200">{fmtRp(Math.round(biayaRp(r, harga)))}</td>
+                        <td className="px-1 py-1.5 text-right">
+                          {isSuperadmin && !r.bawaan && (
+                            <button type="button" onClick={() => hapusBiaya(r.id)} title="Hapus biaya ini" className="text-slate-500 hover:text-red-400">
+                              <X size={14} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  {(() => {
+                    const harga = angkaMp(contohHarga) || 0;
+                    const total = draft.reduce((t, r) => t + biayaRp(r, harga), 0);
+                    return (
+                      <>
+                        <tr className="border-t border-slate-700 text-slate-300">
+                          <td colSpan={5} className="px-2 py-1.5 text-right text-xs">Total biaya marketplace</td>
+                          <td className="px-2 py-1.5 text-right font-semibold">{fmtRp(Math.round(total))}</td>
+                          <td />
+                        </tr>
+                        <tr className="text-slate-300">
+                          <td colSpan={5} className="px-2 py-1 text-right text-xs">Bersih diterima dari harga contoh</td>
+                          <td className="px-2 py-1 text-right font-semibold text-emerald-400">{fmtRp(Math.round(harga - total))}</td>
+                          <td />
+                        </tr>
+                        {angkaMp(contohHpp) > 0 && (
+                          <tr className="text-slate-300">
+                            <td colSpan={5} className="px-2 py-1 text-right text-xs">
+                              Setelah dikurangi HPP {fmtRp(angkaMp(contohHpp))} →{" "}
+                              <b className={harga - total - angkaMp(contohHpp) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                                {harga - total - angkaMp(contohHpp) >= 0 ? "Layak jual" : "Tidak layak jual"}
+                              </b>
+                            </td>
+                            <td className={`px-2 py-1 text-right font-semibold ${harga - total - angkaMp(contohHpp) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {fmtRp(Math.round(harga - total - angkaMp(contohHpp)))}
+                            </td>
+                            <td />
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })()}
+                </tfoot>
+              </table>
+            </div>
+            {isSuperadmin ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={tambahBiaya} className="flex items-center gap-1 border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg">
+                  <Plus size={13} /> Tambah biaya
+                </button>
+                <button type="button" onClick={() => setDraft(bawaanDraft())} className="text-xs text-slate-500 hover:text-slate-300 underline">
+                  Kembalikan ke bawaan
+                </button>
+                <button
+                  type="button"
+                  onClick={simpanAturanMp}
+                  disabled={simpanMp}
+                  className="ml-auto bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-semibold px-4 py-2 rounded-lg"
+                >
+                  {simpanMp ? "Menyimpan…" : "Simpan"}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">Hanya superadmin yang bisa mengubah aturan ini.</p>
+            )}
+            <p className="text-[11px] text-slate-600">
+              Rekomendasi sistem memakai data penjualan MP yang sudah diimpor (90 hari terakhir). Tarif % dihitung dari pesanan yang memang kena biaya itu,
+              jadi matikan "Aktif" untuk program yang toko Anda tidak ikuti. Biaya proses pesanan dihitung per pcs (kondisi terburuk, karena aslinya per pesanan).
+              Biaya iklan belum termasuk.
+            </p>
+          </div>
+        )}
+      </div>
+  );
+}
+
+function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast }) {
+  const isSuperadmin = isSuperadminLike(session?.role);
+
+  // ---- aturan layak jual di Marketplace (panel editornya ada di AturanMpPanel supaya mengetik tidak merender ulang ribuan kartu) ----
+  const kodePT = entitasSesi();
+  const setPT = useMemo(() => pengaturanEntitas(master, kodePT), [master, kodePT]);
+  const barisTersimpan = useMemo(() => bacaBarisMp(setPT), [setPT]);
+  const sigTersimpan = JSON.stringify(barisTersimpan);
+  const mpAktif = barisTersimpan.length ? barisTersimpan : null; // aturan baru berlaku setelah disimpan
+  const [filterMp, setFilterMp] = useState(""); // "" | "layak" | "rugi" | "kosong"
+  const infoMp = (s) => hitungMp(s, mpAktif);
 
   const [q, setQ] = useState("");
   const [kategori, setKategori] = useState("");
@@ -499,180 +706,17 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
           </div>
         }
       />
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 mb-4">
-        <button
-          type="button"
-          onClick={() => setBukaMp((v) => !v)}
-          className="w-full flex flex-wrap items-center gap-2 px-3 py-2 text-left text-sm text-slate-300"
-        >
-          <Store size={14} className="text-amber-400" />
-          <span className="font-medium">Aturan layak jual di Marketplace</span>
-          {mpAktif ? (
-            <span className="text-xs text-slate-500">
-              harga Tengah ·{" "}
-              <span className="text-emerald-400">{hitunganMp.layak} layak</span> ·{" "}
-              <span className="text-red-400">{hitunganMp.rugi} tidak layak</span>
-              {hitunganMp.kosong ? <> · <span className="text-slate-400">{hitunganMp.kosong} HPP/Tengah kosong</span></> : null}
-            </span>
-          ) : (
-            <span className="text-xs text-slate-500">belum aktif — buka, cek daftar biaya, lalu Simpan</span>
-          )}
-          <span className="ml-auto text-xs text-slate-500">{bukaMp ? "Tutup" : "Atur"}</span>
-        </button>
-        {bukaMp && (
-          <div className="border-t border-slate-800 p-3 space-y-3">
-            <p className="text-xs text-slate-500">
-              Barang <b className="text-slate-300">layak dijual di MP</b> kalau harga <b className="text-slate-300">Tengah</b> setelah dipotong semua biaya di bawah
-              masih sama dengan atau di atas <b className="text-slate-300">HPP</b> (tidak minus). Kolom <b className="text-slate-300">Nilai</b> adalah angka
-              rekomendasi sistem; isi <b className="text-slate-300">Ganti nilai</b> kalau admin ingin memakai angka lain.
-            </p>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-              <label className="flex items-center gap-2">
-                Contoh harga Tengah (Rp)
-                <input
-                  value={contohHarga}
-                  onChange={(e) => setContohHarga(e.target.value)}
-                  inputMode="numeric"
-                  className="w-28 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-sm text-slate-200 outline-none"
-                />
-              </label>
-              {isSuperadmin && (
-                <button
-                  type="button"
-                  onClick={rekomendasiDariPenjualan}
-                  disabled={hitungMpBusy}
-                  className="border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg"
-                >
-                  {hitungMpBusy ? "Menghitung…" : "Ambil rekomendasi dari data penjualan MP"}
-                </button>
-              )}
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-slate-500">
-                    <th className="px-2 py-1.5 w-12">Aktif</th>
-                    <th className="px-2 py-1.5">Nama biaya</th>
-                    <th className="px-2 py-1.5 w-16">Jenis</th>
-                    <th className="px-2 py-1.5 w-28 text-right">Nilai</th>
-                    <th className="px-2 py-1.5 w-28 text-right">Ganti nilai</th>
-                    <th className="px-2 py-1.5 w-28 text-right">Biaya (Rp)</th>
-                    <th className="w-8" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {draft.map((r) => {
-                    const harga = angkaMp(contohHarga) || 0;
-                    const kecil = "w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1 text-sm text-right text-slate-200 outline-none disabled:opacity-60";
-                    return (
-                      <tr key={r.id} className={`border-t border-slate-800 ${r.a ? "" : "opacity-50"}`}>
-                        <td className="px-2 py-1.5">
-                          <input type="checkbox" checked={r.a} disabled={!isSuperadmin} onChange={(e) => ubahDraft(r.id, { a: e.target.checked })} className="accent-amber-500" />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          {r.bawaan ? (
-                            <span className="text-slate-200">{r.nama}</span>
-                          ) : (
-                            <input
-                              value={r.nama}
-                              disabled={!isSuperadmin}
-                              onChange={(e) => ubahDraft(r.id, { nama: e.target.value })}
-                              placeholder="Nama biaya"
-                              className="w-full bg-slate-900 border border-slate-800 rounded-md px-2 py-1 text-sm text-slate-200 outline-none disabled:opacity-60"
-                            />
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5">
-                          {r.bawaan ? (
-                            <span className="text-slate-400">{r.j}</span>
-                          ) : (
-                            <select
-                              value={r.j}
-                              disabled={!isSuperadmin}
-                              onChange={(e) => ubahDraft(r.id, { j: e.target.value })}
-                              className="bg-slate-900 border border-slate-800 rounded-md px-1 py-1 text-sm text-slate-200 outline-none"
-                            >
-                              <option value="%">%</option>
-                              <option value="Rp">Rp</option>
-                            </select>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          {r.bawaan ? (
-                            <span className="text-slate-300">{Number(r.v).toLocaleString("id-ID", { minimumFractionDigits: r.j === "%" ? 2 : 0, maximumFractionDigits: 2 })}</span>
-                          ) : (
-                            <input value={r.v} disabled={!isSuperadmin} inputMode="decimal" onChange={(e) => ubahDraft(r.id, { v: e.target.value })} className={kecil} />
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          {r.bawaan ? (
-                            <input value={r.o} disabled={!isSuperadmin} inputMode="decimal" placeholder="—" onChange={(e) => ubahDraft(r.id, { o: e.target.value })} className={kecil} />
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 text-right text-slate-200">{fmtRp(Math.round(biayaRp(r, harga)))}</td>
-                        <td className="px-1 py-1.5 text-right">
-                          {isSuperadmin && !r.bawaan && (
-                            <button type="button" onClick={() => hapusBiaya(r.id)} title="Hapus biaya ini" className="text-slate-500 hover:text-red-400">
-                              <X size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  {(() => {
-                    const harga = angkaMp(contohHarga) || 0;
-                    const total = draft.reduce((t, r) => t + biayaRp(r, harga), 0);
-                    return (
-                      <>
-                        <tr className="border-t border-slate-700 text-slate-300">
-                          <td colSpan={5} className="px-2 py-1.5 text-right text-xs">Total biaya marketplace</td>
-                          <td className="px-2 py-1.5 text-right font-semibold">{fmtRp(Math.round(total))}</td>
-                          <td />
-                        </tr>
-                        <tr className="text-slate-300">
-                          <td colSpan={5} className="px-2 py-1 text-right text-xs">Bersih diterima dari harga contoh</td>
-                          <td className="px-2 py-1 text-right font-semibold text-emerald-400">{fmtRp(Math.round(harga - total))}</td>
-                          <td />
-                        </tr>
-                      </>
-                    );
-                  })()}
-                </tfoot>
-              </table>
-            </div>
-            {isSuperadmin ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={tambahBiaya} className="flex items-center gap-1 border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg">
-                  <Plus size={13} /> Tambah biaya
-                </button>
-                <button type="button" onClick={() => setDraft(bawaanDraft())} className="text-xs text-slate-500 hover:text-slate-300 underline">
-                  Kembalikan ke bawaan
-                </button>
-                <button
-                  type="button"
-                  onClick={simpanAturanMp}
-                  disabled={simpanMp}
-                  className="ml-auto bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-semibold px-4 py-2 rounded-lg"
-                >
-                  {simpanMp ? "Menyimpan…" : "Simpan"}
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500">Hanya superadmin yang bisa mengubah aturan ini.</p>
-            )}
-            <p className="text-[11px] text-slate-600">
-              Rekomendasi sistem memakai data penjualan MP yang sudah diimpor (90 hari terakhir). Tarif % dihitung dari pesanan yang memang kena biaya itu,
-              jadi matikan "Aktif" untuk program yang toko Anda tidak ikuti. Biaya proses pesanan dihitung per pcs (kondisi terburuk, karena aslinya per pesanan).
-              Biaya iklan belum termasuk.
-            </p>
-          </div>
-        )}
-      </div>
+      <AturanMpPanel
+        isSuperadmin={isSuperadmin}
+        master={master}
+        kodePT={kodePT}
+        barisTersimpan={barisTersimpan}
+        sigTersimpan={sigTersimpan}
+        mpAktif={mpAktif}
+        hitunganMp={hitunganMp}
+        reload={reload}
+        showToast={showToast}
+      />
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[200px]">
           <Search size={14} className="text-slate-500" />
