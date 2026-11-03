@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import {
-  Search, Plus, ShoppingCart, AlertTriangle, CalendarClock, Wallet, Trash2, X,
+  Search, Plus, ShoppingCart, AlertTriangle, CalendarClock, Wallet, Trash2, X, FileText,
 } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, InputTanggal, InputRupiah } from "../components/ui";
 import {
   sb, sbAll, fmtRp, nextKode, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa, hitungStatusBayar, todayDDMMYYYY,
   daftarTujuanPencairan, cariTujuanPencairan, tujuanPencairanDefault, ingatTujuanPencairan,
-  rincianDepositPelanggan,
+  rincianDepositPelanggan, totalDibayarPesanan, entitasSesi, namaUsahaEntitas, alamatEntitas,
 } from "../lib/api";
+import { buatPdfRiwayat } from "../lib/PdfInvoice";
 import { InvoiceWaModal, TombolKirimWa } from "../components/InvoiceWa";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 import { isSuperadminLike } from "../lib/constants";
@@ -346,6 +347,7 @@ function PencairanDanPenagihanReseller({
           depositGrosir={depositGrosir}
           keuanganTransaksi={keuanganTransaksi}
           session={session}
+          master={master}
           reload={reload}
           showToast={showToast}
         />
@@ -395,11 +397,12 @@ function PencairanDanPenagihanReseller({
 // =========================================================
 function RiwayatPenagihanPencairan({
   pesananReseller, pesananCekout, pelangganGrosir, pembayaranGrosir, depositGrosir, keuanganTransaksi,
-  session, reload, showToast,
+  session, master, reload, showToast,
 }) {
   const [q, setQ] = useState("");
   const [jenisFilter, setJenisFilter] = useState("");
   const [menghapusId, setMenghapusId] = useState(null);
+  const [pdfId, setPdfId] = useState(null);
   const isSuperadmin = isSuperadminLike(session?.role);
 
   const namaPelanggan = (id) => (pelangganGrosir || []).find((p) => p.id === id)?.nama || "—";
@@ -418,6 +421,7 @@ function RiwayatPenagihanPencairan({
       jenis: "Penagihan Hutang",
       warna: "emerald",
       arah: "masuk",
+      pesananId: b.pesanan_id,
       pelangganId: b.pelanggan_id,
       nomor: nomorPesananReseller(b.pesanan_id),
       metode: b.metode_bayar,
@@ -461,6 +465,7 @@ function RiwayatPenagihanPencairan({
         jenis: jumlah >= 0 ? "Kelebihan → Deposit" : "Dicairkan ke Pelanggan",
         warna: jumlah >= 0 ? "sky" : "red",
         arah: jumlah >= 0 ? "masuk" : "keluar",
+        pesananId: d.pesanan_id_terkait || null,
         pelangganId: d.pelanggan_id,
         nomor: d.pesanan_id_terkait ? nomorPesananCekout(d.pesanan_id_terkait) : null,
         metode: null,
@@ -480,6 +485,65 @@ function RiwayatPenagihanPencairan({
   const semua = [...entriPenagihan, ...entriCair, ...entriDeposit].sort(
     (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
   );
+
+  // PDF dari satu baris riwayat: "Penagihan Hutang" -> Invoice Lunas / Bukti Pembayaran,
+  // "Dicairkan ke Pelanggan" -> Bukti Pencairan (+ foto bukti transfer kalau ada).
+  const bisaPdf = (x) => x.jenis === "Penagihan Hutang" || x.jenis === "Dicairkan ke Pelanggan";
+  const unduhPdf = async (x) => {
+    setPdfId(x.id);
+    try {
+      const jenis = x.jenis === "Penagihan Hutang" ? "lunas" : "pencairan";
+      const pelanggan = (pelangganGrosir || []).find((p) => p.id === x.pelangganId) || { nama: namaPelanggan(x.pelangganId) };
+      let pesanan = null;
+      const ps = [...(pesananReseller || []), ...(pesananCekout || [])].find((p) => p.id === x.pesananId);
+      if (ps) {
+        let items = [];
+        try {
+          items = (await sb(`grosir_detail_pesanan?select=*&pesanan_id=eq.${ps.id}`)) || [];
+        } catch {
+          items = [];
+        }
+        const dibayarTotal = totalDibayarPesanan(ps.id, pembayaranGrosir);
+        pesanan = {
+          nomor_pesanan: ps.nomor_pesanan,
+          total: Number(ps.total) || 0,
+          dibayarTotal,
+          sisa: Math.max(0, (Number(ps.total) || 0) - dibayarTotal),
+          items,
+        };
+      }
+      const kode = entitasSesi();
+      const { blob, nama } = await buatPdfRiwayat({
+        jenis,
+        namaUsaha: namaUsahaEntitas(master, kode),
+        alamat: alamatEntitas(master, kode),
+        pelanggan,
+        entri: { tanggal: x.tanggal, jumlah: x.jumlah, metode: x.metode, catatan: x.catatan },
+        pesanan,
+        buktiUrl: x.buktiUrl,
+      });
+      const file = new File([blob], nama, { type: "application/pdf" });
+      const sentuh = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+      if (sentuh && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (e) {
+          if (e?.name === "AbortError") return;
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nama;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+      showToast?.(e?.message || "Gagal membuat PDF", "err");
+    } finally {
+      setPdfId(null);
+    }
+  };
 
   // Hapus satu baris riwayat — khusus superadmin, dari tabel asalnya
   // langsung (grosir_pembayaran untuk Penagihan Hutang/Cair dari
@@ -620,6 +684,17 @@ function RiwayatPenagihanPencairan({
                 {x.arah === "masuk" ? "+" : "−"}
                 {fmtRp(x.jumlah)}
               </div>
+              {bisaPdf(x) && (
+                <button
+                  onClick={() => unduhPdf(x)}
+                  disabled={pdfId === x.id}
+                  title={x.jenis === "Penagihan Hutang" ? "PDF invoice lunas / bukti pembayaran" : "PDF bukti pencairan"}
+                  className="ml-2 inline-flex items-center gap-1 rounded-lg bg-sky-600/15 text-sky-400 hover:bg-sky-600/25 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 flex-shrink-0"
+                >
+                  <FileText size={14} />
+                  {pdfId === x.id ? "…" : "PDF"}
+                </button>
+              )}
               {isSuperadmin && (
                 <button
                   onClick={() => hapusEntri(x)}
