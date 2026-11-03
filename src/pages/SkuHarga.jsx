@@ -90,10 +90,9 @@ function BuatSkuList({ items, setModal, session }) {
 // di bawah HPP, artinya tidak minus.
 //   Bersih di MP = Tengah - (biaya % x Tengah) - (biaya Rp)
 //   Layak        = Bersih di MP >= HPP
-// Daftar biaya ditulis admin (Aktif / Jenis % atau Rp / Nilai / Ganti nilai) dan disimpan per PT
+// Daftar biaya ditulis admin (Aktif / Jenis % atau Rp / Nilai) dan disimpan per PT
 // di master_data tipe "entitas_set", satu baris per biaya (kunci mp_biaya_<id>, isi JSON kecil).
-// "Nilai" = angka rekomendasi sistem (dihitung dari data penjualan MP yang diimpor);
-// "Ganti nilai" = angka pilihan admin, kalau diisi dialah yang dipakai.
+// "Nilai" berisi angka bawaan / rekomendasi sistem (tombol "Ambil rekomendasi") dan bisa langsung diketik ulang admin.
 // ---------------------------------------------------------
 const AWAL_KUNCI_MP = "mp_biaya_";
 const BIAYA_BAWAAN = [
@@ -104,16 +103,13 @@ const BIAYA_BAWAAN = [
   { id: "promosi", nama: "Biaya Promosi", j: "%", v: 1.11 },
   { id: "pph", nama: "Pajak PPh 22", j: "%", v: 0.5 },
 ];
-const bawaanDraft = () => BIAYA_BAWAAN.map((b) => ({ ...b, o: "", a: true, bawaan: true }));
+const bawaanDraft = () => BIAYA_BAWAAN.map((b) => ({ ...b, a: true, bawaan: true }));
 const angkaMp = (v) => {
   if (v == null || String(v).trim() === "") return null;
   const n = Number(String(v).replace(",", "."));
   return Number.isFinite(n) ? n : null;
 };
-const nilaiBiaya = (r) => {
-  const o = angkaMp(r.o);
-  return o != null ? o : Number(r.v) || 0;
-};
+const nilaiBiaya = (r) => angkaMp(r.v) ?? 0;
 const biayaRp = (r, harga) => (!r.a ? 0 : r.j === "%" ? (harga * nilaiBiaya(r)) / 100 : nilaiBiaya(r));
 function bacaBarisMp(setPT) {
   const hasil = [];
@@ -123,8 +119,9 @@ function bacaBarisMp(setPT) {
       const d = JSON.parse(v);
       const id = k.slice(AWAL_KUNCI_MP.length);
       hasil.push({
-        id, nama: d.n || "Biaya", j: d.j === "Rp" ? "Rp" : "%", v: Number(d.v) || 0,
-        o: d.o == null ? "" : String(d.o), a: !(d.a === 0 || d.a === false),
+        // data versi awal punya "ganti nilai" (d.o): kalau ada, itulah angka yang dulu dipakai -> jadi Nilai.
+        id, nama: d.n || "Biaya", j: d.j === "Rp" ? "Rp" : "%", v: d.o != null ? Number(d.o) || 0 : Number(d.v) || 0,
+        a: !(d.a === 0 || d.a === false),
         bawaan: BIAYA_BAWAAN.some((b) => b.id === id),
       });
     } catch {
@@ -175,7 +172,7 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
 
   const ubahDraft = (id, patch) => setDraft((d) => d.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const tambahBiaya = () =>
-    setDraft((d) => [...d, { id: `x${Date.now().toString(36)}`, nama: "", j: "%", v: 0, o: "", a: true, bawaan: false }]);
+    setDraft((d) => [...d, { id: `x${Date.now().toString(36)}`, nama: "", j: "%", v: "", a: true, bawaan: false }]);
   const hapusBiaya = (id) => setDraft((d) => d.filter((r) => r.id !== id));
 
   const tulisSet = async (kunci, isi) => {
@@ -189,9 +186,8 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
     if (simpanMp) return;
     for (const r of draft) {
       if (!String(r.nama).trim()) return showToast?.("Nama biaya tidak boleh kosong.", "err");
-      const v = Number(r.v);
-      if (!Number.isFinite(v) || v < 0) return showToast?.(`${r.nama}: nilai harus angka 0 atau lebih.`, "err");
-      if (String(r.o).trim() !== "" && (angkaMp(r.o) == null || angkaMp(r.o) < 0)) return showToast?.(`${r.nama}: "Ganti nilai" harus angka 0 atau lebih.`, "err");
+      const v = angkaMp(r.v);
+      if (v == null || v < 0) return showToast?.(`${r.nama}: nilai harus angka 0 atau lebih.`, "err");
     }
     const totalPersen = draft.filter((r) => r.a && r.j === "%").reduce((t, r) => t + nilaiBiaya(r), 0);
     if (totalPersen >= 100) return showToast?.("Total biaya persen tidak boleh 100% atau lebih.", "err");
@@ -200,7 +196,7 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
       for (const r of draft) {
         await tulisSet(
           `${AWAL_KUNCI_MP}${r.id}`,
-          JSON.stringify({ n: String(r.nama).trim(), j: r.j, v: Number(r.v) || 0, o: angkaMp(r.o), a: r.a ? 1 : 0 })
+          JSON.stringify({ n: String(r.nama).trim(), j: r.j, v: angkaMp(r.v) ?? 0, a: r.a ? 1 : 0 })
         );
       }
       // biaya yang dihapus admin + sisa kunci lama (versi awal fitur ini)
@@ -297,8 +293,8 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
           <div className="border-t border-slate-800 p-3 space-y-3">
             <p className="text-xs text-slate-500">
               Barang <b className="text-slate-300">layak dijual di MP</b> kalau harga <b className="text-slate-300">Tengah</b> setelah dipotong semua biaya di bawah
-              masih sama dengan atau di atas <b className="text-slate-300">HPP</b> (tidak minus). Kolom <b className="text-slate-300">Nilai</b> adalah angka
-              rekomendasi sistem; isi <b className="text-slate-300">Ganti nilai</b> kalau admin ingin memakai angka lain.
+              masih sama dengan atau di atas <b className="text-slate-300">HPP</b> (tidak minus). Kolom <b className="text-slate-300">Nilai</b> berisi angka
+              bawaan / rekomendasi sistem; admin bisa langsung mengetik angka lain di situ.
             </p>
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
               <label className="flex items-center gap-2">
@@ -339,7 +335,6 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
                     <th className="px-2 py-1.5">Nama biaya</th>
                     <th className="px-2 py-1.5 w-16">Jenis</th>
                     <th className="px-2 py-1.5 w-28 text-right">Nilai</th>
-                    <th className="px-2 py-1.5 w-28 text-right">Ganti nilai</th>
                     <th className="px-2 py-1.5 w-28 text-right">Biaya (Rp)</th>
                     <th className="w-8" />
                   </tr>
@@ -382,18 +377,7 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
                           )}
                         </td>
                         <td className="px-2 py-1.5 text-right">
-                          {r.bawaan ? (
-                            <span className="text-slate-300">{Number(r.v).toLocaleString("id-ID", { minimumFractionDigits: r.j === "%" ? 2 : 0, maximumFractionDigits: 2 })}</span>
-                          ) : (
-                            <input value={r.v} disabled={!isSuperadmin} inputMode="decimal" onChange={(e) => ubahDraft(r.id, { v: e.target.value })} className={kecil} />
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          {r.bawaan ? (
-                            <input value={r.o} disabled={!isSuperadmin} inputMode="decimal" placeholder="—" onChange={(e) => ubahDraft(r.id, { o: e.target.value })} className={kecil} />
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
+                          <input value={r.v} disabled={!isSuperadmin} inputMode="decimal" onChange={(e) => ubahDraft(r.id, { v: e.target.value })} className={kecil} />
                         </td>
                         <td className="px-2 py-1.5 text-right text-slate-200">{fmtRp(Math.round(biayaRp(r, harga)))}</td>
                         <td className="px-1 py-1.5 text-right">
@@ -414,18 +398,18 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
                     return (
                       <>
                         <tr className="border-t border-slate-700 text-slate-300">
-                          <td colSpan={5} className="px-2 py-1.5 text-right text-xs">Total biaya marketplace</td>
+                          <td colSpan={4} className="px-2 py-1.5 text-right text-xs">Total biaya marketplace</td>
                           <td className="px-2 py-1.5 text-right font-semibold">{fmtRp(Math.round(total))}</td>
                           <td />
                         </tr>
                         <tr className="text-slate-300">
-                          <td colSpan={5} className="px-2 py-1 text-right text-xs">Bersih diterima dari harga contoh</td>
+                          <td colSpan={4} className="px-2 py-1 text-right text-xs">Bersih diterima dari harga contoh</td>
                           <td className="px-2 py-1 text-right font-semibold text-emerald-400">{fmtRp(Math.round(harga - total))}</td>
                           <td />
                         </tr>
                         {angkaMp(contohHpp) > 0 && (
                           <tr className="text-slate-300">
-                            <td colSpan={5} className="px-2 py-1 text-right text-xs">
+                            <td colSpan={4} className="px-2 py-1 text-right text-xs">
                               Setelah dikurangi HPP {fmtRp(angkaMp(contohHpp))} →{" "}
                               <b className={harga - total - angkaMp(contohHpp) >= 0 ? "text-emerald-400" : "text-red-400"}>
                                 {harga - total - angkaMp(contohHpp) >= 0 ? "Layak jual" : "Tidak layak jual"}
