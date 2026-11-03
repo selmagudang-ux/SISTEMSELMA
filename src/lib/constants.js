@@ -601,6 +601,7 @@ export const ROLES = [
   { key: "marketplace", label: "Admin Marketplace" },
   { key: "grosir", label: "Admin Grosir" },
   { key: "keuangan", label: "Admin Keuangan" },
+  { key: "scan_resi", label: "Admin Scan Resi" },
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
@@ -651,6 +652,8 @@ export const ROLE_MENUS = {
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
   // karena tidak didaftarkan di ROLE_SUBMENUS.
   keuangan: ["keuangan", "chat", "panduan"],
+  // Admin Scan Resi: HANYA Scan Resi & Urut Resi (tanpa Chat/Panduan). Landing page = menu pertama (scan-resi).
+  scan_resi: ["scan-resi", "urut-resi"],
   // Pemegang Saham: hanya melihat tab Konsolidasi di menu Holding (read-only,
   // lihat ROLE_READONLY di lib/api.js & allowedSubMenus di bawah).
   pemegang_saham: ["perusahaan"],
