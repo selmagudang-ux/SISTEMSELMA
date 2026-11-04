@@ -909,10 +909,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       let hilang = [];
       if (hasilBaca.baris.length) {
         const resiBaru = new Set(hasilBaca.baris.map((b) => b.resi));
-        const sudahScan = new Set(rows.map((r) => r.resi));
+        const sesiScan = new Map(rows.map((r) => [r.resi, r.sesi]));
         hilang = orderanRows
           .filter((o) => o.tanggal === hari && !resiBaru.has(o.resi) && !cancelMap.has(o.resi))
-          .map((o) => ({ resi: o.resi, order_id: o.order_id, sudahScan: sudahScan.has(o.resi) }));
+          .map((o) => ({ resi: o.resi, order_id: o.order_id, sudahScan: sesiScan.has(o.resi), sesi: sesiScan.get(o.resi) ?? null }));
       }
       setDraftOrderan({
         ...hasilBaca, nama: f.name, hilang,
@@ -1341,61 +1341,96 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   <button type="button" onClick={() => setDraftOrderan(null)} className={btnText}>Batal</button>
                 </div>
 
-                {draftOrderan.hilang?.length > 0 && (
-                  <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 p-3 space-y-2">
-                    <div className="font-medium text-amber-100">
-                      {draftOrderan.hilang.length} resi ada di import sebelumnya tapi tidak ada di file ini
-                    </div>
-                    <div className="text-xs text-md-on-surface-variant">
-                      Resi bisa hilang karena pesanannya dibatalkan, tapi juga karena paketnya sudah diambil kurir (pindah dari "Untuk Dikirim") atau file ini terfilter.
-                      Karena itu tidak ada yang dicentang otomatis: upload export cancel TikTok untuk mencentang yang benar-benar cancel, atau centang sendiri. Yang dicentang akan masuk daftar cancel.
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <input ref={fileCancelKonfirmRef} type="file" accept=".xlsx,.xls,.csv" onChange={pilihFileCancelKonfirm} className="hidden" />
-                      <button type="button" onClick={() => fileCancelKonfirmRef.current?.click()} className={btnOutlined}>
-                        <FileSpreadsheet size={14} /> Konfirmasi dengan file cancel TikTok
-                      </button>
-                      {draftOrderan.fileCancel ? (
-                        <span className="text-md-on-surface-variant">
-                          {draftOrderan.fileCancel.nama}: {draftOrderan.fileCancel.jumlah} resi cancel di file ·{" "}
-                          <b className="text-emerald-300">{draftOrderan.hilang.filter((h) => draftOrderan.fileCancel.resi.has(h.resi)).length} terkonfirmasi cancel</b>,{" "}
-                          <b className="text-amber-300">{draftOrderan.hilang.filter((h) => !draftOrderan.fileCancel.resi.has(h.resi)).length} belum terkonfirmasi</b> (kemungkinan sudah diambil kurir)
-                        </span>
-                      ) : (
-                        <span className="text-md-on-surface-variant">{draftOrderan.hilang.length} resi hilang · 0 terkonfirmasi cancel</span>
+                {draftOrderan.hilang?.length > 0 && (() => {
+                  // Export "Untuk Dikirim" TikTok TIDAK memuat paket yang sudah di-pickup kurir, jadi resi yang
+                  // sudah di-scan lalu hilang dari file baru umumnya = sudah diambil kurir, bukan cancel.
+                  // Dipisah supaya yang perlu dicek (belum di-scan) tidak tertimbun ratusan resi yang wajar hilang.
+                  const hilangBelumScan = draftOrderan.hilang.filter((h) => !h.sudahScan);
+                  const hilangSudahScan = draftOrderan.hilang.filter((h) => h.sudahScan);
+                  const cancelSudahScan = draftOrderan.fileCancel
+                    ? hilangSudahScan.filter((h) => draftOrderan.fileCancel.resi.has(h.resi)).length
+                    : 0;
+                  const barisHilang = (h) => {
+                    const kirimKe = h.sesi != null ? kirimPerSesi.get(`${hari}|${h.sesi}`) : null;
+                    return (
+                      <label key={h.resi} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={draftOrderan.hilangPilih.has(h.resi)}
+                          onChange={(e) =>
+                            setDraftOrderan((d) => {
+                              const s = new Set(d.hilangPilih);
+                              if (e.target.checked) s.add(h.resi);
+                              else s.delete(h.resi);
+                              return { ...d, hilangPilih: s };
+                            })
+                          }
+                        />
+                        <span className="font-mono">{h.resi}</span>
+                        {h.order_id && <span className="text-md-on-surface-variant">· {h.order_id}</span>}
+                        {h.sudahScan && (
+                          <span className="text-amber-300">
+                            · sudah di-scan{h.sesi != null ? ` (sesi ${h.sesi}${kirimKe ? `, pengiriman ${kirimKe}` : ""})` : ""}
+                          </span>
+                        )}
+                        {draftOrderan.fileCancel && (draftOrderan.fileCancel.resi.has(h.resi)
+                          ? <span className="text-emerald-300">· cancel di file TikTok</span>
+                          : <span className="text-md-on-surface-variant">· belum terkonfirmasi</span>)}
+                      </label>
+                    );
+                  };
+                  return (
+                    <div className={`rounded-lg border p-3 space-y-2 ${hilangBelumScan.length > 0 || cancelSudahScan > 0 ? "border-amber-400/50 bg-amber-500/10" : "border-md-outline-variant bg-md-container-low"}`}>
+                      <div className="font-medium text-amber-100">
+                        {draftOrderan.hilang.length} resi ada di import sebelumnya tapi tidak ada di file ini
+                      </div>
+                      <div className="text-xs text-md-on-surface-variant">
+                        <b>{hilangBelumScan.length}</b> belum di-scan (perlu dicek) · <b>{hilangSudahScan.length}</b> sudah di-scan
+                        (umumnya sudah diambil kurir, karena export TikTok tidak memuat paket yang sudah di-pickup).
+                        Tidak ada yang dicentang otomatis: upload export cancel TikTok untuk mencentang yang benar-benar cancel, atau centang sendiri. Yang dicentang akan masuk daftar cancel.
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <input ref={fileCancelKonfirmRef} type="file" accept=".xlsx,.xls,.csv" onChange={pilihFileCancelKonfirm} className="hidden" />
+                        <button type="button" onClick={() => fileCancelKonfirmRef.current?.click()} className={btnOutlined}>
+                          <FileSpreadsheet size={14} /> Konfirmasi dengan file cancel TikTok
+                        </button>
+                        {draftOrderan.fileCancel ? (
+                          <span className="text-md-on-surface-variant">
+                            {draftOrderan.fileCancel.nama}: {draftOrderan.fileCancel.jumlah} resi cancel di file ·{" "}
+                            <b className="text-emerald-300">{draftOrderan.hilang.filter((h) => draftOrderan.fileCancel.resi.has(h.resi)).length} terkonfirmasi cancel</b>,{" "}
+                            <b className="text-amber-300">{draftOrderan.hilang.filter((h) => !draftOrderan.fileCancel.resi.has(h.resi)).length} belum terkonfirmasi</b> (kemungkinan sudah diambil kurir)
+                          </span>
+                        ) : (
+                          <span className="text-md-on-surface-variant">{draftOrderan.hilang.length} resi hilang · 0 terkonfirmasi cancel</span>
+                        )}
+                      </div>
+                      {draftOrderan.totalLama > 0 && hilangBelumScan.length > draftOrderan.totalLama / 2 && (
+                        <div className="text-xs font-medium text-red-300">
+                          Hati-hati: lebih dari separuh orderan yang belum di-scan hilang. Pastikan ini file "Untuk Dikirim" yang lengkap, bukan file yang terfilter.
+                        </div>
+                      )}
+                      {hilangBelumScan.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-amber-100 mb-1">Belum di-scan ({hilangBelumScan.length})</div>
+                          <div className="max-h-48 overflow-y-auto space-y-1">{hilangBelumScan.map(barisHilang)}</div>
+                        </div>
+                      )}
+                      {hilangSudahScan.length > 0 && (
+                        <details open={cancelSudahScan > 0 || hilangBelumScan.length === 0}>
+                          <summary className="text-xs font-medium text-amber-100 cursor-pointer">
+                            Sudah di-scan ({hilangSudahScan.length}) — kemungkinan sudah diambil kurir
+                          </summary>
+                          {cancelSudahScan > 0 && (
+                            <div className="text-xs font-medium text-red-300 mt-1">
+                              {cancelSudahScan} di antaranya terkonfirmasi cancel di file TikTok — paketnya perlu ditarik.
+                            </div>
+                          )}
+                          <div className="max-h-48 overflow-y-auto space-y-1 mt-1">{hilangSudahScan.map(barisHilang)}</div>
+                        </details>
                       )}
                     </div>
-                    {draftOrderan.totalLama > 0 && draftOrderan.hilang.length > draftOrderan.totalLama / 2 && (
-                      <div className="text-xs font-medium text-red-300">
-                        Hati-hati: lebih dari separuh orderan hilang. Pastikan ini file "Untuk Dikirim" yang lengkap, bukan file yang terfilter.
-                      </div>
-                    )}
-                    <div className="max-h-48 overflow-y-auto space-y-1">
-                      {draftOrderan.hilang.map((h) => (
-                        <label key={h.resi} className="flex items-center gap-2 text-xs cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={draftOrderan.hilangPilih.has(h.resi)}
-                            onChange={(e) =>
-                              setDraftOrderan((d) => {
-                                const s = new Set(d.hilangPilih);
-                                if (e.target.checked) s.add(h.resi);
-                                else s.delete(h.resi);
-                                return { ...d, hilangPilih: s };
-                              })
-                            }
-                          />
-                          <span className="font-mono">{h.resi}</span>
-                          {h.order_id && <span className="text-md-on-surface-variant">· {h.order_id}</span>}
-                          {h.sudahScan && <span className="text-amber-300">· sudah di-scan</span>}
-                          {draftOrderan.fileCancel && (draftOrderan.fileCancel.resi.has(h.resi)
-                            ? <span className="text-emerald-300">· cancel di file TikTok</span>
-                            : <span className="text-md-on-surface-variant">· belum terkonfirmasi</span>)}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
