@@ -49,6 +49,11 @@ const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at,sesi";
 const KOLOM_SESI = "id,tanggal,sesi,ditutup_at,ditutup_oleh,pengiriman,dikirim_at,dikirim_oleh";
 const KOLOM_CANCEL = "id,resi,no_pesanan,platform,alasan,created_at";
 const KOLOM_ORDERAN = "resi,order_id,platform,barang,total_qty,tanggal";
+
+// Deteksi "resi hilang" saat import orderan ke-2 dst. di hari yang sama. MATI: daftar cancel diisi manual,
+// dan import orderan hanya menambah/menjumlahkan orderan (resi yang sudah di-pickup kurir memang tidak
+// ada lagi di export TikTok). Ubah ke true kalau suatu saat mau memakai usulan cancel dari file import.
+const DETEKSI_RESI_HILANG = false;
 const HARI_ORDERAN = 7; // orderan yang dimuat untuk pencocokan: sampai 7 hari sebelum tanggal yang dibuka
 
 // ---- ANTREAN OFFLINE ----
@@ -908,7 +913,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       // dicentang otomatis: bisa jadi paketnya sudah diambil kurir (status pindah dari "Untuk Dikirim").
       let hilang = [];
       let hilangDikirim = 0;
-      if (hasilBaca.baris.length) {
+      if (DETEKSI_RESI_HILANG && hasilBaca.baris.length) {
         const resiBaru = new Set(hasilBaca.baris.map((b) => b.resi));
         const sesiScan = new Map(rows.map((r) => [r.resi, r.sesi]));
         const semuaHilang = orderanRows
