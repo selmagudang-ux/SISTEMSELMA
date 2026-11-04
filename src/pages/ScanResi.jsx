@@ -716,6 +716,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [menyimpanOrderan, setMenyimpanOrderan] = useState(false);
   const [laporanOrderan, setLaporanOrderan] = useState("");
   const fileOrderanRef = useRef(null);
+  const fileCancelKonfirmRef = useRef(null);
 
   // ---- Riwayat import (khusus superappa): siapa, kapan, file apa, dari perangkat mana ----
   const bolehLihatLogImport = session?.role === "superappa";
@@ -765,11 +766,30 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       }
       setDraftOrderan({
         ...hasilBaca, nama: f.name, hilang,
-        hilangPilih: new Set(hilang.filter((h) => !h.sudahScan).map((h) => h.resi)),
+        hilangPilih: new Set(), // tidak ada yang dicentang otomatis: resi bisa hilang karena sudah diambil kurir, bukan hanya cancel
+        fileCancel: null,
         totalLama: orderanRows.filter((o) => o.tanggal === hari).length,
       });
     } catch (err) {
       setDraftOrderan(null);
+      toast(err.message, "err");
+    }
+  };
+
+  // Konfirmasi resi hilang dengan export cancel TikTok: hanya yang ada di file itu yang dicentang otomatis.
+  const pilihFileCancelKonfirm = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const { baris } = await parseFileCancel(f);
+      const set = new Set(baris.map((b) => b.resi));
+      setDraftOrderan((d) => (d ? {
+        ...d,
+        fileCancel: { nama: f.name, jumlah: baris.length, resi: set },
+        hilangPilih: new Set((d.hilang || []).filter((h) => set.has(h.resi)).map((h) => h.resi)),
+      } : d));
+    } catch (err) {
       toast(err.message, "err");
     }
   };
@@ -804,7 +824,9 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         for (let i = 0; i < pilihCancel.length; i += 500) {
           const potong = pilihCancel.slice(i, i + 500).map((h) => ({
             resi: h.resi, no_pesanan: h.order_id, platform: "TikTok Shop",
-            alasan: "Hilang dari import orderan terbaru (otomatis)",
+            alasan: draftOrderan.fileCancel?.resi.has(h.resi)
+              ? "Cancel (terkonfirmasi file cancel TikTok)"
+              : "Hilang dari import orderan terbaru (dicentang manual)",
           }));
           const res = await sb("resi_cancel?on_conflict=entitas,resi", {
             method: "POST",
@@ -826,7 +848,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       await muatOrderan();
       setLaporanOrderan(
         `${n} resi orderan disimpan untuk ${formatTanggalID(hari)} (yang sudah ada diperbarui).` +
-          (nCancel ? ` ${nCancel} resi yang hilang dari file baru dimasukkan ke daftar cancel.` : "") +
+          (nCancel ? ` ${nCancel} resi yang hilang dari file baru dimasukkan ke daftar cancel (${pilihCancel.filter((h) => draftOrderan.fileCancel?.resi.has(h.resi)).length} terkonfirmasi file cancel TikTok, ${pilihCancel.filter((h) => !draftOrderan.fileCancel?.resi.has(h.resi)).length} dicentang manual).` : "") +
           (nTerlanjur ? ` ${nTerlanjur} di antaranya sudah di-scan — cek/tarik paketnya.` : "") +
           (draftOrderan.tanpaResi ? ` ${draftOrderan.tanpaResi} pesanan belum punya resi — import ulang nanti setelah resinya terbit.` : "")
       );
@@ -892,9 +914,14 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     e.target.value = "";
     if (!f) return;
     try {
-      const { baris, diabaikanBukanBatal } = await parseFileCancel(f);
+      const { baris, diabaikanBukanBatal, batalTanpaResi, duplikat } = await parseFileCancel(f);
       setDariFile(baris);
-      setInfoFile(`${f.name}: ${baris.length} resi cancel terbaca${diabaikanBukanBatal ? `, ${diabaikanBukanBatal} baris non-batal diabaikan` : ""}.`);
+      setInfoFile(
+        `${f.name}: ${baris.length} resi cancel terbaca` +
+          (diabaikanBukanBatal ? `, ${diabaikanBukanBatal} baris non-batal diabaikan` : "") +
+          (duplikat ? `, ${duplikat} resi dobel digabung` : "") +
+          (batalTanpaResi ? `, ${batalTanpaResi} pesanan batal TANPA resi valid (belum terbit resi, tidak bisa dicocokkan saat scan)` : "") + "."
+      );
     } catch (err) {
       setDariFile([]);
       setInfoFile("");
@@ -1090,8 +1117,23 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                       {draftOrderan.hilang.length} resi ada di import sebelumnya tapi tidak ada di file ini
                     </div>
                     <div className="text-xs text-md-on-surface-variant">
-                      Biasanya pesanannya dibatalkan pembeli. Resi yang dicentang akan masuk daftar cancel. Yang sudah di-scan tidak dicentang otomatis,
-                      karena bisa jadi paketnya sudah diambil kurir (hilang dari "Untuk Dikirim" karena sudah dikirim).
+                      Resi bisa hilang karena pesanannya dibatalkan, tapi juga karena paketnya sudah diambil kurir (pindah dari "Untuk Dikirim") atau file ini terfilter.
+                      Karena itu tidak ada yang dicentang otomatis: upload export cancel TikTok untuk mencentang yang benar-benar cancel, atau centang sendiri. Yang dicentang akan masuk daftar cancel.
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <input ref={fileCancelKonfirmRef} type="file" accept=".xlsx,.xls,.csv" onChange={pilihFileCancelKonfirm} className="hidden" />
+                      <button type="button" onClick={() => fileCancelKonfirmRef.current?.click()} className={btnOutlined}>
+                        <FileSpreadsheet size={14} /> Konfirmasi dengan file cancel TikTok
+                      </button>
+                      {draftOrderan.fileCancel ? (
+                        <span className="text-md-on-surface-variant">
+                          {draftOrderan.fileCancel.nama}: {draftOrderan.fileCancel.jumlah} resi cancel di file ·{" "}
+                          <b className="text-emerald-300">{draftOrderan.hilang.filter((h) => draftOrderan.fileCancel.resi.has(h.resi)).length} terkonfirmasi cancel</b>,{" "}
+                          <b className="text-amber-300">{draftOrderan.hilang.filter((h) => !draftOrderan.fileCancel.resi.has(h.resi)).length} belum terkonfirmasi</b> (kemungkinan sudah diambil kurir)
+                        </span>
+                      ) : (
+                        <span className="text-md-on-surface-variant">{draftOrderan.hilang.length} resi hilang · 0 terkonfirmasi cancel</span>
+                      )}
                     </div>
                     {draftOrderan.totalLama > 0 && draftOrderan.hilang.length > draftOrderan.totalLama / 2 && (
                       <div className="text-xs font-medium text-red-300">
@@ -1116,6 +1158,9 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                           <span className="font-mono">{h.resi}</span>
                           {h.order_id && <span className="text-md-on-surface-variant">· {h.order_id}</span>}
                           {h.sudahScan && <span className="text-amber-300">· sudah di-scan</span>}
+                          {draftOrderan.fileCancel && (draftOrderan.fileCancel.resi.has(h.resi)
+                            ? <span className="text-emerald-300">· cancel di file TikTok</span>
+                            : <span className="text-md-on-surface-variant">· belum terkonfirmasi</span>)}
                         </label>
                       ))}
                     </div>

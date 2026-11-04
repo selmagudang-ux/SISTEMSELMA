@@ -115,6 +115,8 @@ export async function parseFileCancel(file) {
   const hasil = new Map();
   let adaKolomResi = false;
   let diabaikanBukanBatal = 0;
+  let batalTanpaResi = 0; // baris batal yang resinya kosong/tidak valid (belum terbit resi, tidak bisa dicocokkan saat scan)
+  let duplikat = 0; // resi yang muncul lebih dari sekali di file (digabung jadi satu)
 
   for (const nama of wb.SheetNames) {
     const aoa = XLSX.utils.sheet_to_json(wb.Sheets[nama], { header: 1, raw: false, defval: "" });
@@ -128,12 +130,17 @@ export async function parseFileCancel(file) {
     const iAlasan = head.findIndex((c) => RE_HEADER_ALASAN.test(c));
 
     for (const row of aoa.slice(hIdx + 1)) {
-      const r = normalisasiResi(row[iResi]);
-      if (!r) continue;
+      const mentah = String(row[iResi] ?? "").trim();
+      const r = normalisasiResi(mentah);
       if (iStatus >= 0 && !RE_STATUS_BATAL.test(String(row[iStatus]))) {
-        diabaikanBukanBatal += 1;
+        if (r) diabaikanBukanBatal += 1;
         continue;
       }
+      if (!r) {
+        if (mentah || (iPesanan >= 0 && String(row[iPesanan] ?? "").trim())) batalTanpaResi += 1;
+        continue;
+      }
+      if (hasil.has(r)) duplikat += 1;
       if (!hasil.has(r)) {
         hasil.set(r, {
           resi: r,
@@ -146,5 +153,5 @@ export async function parseFileCancel(file) {
   if (!adaKolomResi) {
     throw new Error('Kolom resi tidak ditemukan. Pastikan ada kolom berjudul "No. Resi" / "Tracking ID" / "Tracking Code" / "AWB".');
   }
-  return { baris: [...hasil.values()], diabaikanBukanBatal };
+  return { baris: [...hasil.values()], diabaikanBukanBatal, batalTanpaResi, duplikat };
 }
