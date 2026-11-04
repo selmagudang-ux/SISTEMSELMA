@@ -42,7 +42,9 @@ const POLL_CANCEL_MS = 20000;
 const POLL_SCAN_MS = 30000;
 const BATAS_BARIS = 300;
 const PLATFORM = ["Shopee", "TikTok Shop", "Lazada", "Tokopedia", "Lainnya"];
-const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at";
+const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at,sesi";
+const MAKS_SESI = 5; // pilihan Sesi 1..5 (gelombang scan dalam sehari, mis. pagi / siang / sore)
+const KUNCI_SESI = "selma-scan-resi-sesi";
 const KOLOM_CANCEL = "id,resi,no_pesanan,platform,alasan,created_at";
 const KOLOM_ORDERAN = "resi,order_id,platform,barang,total_qty,tanggal";
 const HARI_ORDERAN = 7; // orderan yang dimuat untuk pencocokan: sampai 7 hari sebelum tanggal yang dibuka
@@ -347,7 +349,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         // ekspedisi diperbaiki, scan lama ikut benar tanpa perlu update database.
         const ekspedisi = s.ekspedisi === "LAINNYA" ? deteksiEkspedisi(s.resi) : s.ekspedisi;
         return {
-          ...s, ekspedisi, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at),
+          ...s, sesi: s.sesi || 1, ekspedisi, cancel: !!c, infoCancel: c || null, terlanjur: !!c && new Date(s.created_at) < new Date(c.created_at),
           orderan: o, asing: adaOrderan && !c && !o,
         };
       }),
@@ -358,6 +360,25 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   // ---------------- scan ----------------
   const [input, setInput] = useState("");
   const [hasil, setHasil] = useState(null);
+  // Sesi aktif: label gelombang scan (Sesi 1, 2, …). Tersimpan per tanggal di perangkat ini; hari baru -> Sesi 1.
+  const [sesi, setSesiState] = useState(() => {
+    try {
+      const o = JSON.parse(localStorage.getItem(KUNCI_SESI) || "null");
+      if (o && o.hari === hariIni() && o.sesi >= 1 && o.sesi <= MAKS_SESI) return o.sesi;
+    } catch {
+      // abaikan
+    }
+    return 1;
+  });
+  const setSesi = (n) => {
+    setSesiState(n);
+    try {
+      localStorage.setItem(KUNCI_SESI, JSON.stringify({ hari: hariIni(), sesi: n }));
+    } catch {
+      // abaikan
+    }
+  };
+  const [sesiFilter, setSesiFilter] = useState(null); // null = semua sesi
   const [suara, setSuara] = useState(() => {
     try {
       return localStorage.getItem("selma-scan-resi-suara") !== "off";
@@ -368,7 +389,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const inputRef = useRef(null);
   const antrean = useRef(Promise.resolve());
   const ref = useRef({});
-  ref.current = { scans, cancelMap, suara, hari, operator, orderanMap, adaOrderan };
+  ref.current = { scans, cancelMap, suara, hari, operator, orderanMap, adaOrderan, sesi };
 
   const sedangKirim = useRef(false);
   const kirimAntrean = useCallback(async () => {
@@ -385,7 +406,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
               method: "POST",
               body: JSON.stringify(paket.map((it) => ({
                 resi: it.resi, ekspedisi: it.ekspedisi, tanggal: it.tanggal,
-                created_at: it.created_at, discan_oleh: it.discan_oleh,
+                created_at: it.created_at, discan_oleh: it.discan_oleh, sesi: it.sesi || 1,
               }))),
             });
             const resiTerkirim = new Set(paket.map((x) => x.resi));
@@ -411,7 +432,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             method: "POST",
             body: JSON.stringify({
               resi: it.resi, ekspedisi: it.ekspedisi, tanggal: it.tanggal,
-              created_at: it.created_at, discan_oleh: it.discan_oleh,
+              created_at: it.created_at, discan_oleh: it.discan_oleh, sesi: it.sesi || 1,
             }),
           });
           const baris = Array.isArray(hasilPost) ? hasilPost[0] : hasilPost;
@@ -466,7 +487,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   }, [kirimAntrean]);
 
   const kerjakanScan = useCallback(async (raw) => {
-    const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op, orderanMap: omap, adaOrderan: adaO } = ref.current;
+    const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op, orderanMap: omap, adaOrderan: adaO, sesi: sesiAktif } = ref.current;
     const bip = (t) => bunyiAktif && bunyi(t);
     const resi = normalisasiResi(raw);
     if (!resi) {
@@ -489,7 +510,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         bip("cancel");
         return;
       }
-      setHasil({ tipe: "dup", resi, ekspedisi: ada.ekspedisi, info: `Sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)}.` });
+      setHasil({ tipe: "dup", resi, ekspedisi: ada.ekspedisi, info: `Sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)} (Sesi ${ada.sesi || 1}).` });
       bip("dup");
       return;
     }
@@ -501,13 +522,13 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         bip("cancel");
         return;
       }
-      setHasil({ tipe: "dup", resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
+      setHasil({ tipe: "dup", resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (Sesi ${tunda.sesi || 1}, menunggu terkirim ke server).` });
       bip("dup");
       return;
     }
     const ekspedisi = deteksiEkspedisi(resi);
     // Catat dulu di perangkat ini, kirim ke server di belakang layar (lihat ANTREAN OFFLINE).
-    setAntreanSync((a) => [...a, { resi, ekspedisi, tanggal: hariAktif, discan_oleh: op, created_at: new Date().toISOString() }]);
+    setAntreanSync((a) => [...a, { resi, ekspedisi, tanggal: hariAktif, discan_oleh: op, sesi: sesiAktif, created_at: new Date().toISOString() }]);
     kirimAntrean();
     const c = cmap.get(resi);
     const o = omap.get(resi);
@@ -590,18 +611,29 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [filter, setFilter] = useState("semua");
   const [ekspFilter, setEkspFilter] = useState(null);
   const [cariResi, setCariResi] = useState("");
+  // Filter sesi hanya berlaku di halaman Scan (rekap rentang tanggal selalu menghitung semua sesi).
+  const rowsView = useMemo(
+    () => (sub === "scan" && sesiFilter ? rows.filter((r) => r.sesi === sesiFilter) : rows),
+    [rows, sesiFilter, sub]
+  );
+  const daftarSesi = useMemo(() => {
+    const m = new Map();
+    rows.forEach((r) => m.set(r.sesi, (m.get(r.sesi) || 0) + 1));
+    if (!m.has(sesi)) m.set(sesi, 0);
+    return [...m.entries()].sort((a, b) => a[0] - b[0]);
+  }, [rows, sesi]);
   const tampil = useMemo(
     () =>
-      rows.filter(
+      rowsView.filter(
         (r) =>
           (filter === "semua" || (filter === "cancel" ? r.cancel : !r.cancel)) &&
           (!ekspFilter || r.ekspedisi === ekspFilter) &&
           (!cariResi || r.resi.includes(cariResi.trim().toUpperCase()))
       ),
-    [rows, filter, ekspFilter, cariResi]
+    [rowsView, filter, ekspFilter, cariResi]
   );
-  const totalValid = rows.filter((r) => !r.cancel).length;
-  const totalCancel = rows.length - totalValid;
+  const totalValid = rowsView.filter((r) => !r.cancel).length;
+  const totalCancel = rowsView.length - totalValid;
 
   // ---- hapus massal: HANYA role superappa ----
   const bisaHapusMassal = session?.role === "superappa";
@@ -695,13 +727,13 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       {
         name: "Detail",
         columns: [
-          { key: "tanggal", label: "Tanggal" }, { key: "jam", label: "Jam" }, { key: "resi", label: "Resi" },
+          { key: "tanggal", label: "Tanggal" }, { key: "sesi", label: "Sesi" }, { key: "jam", label: "Jam" }, { key: "resi", label: "Resi" },
           { key: "ekspedisi", label: "Ekspedisi" }, { key: "status", label: "Status" },
           { key: "oleh", label: "Discan oleh" }, { key: "pesanan", label: "No. Pesanan (cancel)" },
           { key: "barang", label: "Barang (orderan)" },
         ],
         rows: [...rows].reverse().map((r) => ({
-          tanggal: r.tanggal, jam: jam(r.created_at), resi: r.resi, ekspedisi: labelEkspedisi(r.ekspedisi),
+          tanggal: r.tanggal, sesi: r.sesi, jam: jam(r.created_at), resi: r.resi, ekspedisi: labelEkspedisi(r.ekspedisi),
           status: r.cancel ? (r.terlanjur ? "CANCEL (terlanjur di-scan)" : "CANCEL") : r.asing ? "Tidak ada di orderan" : "Valid",
           oleh: r.discan_oleh || "", pesanan: r.infoCancel?.no_pesanan || "",
           barang: r.orderan ? ringkasBarang(r.orderan.barang) : "",
@@ -1041,7 +1073,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   spellCheck={false}
                   className={`${inputClass} font-mono text-base`}
                 />
-                <TombolScanKamera continuous format="resi" label="Kamera" judul="Scan Resi" onDetect={prosesScan} hasil={hasil} renderHasil={(h) => <KartuHasil hasil={h} />} />
+                <TombolScanKamera continuous format="resi" label="Kamera" judul={`Scan Resi · Sesi ${sesi}`} onDetect={prosesScan} hasil={hasil} renderHasil={(h) => <KartuHasil hasil={h} />} />
                 <button type="button" onClick={gantiSuara} className="px-3 rounded-lg border border-md-outline-variant text-md-on-surface-variant" aria-label="Suara">
                   {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
@@ -1056,10 +1088,23 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   <button type="button" onClick={kirimAntrean} className={btnText}>Kirim sekarang</button>
                 </div>
               )}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-md-on-surface-variant">Scan masuk ke:</span>
+                {Array.from({ length: Math.max(MAKS_SESI, 1) }, (_, i) => i + 1).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => { setSesi(n); inputRef.current?.focus(); }}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${sesi === n ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                  >
+                    Sesi {n}
+                  </button>
+                ))}
+              </div>
               <KartuHasil hasil={hasil} />
             </div>
             <div className="grid grid-cols-3 lg:grid-cols-1 gap-3">
-              <StatCard label="Total di-scan" value={rows.length} icon={ScanLine} onClick={() => setFilter("semua")} />
+              <StatCard label="Total di-scan" value={rowsView.length} icon={ScanLine} onClick={() => setFilter("semua")} />
               <StatCard label="Valid (kirim)" value={totalValid} accent="text-emerald-300" icon={CheckCircle2} iconColor="text-emerald-300" onClick={() => setFilter("valid")} />
               <StatCard label="Cancel" value={totalCancel} accent={totalCancel ? "text-red-400" : undefined} icon={Ban} iconColor="text-red-400" onClick={() => setFilter("cancel")} />
             </div>
@@ -1361,7 +1406,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             )}
           </div>
 
-          <TabelRekap rows={rows} aktif={ekspFilter} onPilih={setEkspFilter} />
+          <TabelRekap rows={rowsView} aktif={ekspFilter} onPilih={setEkspFilter} />
           {ekspFilter && (
             <div className="text-xs text-md-on-surface-variant">
               Daftar di bawah difilter: {labelEkspedisi(ekspFilter)} —{" "}
@@ -1369,6 +1414,21 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             </div>
           )}
 
+          {daftarSesi.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-md-on-surface-variant">Lihat sesi:</span>
+              {[[null, rows.length], ...daftarSesi].map(([n, jml]) => (
+                <button
+                  key={n ?? "semua"}
+                  type="button"
+                  onClick={() => setSesiFilter(n)}
+                  className={`text-xs px-3 py-1.5 rounded-full border ${sesiFilter === n ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                >
+                  {n === null ? "Semua sesi" : `Sesi ${n}`} ({jml})
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {["semua", "valid", "cancel"].map((f) => (
               <button
@@ -1424,7 +1484,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                           <input type="checkbox" checked={pilih.has(r.id)} onChange={() => togglePilih(r.id)} aria-label={`Pilih ${r.resi}`} />
                         </td>
                       )}
-                      <td className="px-4 py-2 text-xs text-md-on-surface-variant whitespace-nowrap">{jam(r.created_at)}</td>
+                      <td className="px-4 py-2 text-xs text-md-on-surface-variant whitespace-nowrap">{jam(r.created_at)} <span className="ml-1 rounded bg-md-container-high px-1.5 py-0.5 text-[10px] font-semibold">S{r.sesi}</span></td>
                       <td className="px-2 py-2 font-mono text-md-on-surface">{r.resi}</td>
                       <td className="px-2 py-2">
                         {r.ekspedisi === "LAINNYA" ? (
@@ -1599,11 +1659,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             </button>
           </div>
           <div className="grid grid-cols-3 gap-3 max-w-xl">
-            <StatCard label="Total di-scan" value={rows.length} icon={ScanLine} />
+            <StatCard label="Total di-scan" value={rowsView.length} icon={ScanLine} />
             <StatCard label="Valid" value={totalValid} accent="text-emerald-300" />
             <StatCard label="Cancel" value={totalCancel} accent={totalCancel ? "text-red-400" : undefined} />
           </div>
-          {memuat ? <div className="text-sm text-md-on-surface-variant py-8 text-center">Memuat…</div> : <TabelRekap rows={rows} />}
+          {memuat ? <div className="text-sm text-md-on-surface-variant py-8 text-center">Memuat…</div> : <TabelRekap rows={rowsView} />}
         </div>
       )}
     </div>
