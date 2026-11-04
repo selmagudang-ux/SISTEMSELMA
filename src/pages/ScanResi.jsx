@@ -1394,6 +1394,15 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                         <button type="button" onClick={() => fileCancelKonfirmRef.current?.click()} className={btnOutlined}>
                           <FileSpreadsheet size={14} /> Konfirmasi dengan file cancel TikTok
                         </button>
+                        {draftOrderan.hilangPilih?.size > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDraftOrderan((d) => (d ? { ...d, hilangPilih: new Set() } : d))}
+                            className={btnText}
+                          >
+                            Kosongkan centang ({draftOrderan.hilangPilih.size})
+                          </button>
+                        )}
                         {draftOrderan.fileCancel ? (
                           <span className="text-md-on-surface-variant">
                             {draftOrderan.fileCancel.nama}: {draftOrderan.fileCancel.jumlah} resi cancel di file ·{" "}
