@@ -128,6 +128,8 @@ export const TABEL_PER_PT = new Set([
   // Scan Resi (pages/ScanResi.jsx) — kolom entitas dibuat di scan_resi.sql;
   // resi_barang (orderan resi -> barang) di scan_resi_barang.sql.
   "resi_scan", "resi_cancel", "resi_barang",
+  // Sesi scan & pengiriman (scan_resi_sesi.sql).
+  "resi_sesi",
   // Log import orderan (resi_import_log.sql) — hanya dibaca role superappa.
   "resi_import_log",
 ]);

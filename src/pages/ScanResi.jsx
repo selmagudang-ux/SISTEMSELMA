@@ -43,8 +43,10 @@ const POLL_SCAN_MS = 30000;
 const BATAS_BARIS = 300;
 const PLATFORM = ["Shopee", "TikTok Shop", "Lazada", "Tokopedia", "Lainnya"];
 const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at,sesi";
-const MAKS_SESI = 5; // pilihan Sesi 1..5 (gelombang scan dalam sehari, mis. pagi / siang / sore)
-const KUNCI_SESI = "selma-scan-resi-sesi";
+// SESI = satu gelombang scan dalam sehari. Sesi yang sudah DITUTUP tidak bisa ditambah lagi — scan
+// berikutnya otomatis masuk sesi baru. Sesi yang sudah ditutup bisa ditandai "dikirim": satu
+// PENGIRIMAN (pickup kurir) bisa berisi beberapa sesi. Tabelnya resi_sesi (lihat scan_resi_sesi.sql).
+const KOLOM_SESI = "id,tanggal,sesi,ditutup_at,ditutup_oleh,pengiriman,dikirim_at,dikirim_oleh";
 const KOLOM_CANCEL = "id,resi,no_pesanan,platform,alasan,created_at";
 const KOLOM_ORDERAN = "resi,order_id,platform,barang,total_qty,tanggal";
 const HARI_ORDERAN = 7; // orderan yang dimuat untuk pencocokan: sampai 7 hari sebelum tanggal yang dibuka
@@ -227,6 +229,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [dari, setDari] = useState(geserHari(hariIni(), -6));
   const [sampai, setSampai] = useState(hariIni());
   const [scans, setScans] = useState([]);
+  const [sesiRows, setSesiRows] = useState([]); // status tutup/kirim tiap sesi (tabel resi_sesi)
+  const [galatSesi, setGalatSesi] = useState("");
   const [belumKirim, setBelumKirim] = useState(bacaAntrean); // scan yang belum terkirim ke server
   const belumKirimRef = useRef(belumKirim);
   const [infoKirim, setInfoKirim] = useState("");
@@ -250,6 +254,14 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       `resi_scan?select=${KOLOM_SCAN}&tanggal=gte.${d1}&tanggal=lte.${d2}&order=created_at.desc,id.desc`
     );
     setScans(rows || []);
+    // Status sesi dimuat terpisah: kalau tabel resi_sesi belum dibuat, scan tetap jalan (Sesi 1 saja).
+    try {
+      const sr = await sbAll(`resi_sesi?select=${KOLOM_SESI}&tanggal=gte.${d1}&tanggal=lte.${d2}&order=tanggal.asc,sesi.asc`);
+      setSesiRows(sr || []);
+      setGalatSesi("");
+    } catch (e) {
+      setGalatSesi(e.message || "Gagal memuat status sesi.");
+    }
   }, []);
 
   const muatCancel = useCallback(async () => {
@@ -360,24 +372,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   // ---------------- scan ----------------
   const [input, setInput] = useState("");
   const [hasil, setHasil] = useState(null);
-  // Sesi aktif: label gelombang scan (Sesi 1, 2, …). Tersimpan per tanggal di perangkat ini; hari baru -> Sesi 1.
-  const [sesi, setSesiState] = useState(() => {
-    try {
-      const o = JSON.parse(localStorage.getItem(KUNCI_SESI) || "null");
-      if (o && o.hari === hariIni() && o.sesi >= 1 && o.sesi <= MAKS_SESI) return o.sesi;
-    } catch {
-      // abaikan
-    }
-    return 1;
-  });
-  const setSesi = (n) => {
-    setSesiState(n);
-    try {
-      localStorage.setItem(KUNCI_SESI, JSON.stringify({ hari: hariIni(), sesi: n }));
-    } catch {
-      // abaikan
-    }
-  };
+  // Sesi AKTIF = sesi setelah sesi terakhir yang ditutup (hari ini). Sesi yang sudah ditutup tidak
+  // bisa ditambah lagi; setelah "Tutup sesi", scan berikutnya otomatis masuk sesi berikutnya.
+  const sesiHari = useMemo(() => sesiRows.filter((x) => x.tanggal === hari), [sesiRows, hari]);
+  const sesi = useMemo(() => sesiHari.reduce((m, x) => Math.max(m, x.sesi), 0) + 1, [sesiHari]);
   const [sesiFilter, setSesiFilter] = useState(null); // null = semua sesi
   const [suara, setSuara] = useState(() => {
     try {
@@ -619,9 +617,87 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const daftarSesi = useMemo(() => {
     const m = new Map();
     rows.forEach((r) => m.set(r.sesi, (m.get(r.sesi) || 0) + 1));
-    if (!m.has(sesi)) m.set(sesi, 0);
+    if (sub === "scan" && !m.has(sesi)) m.set(sesi, 0);
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
-  }, [rows, sesi]);
+  }, [rows, sesi, sub]);
+  const infoSesi = useMemo(() => new Map(sesiHari.map((x) => [x.sesi, x])), [sesiHari]);
+  // Kunci "tanggal|sesi" -> pengiriman ke-n (dipakai di export Excel, bisa lintas tanggal).
+  const kirimPerSesi = useMemo(() => new Map(sesiRows.filter((x) => x.pengiriman).map((x) => [`${x.tanggal}|${x.sesi}`, x.pengiriman])), [sesiRows]);
+  const [pilihKirim, setPilihKirim] = useState(new Set());
+  const [sibukSesi, setSibukSesi] = useState(false);
+  const jmlSesiAktif = rows.filter((r) => r.sesi === sesi).length;
+
+  const tutupSesi = async () => {
+    if (sibukSesi || !jmlSesiAktif) return;
+    if (!window.confirm(`Tutup Sesi ${sesi} (${jmlSesiAktif} resi)? Setelah ditutup, Sesi ${sesi} tidak bisa ditambah lagi dan scan berikutnya masuk Sesi ${sesi + 1}.`)) return;
+    setSibukSesi(true);
+    try {
+      const res = await sb("resi_sesi?on_conflict=entitas,tanggal,sesi", {
+        method: "POST",
+        prefer: "resolution=ignore-duplicates,return=representation",
+        body: JSON.stringify({ tanggal: hari, sesi, ditutup_at: new Date().toISOString(), ditutup_oleh: operator }),
+      });
+      const baris = Array.isArray(res) ? res[0] : res;
+      setSesiRows((l) => [...l.filter((x) => !(x.tanggal === hari && x.sesi === sesi)), baris || { tanggal: hari, sesi, ditutup_at: new Date().toISOString() }]);
+      toast(`Sesi ${sesi} ditutup. Scan berikutnya masuk Sesi ${sesi + 1}.`);
+    } catch (e) {
+      toast(e.message || "Gagal menutup sesi.", "err");
+    } finally {
+      setSibukSesi(false);
+    }
+  };
+
+  const tandaiDikirim = async () => {
+    const daftar = [...pilihKirim].sort((a, b) => a - b);
+    if (sibukSesi || !daftar.length) return;
+    const nomor = sesiHari.reduce((m, x) => Math.max(m, x.pengiriman || 0), 0) + 1;
+    if (!window.confirm(`Tandai Sesi ${daftar.join(", ")} sebagai Pengiriman ${nomor}?`)) return;
+    setSibukSesi(true);
+    try {
+      const waktu = new Date().toISOString();
+      await sb(`resi_sesi?tanggal=eq.${hari}&sesi=in.(${daftar.join(",")})&pengiriman=is.null`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: JSON.stringify({ pengiriman: nomor, dikirim_at: waktu, dikirim_oleh: operator }),
+      });
+      setSesiRows((l) => l.map((x) => (x.tanggal === hari && daftar.includes(x.sesi) && !x.pengiriman ? { ...x, pengiriman: nomor, dikirim_at: waktu, dikirim_oleh: operator } : x)));
+      setPilihKirim(new Set());
+      toast(`Pengiriman ${nomor} dicatat: Sesi ${daftar.join(", ")}.`);
+    } catch (e) {
+      toast(e.message || "Gagal mencatat pengiriman.", "err");
+    } finally {
+      setSibukSesi(false);
+    }
+  };
+
+  const batalKirim = async (nomor) => {
+    if (sibukSesi || !window.confirm(`Batalkan Pengiriman ${nomor}? Sesi di dalamnya kembali berstatus "ditutup, belum dikirim".`)) return;
+    setSibukSesi(true);
+    try {
+      await sb(`resi_sesi?tanggal=eq.${hari}&pengiriman=eq.${nomor}`, {
+        method: "PATCH",
+        prefer: "return=minimal",
+        body: JSON.stringify({ pengiriman: null, dikirim_at: null, dikirim_oleh: null }),
+      });
+      setSesiRows((l) => l.map((x) => (x.tanggal === hari && x.pengiriman === nomor ? { ...x, pengiriman: null, dikirim_at: null, dikirim_oleh: null } : x)));
+    } catch (e) {
+      toast(e.message || "Gagal membatalkan pengiriman.", "err");
+    } finally {
+      setSibukSesi(false);
+    }
+  };
+
+  // Pengiriman hari ini: nomor -> sesi-sesi di dalamnya + jumlah resi.
+  const daftarKirim = useMemo(() => {
+    const m = new Map();
+    sesiHari.filter((x) => x.pengiriman).forEach((x) => {
+      const g = m.get(x.pengiriman) || { nomor: x.pengiriman, sesi: [], waktu: x.dikirim_at, jumlah: 0 };
+      g.sesi.push(x.sesi);
+      g.jumlah += rows.filter((r) => r.sesi === x.sesi && !r.cancel).length;
+      m.set(x.pengiriman, g);
+    });
+    return [...m.values()].sort((a, b) => a.nomor - b.nomor);
+  }, [sesiHari, rows]);
   const tampil = useMemo(
     () =>
       rowsView.filter(
@@ -727,13 +803,13 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       {
         name: "Detail",
         columns: [
-          { key: "tanggal", label: "Tanggal" }, { key: "sesi", label: "Sesi" }, { key: "jam", label: "Jam" }, { key: "resi", label: "Resi" },
+          { key: "tanggal", label: "Tanggal" }, { key: "sesi", label: "Sesi" }, { key: "kirim", label: "Pengiriman" }, { key: "jam", label: "Jam" }, { key: "resi", label: "Resi" },
           { key: "ekspedisi", label: "Ekspedisi" }, { key: "status", label: "Status" },
           { key: "oleh", label: "Discan oleh" }, { key: "pesanan", label: "No. Pesanan (cancel)" },
           { key: "barang", label: "Barang (orderan)" },
         ],
         rows: [...rows].reverse().map((r) => ({
-          tanggal: r.tanggal, sesi: r.sesi, jam: jam(r.created_at), resi: r.resi, ekspedisi: labelEkspedisi(r.ekspedisi),
+          tanggal: r.tanggal, sesi: r.sesi, kirim: kirimPerSesi.get(`${r.tanggal}|${r.sesi}`) || "", jam: jam(r.created_at), resi: r.resi, ekspedisi: labelEkspedisi(r.ekspedisi),
           status: r.cancel ? (r.terlanjur ? "CANCEL (terlanjur di-scan)" : "CANCEL") : r.asing ? "Tidak ada di orderan" : "Valid",
           oleh: r.discan_oleh || "", pesanan: r.infoCancel?.no_pesanan || "",
           barang: r.orderan ? ringkasBarang(r.orderan.barang) : "",
@@ -1088,18 +1164,59 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   <button type="button" onClick={kirimAntrean} className={btnText}>Kirim sekarang</button>
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-md-on-surface-variant">Scan masuk ke:</span>
-                {Array.from({ length: Math.max(MAKS_SESI, 1) }, (_, i) => i + 1).map((n) => (
+              <div className="rounded-md-lg border border-md-outline-variant p-3 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-md-on-surface">Sesi aktif: Sesi {sesi}</span>
+                  <span className="text-xs text-md-on-surface-variant">{jmlSesiAktif} resi</span>
                   <button
-                    key={n}
                     type="button"
-                    onClick={() => { setSesi(n); inputRef.current?.focus(); }}
-                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${sesi === n ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                    onClick={tutupSesi}
+                    disabled={sibukSesi || !jmlSesiAktif}
+                    className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border border-amber-400/60 text-amber-200 disabled:opacity-40"
                   >
-                    Sesi {n}
+                    Tutup Sesi {sesi}
                   </button>
-                ))}
+                </div>
+                {galatSesi && (
+                  <div className="text-xs text-red-300">Status sesi belum bisa dimuat: {galatSesi}. Pastikan scan_resi_sesi.sql sudah dijalankan.</div>
+                )}
+                {sesiHari.length > 0 && (
+                  <div className="space-y-1.5">
+                    {sesiHari.map((x) => {
+                      const n = rows.filter((r) => r.sesi === x.sesi).length;
+                      const bisaPilih = !x.pengiriman;
+                      return (
+                        <label key={x.sesi} className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            disabled={!bisaPilih}
+                            checked={pilihKirim.has(x.sesi)}
+                            onChange={() => setPilihKirim((p) => { const b = new Set(p); b.has(x.sesi) ? b.delete(x.sesi) : b.add(x.sesi); return b; })}
+                          />
+                          <span className="font-medium">Sesi {x.sesi}</span>
+                          <span className="text-xs text-md-on-surface-variant">{n} resi · ditutup {jam(x.ditutup_at)}</span>
+                          {x.pengiriman ? <Badge color="emerald">Pengiriman {x.pengiriman}</Badge> : <Badge color="amber">Belum dikirim</Badge>}
+                        </label>
+                      );
+                    })}
+                    {pilihKirim.size > 0 && (
+                      <button type="button" onClick={tandaiDikirim} disabled={sibukSesi} className="text-xs font-semibold px-3 py-1.5 rounded-full bg-md-primary-container text-md-on-primary-container">
+                        Tandai dikirim: Sesi {[...pilihKirim].sort((a, b) => a - b).join(", ")}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {daftarKirim.length > 0 && (
+                  <div className="border-t border-md-outline-variant pt-2 space-y-1">
+                    {daftarKirim.map((g) => (
+                      <div key={g.nomor} className="flex flex-wrap items-center gap-2 text-xs text-md-on-surface-variant">
+                        <b className="text-md-on-surface">Pengiriman {g.nomor}</b>
+                        <span>Sesi {g.sesi.join(" + ")} · {g.jumlah} resi valid · {jam(g.waktu)}</span>
+                        <button type="button" onClick={() => batalKirim(g.nomor)} className="ml-auto underline">Batalkan</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <KartuHasil hasil={hasil} />
             </div>
@@ -1424,7 +1541,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   onClick={() => setSesiFilter(n)}
                   className={`text-xs px-3 py-1.5 rounded-full border ${sesiFilter === n ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
                 >
-                  {n === null ? "Semua sesi" : `Sesi ${n}`} ({jml})
+                  {n === null ? "Semua sesi" : `Sesi ${n}`} ({jml}){n !== null && infoSesi.get(n)?.pengiriman ? ` · Kirim ${infoSesi.get(n).pengiriman}` : ""}
                 </button>
               ))}
             </div>
