@@ -8,7 +8,19 @@ import { ScanLine, X, Loader2 } from "lucide-react";
 // continuous = false -> tutup otomatis begitu satu barcode terbaca.
 // continuous = true  -> kamera tetap terbuka, tiap barcode yang terbaca
 //                       dikirim ke onDetect (cocok untuk hitung +1 tiap scan).
-export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128" }) {
+//
+// hasil + renderHasil (opsional) -> tampilkan hasil tiap scan (berhasil/gagal/duplikat/cancel) langsung
+// di atas kamera sebagai kilatan warna + kartu hasil, supaya operator tidak hanya mengandalkan suara.
+// hasil = objek { tipe: "ok"|"cancel"|"dup"|"asing"|"err", ... }; renderHasil(hasil) -> elemen React.
+const WARNA_KILAT = {
+  ok: { bg: "bg-emerald-500/55", teks: "BERHASIL", ikon: "✓" },
+  cancel: { bg: "bg-red-600/70", teks: "CANCEL", ikon: "✕" },
+  dup: { bg: "bg-amber-500/65", teks: "SUDAH DI-SCAN", ikon: "!" },
+  asing: { bg: "bg-amber-500/65", teks: "TIDAK ADA DI ORDERAN", ikon: "!" },
+  err: { bg: "bg-red-600/70", teks: "GAGAL", ikon: "✕" },
+};
+
+export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128", hasil = null, renderHasil = null }) {
   const isQr = format === "qr";
   // format="resi": resi paket — baca barcode garis (Code 128/39/93, ITF, Codabar; QR & EAN tidak) dan minta kamera
   // resolusi tinggi + fokus otomatis, karena barcode di label resi kecil & rapat.
@@ -22,6 +34,16 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
   const [status, setStatus] = useState("loading"); // loading | ready | error
   const [pesanError, setPesanError] = useState("");
   const [terakhir, setTerakhir] = useState("");
+  // Hasil yang sudah ada sebelum kamera dibuka tidak ditampilkan (bukan dari sesi kamera ini).
+  const hasilAwal = useRef(hasil);
+  const [kilat, setKilat] = useState(null);
+  useEffect(() => {
+    if (!hasil || hasil === hasilAwal.current) return;
+    setKilat(hasil.tipe);
+    const t = setTimeout(() => setKilat(null), 900);
+    return () => clearTimeout(t);
+  }, [hasil]);
+  const hasilBaru = hasil && hasil !== hasilAwal.current ? hasil : null;
 
   useEffect(() => {
     let batal = false;
@@ -169,8 +191,8 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
   }, [continuous, isQr, isResi]);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-950 overflow-hidden">
+    <div className="fixed inset-0 z-[100] bg-black/85 overflow-y-auto p-4">
+      <div className="w-full max-w-md mx-auto my-auto rounded-xl border border-slate-700 bg-slate-950 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
           <div className="text-sm font-semibold text-slate-100">{judul}</div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200" aria-label="Tutup">
@@ -185,6 +207,12 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
           {status === "ready" && isQr && (
             <div className="pointer-events-none absolute inset-0 m-auto w-48 h-48 border-2 border-red-500/80 rounded-lg" />
           )}
+          {kilat && WARNA_KILAT[kilat] && (
+            <div className={`pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-white ${WARNA_KILAT[kilat].bg}`}>
+              <div className="text-7xl font-black leading-none">{WARNA_KILAT[kilat].ikon}</div>
+              <div className="mt-2 text-lg font-bold tracking-wide">{WARNA_KILAT[kilat].teks}</div>
+            </div>
+          )}
           {status === "loading" && (
             <div className="absolute inset-0 flex items-center justify-center text-slate-300 text-xs gap-2">
               <Loader2 size={16} className="animate-spin" /> Membuka kamera…
@@ -196,6 +224,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
             </div>
           )}
         </div>
+        {hasilBaru && renderHasil && <div className="p-3 border-b border-slate-800">{renderHasil(hasilBaru)}</div>}
         <div className="px-4 py-3 text-[11px] text-slate-400">
           {terakhir ? (
             // Isi QR gaji bersifat rahasia — tidak ditampilkan di layar.
@@ -220,7 +249,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
   );
 }
 
-export function TombolScanKamera({ onDetect, continuous = false, label = "Scan", judul, format }) {
+export function TombolScanKamera({ onDetect, continuous = false, label = "Scan", judul, format, hasil, renderHasil }) {
   const [buka, setBuka] = useState(false);
   return (
     <>
@@ -236,6 +265,8 @@ export function TombolScanKamera({ onDetect, continuous = false, label = "Scan",
           continuous={continuous}
           judul={judul}
           format={format}
+          hasil={hasil}
+          renderHasil={renderHasil}
           onDetect={onDetect}
           onClose={() => setBuka(false)}
         />
