@@ -386,6 +386,24 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   });
   const inputRef = useRef(null);
   const antrean = useRef(Promise.resolve());
+  // Konfirmasi untuk resi yang TIDAK ada di orderan: scan menunggu jawaban operator sebelum tercatat.
+  // Scan berikutnya ikut mengantre (antrean berurutan), jadi tidak ada yang terlewat atau tertimpa.
+  const [konfirm, setKonfirm] = useState(null);
+  const jawabKonfirm = useRef(null);
+  const mintaKonfirm = useCallback(
+    (data) =>
+      new Promise((selesai) => {
+        jawabKonfirm.current = selesai;
+        setKonfirm(data);
+      }),
+    []
+  );
+  const putuskan = (setuju) => {
+    const f = jawabKonfirm.current;
+    jawabKonfirm.current = null;
+    setKonfirm(null);
+    f?.(setuju);
+  };
   const ref = useRef({});
   ref.current = { scans, cancelMap, suara, hari, operator, orderanMap, adaOrderan, sesi };
 
@@ -525,11 +543,21 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       return;
     }
     const ekspedisi = deteksiEkspedisi(resi);
+    const c = cmap.get(resi);
+    const o = omap.get(resi);
+    // Orderan sudah di-import tapi resi ini tidak ada di dalamnya (dan bukan resi cancel):
+    // minta konfirmasi dulu — TIDAK tercatat sebelum operator memilih "Simpan".
+    if (!c && adaO && !o) {
+      bip("asing");
+      const setuju = await mintaKonfirm({ resi, ekspedisi, sesi: sesiAktif });
+      if (!setuju) {
+        setHasil({ tipe: "err", resi, ekspedisi, info: "Tidak ada di daftar orderan — TIDAK disimpan (dibatalkan oleh operator)." });
+        return;
+      }
+    }
     // Catat dulu di perangkat ini, kirim ke server di belakang layar (lihat ANTREAN OFFLINE).
     setAntreanSync((a) => [...a, { resi, ekspedisi, tanggal: hariAktif, discan_oleh: op, sesi: sesiAktif, created_at: new Date().toISOString() }]);
     kirimAntrean();
-    const c = cmap.get(resi);
-    const o = omap.get(resi);
     if (c) {
       setHasil({
         tipe: "cancel", resi, ekspedisi, barang: o?.barang,
@@ -540,7 +568,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       // Orderan sudah di-import tapi resi ini tidak ada di dalamnya: tetap dicatat, hanya diperingatkan.
       setHasil({
         tipe: "asing", resi, ekspedisi,
-        info: "Resi ini tidak ada di daftar orderan — cek paketnya (salah paket?) atau file orderan terbaru belum di-import. Tetap tercatat.",
+        info: "Tidak ada di daftar orderan, tetapi Anda memilih menyimpannya — cek paketnya (salah paket?) atau file orderan terbaru belum di-import.",
       });
       bip("asing");
     } else {
@@ -550,7 +578,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       });
       bip("ok");
     }
-  }, [kirimAntrean, setAntreanSync]);
+  }, [kirimAntrean, setAntreanSync, mintaKonfirm]);
 
   // Antrean berurutan: scanner cepat tidak membuat dua scan saling menimpa.
   const prosesScan = useCallback(
@@ -1130,6 +1158,32 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
 
   return (
     <div>
+      {konfirm && (
+        // z di atas layar kamera (z-100). Tombol sengaja TIDAK di-fokus otomatis: scanner keyboard
+        // mengirim Enter setelah tiap resi, jangan sampai Enter itu menekan "Simpan".
+        <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-xl border-2 border-amber-400/70 bg-slate-950 p-5 text-amber-100">
+            <div className="flex items-center gap-2 text-lg font-bold">
+              <AlertTriangle size={26} /> Tidak ada di orderan
+            </div>
+            <div className="mt-2 font-mono text-base break-all text-white">{konfirm.resi}</div>
+            <div className="mt-1 text-sm">
+              {labelEkspedisi(konfirm.ekspedisi)} · akan masuk Sesi {konfirm.sesi}
+            </div>
+            <p className="mt-3 text-sm opacity-90">
+              Resi ini tidak ada di daftar orderan. Kemungkinan salah paket, barcode lain di label, atau file orderan terbaru belum di-import. Simpan tetap?
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => putuskan(false)} className="rounded-lg border border-slate-600 py-3 text-sm font-semibold text-slate-100">
+                Jangan simpan
+              </button>
+              <button type="button" onClick={() => putuskan(true)} className="rounded-lg bg-amber-500 py-3 text-sm font-bold text-black">
+                Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <PageHeader title={judul} description={deskripsi} action={tombolMuat} />
       {galat && <div className="mb-4 rounded-md-lg bg-md-error-container text-md-on-error-container text-sm p-3">{galat}</div>}
 
