@@ -907,15 +907,21 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       // Diusulkan masuk daftar cancel, tapi user yang konfirmasi. Resi yang sudah di-scan tidak
       // dicentang otomatis: bisa jadi paketnya sudah diambil kurir (status pindah dari "Untuk Dikirim").
       let hilang = [];
+      let hilangDikirim = 0;
       if (hasilBaca.baris.length) {
         const resiBaru = new Set(hasilBaca.baris.map((b) => b.resi));
         const sesiScan = new Map(rows.map((r) => [r.resi, r.sesi]));
-        hilang = orderanRows
+        const semuaHilang = orderanRows
           .filter((o) => o.tanggal === hari && !resiBaru.has(o.resi) && !cancelMap.has(o.resi))
           .map((o) => ({ resi: o.resi, order_id: o.order_id, sudahScan: sesiScan.has(o.resi), sesi: sesiScan.get(o.resi) ?? null }));
+        // Resi yang sesinya SUDAH ditandai "dikirim" paketnya sudah diserahkan ke kurir, jadi wajar tidak
+        // ada lagi di export "Untuk Dikirim" — tidak perlu dicek/ditawarkan jadi cancel. Kalau pengiriman
+        // dibatalkan (Batalkan), resinya otomatis muncul lagi di import berikutnya.
+        hilang = semuaHilang.filter((h) => !(h.sesi != null && kirimPerSesi.has(`${hari}|${h.sesi}`)));
+        hilangDikirim = semuaHilang.length - hilang.length;
       }
       setDraftOrderan({
-        ...hasilBaca, nama: f.name, hilang,
+        ...hasilBaca, nama: f.name, hilang, hilangDikirim,
         hilangPilih: new Set(), // tidak ada yang dicentang otomatis: resi bisa hilang karena sudah diambil kurir, bukan hanya cancel
         fileCancel: null,
         totalLama: orderanRows.filter((o) => o.tanggal === hari).length,
@@ -1341,6 +1347,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   <button type="button" onClick={() => setDraftOrderan(null)} className={btnText}>Batal</button>
                 </div>
 
+                {draftOrderan.hilangDikirim > 0 && (
+                  <div className="text-xs text-md-on-surface-variant">
+                    {draftOrderan.hilangDikirim} resi tidak ada di file ini tapi sesinya sudah ditandai dikirim (sudah diserahkan ke kurir), jadi tidak dicek.
+                  </div>
+                )}
                 {draftOrderan.hilang?.length > 0 && (() => {
                   // Export "Untuk Dikirim" TikTok TIDAK memuat paket yang sudah di-pickup kurir, jadi resi yang
                   // sudah di-scan lalu hilang dari file baru umumnya = sudah diambil kurir, bukan cancel.
