@@ -6,6 +6,7 @@ import {
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
 import { sb, sbAll, fmtRp, downloadCsv } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
+import RencanaIklan from "./RencanaIklan";
 import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, buangKodeRak, cariMaster, sbTulis, FIELD_BIAYA, produkDariBaris, normJudul } from "../lib/marketplaceImport";
 
 // =========================================================
@@ -403,7 +404,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     return [...skuList].sort((a, b) => bandingkan(ak(a), ak(b), urutSku.d));
   }, [skuList, urutSku]);
   const daftar = tampil === "sku" ? skuUrut : tampil === "etalase" ? etalaseUrut : pesananUrut;
-  const jumlahHal = tampil === "biaya" ? 1 : Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
+  const jumlahHal = tampil === "biaya" || tampil === "rencana" ? 1 : Math.max(1, Math.ceil(daftar.length / PER_HALAMAN));
   const potong = daftar.slice((halaman - 1) * PER_HALAMAN, halaman * PER_HALAMAN);
 
   // ---- SKU yang belum cocok ----
@@ -741,24 +742,35 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex rounded-full border border-md-outline-variant overflow-hidden text-xs">
-          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ["etalase", "Per Etalase"], ["biaya", "Rincian Biaya"]].map(([k, l]) => (
+          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ["etalase", "Per Etalase"], ["biaya", "Rincian Biaya"], ...(platform === "shopee" ? [["rencana", "Rencana Iklan"]] : [])].map(([k, l]) => (
             <button key={k} onClick={() => setTampil(k)} className={`px-4 py-2 ${tampil === k ? "bg-md-primary-container text-md-on-primary-container font-medium" : "text-md-on-surface-variant"}`}>{l}</button>
           ))}
         </div>
+        {tampil !== "rencana" && (
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
           <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. pesanan / SKU / nama produk" className={`${inputClass} !pl-9`} />
         </div>
+        )}
         {(tampil === "pesanan" || tampil === "biaya") && (
           <label className="flex items-center gap-1.5 text-xs text-md-on-surface-variant cursor-pointer select-none">
             <input type="checkbox" checked={hanyaRefund} onChange={(e) => setHanyaRefund(e.target.checked)} />
             Hanya refund/retur ({pesananList.filter((p) => n0(p.r.refund) !== 0 || p.lines.some((l) => n0(l.qty_retur) > 0)).length})
           </label>
         )}
-        <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "sku" ? "SKU" : tampil === "etalase" ? "etalase" : "pesanan"}</div>
+        {tampil !== "rencana" && <div className="text-xs text-md-on-surface-variant">{daftar.length} {tampil === "sku" ? "SKU" : tampil === "etalase" ? "etalase" : "pesanan"}</div>}
       </div>
 
-      {loading && data.length === 0 ? (
+      {tampil === "rencana" ? (
+        loading && data.length === 0 ? (
+          <div className="text-sm text-md-on-surface-variant py-10 text-center">Memuat…</div>
+        ) : (
+          <RencanaIklan
+            etalase={etalaseSemua} dari={dari} sampai={sampai} platform={platform} tokoKode={tokoKode} filterToko={filterToko}
+            batasIklan={batasIklan} iklanTabelAda={iklanTabelAda} iklanAda={iklanPeriode.length > 0} showToast={showToast}
+          />
+        )
+      ) : loading && data.length === 0 ? (
         <div className="text-sm text-md-on-surface-variant py-10 text-center">Memuat…</div>
       ) : data.length === 0 ? (
         <EmptyState label={platform === "shopee" ? "Belum ada data di periode ini. Klik “Import Laporan Shopee” untuk mengunggah Laporan Penghasilan + Export Pesanan." : "Import otomatis baru tersedia untuk Shopee."} />
