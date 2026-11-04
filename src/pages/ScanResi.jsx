@@ -479,14 +479,28 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       bip("dup");
       return;
     }
+    // Resi cancel yang di-scan ULANG tetap tampil merah CANCEL (bukan sekadar "sudah di-scan"), tidak dicatat dobel.
+    const infoCancel = (c) => [c.platform, c.no_pesanan && `Pesanan ${c.no_pesanan}`, c.alasan].filter(Boolean).join(" · ") || "Pesanan sudah dibatalkan.";
     const ada = daftar.find((s) => s.resi === resi);
     if (ada) {
+      const cx = cmap.get(resi);
+      if (cx) {
+        setHasil({ tipe: "cancel", resi, ekspedisi: ada.ekspedisi, barang: omap.get(resi)?.barang, info: `${infoCancel(cx)} · Scan ulang, sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)}.` });
+        bip("cancel");
+        return;
+      }
       setHasil({ tipe: "dup", resi, ekspedisi: ada.ekspedisi, info: `Sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)}.` });
       bip("dup");
       return;
     }
     const tunda = belumKirimRef.current.find((x) => x.resi === resi);
     if (tunda) {
+      const cx = cmap.get(resi);
+      if (cx) {
+        setHasil({ tipe: "cancel", resi, ekspedisi: tunda.ekspedisi, barang: omap.get(resi)?.barang, info: `${infoCancel(cx)} · Scan ulang, sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
+        bip("cancel");
+        return;
+      }
       setHasil({ tipe: "dup", resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
       bip("dup");
       return;
@@ -500,7 +514,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     if (c) {
       setHasil({
         tipe: "cancel", resi, ekspedisi, barang: o?.barang,
-        info: [c.platform, c.no_pesanan && `Pesanan ${c.no_pesanan}`, c.alasan].filter(Boolean).join(" · ") || "Pesanan sudah dibatalkan.",
+        info: infoCancel(c),
       });
       bip("cancel");
     } else if (adaO && !o) {
