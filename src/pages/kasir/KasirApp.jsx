@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { LogOut, ShoppingCart, Store } from "lucide-react";
+import { LogOut, Store } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
+import LayarKasir from "./LayarKasir";
 
 // =========================================================
 // KASIR (POS) — pintu masuk aplikasi kasir di alamat /kasir.
@@ -11,8 +12,8 @@ import { getSession, logout } from "../../lib/auth";
 // (lib/unifiedLogin.js), jadi akun kasir dibuat lewat Pengaturan > Kelola User
 // dengan role "Kasir".
 //
-// TAHAP 1 (ini): rute, login, pembatasan role, kerangka tampilan.
-// TAHAP 2 berikutnya: layar kasir (cari/scan SKU, keranjang, diskon, total).
+// TAHAP 1: rute, login, pembatasan role, kerangka tampilan.
+// TAHAP 2: layar kasir (cari/scan SKU, keranjang, diskon, total) — LayarKasir.jsx.
 // =========================================================
 
 // Role yang boleh membuka /kasir. Superadmin & superappa ikut supaya bisa menguji.
@@ -64,7 +65,7 @@ export default function KasirApp() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div className="h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
@@ -86,17 +87,7 @@ export default function KasirApp() {
         </div>
       </header>
 
-      <main className="flex-1 flex items-center justify-center px-4">
-        <div className="text-center max-w-xs">
-          <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center mx-auto mb-4">
-            <ShoppingCart size={24} className="text-amber-500" />
-          </div>
-          <div className="font-semibold mb-1">Fondasi kasir siap</div>
-          <p className="text-sm text-slate-400">
-            Login dan pembatasan role sudah jalan. Layar kasir (keranjang, scan SKU, pembayaran) dibangun di tahap 2.
-          </p>
-        </div>
-      </main>
+      <LayarKasir session={session} />
     </div>
   );
 }
