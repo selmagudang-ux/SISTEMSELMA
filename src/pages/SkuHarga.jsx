@@ -8,6 +8,7 @@ import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
 import Rusak from "./Rusak";
 import BarangToko from "./kasir/BarangToko";
+import PindahKeToko from "./kasir/PindahKeToko";
 
 export default function SkuHarga({
   sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
@@ -496,6 +497,8 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
   const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
   const [sortBy, setSortBy] = useState("model"); // "model" | "az" | "za"
+  const bolehKeToko = session?.role === "superappa"; // pindah SKU ke Barang Toko (kasir)
+  const [pindah, setPindah] = useState(null); // array SKU yang akan dipindah ke Barang Toko
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
   // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
@@ -680,6 +683,14 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                 </>
               )}
             </button>
+            {bolehKeToko && selected.size > 0 && (
+              <button
+                onClick={() => setPindah(skuMaster.filter((s) => selected.has(s.sku)))}
+                className="flex items-center gap-1.5 border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 text-xs font-medium px-3 py-2 rounded-lg"
+              >
+                <Store size={14} /> Pindahkan ke Toko ({selected.size})
+              </button>
+            )}
             {selected.size > 0 && (
               <button
                 onClick={() => setSelected(new Set())}
@@ -707,6 +718,21 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
           </div>
         }
       />
+      {pindah && bolehKeToko && (
+        <PindahKeToko
+          daftar={pindah}
+          labelKategori={kategoriLabel}
+          onClose={() => setPindah(null)}
+          onSelesai={(h) => {
+            setPindah(null);
+            if (h?.dibuat > 0 || h?.dipindah > 0) {
+              setSelected(new Set());
+              showToast?.(`${h.dibuat} barang masuk ke Barang Toko${h.dipindah ? `, ${h.dipindah} stok dipindah` : ""}`);
+              reload?.();
+            }
+          }}
+        />
+      )}
       <AturanMpPanel
         isSuperadmin={isSuperadmin}
         master={master}
@@ -876,6 +902,19 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 className="absolute top-11 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
                               >
                                 <Pencil size={12} />
+                              </button>
+                            )}
+                            {bolehKeToko && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPindah([s]);
+                                }}
+                                title="Pindahkan ke Barang Toko (kasir)"
+                                className="absolute top-[4.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
+                              >
+                                <Store size={12} />
                               </button>
                             )}
                             <button

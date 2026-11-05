@@ -14,10 +14,10 @@ import { InputRupiah } from "../../components/ui";
 // penjualan kasir, atau opname, supaya selalu ada catatannya (toko_stok_mutasi).
 // =========================================================
 
-const inp =
+export const inp =
   "w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500";
 
-function pesanError(e) {
+export function pesanError(e) {
   const msg = String(e?.message || e || "");
   const [kode, a, b] = (msg.match(/[A-Z_]{4,}(\|[^\n]*)?/)?.[0] || "").split("|");
   switch (kode) {
@@ -36,7 +36,7 @@ function pesanError(e) {
   }
 }
 
-function Kerangka({ judul, onClose, children, lebar = "sm:max-w-md" }) {
+export function Kerangka({ judul, onClose, children, lebar = "sm:max-w-md" }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
       <div
@@ -55,7 +55,7 @@ function Kerangka({ judul, onClose, children, lebar = "sm:max-w-md" }) {
   );
 }
 
-const Galat = ({ pesan }) =>
+export const Galat = ({ pesan }) =>
   pesan ? (
     <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
       <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> <span>{pesan}</span>
