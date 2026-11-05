@@ -25,8 +25,9 @@ import { tglJamId } from "./kasirStruk";
 //   (hitung kas, selisih) saat selesai; Riwayat berisi rekap per kasir, void & retur.
 // =========================================================
 
-// Role yang boleh membuka /kasir. Superadmin & superappa ikut supaya bisa menguji.
-const ROLE_BOLEH_KASIR = ["kasir", "superadmin", "superappa"];
+// Role yang boleh membuka /kasir. SEMENTARA hanya superappa (tahap uji coba).
+// Untuk membuka ke kasir lagi nanti, tambahkan "kasir" (dan "superadmin") ke daftar ini.
+const ROLE_BOLEH_KASIR = ["superappa"];
 
 export default function KasirApp() {
   const [session, setSession] = useState(() => getSession());
@@ -90,7 +91,7 @@ export default function KasirApp() {
         <div className="max-w-sm text-center">
           <div className="font-bold text-lg mb-1">Tidak punya akses kasir</div>
           <p className="text-sm text-slate-400 mb-5">
-            Akun <span className="text-slate-200">{session.username}</span> belum diberi role Kasir.
+            Akun <span className="text-slate-200">{session.username}</span> belum diizinkan memakai aplikasi kasir.
           </p>
           <div className="flex items-center justify-center gap-3">
             <a href="/" className="text-xs font-medium bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700">

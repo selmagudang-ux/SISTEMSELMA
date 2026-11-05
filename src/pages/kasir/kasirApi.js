@@ -253,7 +253,7 @@ export async function muatStrukDariDb(row, identitas) {
 
 // Siapa yang boleh membatalkan seluruh transaksi (void). Retur boleh dilakukan semua kasir
 // selama shift-nya buka. Ubah daftar ini kalau aturannya berbeda.
-export const ROLE_BOLEH_VOID = ["superadmin", "superappa"];
+export const ROLE_BOLEH_VOID = ["superappa"];
 
 const KATEGORI_KELUAR_KOREKSI = "Retur & Void Penjualan Kasir";
 
