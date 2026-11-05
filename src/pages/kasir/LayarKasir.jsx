@@ -191,6 +191,11 @@ export default function LayarKasir({ session }) {
     return out;
   }, [q, indeks]);
 
+  // Kolom cari kosong -> tampilkan daftar barang toko (urut kode) supaya kasir bisa
+  // langsung pilih tanpa mengetik. Ada isi -> tampilkan hasil pencarian.
+  const cariKosong = !q.trim();
+  const daftarTampil = cariKosong ? skuList.slice(0, MAKS_HASIL) : hasilCari;
+
   // Tambah 1 pcs ke keranjang. Mengembalikan { ok, pesan } supaya bisa dipakai
   // oleh klik hasil cari, Enter (scanner USB), dan kamera.
   const tambah = useCallback(
@@ -346,17 +351,23 @@ export default function LayarKasir({ session }) {
           <div className="mt-10 flex items-center justify-center gap-2 text-sm text-slate-500">
             <Loader2 size={15} className="animate-spin" /> Memuat daftar barang…
           </div>
-        ) : !q.trim() ? (
-          <div className="mt-10 text-center text-sm text-slate-500">
-            <Tag size={26} className="mx-auto mb-2 text-slate-700" />
-            Scan barcode atau ketik untuk mencari barang.
-            <div className="text-[11px] text-slate-600 mt-1">{skuList.length} barang aktif</div>
-          </div>
-        ) : hasilCari.length === 0 ? (
-          <div className="mt-10 text-center text-sm text-slate-500">Tidak ada barang yang cocok.</div>
+        ) : daftarTampil.length === 0 ? (
+          cariKosong ? (
+            <div className="mt-10 text-center text-sm text-slate-500">
+              <Tag size={26} className="mx-auto mb-2 text-slate-700" />
+              Belum ada barang toko aktif.
+              <div className="text-[11px] text-slate-600 mt-1">Tambahkan lewat Barang Toko atau pindahkan dari Master Barang.</div>
+            </div>
+          ) : (
+            <div className="mt-10 text-center text-sm text-slate-500">Tidak ada barang yang cocok.</div>
+          )
         ) : (
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-            {hasilCari.map((s) => {
+          <>
+          {cariKosong && (
+            <div className="mt-3 text-[11px] text-slate-600">{skuList.length} barang aktif — scan atau ketik untuk mencari</div>
+          )}
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+            {daftarTampil.map((s) => {
               const stok = Number(s.stok) || 0;
               const harga = Number(s.ecer) || 0;
               const tidakBisa = stok <= 0 || harga <= 0;
@@ -379,8 +390,9 @@ export default function LayarKasir({ session }) {
               );
             })}
           </div>
+          </>
         )}
-        {hasilCari.length >= MAKS_HASIL && (
+        {daftarTampil.length >= MAKS_HASIL && (!cariKosong || skuList.length > MAKS_HASIL) && (
           <div className="mt-2 text-[11px] text-slate-600 text-center">Menampilkan {MAKS_HASIL} pertama — persempit pencarian.</div>
         )}
       </section>
