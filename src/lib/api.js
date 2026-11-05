@@ -110,6 +110,7 @@ export const TABEL_PER_PT = new Set([
   "marketplace_notif_ack",
   // Kasir (POS) — lihat supabase/migrations/20261105_kasir_fase1.sql.
   "kasir_shift", "kasir_transaksi", "kasir_item", "kasir_pembayaran",
+  "master_toko", "toko_stok_mutasi",
   // View "terbaru per SKU/rak" (hemat egress) — HARUS punya kolom entitas
   // (lihat view_latest_per_pt.sql) dan dikelompokkan per (entitas, sku/rak).
   "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { LogOut, Store, History } from "lucide-react";
+import { LogOut, Store, History, Package } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
+import BarangToko from "./BarangToko";
 
 // =========================================================
 // KASIR (POS) — pintu masuk aplikasi kasir di alamat /kasir.
@@ -16,6 +17,7 @@ import RiwayatStruk from "./RiwayatStruk";
 // TAHAP 1: rute, login, pembatasan role, kerangka tampilan.
 // TAHAP 2: layar kasir (cari/scan SKU, keranjang, diskon, total) — LayarKasir.jsx.
 // TAHAP 4: tombol Riwayat (cetak ulang struk) — RiwayatStruk.jsx.
+// MASTER TOKO: tombol Barang Toko (hanya superadmin/superappa) — BarangToko.jsx.
 // =========================================================
 
 // Role yang boleh membuka /kasir. Superadmin & superappa ikut supaya bisa menguji.
@@ -24,6 +26,7 @@ const ROLE_BOLEH_KASIR = ["kasir", "superadmin", "superappa"];
 export default function KasirApp() {
   const [session, setSession] = useState(() => getSession());
   const [riwayatBuka, setRiwayatBuka] = useState(false);
+  const [barangBuka, setBarangBuka] = useState(false);
 
   const keluar = () => {
     logout();
@@ -81,6 +84,14 @@ export default function KasirApp() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          {session.role !== "kasir" && (
+            <button
+              onClick={() => setBarangBuka(true)}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+            >
+              <Package size={13} /> Barang Toko
+            </button>
+          )}
           <button
             onClick={() => setRiwayatBuka(true)}
             className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
@@ -98,6 +109,7 @@ export default function KasirApp() {
 
       <LayarKasir session={session} />
       {riwayatBuka && <RiwayatStruk session={session} onClose={() => setRiwayatBuka(false)} />}
+      {barangBuka && <BarangToko onClose={() => setBarangBuka(false)} />}
     </div>
   );
 }

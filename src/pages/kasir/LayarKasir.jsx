@@ -9,13 +9,26 @@ import { buatKunci } from "./kasirApi";
 // =========================================================
 // KASIR — LAYAR KASIR INTI (fase 2)
 // Cari/scan SKU -> keranjang -> diskon -> total.
-// Harga jual = kolom "ecer" di Master Barang (sku_master). Stok dibatasi
-// sesuai stok yang tercatat. Pembayaran & potong stok (fase 3): ModalBayar.jsx
+// Barang & harga jual = Master Barang TOKO (master_toko: harga_jual, stok toko), terpisah
+// dari Master Barang gudang. Stok dibatasi sesuai stok toko yang tercatat. Pembayaran & potong stok (fase 3): ModalBayar.jsx
 // + kasirApi.js, disimpan lewat fungsi database kasir_simpan_transaksi.
 // Scanner USB/Bluetooth bekerja seperti keyboard: ketik kode + Enter di kolom cari.
 // =========================================================
 
-const KOLOM = "id,sku,bahan,kategori,subkategori,model,warna,ukuran,hpp,ecer,stok,barcode_supplier,nonaktif";
+const KOLOM = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif";
+// Bentuk master_toko disamakan dengan bentuk lama (sku/model/ecer/...) supaya seluruh
+// layar kasir, pencarian, scan dan keranjang di bawah tidak perlu diubah.
+const dariToko = (r) => ({
+  id: r.id,
+  sku: r.kode,
+  model: r.nama,
+  kategori: r.kategori,
+  barcode_supplier: r.barcode,
+  hpp: r.hpp,
+  ecer: r.harga_jual,
+  stok: r.stok,
+  nonaktif: r.nonaktif,
+});
 const MAKS_HASIL = 40;
 
 function kunciSimpan(session) {
@@ -127,7 +140,7 @@ export default function LayarKasir({ session }) {
     setLoading(true);
     setErrMuat("");
     try {
-      const rows = (await sbAll(`sku_master?select=${KOLOM}&order=sku`)) || [];
+      const rows = ((await sbAll(`master_toko?select=${KOLOM}&order=kode`)) || []).map(dariToko);
       setSkuList(rows.filter((s) => !s.nonaktif));
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows);
       if (catatan.length) {
