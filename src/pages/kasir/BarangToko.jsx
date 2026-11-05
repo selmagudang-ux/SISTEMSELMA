@@ -21,6 +21,8 @@ export function pesanError(e) {
   const msg = String(e?.message || e || "");
   const [kode, a, b] = (msg.match(/[A-Z_]{4,}(\|[^\n]*)?/)?.[0] || "").split("|");
   switch (kode) {
+    case "STOK_TOKO_KURANG":
+      return `Stok toko ${a} hanya ${b}.`;
     case "STOK_GUDANG_KURANG":
       return `Stok gudang ${a} hanya ${b}.`;
     case "TIDAK_TERTAUT":
@@ -155,6 +157,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
 
 function FormMutasi({ barang, onSelesai, onClose }) {
   const [gudang, setGudang] = useState(null); // stok gudang untuk SKU tertaut
+  const [arah, setArah] = useState("ke_toko"); // "ke_toko" (gudang -> toko) | "ke_gudang" (toko -> gudang)
   const [qty, setQty] = useState("");
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
@@ -170,10 +173,13 @@ function FormMutasi({ barang, onSelesai, onClose }) {
   const jalankan = async () => {
     const n = parseInt(qty, 10);
     if (!(n > 0)) return setError("Isi jumlah lebih dari 0.");
+    if (arah === "ke_gudang" && n > (Number(barang.stok) || 0)) {
+      return setError(`Stok toko ${barang.kode} hanya ${Number(barang.stok) || 0}.`);
+    }
     setSaving(true);
     setError("");
     try {
-      await sb("rpc/toko_mutasi_dari_gudang", {
+      await sb(arah === "ke_gudang" ? "rpc/toko_kembalikan_ke_gudang" : "rpc/toko_mutasi_dari_gudang", {
         method: "POST",
         body: JSON.stringify({ p: { entitas: entitasSesi(), kode: barang.kode, qty: n, catatan: catatan.trim() || null } }),
       });
@@ -186,8 +192,20 @@ function FormMutasi({ barang, onSelesai, onClose }) {
   };
 
   return (
-    <Kerangka judul={`Mutasi ke toko — ${barang.kode}`} onClose={onClose}>
+    <Kerangka judul={`${arah === "ke_gudang" ? "Kembalikan ke gudang" : "Mutasi ke toko"} — ${barang.kode}`} onClose={onClose}>
       <div className="text-sm text-slate-300">{barang.nama}</div>
+      <div className="grid grid-cols-2 gap-1 bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs">
+        {[["ke_toko", "Gudang → Toko"], ["ke_gudang", "Toko → Gudang"]].map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => { setArah(v); setError(""); }}
+            className={`py-1.5 rounded-md font-semibold ${arah === v ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
       {!barang.sku_gudang ? (
         <Galat pesan="Barang ini belum ditautkan ke SKU gudang. Isi dulu lewat tombol ubah." />
       ) : (
@@ -203,7 +221,7 @@ function FormMutasi({ barang, onSelesai, onClose }) {
         </div>
       )}
       <label className="block">
-        <div className="text-xs text-slate-400 mb-1">Jumlah dipindah ke toko</div>
+        <div className="text-xs text-slate-400 mb-1">{arah === "ke_gudang" ? "Jumlah dikembalikan ke gudang" : "Jumlah dipindah ke toko"}</div>
         <input value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={inp} placeholder="0" />
       </label>
       <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={200} placeholder="Catatan (opsional)" className={inp} />
@@ -356,7 +374,7 @@ export default function BarangToko({ onClose, inline = false }) {
                   <div className={`text-[11px] ${r.stok <= 0 ? "text-red-400" : "text-slate-400"}`}>stok {r.stok}</div>
                 </div>
                 <div className="flex gap-0.5 flex-shrink-0">
-                  <button onClick={() => setMutasi(r)} title="Mutasi dari gudang" className="p-2 text-slate-400 hover:text-amber-400">
+                  <button onClick={() => setMutasi(r)} title="Mutasi gudang ⇄ toko" className="p-2 text-slate-400 hover:text-amber-400">
                     <ArrowDownToLine size={16} />
                   </button>
                   <button onClick={() => setOpname(r)} title="Opname" className="p-2 text-slate-400 hover:text-amber-400">
