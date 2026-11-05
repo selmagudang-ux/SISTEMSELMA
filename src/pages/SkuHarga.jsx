@@ -92,6 +92,22 @@ function BuatSkuList({ items, setModal, session }) {
               </div>
             </button>
           ))}
+          {sisa > 0 && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setBatas((b) => b + 60)}
+                className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-4 py-2 rounded-lg"
+              >
+                Tampilkan 60 lagi (sisa {sisa})
+              </button>
+              <button
+                onClick={() => setBatas(filtered.length)}
+                className="text-[11px] text-slate-500 hover:text-slate-300 underline"
+              >
+                Tampilkan semua
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -497,6 +513,28 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
   const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
   const [sortBy, setSortBy] = useState("model"); // "model" | "az" | "za"
+  // PERFORMA: dulu tiap kartu memanggil fotoUntukSku() (filter+sort SELURUH items) dan
+  // rakForSku() (find di seluruh penempatan) — dengan ribuan SKU itu jutaan operasi setiap
+  // kali halaman dibuka/di-render ulang. Sekarang dihitung SEKALI jadi peta lookup.
+  const fotoPerSku = useMemo(() => {
+    const terbaru = new Map(); // sku -> { t, url }
+    for (const i of items || []) {
+      if (!i.sku || !i.foto_url) continue;
+      const t = new Date(i.created_at || i.tanggal || 0).getTime() || 0;
+      const cur = terbaru.get(i.sku);
+      if (!cur || t > cur.t) terbaru.set(i.sku, { t, url: i.foto_url });
+    }
+    const out = new Map();
+    terbaru.forEach((v, k) => out.set(k, v.url));
+    return out;
+  }, [items]);
+  const rakPerSku = useMemo(() => {
+    const out = new Map();
+    for (const p of penempatan || []) if (!out.has(p.sku)) out.set(p.sku, p.rak_code);
+    return out;
+  }, [penempatan]);
+  // Render kartu bertahap (ribuan kartu sekaligus yang bikin klik menu terasa tersendat).
+  const [batas, setBatas] = useState(60);
   const bolehKeToko = session?.role === "superappa"; // pindah SKU ke Barang Toko (kasir)
   const [pindah, setPindah] = useState(null); // array SKU yang akan dipindah ke Barang Toko
 
@@ -530,7 +568,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
     )
   ).sort();
 
-  const filtered = skuMaster
+  const filtered = useMemo(() => skuMaster
     .filter((s) => {
       if (!tampilkanNonaktif && s.nonaktif) return false;
       if (hanyaPerubahan && !adaHargaBaruCheck(s)) return false;
@@ -559,7 +597,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
       if (!ma) return 1;
       if (!mb) return -1;
       return ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
-    });
+    }), [skuMaster, tampilkanNonaktif, hanyaPerubahan, q, kategori, subkategori, filterMp, mpAktif, sortBy]);
 
   // Jumlah SKU yang ada perubahan harga, dihitung dari cakupan yang sama
   // dengan toggle nonaktif (biar angkanya konsisten sama apa yang bisa
@@ -568,6 +606,28 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   const jumlahPerubahan = skuMaster.filter(
     (s) => (tampilkanNonaktif || !s.nonaktif) && adaHargaBaruCheck(s)
   ).length;
+
+  const grouped = useMemo(() => groupByKategori(filtered), [filtered]);
+  const { tampilGrup, sisa } = useMemo(() => {
+    let kuota = batas;
+    const out = [];
+    for (const { kategori: kat, groups } of grouped) {
+      if (kuota <= 0) break;
+      const gs = [];
+      for (const g of groups) {
+        if (kuota <= 0) break;
+        const its = g.items.slice(0, kuota);
+        kuota -= its.length;
+        gs.push({ ...g, items: its });
+      }
+      out.push({ kategori: kat, groups: gs, total: groups.reduce((n, g) => n + g.items.length, 0) });
+    }
+    return { tampilGrup: out, sisa: filtered.length - (batas - kuota) };
+  }, [grouped, filtered, batas]);
+  // Ganti filter/pencarian -> mulai lagi dari 60 kartu pertama.
+  useEffect(() => {
+    setBatas(60);
+  }, [q, kategori, subkategori, tampilkanNonaktif, hanyaPerubahan, filterMp, sortBy]);
 
   // Hitungan kelayakan MP untuk SKU aktif (lepas dari filter, supaya angkanya selalu total sebenarnya).
   const hitunganMp = useMemo(() => {
@@ -609,7 +669,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
         const mp = mpAktif ? infoMp(s) : null;
         return {
           ...s,
-          rak: rakForSku(s.sku, penempatan) || "",
+          rak: rakPerSku.get(s.sku) || "",
           ...(mp ? { bersih_mp: mp.bersih != null ? Math.round(mp.bersih) : "", status_mp: LABEL_STATUS_MP[mp.status] } : {}),
         };
       })
@@ -639,7 +699,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   const handleDownloadFoto = async () => {
     const sumber = selected.size > 0 ? skuMaster.filter((s) => selected.has(s.sku)) : filtered;
     if (sumber.length === 0 || unduhFoto) return;
-    const fotos = sumber.map((s) => ({ sku: s.sku, url: fotoUntukSku(s.sku, items) }));
+    const fotos = sumber.map((s) => ({ sku: s.sku, url: fotoPerSku.get(s.sku) || null }));
     if (fotos.every((f) => !f.url)) {
       alert("Tidak ada foto untuk SKU pada daftar ini.");
       return;
@@ -842,12 +902,12 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
         />
       ) : (
         <div className="space-y-6">
-          {groupByKategori(filtered).map(({ kategori, groups }) => (
+          {tampilGrup.map(({ kategori, groups, total }) => (
             <div key={kategori}>
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="text-sm font-semibold text-amber-400">{kategoriLabel(kategori)}</h3>
                 <span className="text-[11px] text-slate-500">
-                  ({groups.reduce((n, g) => n + g.items.length, 0)} SKU)
+                  ({total} SKU)
                 </span>
               </div>
               <div className="space-y-4">
@@ -859,9 +919,9 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {subItems.map((s) => {
                         const adaHargaBaru = adaHargaBaruCheck(s);
-                        const foto = fotoUntukSku(s.sku, items);
+                        const foto = fotoPerSku.get(s.sku) || null;
                         const dipilih = selected.has(s.sku);
-                        const kodeRak = rakForSku(s.sku, penempatan);
+                        const kodeRak = rakPerSku.get(s.sku) || "";
                         return (
                           <div
                             key={s.id}
