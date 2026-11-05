@@ -39,11 +39,20 @@ window.addEventListener("vite:preloadError", (e) => {
 // Dimuat malas supaya tidak menambah bundle utama aplikasi.
 const TiktokCallback = React.lazy(() => import("./pages/TiktokCallback.jsx"));
 const adalahCallbackTiktok = window.location.pathname.replace(/\/+$/, "") === "/tiktok-callback";
+// Aplikasi kasir (POS) — satu kode & satu database dengan SELMA, tapi dibuka lewat
+// alamat sendiri (/kasir) dan TANPA sidebar/menu SELMA. Dimuat malas supaya tidak
+// menambah bundle utama.
+const KasirApp = React.lazy(() => import("./pages/kasir/KasirApp.jsx"));
+const adalahKasir = /^\/kasir(\/|$)/.test(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {adalahCallbackTiktok ? (
+      {adalahKasir ? (
+        <React.Suspense fallback={null}>
+          <KasirApp />
+        </React.Suspense>
+      ) : adalahCallbackTiktok ? (
         <React.Suspense fallback={null}>
           <TiktokCallback />
         </React.Suspense>

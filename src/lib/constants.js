@@ -602,6 +602,7 @@ export const ROLES = [
   { key: "grosir", label: "Admin Grosir" },
   { key: "keuangan", label: "Admin Keuangan" },
   { key: "scan_resi", label: "Admin Scan Resi" },
+  { key: "kasir", label: "Kasir" },
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
@@ -654,6 +655,8 @@ export const ROLE_MENUS = {
   keuangan: ["keuangan", "chat", "panduan"],
   // Admin Scan Resi: HANYA Scan Resi & Urut Resi (tanpa Chat/Panduan). Landing page = menu pertama (scan-resi).
   scan_resi: ["scan-resi", "urut-resi"],
+  // Kasir: bekerja di aplikasi kasir (/kasir), bukan di sidebar SELMA. Di SELMA hanya Chat & Panduan.
+  kasir: ["chat", "panduan"],
   // Pemegang Saham: hanya melihat tab Konsolidasi di menu Holding (read-only,
   // lihat ROLE_READONLY di lib/api.js & allowedSubMenus di bawah).
   pemegang_saham: ["perusahaan"],
