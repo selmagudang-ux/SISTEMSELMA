@@ -30,7 +30,7 @@ export default function SkuHarga({
           title="Barang Toko (Kasir)"
           description="Barang yang dijual di aplikasi kasir: harga jual, HPP, dan stok toko. Stok berubah lewat mutasi dari gudang, penjualan kasir, atau opname."
         />
-        <BarangToko inline />
+        <BarangToko inline onBerubah={() => reload?.()} />
       </div>
     );
   }

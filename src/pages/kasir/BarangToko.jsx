@@ -284,7 +284,8 @@ function FormOpname({ barang, onSelesai, onClose }) {
   );
 }
 
-export default function BarangToko({ onClose, inline = false }) {
+// onBerubah: dipanggil setelah mutasi gudang <-> toko, supaya data gudang di SELMA ikut dimuat ulang.
+export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
@@ -391,7 +392,7 @@ export default function BarangToko({ onClose, inline = false }) {
       </div>
 
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
-      {mutasi && <FormMutasi barang={mutasi} onSelesai={selesai} onClose={() => setMutasi(null)} />}
+      {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {opname && <FormOpname barang={opname} onSelesai={selesai} onClose={() => setOpname(null)} />}
     </div>
   );
