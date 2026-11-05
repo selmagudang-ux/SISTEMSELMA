@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, AlertCircle, CheckCircle2, Banknote, Landmark, QrCode, Split } from "lucide-react";
+import { X, Loader2, AlertCircle, CheckCircle2, Banknote, Landmark, QrCode, Split, Receipt } from "lucide-react";
 import { fmtRp } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
-import { hitungPembayaran, saranUang } from "./kasirHitung";
+import { hitungPembayaran, saranUang, hitungItem } from "./kasirHitung";
 import { muatMaster, siapkanKeuangan, simpanTransaksiKasir, pesanErrorKasir } from "./kasirApi";
+import { susunStruk, identitasStruk } from "./kasirStruk";
+import ModalStruk from "./StrukKasir";
 
 // =========================================================
 // KASIR — PEMBAYARAN (fase 3)
@@ -11,6 +13,8 @@ import { muatMaster, siapkanKeuangan, simpanTransaksiKasir, pesanErrorKasir } fr
 // Transfer & QRIS dianggap pas. Penyimpanan lewat satu fungsi database
 // (kasir_simpan_transaksi): stok, rak, riwayat stok & Keuangan terbarui sekaligus
 // atau batal semua. `kunci` mencegah transaksi tersimpan dobel kalau Bayar ditekan ulang.
+// Fase 4: setelah bayar, data struk DIFOTO (snapshot) sebelum keranjang dikosongkan oleh
+// LayarKasir, lalu bisa dicetak / PDF / WhatsApp lewat StrukKasir.jsx.
 // =========================================================
 
 const MODE = [
@@ -34,6 +38,8 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [hasil, setHasil] = useState(null);
+  const [struk, setStruk] = useState(null);
+  const [strukBuka, setStrukBuka] = useState(false);
 
   useEffect(() => {
     let batal = false;
@@ -65,6 +71,22 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
         hb.pembayaran.map((p) => p.metode)
       );
       const res = await simpanTransaksiKasir({ session, items, diskonTransaksi, hitungBayar: hb, keuangan, catatan, kunci });
+      // Snapshot struk SEBELUM onSukses: setelah itu LayarKasir mengosongkan keranjang,
+      // sehingga prop `items` di sini ikut menjadi kosong.
+      setStruk(
+        susunStruk({
+          nomor: res.nomor,
+          waktu: res.waktu,
+          kasir: session?.nama || session?.username,
+          items: items.map((it) => ({ sku: it.sku, nama: it.nama, qty: it.qty, harga: it.harga, diskon: hitungItem(it).diskon })),
+          diskonTransaksi,
+          pembayaran: hb.pembayaran,
+          bayar: hb.bayar,
+          kembalian: hb.kembalian,
+          catatan,
+          identitas: identitasStruk(master),
+        })
+      );
       setHasil(res);
       onSukses?.(res);
     } catch (e) {
@@ -81,6 +103,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={tutup}>
       <div
         className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto"
@@ -104,7 +127,15 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
             {hasil.duplikat && (
               <p className="mt-3 text-xs text-slate-400">Transaksi ini sudah pernah disimpan sebelumnya, jadi tidak disimpan dua kali.</p>
             )}
-            <button onClick={onClose} className="mt-5 w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3 rounded-xl">
+            {struk && (
+              <button
+                onClick={() => setStrukBuka(true)}
+                className="mt-5 w-full flex items-center justify-center gap-2 border border-slate-700 hover:border-amber-500 text-slate-200 font-medium py-3 rounded-xl"
+              >
+                <Receipt size={16} /> Struk — Cetak / WhatsApp / PDF
+              </button>
+            )}
+            <button onClick={onClose} className="mt-2.5 w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3 rounded-xl">
               Transaksi Baru
             </button>
           </div>
@@ -210,5 +241,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
         )}
       </div>
     </div>
+    {strukBuka && struk && <ModalStruk struk={struk} onClose={() => setStrukBuka(false)} />}
+    </>
   );
 }

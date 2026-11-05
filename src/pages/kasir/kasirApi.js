@@ -6,6 +6,7 @@ import {
   KODE_REKENING_TOKO_OFFLINE_CASHLESS,
 } from "../../lib/constants";
 import { hitungItem } from "./kasirHitung";
+import { susunStruk } from "./kasirStruk";
 
 // =========================================================
 // KASIR — jembatan ke database (fase 3)
@@ -138,4 +139,67 @@ export function pesanErrorKasir(err) {
     };
   }
   return { pesan: msg || "Gagal menyimpan transaksi", perluMuatUlang: false };
+}
+
+// =========================================================
+// FASE 4 — riwayat & cetak ulang struk
+// SEMUA nama kolom tabel kasir dikumpulkan di SKEMA ini. Kalau nama kolom di
+// database berbeda, cukup ubah di sini — tidak ada nama kolom lain di fase 4.
+// =========================================================
+export const SKEMA = {
+  trx: {
+    id: "id",
+    nomor: "nomor",
+    total: "total",
+    waktu: "created_at",
+    kasirId: "kasir_id",
+    kasirNama: "kasir_nama",
+    diskon: "diskon",
+    bayar: "bayar",
+    kembalian: "kembalian",
+    catatan: "catatan",
+  },
+  item: { trxId: "transaksi_id", sku: "sku", nama: "nama_produk", qty: "qty", harga: "harga_satuan", diskon: "diskon" },
+  bayar: { trxId: "transaksi_id", metode: "metode", jumlah: "jumlah" },
+};
+
+// Transaksi terbaru. Role kasir hanya melihat transaksinya sendiri; superadmin/superappa
+// melihat semua kasir (di PT yang sedang login — difilter otomatis oleh sb()).
+export async function muatRiwayat({ session, sejak }) {
+  const T = SKEMA.trx;
+  const q = [`select=*`, `order=${T.waktu}.desc`, `limit=100`];
+  if (sejak) q.push(`${T.waktu}=gte.${encodeURIComponent(sejak.toISOString())}`);
+  if (session?.role === "kasir") q.push(`${T.kasirId}=eq.${encodeURIComponent(String(session.id))}`);
+  return (await sb(`kasir_transaksi?${q.join("&")}`)) || [];
+}
+
+// Rincian satu transaksi -> data struk siap tampil (ditandai salinan/cetak ulang).
+export async function muatStrukDariDb(row, identitas) {
+  const T = SKEMA.trx;
+  const id = encodeURIComponent(row[T.id]);
+  const [items, bayar] = await Promise.all([
+    sb(`kasir_item?select=*&${SKEMA.item.trxId}=eq.${id}`),
+    sb(`kasir_pembayaran?select=*&${SKEMA.bayar.trxId}=eq.${id}`),
+  ]);
+  const I = SKEMA.item;
+  const B = SKEMA.bayar;
+  const daftarItem = (items || []).map((it) => ({ sku: it[I.sku], nama: it[I.nama], qty: it[I.qty], harga: it[I.harga], diskon: it[I.diskon] }));
+  // Diskon transaksi dihitung dari selisih subtotal item dan total yang tersimpan, supaya cetak
+  // ulang SELALU sama dengan struk asli, apa pun arti kolom kasir_transaksi.diskon.
+  const subtotalItem = daftarItem.reduce((a, it) => a + Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0)) - (Number(it.diskon) || 0), 0);
+  const totalTersimpan = Number(row[T.total]);
+  const diskonTransaksi = Number.isFinite(totalTersimpan) && totalTersimpan > 0 ? Math.max(subtotalItem - totalTersimpan, 0) : Number(row[T.diskon]) || 0;
+  return susunStruk({
+    nomor: row[T.nomor],
+    waktu: row[T.waktu],
+    kasir: row[T.kasirNama],
+    catatan: row[T.catatan],
+    diskonTransaksi,
+    bayar: row[T.bayar],
+    kembalian: row[T.kembalian],
+    items: daftarItem,
+    pembayaran: (bayar || []).map((p) => ({ metode: p[B.metode], jumlah: p[B.jumlah] })),
+    identitas,
+    salinan: true,
+  });
 }
