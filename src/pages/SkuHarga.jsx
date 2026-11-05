@@ -7,6 +7,7 @@ import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
 import Rusak from "./Rusak";
+import BarangToko from "./kasir/BarangToko";
 
 export default function SkuHarga({
   sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
@@ -16,6 +17,22 @@ export default function SkuHarga({
   if (sub === "kategori") return <MasterData master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
   // Sub-menu "Barang Reject" — dulu menu top-level terpisah bernama "Rusak",
   // sekarang dipindahkan ke sini karena datanya sama-sama seputar SKU.
+  // Barang Toko (kasir) — dijaga di sini juga (bukan cuma disembunyikan di sidebar),
+  // supaya role lain tidak bisa membukanya lewat URL/state navigasi.
+  if (sub === "master-toko") {
+    if (session?.role !== "superappa") {
+      return <EmptyState label="Halaman ini khusus untuk role superappa." />;
+    }
+    return (
+      <div>
+        <PageHeader
+          title="Barang Toko (Kasir)"
+          description="Barang yang dijual di aplikasi kasir: harga jual, HPP, dan stok toko. Stok berubah lewat mutasi dari gudang, penjualan kasir, atau opname."
+        />
+        <BarangToko inline />
+      </div>
+    );
+  }
   if (sub === "reject") return <Rusak barangRusak={barangRusak} pesananMasuk={pesananMasuk} setModal={setModal} />;
   return (
     <MasterBarang

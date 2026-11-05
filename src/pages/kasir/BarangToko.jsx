@@ -5,7 +5,8 @@ import { InputRupiah } from "../../components/ui";
 
 // =========================================================
 // MASTER BARANG TOKO (offline store) — terpisah dari Master Barang gudang besar.
-// Dibuka dari tombol "Barang Toko" di header kasir (hanya superadmin/superappa).
+// Dibuka dari tombol "Barang Toko" di header kasir DAN dari Master Barang > "Barang Toko (Kasir)"
+// (mode inline). Keduanya HANYA untuk role superappa.
 //  - Tambah / ubah barang toko (kode toko bebas; boleh ditautkan ke SKU gudang)
 //  - Mutasi dari gudang  : fungsi database toko_mutasi_dari_gudang (atomik)
 //  - Opname              : fungsi database toko_opname (koreksi stok hasil hitung fisik)
@@ -265,7 +266,7 @@ function FormOpname({ barang, onSelesai, onClose }) {
   );
 }
 
-export default function BarangToko({ onClose }) {
+export default function BarangToko({ onClose, inline = false }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
@@ -302,15 +303,17 @@ export default function BarangToko({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[65] bg-slate-950 text-slate-100 flex flex-col">
+    <div className={inline ? "rounded-xl border border-slate-800 bg-slate-950 text-slate-100 flex flex-col min-h-[60vh]" : "fixed inset-0 z-[65] bg-slate-950 text-slate-100 flex flex-col"}>
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
         <div>
-          <div className="font-bold text-sm">Barang Toko</div>
+          <div className="font-bold text-sm">Barang Toko (Kasir)</div>
           <div className="text-[11px] text-slate-500">{rows ? `${rows.length} barang` : "Memuat…"} · stok & harga khusus toko</div>
         </div>
-        <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
-          <X size={18} />
-        </button>
+        {!inline && (
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
+            <X size={18} />
+          </button>
+        )}
       </header>
 
       <div className="p-3 flex items-center gap-2 border-b border-slate-800">
@@ -326,7 +329,7 @@ export default function BarangToko({ onClose }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className={inline ? "flex-1 p-3" : "flex-1 overflow-y-auto p-3"}>
         {error && <Galat pesan={error} />}
         {!rows ? (
           <div className="py-10 flex justify-center text-slate-500">

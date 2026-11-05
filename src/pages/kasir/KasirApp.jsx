@@ -17,7 +17,7 @@ import BarangToko from "./BarangToko";
 // TAHAP 1: rute, login, pembatasan role, kerangka tampilan.
 // TAHAP 2: layar kasir (cari/scan SKU, keranjang, diskon, total) — LayarKasir.jsx.
 // TAHAP 4: tombol Riwayat (cetak ulang struk) — RiwayatStruk.jsx.
-// MASTER TOKO: tombol Barang Toko (hanya superadmin/superappa) — BarangToko.jsx.
+// MASTER TOKO: tombol Barang Toko (hanya superappa) — BarangToko.jsx.
 // =========================================================
 
 // Role yang boleh membuka /kasir. Superadmin & superappa ikut supaya bisa menguji.
@@ -84,7 +84,7 @@ export default function KasirApp() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          {session.role !== "kasir" && (
+          {session.role === "superappa" && (
             <button
               onClick={() => setBarangBuka(true)}
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
@@ -109,7 +109,7 @@ export default function KasirApp() {
 
       <LayarKasir session={session} />
       {riwayatBuka && <RiwayatStruk session={session} onClose={() => setRiwayatBuka(false)} />}
-      {barangBuka && <BarangToko onClose={() => setBarangBuka(false)} />}
+      {barangBuka && session.role === "superappa" && <BarangToko onClose={() => setBarangBuka(false)} />}
     </div>
   );
 }
