@@ -3,13 +3,15 @@ import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2
 import { sbAll, fmtRp } from "../../lib/api";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
+import ModalBayar from "./ModalBayar";
+import { buatKunci } from "./kasirApi";
 
 // =========================================================
 // KASIR — LAYAR KASIR INTI (fase 2)
 // Cari/scan SKU -> keranjang -> diskon -> total.
 // Harga jual = kolom "ecer" di Master Barang (sku_master). Stok dibatasi
-// sesuai stok yang tercatat. PEMBAYARAN & potong stok baru di fase 3 —
-// tombol Bayar sengaja belum aktif.
+// sesuai stok yang tercatat. Pembayaran & potong stok (fase 3): ModalBayar.jsx
+// + kasirApi.js, disimpan lewat fungsi database kasir_simpan_transaksi.
 // Scanner USB/Bluetooth bekerja seperti keyboard: ketik kode + Enter di kolom cari.
 // =========================================================
 
@@ -26,10 +28,40 @@ function bacaSimpan(session) {
     return {
       items: Array.isArray(d?.items) ? d.items : [],
       diskonTrx: d?.diskonTrx || { tipe: "rp", nilai: "" },
+      kunci: d?.kunci || null,
     };
   } catch {
-    return { items: [], diskonTrx: { tipe: "rp", nilai: "" } };
+    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null };
   }
+}
+
+// Samakan isi keranjang dengan data terbaru (harga, stok, SKU yang dinonaktifkan).
+// Dipakai tiap kali daftar barang dimuat — termasuk keranjang yang dipulihkan setelah refresh.
+function sinkronItems(items, rows) {
+  const peta = new Map(rows.map((s) => [s.sku, s]));
+  const catatan = [];
+  const out = [];
+  for (const it of items) {
+    const s = peta.get(it.sku);
+    if (!s || s.nonaktif) {
+      catatan.push(`${it.sku} dihapus (tidak dijual)`);
+      continue;
+    }
+    const stok = Number(s.stok) || 0;
+    const harga = Number(s.ecer) || 0;
+    if (harga <= 0 || stok <= 0) {
+      catatan.push(`${it.sku} dihapus (${harga <= 0 ? "harga kosong" : "stok habis"})`);
+      continue;
+    }
+    let qty = it.qty;
+    if (qty > stok) {
+      qty = stok;
+      catatan.push(`${it.sku} jumlah jadi ${stok}`);
+    }
+    if (harga !== it.harga) catatan.push(`${it.sku} harga jadi ${fmtRp(harga)}`);
+    out.push({ ...it, harga, hpp: Number(s.hpp) || 0, stok, qty });
+  }
+  return { items: out, catatan };
 }
 
 function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
@@ -71,12 +103,18 @@ export default function LayarKasir({ session }) {
   const [q, setQ] = useState("");
   const [items, setItems] = useState(() => bacaSimpan(session).items);
   const [diskonTrx, setDiskonTrx] = useState(() => bacaSimpan(session).diskonTrx);
+  // Satu keranjang = satu kunci. Dikirim ke database supaya transaksi yang sama tidak
+  // tersimpan dua kali kalau tombol Bayar ditekan ulang (mis. koneksi putus).
+  const [kunci, setKunci] = useState(() => bacaSimpan(session).kunci);
+  const [bayarBuka, setBayarBuka] = useState(false);
   const [bukaDiskon, setBukaDiskon] = useState(() => new Set());
   const [toast, setToast] = useState(null);
   const [scanBuka, setScanBuka] = useState(false);
   const [hasilScan, setHasilScan] = useState(null);
   const inputRef = useRef(null);
   const toastTimer = useRef(null);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const tampilToast = useCallback((pesan, tipe = "err") => {
     clearTimeout(toastTimer.current);
@@ -89,14 +127,19 @@ export default function LayarKasir({ session }) {
     setLoading(true);
     setErrMuat("");
     try {
-      const rows = await sbAll(`sku_master?select=${KOLOM}&order=sku`);
-      setSkuList((rows || []).filter((s) => !s.nonaktif));
+      const rows = (await sbAll(`sku_master?select=${KOLOM}&order=sku`)) || [];
+      setSkuList(rows.filter((s) => !s.nonaktif));
+      const { items: baru, catatan } = sinkronItems(itemsRef.current, rows);
+      if (catatan.length) {
+        setItems(baru);
+        tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`);
+      }
     } catch (e) {
       setErrMuat(e.message || "Gagal memuat daftar barang");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tampilToast]);
   useEffect(() => {
     muat();
   }, [muat]);
@@ -104,11 +147,11 @@ export default function LayarKasir({ session }) {
   // Keranjang bertahan kalau halaman di-refresh (hilang saat tab ditutup / logout).
   useEffect(() => {
     try {
-      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx }));
+      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci }));
     } catch {
       /* penyimpanan penuh / diblokir — abaikan */
     }
-  }, [items, diskonTrx, session]);
+  }, [items, diskonTrx, kunci, session]);
 
   // Indeks pencarian: dibuat sekali per daftar SKU.
   const indeks = useMemo(() => {
@@ -224,6 +267,21 @@ export default function LayarKasir({ session }) {
     setItems([]);
     setDiskonTrx({ tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
+    setKunci(null);
+  };
+
+  const bukaBayar = () => {
+    if (!kunci) setKunci(buatKunci());
+    setBayarBuka(true);
+  };
+  // Transaksi tersimpan -> keranjang langsung dikosongkan (supaya tidak bisa terbayar dua kali),
+  // stok di layar dimuat ulang. Modal tetap terbuka menampilkan kembalian.
+  const setelahBayar = () => {
+    setItems([]);
+    setDiskonTrx({ tipe: "rp", nilai: "" });
+    setBukaDiskon(new Set());
+    setKunci(null);
+    muat();
   };
 
   const ringkas = hitungKeranjang(items, diskonTrx);
@@ -430,11 +488,11 @@ export default function LayarKasir({ session }) {
             <span className="text-xl font-bold text-amber-400">{fmtRp(ringkas.total)}</span>
           </div>
           <button
-            disabled
-            title="Pembayaran dibangun di fase 3"
-            className="w-full bg-slate-800 text-slate-500 font-semibold text-sm py-3 rounded-xl cursor-not-allowed"
+            onClick={bukaBayar}
+            disabled={!items.length || ringkas.total <= 0}
+            className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-semibold text-sm py-3 rounded-xl"
           >
-            Bayar · segera hadir (fase 3)
+            Bayar
           </button>
         </div>
       </aside>
@@ -449,6 +507,19 @@ export default function LayarKasir({ session }) {
         >
           {toast.pesan}
         </div>
+      )}
+
+      {bayarBuka && (
+        <ModalBayar
+          total={ringkas.total}
+          items={items}
+          diskonTransaksi={ringkas.diskonTransaksi}
+          session={session}
+          kunci={kunci}
+          onSukses={setelahBayar}
+          onMuatUlang={muat}
+          onClose={() => setBayarBuka(false)}
+        />
       )}
 
       {scanBuka && (

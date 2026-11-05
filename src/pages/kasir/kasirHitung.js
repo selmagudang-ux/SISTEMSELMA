@@ -46,3 +46,46 @@ export function namaTampil(s) {
   const n = [s.model, s.warna, s.ukuran].filter(Boolean).join(" · ");
   return n || s.sku;
 }
+
+// Pembayaran: Cash / Transfer / QRIS, boleh digabung (split).
+// Transfer & QRIS dianggap PAS (tidak ada kembalian). Sisa total dibayar Cash;
+// kembalian hanya muncul dari Cash. "jumlah" di hasil.pembayaran = uang yang
+// benar-benar MASUK kas (Cash sudah dikurangi kembalian) — itulah yang dicatat
+// ke Keuangan.
+export function hitungPembayaran(total, { transfer = 0, qris = 0, cashDiterima = 0 } = {}) {
+  const T = Math.round(Number(total) || 0);
+  const tr = Math.max(Math.round(Number(transfer) || 0), 0);
+  const qr = Math.max(Math.round(Number(qris) || 0), 0);
+  const cashDit = Math.max(Math.round(Number(cashDiterima) || 0), 0);
+  const nonCash = tr + qr;
+  const hasil = { valid: false, pesan: "", cashPerlu: 0, kurang: 0, kembalian: 0, bayar: 0, pembayaran: [] };
+
+  if (T <= 0) return { ...hasil, pesan: "Total harus lebih dari 0" };
+  if (nonCash > T) return { ...hasil, pesan: "Transfer + QRIS melebihi total" };
+
+  const cashPerlu = T - nonCash;
+  hasil.cashPerlu = cashPerlu;
+  if (cashPerlu > 0 && cashDit < cashPerlu) {
+    hasil.kurang = cashPerlu - cashDit;
+    hasil.pesan = `Uang kurang ${hasil.kurang}`;
+    return hasil;
+  }
+  hasil.kembalian = cashPerlu > 0 ? cashDit - cashPerlu : 0;
+  hasil.bayar = (cashPerlu > 0 ? cashDit : 0) + nonCash;
+  if (cashPerlu > 0) hasil.pembayaran.push({ metode: "Cash", jumlah: cashPerlu });
+  if (tr > 0) hasil.pembayaran.push({ metode: "Transfer", jumlah: tr });
+  if (qr > 0) hasil.pembayaran.push({ metode: "QRIS", jumlah: qr });
+  hasil.valid = true;
+  return hasil;
+}
+
+// Pilihan uang cepat untuk Cash: uang pas + pembulatan ke atas.
+export function saranUang(total) {
+  const T = Math.round(Number(total) || 0);
+  const out = new Set([T]);
+  for (const k of [10000, 50000, 100000]) {
+    const n = Math.ceil(T / k) * k;
+    if (n >= T) out.add(n);
+  }
+  return [...out].sort((a, b) => a - b).slice(0, 4);
+}
