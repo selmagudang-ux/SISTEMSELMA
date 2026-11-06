@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera } from "lucide-react";
+import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import ImporBarangToko from "./ImporBarangToko";
+import FotoMassalToko from "./FotoMassalToko";
 
 // =========================================================
 // MASTER BARANG TOKO (offline store) — terpisah dari Master Barang gudang besar.
@@ -11,6 +12,7 @@ import ImporBarangToko from "./ImporBarangToko";
 //  - Tambah / ubah barang toko (kode toko bebas; boleh ditautkan ke SKU gudang;
 //    barcode = SKU gudang kalau tertaut, selain itu bebas)
 //  - Foto barang         : bisa difoto / dipilih dari galeri saat tambah atau ubah (disimpan di kolom foto_url)
+//  - Foto massal         : tombol Foto di header (FotoMassalToko.jsx), cocokkan nama file dengan kode/barcode/nama
 //  - Mutasi dari gudang  : fungsi database toko_mutasi_dari_gudang (atomik)
 //  - Opname              : fungsi database toko_opname (koreksi stok hasil hitung fisik)
 //  - Hapus               : HANYA kalau stok toko 0 (dicek di layar DAN di database lewat filter stok=eq.0)
@@ -402,6 +404,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [opname, setOpname] = useState(null);
   const [hapus, setHapus] = useState(null);
   const [impor, setImpor] = useState(false);
+  const [fotoMassal, setFotoMassal] = useState(false);
 
   const muat = async () => {
     setError("");
@@ -456,6 +459,13 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
           className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
         >
           <FileUp size={15} /> Import
+        </button>
+        <button
+          onClick={() => setFotoMassal(true)}
+          title="Foto massal (cocokkan nama file dengan kode/barcode/nama)"
+          className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
+        >
+          <ImagePlus size={15} /> Foto
         </button>
         <button
           onClick={() => setForm({ barang: {} })}
@@ -521,6 +531,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
       </div>
 
       {impor && <ImporBarangToko barangAda={rows || []} onSelesai={() => { setImpor(false); muat(); }} onClose={() => setImpor(false)} />}
+      {fotoMassal && <FotoMassalToko barangAda={rows || []} onSelesai={() => { setFotoMassal(false); muat(); }} onClose={() => setFotoMassal(false)} />}
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {hapus && <FormHapus barang={hapus} onSelesai={selesai} onClose={() => setHapus(null)} />}
