@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Loader2, AlertCircle, Receipt, RefreshCw, Undo2, Ban } from "lucide-react";
+import { X, Loader2, AlertCircle, Receipt, RefreshCw, Undo2, Ban, Trash2 } from "lucide-react";
 import { fmtRp } from "../../lib/api";
 import { muatMaster, muatRiwayat, muatStrukDariDb, muatDaftarShift, muatIdShiftBuka, ROLE_BOLEH_VOID, BATAS_RIWAYAT, SKEMA } from "./kasirApi";
 import { identitasStruk, tglJamId } from "./kasirStruk";
 import ModalStruk from "./StrukKasir";
-import { ModalVoid, ModalRetur } from "./KoreksiTransaksi";
+import { ModalVoid, ModalRetur, ModalHapus } from "./KoreksiTransaksi";
 
 // =========================================================
 // KASIR — RIWAYAT TRANSAKSI, SHIFT, VOID & RETUR
@@ -36,9 +36,9 @@ const num = (v) => Number(v) || 0;
 
 function Badge({ r }) {
   const st = statusTrx(r);
-  if (st === "void") return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">VOID</span>;
-  if (st === "retur") return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300">RETUR</span>;
-  if (num(r[T.totalRetur]) > 0) return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300">RETUR SEBAGIAN</span>;
+  if (st === "void") return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">Void</span>;
+  if (st === "retur") return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300">Retur</span>;
+  if (num(r[T.totalRetur]) > 0) return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300">Retur sebagian</span>;
   return null;
 }
 
@@ -146,17 +146,17 @@ export default function RiwayatStruk({ session, shift, onClose }) {
   };
 
   const chip = (aktif) =>
-    `px-2.5 py-1 rounded-lg text-xs font-medium border ${aktif ? "bg-amber-500 text-slate-950 border-amber-500" : "border-slate-700 text-slate-400 hover:text-slate-200"}`;
+    `px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${aktif ? "bg-amber-500 text-slate-950 border-amber-500" : "border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500"}`;
   const hariIni = tglInput(new Date());
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
         <div
-          className="w-full sm:max-w-xl bg-slate-900 border border-slate-800 sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col"
+          className="w-full sm:max-w-xl bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-800">
+          <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
             <div>
               <div className="font-bold">Riwayat</div>
               <div className="text-xs text-slate-500">
@@ -245,22 +245,22 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                   <Loader2 className="animate-spin" size={20} />
                 </div>
               ) : tampil.length === 0 ? (
-                <div className="py-10 text-center text-sm text-slate-500">Belum ada transaksi di periode ini.</div>
+                <div className="py-12 text-center text-sm text-slate-400">Belum ada transaksi di periode ini.<div className="text-xs text-slate-500 mt-1">Pilih tanggal lain untuk melihat transaksi sebelumnya.</div></div>
               ) : (
                 <>
                   {/* ringkasan */}
                   <div className="grid grid-cols-3 gap-2 mb-2">
-                    <div className="rounded-xl border border-slate-800 px-3 py-2">
-                      <div className="text-[10px] text-slate-500">Penjualan bersih</div>
-                      <div className="text-sm font-bold text-amber-400">{fmtRp(ringkas.semua.jual - ringkas.semua.retur)}</div>
+                    <div className="rounded-2xl bg-slate-950/50 border border-slate-800 px-3.5 py-3">
+                      <div className="text-[11px] text-slate-500">Penjualan bersih</div>
+                      <div className="text-base font-bold text-amber-400">{fmtRp(ringkas.semua.jual - ringkas.semua.retur)}</div>
                     </div>
-                    <div className="rounded-xl border border-slate-800 px-3 py-2">
-                      <div className="text-[10px] text-slate-500">Retur</div>
-                      <div className="text-sm font-bold text-orange-300">{fmtRp(ringkas.semua.retur)}</div>
+                    <div className="rounded-2xl bg-slate-950/50 border border-slate-800 px-3.5 py-3">
+                      <div className="text-[11px] text-slate-500">Retur</div>
+                      <div className="text-base font-bold text-orange-300">{fmtRp(ringkas.semua.retur)}</div>
                     </div>
-                    <div className="rounded-xl border border-slate-800 px-3 py-2">
-                      <div className="text-[10px] text-slate-500">Void</div>
-                      <div className="text-sm font-bold text-red-300">
+                    <div className="rounded-2xl bg-slate-950/50 border border-slate-800 px-3.5 py-3">
+                      <div className="text-[11px] text-slate-500">Void</div>
+                      <div className="text-base font-bold text-red-300">
                         {ringkas.semua.nVoid} <span className="text-[10px] font-normal text-slate-500">({fmtRp(ringkas.semua.nilaiVoid)})</span>
                       </div>
                     </div>
@@ -298,11 +298,11 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                       const st = statusTrx(r);
                       const void_ = st === "void";
                       return (
-                        <li key={r[T.id]} className="rounded-xl border border-slate-800">
+                        <li key={r[T.id]} className="rounded-2xl border border-slate-800 bg-slate-900/60">
                           <button
                             onClick={() => buka(r)}
                             disabled={membuka !== null}
-                            className="w-full flex items-center gap-3 text-left px-3 py-2.5 rounded-xl hover:border-amber-500 disabled:opacity-60"
+                            className="w-full flex items-center gap-3 text-left px-3.5 py-3 rounded-2xl hover:bg-slate-800/50 disabled:opacity-60 transition-colors"
                           >
                             <Receipt size={16} className="text-slate-500 flex-shrink-0" />
                             <div className="min-w-0 flex-1">
@@ -327,7 +327,7 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                               </div>
                             )}
                           </button>
-                          {(bolehRetur(r) || bolehVoid(r)) && (
+                          {(bolehRetur(r) || bolehVoid(r) || bolehVoidRole) && (
                             <div className="flex gap-2 px-3 pb-2.5">
                               {bolehRetur(r) && (
                                 <button
@@ -343,6 +343,14 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                                   className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10"
                                 >
                                   <Ban size={12} /> Void
+                                </button>
+                              )}
+                              {bolehVoidRole && (
+                                <button
+                                  onClick={() => setAksi({ tipe: "hapus", row: r })}
+                                  className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-700 text-slate-400 hover:border-red-500/50 hover:text-red-300"
+                                >
+                                  <Trash2 size={12} /> Hapus
                                 </button>
                               )}
                             </div>
@@ -365,7 +373,7 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                   const tutup = s.status === "tutup";
                   const sel = num(s.selisih);
                   return (
-                    <li key={s.id} className="rounded-xl border border-slate-800 px-3 py-2.5 text-xs">
+                    <li key={s.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-xs">
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold text-sm">{s.kasir_nama || "(tanpa nama)"}</div>
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${tutup ? "bg-slate-700/60 text-slate-300" : "bg-emerald-500/15 text-emerald-300"}`}>
@@ -405,6 +413,9 @@ export default function RiwayatStruk({ session, shift, onClose }) {
 
       {struk && <ModalStruk struk={struk} onClose={() => setStruk(null)} />}
       {aksi?.tipe === "void" && <ModalVoid row={aksi.row} session={session} onSelesai={selesaiAksi} onMuatUlang={muat} onClose={() => setAksi(null)} />}
+      {aksi?.tipe === "hapus" && (
+        <ModalHapus row={aksi.row} shiftSudahTutup={aksi.row[T.shiftId] != null && !shiftBuka.has(aksi.row[T.shiftId])} onSelesai={selesaiAksi} onClose={() => setAksi(null)} />
+      )}
       {aksi?.tipe === "retur" && <ModalRetur row={aksi.row} session={session} onSelesai={selesaiAksi} onMuatUlang={muat} onClose={() => setAksi(null)} />}
     </>
   );

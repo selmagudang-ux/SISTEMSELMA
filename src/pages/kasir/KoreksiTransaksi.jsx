@@ -8,6 +8,7 @@ import {
   muatRincianKoreksi,
   siapkanKeuanganKeluar,
   voidTransaksi,
+  hapusTransaksi,
   returTransaksi,
   perkiraanNilaiRetur,
   pesanErrorKasir,
@@ -27,12 +28,12 @@ const inputCls =
 
 function Kerangka({ judul, subjudul, onClose, bebasTutup, children }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={() => bebasTutup && onClose()}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={() => bebasTutup && onClose()}>
       <div
-        className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col"
+        className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-800">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div className="min-w-0">
             <div className="font-bold">{judul}</div>
             {subjudul && <div className="text-xs text-slate-500 font-mono truncate">{subjudul}</div>}
@@ -123,7 +124,7 @@ export function ModalVoid({ row, session, onSelesai, onMuatUlang, onClose }) {
             <div className="font-semibold">{fmtRp(hasil.total)} dikembalikan ke pembeli</div>
             <p className="text-xs text-slate-400 mt-1">Stok barang sudah kembali dan pengeluarannya tercatat di Keuangan.</p>
           </div>
-          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl">
+          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-2xl">
             Selesai
           </button>
         </>
@@ -161,7 +162,7 @@ export function ModalVoid({ row, session, onSelesai, onMuatUlang, onClose }) {
               <button
                 onClick={void_}
                 disabled={!alasan.trim() || saving || !master}
-                className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-bold py-3 rounded-xl"
+                className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl"
               >
                 {saving && <Loader2 size={16} className="animate-spin" />} Void Transaksi
               </button>
@@ -235,7 +236,7 @@ export function ModalRetur({ row, session, onSelesai, onMuatUlang, onClose }) {
               Kembalikan uang ke pembeli lewat {metode}. Stok barang sudah bertambah{hasil.penuh ? "; semua barang transaksi ini sudah diretur" : ""}.
             </p>
           </div>
-          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl">
+          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-2xl">
             Selesai
           </button>
         </>
@@ -313,12 +314,96 @@ export function ModalRetur({ row, session, onSelesai, onMuatUlang, onClose }) {
               <button
                 onClick={retur}
                 disabled={!dipilih.length || !alasan.trim() || saving || !master}
-                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold py-3 rounded-xl"
+                className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold py-3.5 rounded-2xl"
               >
                 {saving && <Loader2 size={16} className="animate-spin" />} Proses Retur
               </button>
             </>
           )}
+        </>
+      )}
+    </Kerangka>
+  );
+}
+
+// ---------------------------------------------------------
+// Hapus permanen: transaksi hilang dari Riwayat & Keuangan, stok kembali, tanpa log.
+export function ModalHapus({ row, shiftSudahTutup, onSelesai, onClose }) {
+  const [konfirmasi, setKonfirmasi] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [hasil, setHasil] = useState(null);
+  const siap = konfirmasi.trim().toUpperCase() === "HAPUS";
+
+  const hapus = async () => {
+    if (!siap || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      setHasil(await hapusTransaksi({ row }));
+    } catch (e) {
+      setError(pesanErrorKasir(e, "koreksi").pesan);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Kerangka judul={hasil ? "Transaksi dihapus" : "Hapus Transaksi"} subjudul={row[T.nomor]} onClose={hasil ? onSelesai : onClose} bebasTutup={!saving}>
+      {hasil ? (
+        <>
+          <div className="text-center">
+            <CheckCircle2 size={40} className="mx-auto text-emerald-400 mb-2" />
+            <div className="font-semibold">{hasil.nomor} sudah dihapus</div>
+            <p className="text-xs text-slate-400 mt-1">Transaksi hilang dari Riwayat dan Keuangan, dan stok barang sudah dikembalikan.</p>
+          </div>
+          {Number(hasil.keuangan_tidak_ditemukan) > 0 && (
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>
+                {hasil.keuangan_tidak_ditemukan} catatan uang di Keuangan tidak ditemukan, kemungkinan dicatat dengan cara lama. Periksa Keuangan dan hapus manual kalau masih ada.
+              </span>
+            </div>
+          )}
+          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-2xl">
+            Selesai
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="rounded-2xl bg-slate-950/50 border border-slate-800 p-4 text-sm space-y-1.5">
+            <div className="flex justify-between"><span className="text-slate-400">Nomor</span><span className="font-mono">{row[T.nomor]}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400">Total</span><span className="font-semibold">{fmtRp(Number(row[T.total]) || 0)}</span></div>
+          </div>
+
+          <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4">
+            <li>Transaksi dihapus permanen dari Riwayat dan tidak bisa dikembalikan.</li>
+            <li>Catatan uangnya di Keuangan ikut dihapus atau dikurangi.</li>
+            <li>Stok barang dikembalikan.</li>
+            <li>Tidak ada catatan yang tersisa tentang penghapusan ini.</li>
+          </ul>
+
+          {shiftSudahTutup && (
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>Shift transaksi ini sudah ditutup. Kas seharusnya dan selisih shift itu ikut dihitung ulang.</span>
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium text-slate-300 mb-1.5 block">Ketik HAPUS untuk melanjutkan</label>
+            <input value={konfirmasi} onChange={(e) => setKonfirmasi(e.target.value)} placeholder="HAPUS" className={inputCls} />
+          </div>
+
+          <KotakError pesan={error} />
+
+          <button
+            onClick={hapus}
+            disabled={!siap || saving}
+            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl"
+          >
+            {saving && <Loader2 size={16} className="animate-spin" />} Hapus Permanen
+          </button>
         </>
       )}
     </Kerangka>

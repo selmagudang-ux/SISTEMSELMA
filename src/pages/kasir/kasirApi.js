@@ -376,6 +376,14 @@ export async function returTransaksi({ session, row, items, alasan, metode, keua
   });
 }
 
+// ---------- hapus permanen (khusus Owner, lihat kasir_hapus_transaksi.sql) ----------
+// Menghapus transaksi + stok dikembalikan + Keuangan disesuaikan. Tanpa log.
+export async function hapusTransaksi({ row }) {
+  return rpc("kasir_hapus_transaksi", {
+    p: { entitas: entitasSesi(), transaksi_id: row[SKEMA.trx.id] },
+  });
+}
+
 // Perkiraan nilai retur per barang di layar (angka FINAL dihitung database).
 export function perkiraanNilaiRetur(row, item, qty) {
   const T = SKEMA.trx;

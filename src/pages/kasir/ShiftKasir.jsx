@@ -15,7 +15,7 @@ import { bukaLaciSaatBukaKasir, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./
 // =========================================================
 
 const inputCls =
-  "w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-base outline-none focus:border-amber-500";
+  "w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-base outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10";
 
 // Input angka rupiah yang membedakan "kosong" dan "0" (InputRupiah biasa menampilkan 0 sebagai kosong).
 function InputUang({ value, onChange, placeholder = "0", autoFocus }) {
@@ -31,7 +31,7 @@ function InputUang({ value, onChange, placeholder = "0", autoFocus }) {
         onChange(d === "" ? "" : Number(d));
       }}
       placeholder={placeholder}
-      className={inputCls}
+      className={`${inputCls} text-2xl font-bold`}
     />
   );
 }
@@ -73,16 +73,16 @@ export function LayarBukaShift({ session, onBuka, onKeluar }) {
 
   return (
     <div className="flex-1 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6">
-        <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center mb-3">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-elevation-2">
+        <div className="w-12 h-12 rounded-2xl bg-amber-500 flex items-center justify-center mb-4">
           <LockOpen size={20} className="text-slate-950" />
         </div>
-        <div className="font-bold text-lg">Buka Kasir</div>
-        <p className="text-sm text-slate-400 mt-1 mb-4">
+        <div className="font-bold text-xl">Buka Kasir</div>
+        <p className="text-sm text-slate-400 mt-1.5 mb-5 leading-relaxed">
           Halo {session?.nama || session?.username}. Hitung uang tunai di laci, lalu isi sebagai kas awal. Penjualan baru bisa dimulai setelah kasir dibuka.
         </p>
 
-        <label className="text-xs text-slate-400 mb-1 block">Kas awal (uang tunai di laci)</label>
+        <label className="text-sm font-medium text-slate-300 mb-1.5 block">Kas awal (uang tunai di laci)</label>
         <InputUang value={kasAwal} onChange={setKasAwal} autoFocus />
 
         {error && (
@@ -94,7 +94,7 @@ export function LayarBukaShift({ session, onBuka, onKeluar }) {
         <button
           onClick={buka}
           disabled={kasAwal === "" || saving}
-          className="mt-4 w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold py-3 rounded-xl"
+          className="mt-5 w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-base py-4 rounded-2xl transition-colors"
         >
           {saving ? <Loader2 size={16} className="animate-spin" /> : <LockOpen size={16} />} Buka Kasir
         </button>
@@ -154,12 +154,12 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const r = hasil || ringkas;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={() => !saving && !hasil && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={() => !saving && !hasil && onClose()}>
       <div
-        className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto"
+        className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-800">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div>
             <div className="font-bold">{hasil ? "Kasir ditutup" : "Tutup Kasir"}</div>
             <div className="text-xs text-slate-500">Dibuka {tglJamId(shift.buka_at)}</div>
@@ -171,7 +171,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
           )}
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-6 space-y-5">
           {!r && !error && (
             <div className="py-8 flex justify-center text-slate-500">
               <Loader2 className="animate-spin" size={20} />
@@ -180,7 +180,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
 
           {r && (
             <>
-              <div className="space-y-1.5 text-sm">
+              <div className="space-y-2 text-sm">
                 <Baris label="Kas awal" nilai={fmtRp(r.kas_awal)} />
                 <Baris label="Penjualan cash" nilai={fmtRp(r.penjualan_cash)} tanda="+" />
                 <Baris label="Retur cash" nilai={fmtRp(r.retur_cash)} tanda="−" />
@@ -189,7 +189,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
                 </div>
               </div>
 
-              <div className="rounded-xl border border-slate-800 p-3 space-y-1 text-xs text-slate-400">
+              <div className="rounded-2xl bg-slate-950/50 border border-slate-800 p-4 space-y-1.5 text-xs text-slate-400">
                 <Baris label={`Transaksi (${r.jumlah_transaksi})`} nilai={fmtRp(r.omzet)} />
                 <Baris label="Transfer" nilai={fmtRp(r.penjualan_transfer)} />
                 <Baris label="QRIS" nilai={fmtRp(r.penjualan_qris)} />
@@ -201,16 +201,16 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
 
           {hasil ? (
             <>
-              <div className="rounded-xl border border-slate-800 p-4 text-center">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-5 text-center">
                 <CheckCircle2 size={36} className="mx-auto text-emerald-400 mb-1" />
                 <div className="text-xs text-slate-500">Uang dihitung</div>
-                <div className="text-xl font-bold">{fmtRp(hasil.kas_akhir)}</div>
+                <div className="text-3xl font-extrabold tracking-tight">{fmtRp(hasil.kas_akhir)}</div>
                 <div className={`mt-1 text-sm font-semibold ${warnaSelisih(Number(hasil.selisih))}`}>
                   Selisih: {teksSelisih(Number(hasil.selisih))}
                 </div>
                 {hasil.catatan && <div className="mt-2 text-xs text-slate-400">Catatan: {hasil.catatan}</div>}
               </div>
-              <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl">
+              <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-2xl">
                 Selesai
               </button>
             </>
@@ -218,7 +218,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
             ringkas && (
               <>
                 <div>
-                  <label className="text-xs text-slate-400 mb-1 block">Uang tunai yang dihitung di laci</label>
+                  <label className="text-sm font-medium text-slate-300 mb-1.5 block">Uang tunai yang dihitung di laci</label>
                   <InputUang value={kasAkhir} onChange={setKasAkhir} />
                   {selisih !== null && (
                     <div className={`mt-1.5 text-sm font-semibold ${warnaSelisih(selisih)}`}>Selisih: {teksSelisih(selisih)}</div>
@@ -227,7 +227,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
 
                 {perluCatatan && (
                   <div>
-                    <label className="text-xs text-slate-400 mb-1 block">Catatan selisih (wajib)</label>
+                    <label className="text-sm font-medium text-slate-300 mb-1.5 block">Catatan selisih (wajib)</label>
                     <textarea
                       value={catatan}
                       onChange={(e) => setCatatan(e.target.value)}
@@ -251,7 +251,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
             <button
               onClick={tutup}
               disabled={!bisaTutup}
-              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold py-3 rounded-xl"
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold py-3.5 rounded-2xl"
             >
               {saving && <Loader2 size={16} className="animate-spin" />} Tutup Kasir
             </button>

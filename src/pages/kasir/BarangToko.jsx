@@ -40,12 +40,12 @@ export function pesanError(e) {
 
 export function Kerangka({ judul, onClose, children, lebar = "sm:max-w-md" }) {
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
       <div
-        className={`w-full ${lebar} bg-slate-900 border border-slate-800 sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto`}
+        className={`w-full ${lebar} bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-800">
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div className="font-bold">{judul}</div>
           <button onClick={onClose} className="p-2 text-slate-500 hover:text-slate-200">
             <X size={18} />
@@ -147,7 +147,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
       <button
         onClick={simpan}
         disabled={saving}
-        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3 rounded-xl"
+        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3.5 rounded-2xl"
       >
         {saving && <Loader2 size={15} className="animate-spin" />} Simpan
       </button>
@@ -229,7 +229,7 @@ function FormMutasi({ barang, onSelesai, onClose }) {
       <button
         onClick={jalankan}
         disabled={saving || !barang.sku_gudang}
-        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold py-3 rounded-xl"
+        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold py-3.5 rounded-2xl"
       >
         {saving && <Loader2 size={15} className="animate-spin" />} Pindahkan
       </button>
@@ -276,7 +276,7 @@ function FormOpname({ barang, onSelesai, onClose }) {
       <button
         onClick={jalankan}
         disabled={saving}
-        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3 rounded-xl"
+        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3.5 rounded-2xl"
       >
         {saving && <Loader2 size={15} className="animate-spin" />} Simpan Opname
       </button>

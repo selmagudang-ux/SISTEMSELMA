@@ -108,15 +108,15 @@ export default function KasirApp() {
   }
 
   return (
-    <div className="h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+    <div className="h-screen bg-slate-950 text-slate-100 flex flex-col tabular-nums">
+      <header className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <Store size={16} className="text-slate-950" />
+          <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0">
+            <Store size={18} className="text-slate-950" />
           </div>
           <div className="min-w-0">
-            <div className="font-bold text-sm leading-tight">Kasir Selma</div>
-            <div className="text-[11px] text-slate-500 truncate">
+            <div className="font-bold text-[15px] leading-tight">Kasir Selma</div>
+            <div className="text-xs text-slate-500 truncate mt-0.5">
               {session.nama || session.username}
               {shift ? ` · shift sejak ${tglJamId(shift.buka_at)}` : ""}
             </div>
@@ -128,7 +128,7 @@ export default function KasirApp() {
             <a
               href={URL_UNDUH_APP_KASIR}
               title="Unduh aplikasi kasir untuk Windows"
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
             >
               <Download size={13} /> Unduh Aplikasi
             </a>
@@ -137,7 +137,7 @@ export default function KasirApp() {
             <button
               onClick={() => bukaLaciManual({ kasir: session.nama || session.username })}
               title="Cetak slip kecil agar printer membuka laci"
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
             >
               <Archive size={13} /> Buka Laci
             </button>
@@ -145,7 +145,7 @@ export default function KasirApp() {
           {session.role === "superappa" && (
             <button
               onClick={() => setBarangBuka(true)}
-              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
             >
               <Package size={13} /> Barang Toko
             </button>
@@ -153,20 +153,20 @@ export default function KasirApp() {
           {shift && (
             <button
               onClick={() => setTutupBuka(true)}
-              className="flex items-center gap-1.5 text-xs text-slate-950 bg-amber-500 hover:bg-amber-400 font-semibold px-2.5 py-1.5 rounded-lg"
+              className="flex items-center gap-1.5 text-xs text-slate-950 bg-amber-500 hover:bg-amber-400 font-bold px-3.5 py-2 rounded-xl transition-colors"
             >
               <Lock size={13} /> Tutup Kasir
             </button>
           )}
           <button
             onClick={() => setRiwayatBuka(true)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
           >
             <History size={13} /> Riwayat
           </button>
           <button
             onClick={keluar}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+            className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
           >
             <LogOut size={13} /> Keluar
           </button>
