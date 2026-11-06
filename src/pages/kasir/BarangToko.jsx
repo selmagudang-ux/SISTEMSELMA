@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp } from "lucide-react";
-import { sb, sbAll, fmtRp, entitasSesi } from "../../lib/api";
+import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera } from "lucide-react";
+import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import ImporBarangToko from "./ImporBarangToko";
 
@@ -10,8 +10,10 @@ import ImporBarangToko from "./ImporBarangToko";
 // (mode inline). Keduanya HANYA untuk role superappa.
 //  - Tambah / ubah barang toko (kode toko bebas; boleh ditautkan ke SKU gudang;
 //    barcode = SKU gudang kalau tertaut, selain itu bebas)
+//  - Foto barang         : bisa difoto / dipilih dari galeri saat tambah atau ubah (disimpan di kolom foto_url)
 //  - Mutasi dari gudang  : fungsi database toko_mutasi_dari_gudang (atomik)
 //  - Opname              : fungsi database toko_opname (koreksi stok hasil hitung fisik)
+//  - Hapus               : HANYA kalau stok toko 0 (dicek di layar DAN di database lewat filter stok=eq.0)
 // Stok toko TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi,
 // penjualan kasir, atau opname, supaya selalu ada catatannya (toko_stok_mutasi).
 // =========================================================
@@ -78,6 +80,15 @@ function FormBarang({ barang, onSimpan, onClose }) {
     sku_gudang: barang.sku_gudang || "",
     nonaktif: !!barang.nonaktif,
   });
+  const [fotoFile, setFotoFile] = useState(null); // foto baru yang dipilih (belum diunggah)
+  const [fotoUrl, setFotoUrl] = useState(barang.foto_url || ""); // foto tersimpan; kosong = tanpa foto
+  const [fotoPreview, setFotoPreview] = useState("");
+  useEffect(() => {
+    if (!fotoFile) return setFotoPreview("");
+    const u = URL.createObjectURL(fotoFile);
+    setFotoPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [fotoFile]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const set = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
@@ -100,6 +111,14 @@ function FormBarang({ barang, onSimpan, onClose }) {
       nonaktif: f.nonaktif,
     };
     try {
+      if (fotoFile) {
+        const kecil = await kompresFotoProduk(fotoFile);
+        const ext = (kecil.name.split(".").pop() || "jpg").toLowerCase();
+        const nama = kode.replace(/[^a-zA-Z0-9-_]/g, "-");
+        data.foto_url = await sbUploadFoto(kecil, `toko/${nama}-${Date.now()}.${ext}`);
+      } else if (!baru && (barang.foto_url || "") !== fotoUrl) {
+        data.foto_url = fotoUrl || null; // foto dihapus
+      }
       if (baru) await sb("master_toko", { method: "POST", body: JSON.stringify({ kode, ...data }) });
       else await sb(`master_toko?id=eq.${barang.id}`, { method: "PATCH", body: JSON.stringify(data) });
       onSimpan();
@@ -116,12 +135,6 @@ function FormBarang({ barang, onSimpan, onClose }) {
         <div className="text-xs text-slate-400 mb-1">Kode toko {!baru && "(tidak bisa diubah)"}</div>
         <input value={f.kode} onChange={(e) => set("kode")(e.target.value)} disabled={!baru} className={`${inp} font-mono disabled:opacity-60`} />
       </label>
-      {barang.foto_url && (
-        <div className="flex items-center gap-3">
-          <img src={barang.foto_url} alt="" className="w-16 h-16 rounded-xl object-cover bg-slate-800" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          <div className="text-xs text-slate-400">Foto dari Master Barang gudang.</div>
-        </div>
-      )}
       <label className="block">
         <div className="text-xs text-slate-400 mb-1">Nama barang</div>
         <input value={f.nama} onChange={(e) => set("nama")(e.target.value)} className={inp} />
@@ -153,6 +166,38 @@ function FormBarang({ barang, onSimpan, onClose }) {
             className={`${inp} font-mono disabled:opacity-60`}
           />
         </label>
+      </div>
+      <div>
+        <div className="text-xs text-slate-400 mb-1">Foto barang (opsional)</div>
+        <div className="flex items-center gap-3">
+          <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center flex-shrink-0">
+            {fotoPreview || fotoUrl ? (
+              <img src={fotoPreview || fotoUrl} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            ) : (
+              <Camera size={20} className="text-slate-600" />
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="inline-flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer">
+              <Camera size={14} /> {fotoPreview || fotoUrl ? "Ganti foto" : "Ambil / pilih foto"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) setFotoFile(file);
+                }}
+              />
+            </label>
+            {(fotoPreview || fotoUrl) && (
+              <button type="button" onClick={() => { setFotoFile(null); setFotoUrl(""); }} className="text-left text-xs text-red-400 hover:text-red-300">
+                Hapus foto
+              </button>
+            )}
+          </div>
+        </div>
       </div>
       <label className="block">
         <div className="text-xs text-slate-400 mb-1">SKU gudang (kosong kalau barang ini tidak berasal dari gudang)</div>
@@ -302,6 +347,51 @@ function FormOpname({ barang, onSelesai, onClose }) {
   );
 }
 
+function FormHapus({ barang, onSelesai, onClose }) {
+  const stok = Number(barang.stok) || 0;
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const hapus = async () => {
+    if (stok !== 0) return setError(`Stok toko masih ${stok}. Barang hanya bisa dihapus kalau stoknya 0 (lakukan opname atau kembalikan ke gudang dulu).`);
+    setSaving(true);
+    setError("");
+    try {
+      // Filter stok=eq.0 ikut dikirim ke database: kalau stok berubah sejak halaman dibuka, tidak terhapus.
+      const hasil = await sb(`master_toko?id=eq.${barang.id}&stok=eq.0`, { method: "DELETE" });
+      if (Array.isArray(hasil) && hasil.length === 0) {
+        throw new Error("Barang tidak terhapus: stok sudah tidak 0, barang sudah tidak ada, atau Anda tidak punya izin.");
+      }
+      onSelesai();
+    } catch (e) {
+      setError(pesanError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Kerangka judul={`Hapus ${barang.kode}`} onClose={onClose}>
+      <div className="text-sm text-slate-300">{barang.nama}</div>
+      {stok === 0 ? (
+        <div className="text-sm text-slate-400">
+          Barang ini akan dihapus dari Barang Toko dan tidak muncul lagi di kasir. Kalau barang sudah pernah dipakai di transaksi, hapus akan ditolak — pakai <b className="text-slate-200">Nonaktif</b> lewat tombol ubah.
+        </div>
+      ) : (
+        <Galat pesan={`Stok toko masih ${stok}. Barang hanya bisa dihapus kalau stoknya 0 — lakukan opname atau kembalikan ke gudang dulu.`} />
+      )}
+      <Galat pesan={stok === 0 ? error : ""} />
+      <button
+        onClick={hapus}
+        disabled={saving || stok !== 0}
+        className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl"
+      >
+        {saving && <Loader2 size={15} className="animate-spin" />} Hapus Barang
+      </button>
+    </Kerangka>
+  );
+}
+
 // onBerubah: dipanggil setelah mutasi gudang <-> toko, supaya data gudang di SELMA ikut dimuat ulang.
 export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [rows, setRows] = useState(null);
@@ -310,6 +400,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [form, setForm] = useState(null); // {barang}
   const [mutasi, setMutasi] = useState(null);
   const [opname, setOpname] = useState(null);
+  const [hapus, setHapus] = useState(null);
   const [impor, setImpor] = useState(false);
 
   const muat = async () => {
@@ -337,6 +428,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
     setForm(null);
     setMutasi(null);
     setOpname(null);
+    setHapus(null);
     muat();
   };
 
@@ -418,6 +510,9 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
                   <button onClick={() => setForm({ barang: r })} title="Ubah" className="p-2 text-slate-400 hover:text-amber-400">
                     <Pencil size={16} />
                   </button>
+                  <button onClick={() => setHapus(r)} title="Hapus (stok harus 0)" className="p-2 text-slate-400 hover:text-red-400">
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </li>
             ))}
@@ -428,6 +523,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
       {impor && <ImporBarangToko barangAda={rows || []} onSelesai={() => { setImpor(false); muat(); }} onClose={() => setImpor(false)} />}
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
+      {hapus && <FormHapus barang={hapus} onSelesai={selesai} onClose={() => setHapus(null)} />}
       {opname && <FormOpname barang={opname} onSelesai={selesai} onClose={() => setOpname(null)} />}
     </div>
   );
