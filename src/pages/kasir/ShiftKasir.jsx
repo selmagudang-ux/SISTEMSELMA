@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut } from "lucide-react";
+import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut, Download } from "lucide-react";
 import { fmtRp } from "../../lib/api";
 import { bukaShift, ringkasShift, tutupShift, pesanErrorKasir } from "./kasirApi";
 import { tglJamId } from "./kasirStruk";
-import { bukaLaciSaatBukaKasir } from "./kasirLaci";
+import { bukaLaciSaatBukaKasir, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLaci";
 
 // =========================================================
 // KASIR — SHIFT (fase 5)
@@ -98,6 +98,14 @@ export function LayarBukaShift({ session, onBuka, onKeluar }) {
         >
           {saving ? <Loader2 size={16} className="animate-spin" /> : <LockOpen size={16} />} Buka Kasir
         </button>
+        {!adalahAppDesktop() && (
+          <a
+            href={URL_UNDUH_APP_KASIR}
+            className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-amber-400 border border-slate-800 rounded-lg py-2"
+          >
+            <Download size={13} /> Unduh Aplikasi Kasir (laci terbuka otomatis)
+          </a>
+        )}
         <button onClick={onKeluar} className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs text-slate-500 hover:text-slate-300">
           <LogOut size={13} /> Keluar
         </button>

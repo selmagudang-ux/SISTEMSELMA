@@ -43,6 +43,10 @@ export function cetakSlipLaci(baris) {
   });
 }
 
+// Alamat unduh aplikasi desktop kasir (GitHub Releases; selalu menunjuk rilis terbaru).
+export const URL_UNDUH_APP_KASIR =
+  "https://github.com/selmagudang-ux/kasir-selma-download/releases/latest/download/Kasir-Selma-Setup.exe";
+
 const desktop = () => (typeof window !== "undefined" && window.selmaDesktop?.bukaLaci ? window.selmaDesktop : null);
 export const adalahAppDesktop = () => !!desktop();
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive } from "lucide-react";
+import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, Download } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
@@ -9,7 +9,7 @@ import BarangToko from "./BarangToko";
 import { LayarBukaShift, ModalTutupShift } from "./ShiftKasir";
 import { muatShiftAktif } from "./kasirApi";
 import { tglJamId } from "./kasirStruk";
-import { bukaLaciManual } from "./kasirLaci";
+import { bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLaci";
 
 // =========================================================
 // KASIR (POS) — pintu masuk aplikasi kasir di alamat /kasir.
@@ -124,6 +124,15 @@ export default function KasirApp() {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          {!adalahAppDesktop() && (
+            <a
+              href={URL_UNDUH_APP_KASIR}
+              title="Unduh aplikasi kasir untuk Windows"
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-800"
+            >
+              <Download size={13} /> Unduh Aplikasi
+            </a>
+          )}
           {session.role === "superappa" && (
             <button
               onClick={() => bukaLaciManual({ kasir: session.nama || session.username })}
