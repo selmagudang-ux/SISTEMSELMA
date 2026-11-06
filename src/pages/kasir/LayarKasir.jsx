@@ -110,7 +110,8 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
   );
 }
 
-export default function LayarKasir({ session }) {
+// versiData: angka yang dinaikkan induk (mis. setelah Barang Toko ditutup) supaya daftar barang dimuat ulang.
+export default function LayarKasir({ session, versiData = 0 }) {
   const [skuList, setSkuList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errMuat, setErrMuat] = useState("");
@@ -137,11 +138,16 @@ export default function LayarKasir({ session }) {
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
-  const muat = useCallback(async () => {
-    setLoading(true);
-    setErrMuat("");
+  const terakhirMuat = useRef(0);
+  // diam = true: muat ulang di latar belakang (tanpa spinner / pesan galat), dipakai sinkronisasi otomatis.
+  const muat = useCallback(async (diam = false) => {
+    if (!diam) {
+      setLoading(true);
+      setErrMuat("");
+    }
     try {
       const rows = ((await sbAll(`master_toko?select=${KOLOM}&order=kode`)) || []).map(dariToko);
+      terakhirMuat.current = Date.now();
       setSkuList(rows.filter((s) => !s.nonaktif));
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows);
       if (catatan.length) {
@@ -149,13 +155,32 @@ export default function LayarKasir({ session }) {
         tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`);
       }
     } catch (e) {
-      setErrMuat(e.message || "Gagal memuat daftar barang");
+      if (!diam) setErrMuat(e.message || "Gagal memuat daftar barang");
     } finally {
-      setLoading(false);
+      if (!diam) setLoading(false);
     }
   }, [tampilToast]);
   useEffect(() => {
     muat();
+  }, [muat, versiData]);
+
+  // Sinkronisasi otomatis (perubahan dari perangkat lain: stok, harga, barang baru, foto):
+  // muat ulang diam-diam tiap 60 detik, dan saat jendela/aplikasi kembali dibuka kalau sudah >20 detik.
+  useEffect(() => {
+    const cukupLama = (ms) => Date.now() - terakhirMuat.current > ms;
+    const tiapMenit = setInterval(() => {
+      if (!document.hidden && cukupLama(55000)) muat(true);
+    }, 60000);
+    const saatKembali = () => {
+      if (!document.hidden && cukupLama(20000)) muat(true);
+    };
+    document.addEventListener("visibilitychange", saatKembali);
+    window.addEventListener("focus", saatKembali);
+    return () => {
+      clearInterval(tiapMenit);
+      document.removeEventListener("visibilitychange", saatKembali);
+      window.removeEventListener("focus", saatKembali);
+    };
   }, [muat]);
 
   // Keranjang bertahan kalau halaman di-refresh (hilang saat tab ditutup / logout).
@@ -334,7 +359,7 @@ export default function LayarKasir({ session }) {
             <ScanLine size={18} /> <span className="hidden sm:inline">Scan</span>
           </button>
           <button
-            onClick={muat}
+            onClick={() => muat()}
             disabled={loading}
             title="Muat ulang stok & harga"
             className="p-3.5 rounded-2xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-slate-200 disabled:opacity-50 flex-shrink-0 transition-colors"

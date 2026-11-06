@@ -34,6 +34,7 @@ export default function KasirApp() {
   const [session, setSession] = useState(() => getSession());
   const [riwayatBuka, setRiwayatBuka] = useState(false);
   const [barangBuka, setBarangBuka] = useState(false);
+  const [versiData, setVersiData] = useState(0); // dinaikkan setelah Barang Toko ditutup -> kasir muat ulang
   // shift: undefined = sedang dicek, null = belum buka, objek = shift yang sedang buka
   const [shift, setShift] = useState(undefined);
   const [errShift, setErrShift] = useState("");
@@ -187,7 +188,7 @@ export default function KasirApp() {
           <LayarBukaShift session={session} onBuka={(s) => setShift(s)} onKeluar={keluar} />
         </>
       ) : (
-        <LayarKasir session={sesiKasir} />
+        <LayarKasir session={sesiKasir} versiData={versiData} />
       )}
       {riwayatBuka && <RiwayatStruk session={sesiKasir} shift={shift || null} onClose={() => setRiwayatBuka(false)} />}
       {tutupBuka && shift && (
@@ -200,7 +201,7 @@ export default function KasirApp() {
           }}
         />
       )}
-      {barangBuka && session.role === "superappa" && <BarangToko onClose={() => setBarangBuka(false)} />}
+      {barangBuka && session.role === "superappa" && <BarangToko onClose={() => { setBarangBuka(false); setVersiData((v) => v + 1); }} />}
     </div>
   );
 }
