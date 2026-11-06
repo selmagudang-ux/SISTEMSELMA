@@ -6,6 +6,7 @@ import { hitungPembayaran, saranUang, hitungItem } from "./kasirHitung";
 import { muatMaster, siapkanKeuangan, simpanTransaksiKasir, pesanErrorKasir } from "./kasirApi";
 import { susunStruk, identitasStruk } from "./kasirStruk";
 import ModalStruk from "./StrukKasir";
+import { bukaLaciKalauDesktop } from "./kasirLaci";
 
 // =========================================================
 // KASIR — PEMBAYARAN (fase 3)
@@ -88,6 +89,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
         })
       );
       setHasil(res);
+      if (hb.pembayaran.some((p) => p.metode === "Cash")) bukaLaciKalauDesktop();
       onSukses?.(res);
     } catch (e) {
       const { pesan, perluMuatUlang } = pesanErrorKasir(e);
