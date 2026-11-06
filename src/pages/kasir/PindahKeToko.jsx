@@ -8,7 +8,7 @@ import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 // - Membuat baris master_toko dari data SKU:
 //     kode   = KODE ENTITAS-nomor urut (mis. OPS-0001), nomor lanjut dari yang terbesar
 //     nama   = nama subkategori + nomor urut per subkategori (mis. "Kemeja 12")
-//     barcode = kode toko, foto = foto SKU di gudang (kalau sudah ada)
+//     barcode = SKU gudang (bukan kode toko), foto = foto SKU di gudang (kalau sudah ada)
 //     harga jual = Ecer, HPP = HPP, sku_gudang = SKU (tertaut, jadi bisa dimutasi stoknya).
 // - Kalau SKU sudah ada di Barang Toko (dicek lewat sku_gudang), tidak dibuat dobel (dilewati).
 // - Kalau satu SKU dipilih & jumlah diisi, stok gudang ikut dipindah ke toko
@@ -87,7 +87,7 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
               kode: kodeToko,
               nama,
               kategori: labelKategori(s.kategori) || null,
-              barcode: kodeToko, // barcode toko = kode toko (bukan barcode supplier)
+              barcode: s.sku, // barang dari Master Barang: barcode = SKU gudang (bukan kode toko)
               harga_jual: Math.round(Number(s.ecer) || 0),
               hpp: Math.round(Number(s.hpp) || 0),
               sku_gudang: s.sku,

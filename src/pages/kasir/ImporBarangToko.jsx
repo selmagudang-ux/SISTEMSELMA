@@ -8,7 +8,8 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 // IMPORT BARANG TOKO DARI FILE EXCEL / CSV
 // Kolom file: Nama, Kategori, HPP, Harga Jual, Stok Awal.
 //  - Kode toko dibuat otomatis: KODE ENTITAS-nomor urut (mis. OPS-0001), lanjut dari yang terbesar.
-//  - Barcode = kode toko. Barang tidak ditautkan ke SKU gudang.
+//  - Barcode BEBAS: boleh diisi di kolom "Barcode" (opsional); kosong = sama dengan kode toko.
+//    Barang tidak ditautkan ke SKU gudang.
 //  - Barang yang namanya sudah ada di Barang Toko (atau dobel di file) DILEWATI.
 //  - Stok awal dicatat lewat fungsi toko_opname supaya ada riwayatnya di toko_stok_mutasi.
 // =========================================================
@@ -22,6 +23,7 @@ const ALIAS = {
   hpp: ["hpp", "hargabeli", "modal"],
   harga: ["hargajual", "harga", "hargaecer"],
   stok: ["stokawal", "stok", "jumlah"],
+  barcode: ["barcode", "kodebarcode", "barcodeopsional"],
 };
 
 function angka(v) {
@@ -53,6 +55,7 @@ async function bacaFile(file) {
       hpp: kolom.hpp === undefined ? 0 : angka(r[kolom.hpp]),
       harga: angka(r[kolom.harga]),
       stok: kolom.stok === undefined ? 0 : angka(r[kolom.stok]),
+      barcode: kolom.barcode === undefined ? "" : String(r[kolom.barcode] ?? "").trim(),
     }));
 }
 
@@ -73,10 +76,11 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           { key: "hpp", label: "HPP" },
           { key: "harga", label: "Harga Jual" },
           { key: "stok", label: "Stok Awal" },
+          { key: "barcode", label: "Barcode (opsional)" },
         ],
         rows: [
-          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10 },
-          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5 },
+          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, barcode: "8991234567890" },
+          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, barcode: "" },
         ],
       },
     ]);
@@ -93,6 +97,8 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
       if (!data.length) throw new Error("File kosong, tidak ada baris barang.");
       const ada = new Set(barangAda.map((b) => namaKey(b.nama)));
       const dalamFile = new Set();
+      const barcodeAda = new Set(barangAda.map((b) => String(b.barcode || "").toLowerCase()).filter(Boolean));
+      const barcodeFile = new Set();
       setBaris(
         data.map((d) => {
           let status = "ok";
@@ -101,9 +107,11 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           else if (!(d.harga > 0)) { status = "salah"; pesan = "Harga jual harus lebih dari 0"; }
           else if (Number.isNaN(d.hpp) || (d.hpp ?? 0) < 0) { status = "salah"; pesan = "HPP tidak valid"; }
           else if (Number.isNaN(d.stok) || (d.stok ?? 0) < 0 || !Number.isInteger(d.stok ?? 0)) { status = "salah"; pesan = "Stok awal harus bilangan bulat 0 atau lebih"; }
+          else if (d.barcode && barcodeAda.has(d.barcode.toLowerCase())) { status = "salah"; pesan = "Barcode sudah dipakai barang lain"; }
+          else if (d.barcode && barcodeFile.has(d.barcode.toLowerCase())) { status = "salah"; pesan = "Barcode dobel di file"; }
           else if (ada.has(namaKey(d.nama))) { status = "lewati"; pesan = "Sudah ada di Barang Toko"; }
           else if (dalamFile.has(namaKey(d.nama))) { status = "lewati"; pesan = "Nama dobel di file"; }
-          if (status === "ok") dalamFile.add(namaKey(d.nama));
+          if (status === "ok") { dalamFile.add(namaKey(d.nama)); if (d.barcode) barcodeFile.add(d.barcode.toLowerCase()); }
           return { ...d, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
         })
       );
@@ -139,7 +147,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                 kode: b.kode,
                 nama: b.nama,
                 kategori: b.kategori || null,
-                barcode: b.kode,
+                barcode: b.barcode || b.kode,
                 harga_jual: b.harga,
                 hpp: b.hpp,
                 nonaktif: false,
@@ -208,7 +216,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
   return (
     <Kerangka judul="Import Barang Toko dari file" onClose={proses ? () => {} : onClose}>
       <div className="text-xs text-slate-400 leading-relaxed">
-        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kode toko dan barcode dibuat otomatis (contoh OPS-0001).
+        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko). Kode toko dibuat otomatis (contoh OPS-0001).
         Barang yang namanya sudah ada dilewati.
       </div>
 

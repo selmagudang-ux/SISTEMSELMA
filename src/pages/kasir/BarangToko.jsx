@@ -8,7 +8,8 @@ import ImporBarangToko from "./ImporBarangToko";
 // MASTER BARANG TOKO (offline store) — terpisah dari Master Barang gudang besar.
 // Dibuka dari tombol "Barang Toko" di header kasir DAN dari Master Barang > "Barang Toko (Kasir)"
 // (mode inline). Keduanya HANYA untuk role superappa.
-//  - Tambah / ubah barang toko (kode toko bebas; boleh ditautkan ke SKU gudang)
+//  - Tambah / ubah barang toko (kode toko bebas; boleh ditautkan ke SKU gudang;
+//    barcode = SKU gudang kalau tertaut, selain itu bebas)
 //  - Mutasi dari gudang  : fungsi database toko_mutasi_dari_gudang (atomik)
 //  - Opname              : fungsi database toko_opname (koreksi stok hasil hitung fisik)
 // Stok toko TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi,
@@ -90,7 +91,9 @@ function FormBarang({ barang, onSimpan, onClose }) {
     const data = {
       nama: f.nama.trim(),
       kategori: f.kategori.trim() || null,
-      barcode: baru ? kode : barang.kode, // barcode toko selalu sama dengan kode (SKU)
+      // Barang dari Master Barang (ada SKU gudang): barcode = SKU gudang.
+      // Barang lain (import / manual): barcode bebas; kosong -> sama dengan kode toko.
+      barcode: f.sku_gudang.trim() || f.barcode.trim() || (baru ? kode : barang.kode),
       harga_jual: Math.round(Number(f.harga_jual) || 0),
       hpp: Math.round(Number(f.hpp) || 0),
       sku_gudang: f.sku_gudang.trim() || null,
@@ -139,8 +142,16 @@ function FormBarang({ barang, onSimpan, onClose }) {
           <input value={f.kategori} onChange={(e) => set("kategori")(e.target.value)} className={inp} />
         </label>
         <label className="block">
-          <div className="text-xs text-slate-400 mb-1">Barcode (otomatis sama dengan kode)</div>
-          <input value={baru ? f.kode : barang.kode} disabled className={`${inp} font-mono disabled:opacity-60`} />
+          <div className="text-xs text-slate-400 mb-1">
+            {f.sku_gudang.trim() ? "Barcode (otomatis = SKU gudang)" : "Barcode (bebas; kosong = sama dengan kode)"}
+          </div>
+          <input
+            value={f.sku_gudang.trim() ? f.sku_gudang.trim() : f.barcode}
+            onChange={(e) => set("barcode")(e.target.value)}
+            disabled={!!f.sku_gudang.trim()}
+            placeholder={baru ? f.kode : barang.kode}
+            className={`${inp} font-mono disabled:opacity-60`}
+          />
         </label>
       </div>
       <label className="block">
