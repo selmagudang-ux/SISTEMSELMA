@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck } from "lucide-react";
+import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
+import ImporBarangToko from "./ImporBarangToko";
 
 // =========================================================
 // MASTER BARANG TOKO (offline store) — terpisah dari Master Barang gudang besar.
@@ -298,6 +299,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [form, setForm] = useState(null); // {barang}
   const [mutasi, setMutasi] = useState(null);
   const [opname, setOpname] = useState(null);
+  const [impor, setImpor] = useState(false);
 
   const muat = async () => {
     setError("");
@@ -347,6 +349,12 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode, nama, barcode…" className={`${inp} pl-9`} />
         </div>
         <button
+          onClick={() => setImpor(true)}
+          className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
+        >
+          <FileUp size={15} /> Import
+        </button>
+        <button
           onClick={() => setForm({ barang: {} })}
           className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg"
         >
@@ -362,7 +370,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
           </div>
         ) : tampil.length === 0 ? (
           <div className="py-10 text-center text-sm text-slate-500">
-            {rows.length === 0 ? "Belum ada barang toko. Tambah manual, atau impor dari gudang lewat SQL." : "Tidak ada yang cocok."}
+            {rows.length === 0 ? "Belum ada barang toko. Tambah manual, import dari file, atau pindahkan dari Master Barang." : "Tidak ada yang cocok."}
           </div>
         ) : (
           <ul className="space-y-1.5 max-w-3xl mx-auto">
@@ -406,6 +414,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
         )}
       </div>
 
+      {impor && <ImporBarangToko barangAda={rows || []} onSelesai={() => { setImpor(false); muat(); }} onClose={() => setImpor(false)} />}
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {opname && <FormOpname barang={opname} onSelesai={selesai} onClose={() => setOpname(null)} />}
