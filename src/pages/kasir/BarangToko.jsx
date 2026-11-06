@@ -112,6 +112,12 @@ function FormBarang({ barang, onSimpan, onClose }) {
         <div className="text-xs text-slate-400 mb-1">Kode toko {!baru && "(tidak bisa diubah)"}</div>
         <input value={f.kode} onChange={(e) => set("kode")(e.target.value)} disabled={!baru} className={`${inp} font-mono disabled:opacity-60`} />
       </label>
+      {barang.foto_url && (
+        <div className="flex items-center gap-3">
+          <img src={barang.foto_url} alt="" className="w-16 h-16 rounded-xl object-cover bg-slate-800" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+          <div className="text-xs text-slate-400">Foto dari Master Barang gudang.</div>
+        </div>
+      )}
       <label className="block">
         <div className="text-xs text-slate-400 mb-1">Nama barang</div>
         <input value={f.nama} onChange={(e) => set("nama")(e.target.value)} className={inp} />
@@ -362,6 +368,15 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
           <ul className="space-y-1.5 max-w-3xl mx-auto">
             {tampil.map((r) => (
               <li key={r.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-800 ${r.nonaktif ? "opacity-50" : ""}`}>
+                {r.foto_url && (
+                  <img
+                    src={r.foto_url}
+                    alt=""
+                    loading="lazy"
+                    className="w-11 h-11 rounded-lg object-cover bg-slate-800 flex-shrink-0"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{r.nama}</div>
                   <div className="text-[11px] text-slate-500 font-mono truncate">

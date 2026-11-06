@@ -15,7 +15,7 @@ import { buatKunci } from "./kasirApi";
 // Scanner USB/Bluetooth bekerja seperti keyboard: ketik kode + Enter di kolom cari.
 // =========================================================
 
-const KOLOM = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif";
+const KOLOM = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif,foto_url";
 // Bentuk master_toko disamakan dengan bentuk lama (sku/model/ecer/...) supaya seluruh
 // layar kasir, pencarian, scan dan keranjang di bawah tidak perlu diubah.
 const dariToko = (r) => ({
@@ -28,6 +28,7 @@ const dariToko = (r) => ({
   ecer: r.harga_jual,
   stok: r.stok,
   nonaktif: r.nonaktif,
+  foto: r.foto_url,
 });
 const MAKS_HASIL = 40;
 
@@ -395,10 +396,23 @@ export default function LayarKasir({ session }) {
                         × {diKeranjang}
                       </span>
                     )}
-                    <div className={`text-sm font-semibold text-slate-100 leading-snug line-clamp-2 min-h-[2.5rem] ${diKeranjang > 0 ? "pr-12" : ""}`}>
-                      {namaTampil(s)}
+                    <div className="flex gap-3">
+                      {s.foto && (
+                        <img
+                          src={s.foto}
+                          alt=""
+                          loading="lazy"
+                          className="w-14 h-14 rounded-xl object-cover bg-slate-800 flex-shrink-0"
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-sm font-semibold text-slate-100 leading-snug line-clamp-2 min-h-[2.5rem] ${diKeranjang > 0 ? "pr-12" : ""}`}>
+                          {namaTampil(s)}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-1 font-mono">{s.sku}</div>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-1 font-mono">{s.sku}</div>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-dashed border-slate-800">
                       <span className={`text-base font-bold tabular-nums ${harga > 0 ? "text-amber-400" : "text-red-400"}`}>
                         {harga > 0 ? fmtRp(harga) : "Harga kosong"}

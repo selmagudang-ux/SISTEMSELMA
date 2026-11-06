@@ -1,21 +1,25 @@
 import { useEffect, useState } from "react";
 import { Loader2, Check, AlertCircle } from "lucide-react";
-import { sb, entitasSesi, fmtRp } from "../../lib/api";
+import { sb, sbAll, entitasSesi, fmtRp } from "../../lib/api";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 
 // =========================================================
 // PINDAHKAN SKU DARI MASTER BARANG (gudang) KE BARANG TOKO (kasir).
-// - Membuat baris master_toko dari data SKU: kode = SKU, harga jual = Ecer,
-//   HPP = HPP, sku_gudang = SKU (tertaut, jadi bisa dimutasi stoknya).
-// - Kalau SKU sudah ada di Barang Toko, tidak dibuat dobel (dilewati).
+// - Membuat baris master_toko dari data SKU:
+//     kode   = KODE ENTITAS-nomor urut (mis. OPS-0001), nomor lanjut dari yang terbesar
+//     nama   = nama subkategori + nomor urut per subkategori (mis. "Kemeja 12")
+//     barcode = kode toko, foto = foto SKU di gudang (kalau sudah ada)
+//     harga jual = Ecer, HPP = HPP, sku_gudang = SKU (tertaut, jadi bisa dimutasi stoknya).
+// - Kalau SKU sudah ada di Barang Toko (dicek lewat sku_gudang), tidak dibuat dobel (dilewati).
 // - Kalau satu SKU dipilih & jumlah diisi, stok gudang ikut dipindah ke toko
 //   lewat fungsi database toko_mutasi_dari_gudang (atomik, tercatat riwayatnya).
 // Hanya dipanggil dari Master Barang untuk role superappa.
 // =========================================================
 
-export default function PindahKeToko({ daftar, labelKategori, onClose, onSelesai }) {
+export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, fotoPerSku, onClose, onSelesai }) {
   const tunggal = daftar.length === 1 ? daftar[0] : null;
-  const [sudahAda, setSudahAda] = useState(null); // Set kode yang sudah ada di master_toko
+  const [sudahAda, setSudahAda] = useState(null); // Map sku_gudang -> kode toko yang sudah ada
+  const [semuaToko, setSemuaToko] = useState([]); // { kode, nama } seluruh barang toko (untuk nomor urut)
   const [qty, setQty] = useState("");
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
@@ -23,10 +27,16 @@ export default function PindahKeToko({ daftar, labelKategori, onClose, onSelesai
   const [hasil, setHasil] = useState(null); // { dibuat, dilewati, gagal: [], dipindah }
 
   useEffect(() => {
-    const daftarKode = daftar.map((s) => `"${String(s.sku).replace(/"/g, "")}"`).join(",");
-    sb(`master_toko?select=kode&kode=in.(${encodeURIComponent(daftarKode)})`)
-      .then((r) => setSudahAda(new Set((r || []).map((x) => x.kode))))
-      .catch(() => setSudahAda(new Set()));
+    const daftarSku = daftar.map((s) => `"${String(s.sku).replace(/"/g, "")}"`).join(",");
+    Promise.all([
+      sb(`master_toko?select=kode,sku_gudang&sku_gudang=in.(${encodeURIComponent(daftarSku)})`),
+      sbAll("master_toko?select=kode,nama"),
+    ])
+      .then(([ada, semua]) => {
+        setSudahAda(new Map((ada || []).map((x) => [x.sku_gudang, x.kode])));
+        setSemuaToko(semua || []);
+      })
+      .catch(() => setSudahAda(new Map()));
   }, [daftar]);
 
   const jalankan = async () => {
@@ -38,31 +48,60 @@ export default function PindahKeToko({ daftar, labelKategori, onClose, onSelesai
     setSaving(true);
     setError("");
     const out = { dibuat: 0, dilewati: 0, gagal: [], dipindah: 0 };
+    const prefix = String(entitasSesi()).toUpperCase();
+    // Nomor urut kode toko: lanjut dari nomor terbesar yang sudah ada untuk entitas ini.
+    let nomorKode = 0;
+    for (const t of semuaToko) {
+      const m = String(t.kode || "").toUpperCase().match(new RegExp(`^${prefix}-(\\d+)$`));
+      if (m) nomorKode = Math.max(nomorKode, parseInt(m[1], 10));
+    }
+    // Nomor urut nama per subkategori ("Kemeja 12"): lanjut dari yang terbesar.
+    const nomorNama = new Map();
+    const urutNama = (label) => {
+      if (!nomorNama.has(label)) {
+        let mx = 0;
+        const awal = `${label} `;
+        for (const t of semuaToko) {
+          const nm = String(t.nama || "");
+          if (nm.startsWith(awal) && /^\d+$/.test(nm.slice(awal.length))) mx = Math.max(mx, parseInt(nm.slice(awal.length), 10));
+        }
+        nomorNama.set(label, mx);
+      }
+      const n = nomorNama.get(label) + 1;
+      nomorNama.set(label, n);
+      return n;
+    };
     for (const s of daftar) {
+      let kodeToko = sudahAda?.get(s.sku) || null;
       try {
-        if (sudahAda?.has(s.sku)) {
+        if (kodeToko) {
           out.dilewati += 1;
         } else {
           if (!(Number(s.ecer) > 0)) throw new Error("Harga Ecer kosong/0 — isi harga dulu di Master Barang.");
+          const labelSub = (labelSubkategori ? labelSubkategori(s.subkategori) : "") || "";
+          kodeToko = `${prefix}-${String(nomorKode + 1).padStart(4, "0")}`;
+          const nama = labelSub ? `${labelSub} ${urutNama(labelSub)}` : (s.nama || "").trim() || s.sku;
           await sb("master_toko", {
             method: "POST",
             body: JSON.stringify({
-              kode: s.sku,
-              nama: (s.nama || "").trim() || s.sku,
+              kode: kodeToko,
+              nama,
               kategori: labelKategori(s.kategori) || null,
-              barcode: s.sku, // barcode toko = SKU (bukan barcode supplier)
+              barcode: kodeToko, // barcode toko = kode toko (bukan barcode supplier)
               harga_jual: Math.round(Number(s.ecer) || 0),
               hpp: Math.round(Number(s.hpp) || 0),
               sku_gudang: s.sku,
+              foto_url: fotoPerSku?.get(s.sku) || null,
               nonaktif: false,
             }),
           });
+          nomorKode += 1; // naik hanya kalau berhasil disimpan
           out.dibuat += 1;
         }
         if (tunggal && n > 0) {
           await sb("rpc/toko_mutasi_dari_gudang", {
             method: "POST",
-            body: JSON.stringify({ p: { entitas: entitasSesi(), kode: s.sku, qty: n, catatan: catatan.trim() || null } }),
+            body: JSON.stringify({ p: { entitas: entitasSesi(), kode: kodeToko, qty: n, catatan: catatan.trim() || null } }),
           });
           out.dipindah = n;
         }

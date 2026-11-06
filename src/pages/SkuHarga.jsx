@@ -782,6 +782,8 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
         <PindahKeToko
           daftar={pindah}
           labelKategori={kategoriLabel}
+          labelSubkategori={subkategoriLabel}
+          fotoPerSku={fotoPerSku}
           onClose={() => setPindah(null)}
           onSelesai={(h) => {
             setPindah(null);
