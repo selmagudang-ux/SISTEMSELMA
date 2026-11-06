@@ -3,6 +3,7 @@ import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut } from "lucide-
 import { fmtRp } from "../../lib/api";
 import { bukaShift, ringkasShift, tutupShift, pesanErrorKasir } from "./kasirApi";
 import { tglJamId } from "./kasirStruk";
+import { bukaLaciSaatBukaKasir } from "./kasirLaci";
 
 // =========================================================
 // KASIR — SHIFT (fase 5)
@@ -61,7 +62,9 @@ export function LayarBukaShift({ session, onBuka, onKeluar }) {
     setSaving(true);
     setError("");
     try {
-      onBuka(await bukaShift({ session, kasAwal }));
+      const shift = await bukaShift({ session, kasAwal });
+      bukaLaciSaatBukaKasir({ kasir: session?.nama || session?.username, kasAwal }); // cetak slip -> driver printer membuka laci
+      onBuka(shift);
     } catch (e) {
       setError(pesanErrorKasir(e, "koreksi").pesan);
       setSaving(false);
