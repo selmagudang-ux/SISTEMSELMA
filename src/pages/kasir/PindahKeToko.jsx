@@ -50,7 +50,7 @@ export default function PindahKeToko({ daftar, labelKategori, onClose, onSelesai
               kode: s.sku,
               nama: (s.nama || "").trim() || s.sku,
               kategori: labelKategori(s.kategori) || null,
-              barcode: (s.barcode_supplier || "").trim() || null,
+              barcode: s.sku, // barcode toko = SKU (bukan barcode supplier)
               harga_jual: Math.round(Number(s.ecer) || 0),
               hpp: Math.round(Number(s.hpp) || 0),
               sku_gudang: s.sku,
@@ -88,7 +88,7 @@ export default function PindahKeToko({ daftar, labelKategori, onClose, onSelesai
             <div className="space-y-0.5">{hasil.gagal.map((g) => <div key={g}>{g}</div>)}</div>
           </div>
         )}
-        <button onClick={() => onSelesai(hasil)} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3 rounded-xl">
+        <button onClick={() => onSelesai(hasil)} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3.5 rounded-2xl">
           Selesai
         </button>
       </Kerangka>
@@ -136,7 +136,7 @@ export default function PindahKeToko({ daftar, labelKategori, onClose, onSelesai
       <button
         onClick={jalankan}
         disabled={saving || sudahAda === null}
-        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3 rounded-xl"
+        className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3.5 rounded-2xl"
       >
         {saving && <Loader2 size={15} className="animate-spin" />} Pindahkan
       </button>

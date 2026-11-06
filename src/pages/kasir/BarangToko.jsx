@@ -89,7 +89,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
     const data = {
       nama: f.nama.trim(),
       kategori: f.kategori.trim() || null,
-      barcode: f.barcode.trim() || null,
+      barcode: baru ? kode : barang.kode, // barcode toko selalu sama dengan kode (SKU)
       harga_jual: Math.round(Number(f.harga_jual) || 0),
       hpp: Math.round(Number(f.hpp) || 0),
       sku_gudang: f.sku_gudang.trim() || null,
@@ -132,8 +132,8 @@ function FormBarang({ barang, onSimpan, onClose }) {
           <input value={f.kategori} onChange={(e) => set("kategori")(e.target.value)} className={inp} />
         </label>
         <label className="block">
-          <div className="text-xs text-slate-400 mb-1">Barcode</div>
-          <input value={f.barcode} onChange={(e) => set("barcode")(e.target.value)} className={inp} />
+          <div className="text-xs text-slate-400 mb-1">Barcode (otomatis sama dengan kode)</div>
+          <input value={baru ? f.kode : barang.kode} disabled className={`${inp} font-mono disabled:opacity-60`} />
         </label>
       </div>
       <label className="block">
