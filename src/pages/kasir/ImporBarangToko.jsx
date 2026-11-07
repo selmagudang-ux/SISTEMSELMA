@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Loader2, Check, AlertCircle, FileDown, FileUp, ImagePlus } from "lucide-react";
-import { sb, entitasSesi, fmtRp, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
+import { sb, sbAll, entitasSesi, fmtRp, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { downloadXlsx } from "../../lib/exportData";
 import { Kerangka, Galat, pesanError } from "./BarangToko";
 
@@ -8,6 +8,8 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 // IMPORT BARANG TOKO DARI FILE EXCEL / CSV
 // Kolom file: Nama, Kategori, HPP, Harga Jual, Stok Awal.
 //  - Kode toko dibuat otomatis: KODE ENTITAS-nomor urut (mis. OPS-0001), lanjut dari yang terbesar.
+//  - SKU (opsional): kalau diisi harus ada di Master Barang (sku_master) dan belum dipakai barang toko lain;
+//    barang ditautkan (sku_gudang) dan barcode = SKU. Tanpa SKU = barang bebas.
 //  - Barcode BEBAS: boleh diisi di kolom "Barcode" (opsional); kosong = sama dengan kode toko.
 //    Barang tidak ditautkan ke SKU gudang.
 //  - Barang yang namanya sudah ada di Barang Toko (atau dobel di file) DILEWATI.
@@ -27,6 +29,7 @@ const ALIAS = {
   hpp: ["hpp", "hargabeli", "modal"],
   harga: ["hargajual", "harga", "hargaecer"],
   stok: ["stokawal", "stok", "jumlah"],
+  sku: ["sku", "skuopsional", "skugudang", "kodesku"],
   barcode: ["barcode", "kodebarcode", "barcodeopsional"],
   foto: ["fotolink", "linkfoto", "fotourl", "urlfoto", "linkgambar", "gambar", "foto"],
 };
@@ -60,6 +63,7 @@ async function bacaFile(file) {
       hpp: kolom.hpp === undefined ? 0 : angka(r[kolom.hpp]),
       harga: angka(r[kolom.harga]),
       stok: kolom.stok === undefined ? 0 : angka(r[kolom.stok]),
+      sku: kolom.sku === undefined ? "" : String(r[kolom.sku] ?? "").trim(),
       barcode: kolom.barcode === undefined ? "" : String(r[kolom.barcode] ?? "").trim(),
       fotoMentah: kolom.foto === undefined ? "" : String(r[kolom.foto] ?? "").trim(),
     }));
@@ -83,12 +87,13 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           { key: "hpp", label: "HPP" },
           { key: "harga", label: "Harga Jual" },
           { key: "stok", label: "Stok Awal" },
+          { key: "sku", label: "SKU (opsional)" },
           { key: "barcode", label: "Barcode (opsional)" },
           { key: "foto", label: "Foto (link)" },
         ],
         rows: [
-          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, barcode: "8991234567890", foto: "https://contoh.com/kemeja-1.jpg" },
-          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, barcode: "", foto: "" },
+          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, sku: "", barcode: "8991234567890", foto: "https://contoh.com/kemeja-1.jpg" },
+          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, sku: "SKU-CONTOH-001", barcode: "", foto: "" },
         ],
       },
     ]);
@@ -104,24 +109,37 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
       const data = await bacaFile(file);
       if (!data.length) throw new Error("File kosong, tidak ada baris barang.");
       const ada = new Set(barangAda.map((b) => namaKey(b.nama)));
+      // SKU (opsional): harus ada di Master Barang; barang ditautkan ke SKU itu dan barcode = SKU.
+      let masterSku = null;
+      if (data.some((d) => d.sku)) {
+        const m = await sbAll("sku_master?select=sku");
+        masterSku = new Map((m || []).map((x) => [String(x.sku).toLowerCase(), x.sku]));
+      }
+      const skuToko = new Map(barangAda.filter((b) => b.sku_gudang).map((b) => [String(b.sku_gudang).toLowerCase(), b.kode]));
+      const skuFile = new Set();
       const dalamFile = new Set();
       const barcodeAda = new Set(barangAda.map((b) => String(b.barcode || "").toLowerCase()).filter(Boolean));
       const barcodeFile = new Set();
       setBaris(
         data.map((d) => {
+          const skuAsli = d.sku ? masterSku?.get(d.sku.toLowerCase()) || null : null;
+          const bc = skuAsli || d.barcode; // ada SKU valid -> barcode = SKU
           let status = "ok";
           let pesan = "";
           if (!d.nama) { status = "salah"; pesan = "Nama kosong"; }
           else if (!(d.harga > 0)) { status = "salah"; pesan = "Harga jual harus lebih dari 0"; }
           else if (Number.isNaN(d.hpp) || (d.hpp ?? 0) < 0) { status = "salah"; pesan = "HPP tidak valid"; }
           else if (Number.isNaN(d.stok) || (d.stok ?? 0) < 0 || !Number.isInteger(d.stok ?? 0)) { status = "salah"; pesan = "Stok awal harus bilangan bulat 0 atau lebih"; }
-          else if (d.barcode && barcodeAda.has(d.barcode.toLowerCase())) { status = "salah"; pesan = "Barcode sudah dipakai barang lain"; }
-          else if (d.barcode && barcodeFile.has(d.barcode.toLowerCase())) { status = "salah"; pesan = "Barcode dobel di file"; }
+          else if (d.sku && !skuAsli) { status = "salah"; pesan = "SKU tidak ada di Master Barang"; }
+          else if (d.sku && skuToko.has(d.sku.toLowerCase())) { status = "salah"; pesan = `SKU sudah dipakai barang toko ${skuToko.get(d.sku.toLowerCase())}`; }
+          else if (d.sku && skuFile.has(d.sku.toLowerCase())) { status = "salah"; pesan = "SKU dobel di file"; }
+          else if (bc && barcodeAda.has(bc.toLowerCase())) { status = "salah"; pesan = "Barcode sudah dipakai barang lain"; }
+          else if (bc && barcodeFile.has(bc.toLowerCase())) { status = "salah"; pesan = "Barcode dobel di file"; }
           else if (ada.has(namaKey(d.nama))) { status = "lewati"; pesan = "Sudah ada di Barang Toko"; }
           else if (dalamFile.has(namaKey(d.nama))) { status = "lewati"; pesan = "Nama dobel di file"; }
-          if (status === "ok") { dalamFile.add(namaKey(d.nama)); if (d.barcode) barcodeFile.add(d.barcode.toLowerCase()); }
+          if (status === "ok") { dalamFile.add(namaKey(d.nama)); if (bc) barcodeFile.add(bc.toLowerCase()); if (d.sku) skuFile.add(d.sku.toLowerCase()); }
           const adaLink = /^https?:\/\/\S+$/i.test(d.fotoMentah);
-          return { ...d, fotoUrl: adaLink ? d.fotoMentah : "", fotoSalah: !!d.fotoMentah && !adaLink, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
+          return { ...d, barcode: bc, sku: skuAsli || "", fotoUrl: adaLink ? d.fotoMentah : "", fotoSalah: !!d.fotoMentah && !adaLink, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
         })
       );
     } catch (err) {
@@ -169,6 +187,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                 nama: b.nama,
                 kategori: b.kategori || null,
                 barcode: b.barcode || b.kode,
+                sku_gudang: b.sku || null,
                 harga_jual: b.harga,
                 hpp: b.hpp,
                 foto_url: b.fotoUrl || null,
@@ -263,7 +282,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
   return (
     <Kerangka judul="Import Barang Toko dari file" onClose={proses ? () => {} : onClose}>
       <div className="text-xs text-slate-400 leading-relaxed">
-        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko) dan <b className="text-slate-200">Foto (link)</b> (alamat gambar yang diawali https://). Kode toko dibuat otomatis (contoh OPS-0001).
+        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">SKU</b> (harus ada di Master Barang; barang ditautkan ke SKU itu dan barcode = SKU), <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko; diabaikan kalau SKU diisi) dan <b className="text-slate-200">Foto (link)</b> (alamat gambar yang diawali https://). Kode toko dibuat otomatis (contoh OPS-0001).
         Barang yang namanya sudah ada dilewati.
       </div>
 
