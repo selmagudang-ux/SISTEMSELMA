@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ScanLine, Trash2, Upload, RefreshCw, Volume2, VolumeX, AlertTriangle,
-  CheckCircle2, Ban, Download, Search, Copy, CloudOff, Package, FileSpreadsheet,
+  CheckCircle2, Ban, Download, Search, Copy, CloudOff, Package, FileSpreadsheet, PackageCheck,
 } from "lucide-react";
 import {
   PageHeader, EmptyState, StatCard, Badge, Field, InputTanggal, inputClass,
@@ -48,6 +48,11 @@ const KOLOM_SCAN = "id,resi,ekspedisi,tanggal,discan_oleh,created_at,sesi";
 // PENGIRIMAN (pickup kurir) bisa berisi beberapa sesi. Tabelnya resi_sesi (lihat scan_resi_sesi.sql).
 const KOLOM_SESI = "id,tanggal,sesi,ditutup_at,ditutup_oleh,pengiriman,dikirim_at,dikirim_oleh";
 const KOLOM_CANCEL = "id,resi,no_pesanan,platform,alasan,created_at";
+// RETUR RESI: paket yang BALIK ke gudang (cancel yang sudah terlanjur dikirim, atau paket gagal kirim).
+// Tabelnya resi_retur (lihat retur_resi.sql). jenis: cancel | kirim_balik | tidak_dikenal.
+const KOLOM_RETUR = "id,resi,ekspedisi,jenis,no_pesanan,platform,tanggal,diterima_oleh,created_at";
+const LABEL_JENIS_RETUR = { cancel: "Cancel", kirim_balik: "Gagal kirim", tidak_dikenal: "Tidak dikenal" };
+const WARNA_JENIS_RETUR = { cancel: "red", kirim_balik: "amber", tidak_dikenal: "slate" };
 const KOLOM_ORDERAN = "resi,order_id,platform,barang,total_qty,tanggal";
 
 // Deteksi "resi hilang" saat import orderan ke-2 dst. di hari yang sama. MATI: daftar cancel diisi manual,
@@ -98,6 +103,7 @@ function bunyi(tipe) {
       ok: [{ f: 880, d: 0.08, t: "sine" }],
       dup: [{ f: 330, d: 0.12, t: "square" }, { f: 330, d: 0.12, t: "square", jeda: 0.08 }],
       cancel: [{ f: 220, d: 0.35, t: "sawtooth" }, { f: 180, d: 0.45, t: "sawtooth", jeda: 0.05 }],
+      retur: [{ f: 660, d: 0.1, t: "sine" }, { f: 990, d: 0.14, t: "sine", jeda: 0.04 }],
       asing: [{ f: 440, d: 0.18, t: "triangle" }, { f: 300, d: 0.25, t: "triangle", jeda: 0.06 }],
     }[tipe] || [];
     let t0 = audioCtx.currentTime;
@@ -113,7 +119,7 @@ function bunyi(tipe) {
       osc.stop(t0 + n.d);
       t0 += n.d;
     });
-    if (tipe !== "ok") navigator.vibrate?.(tipe === "cancel" ? [200, 100, 200] : 120);
+    if (tipe !== "ok" && tipe !== "retur") navigator.vibrate?.(tipe === "cancel" ? [200, 100, 200] : 120);
   } catch {
     // perangkat/browser tanpa audio — abaikan
   }
@@ -188,13 +194,13 @@ function KartuHasil({ hasil }) {
     asing: { box: "bg-amber-500/20 border-amber-400/60 text-amber-100", Ikon: AlertTriangle, judul: "TIDAK ADA DI ORDERAN" },
     err: { box: "bg-md-error-container border-red-400/60 text-md-on-error-container", Ikon: AlertTriangle, judul: "GAGAL" },
   }[hasil.tipe];
-  const { Ikon } = gaya;
+  const Ikon = hasil.retur ? PackageCheck : gaya.Ikon;
   return (
     <div className={`rounded-md-lg border-2 p-5 ${gaya.box}`}>
       <div className="flex items-center gap-3">
         <Ikon size={hasil.tipe === "cancel" ? 36 : 28} />
         <div className="min-w-0">
-          <div className={`font-bold ${hasil.tipe === "cancel" ? "text-2xl" : "text-lg"}`}>{hasil.tipe === "ok" && hasil.barang?.length ? "OK — Sesuai orderan" : gaya.judul}</div>
+          <div className={`font-bold ${hasil.tipe === "cancel" ? "text-2xl" : "text-lg"}`}>{hasil.judul || (hasil.tipe === "ok" && hasil.barang?.length ? "OK — Sesuai orderan" : gaya.judul)}</div>
           <div className="font-mono text-sm break-all">{hasil.resi}</div>
         </div>
       </div>
@@ -228,6 +234,8 @@ function KartuHasil({ hasil }) {
 export default function ScanResi({ sub = "scan", session, showToast }) {
   const toast = useCallback((m, k) => showToast?.(m, k), [showToast]);
   const operator = session?.nama || session?.username || null;
+  // Retur Resi sementara KHUSUS Super Appa (sub-menu juga disembunyikan dari sidebar lewat onlyRole di constants.js).
+  const bisaRetur = session?.role === "superappa";
 
   // ---------------- data ----------------
   const [hari, setHari] = useState(hariIni());
@@ -246,6 +254,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     setBelumKirim(baru);
   }, []);
   const [cancelRows, setCancelRows] = useState([]);
+  const [returRows, setReturRows] = useState([]); // resi yang sudah dikonfirmasi BALIK (tabel resi_retur)
+  const [galatRetur, setGalatRetur] = useState("");
   const [orderanRows, setOrderanRows] = useState([]);
   const [orderanGalat, setOrderanGalat] = useState("");
   const [memuat, setMemuat] = useState(true);
@@ -278,6 +288,21 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     lastCancel.current = rows?.[0]?.created_at || batas;
   }, []);
 
+  // Retur dimuat terpisah: kalau tabel resi_retur belum dibuat (retur_resi.sql), scan & cancel tetap jalan.
+  const muatRetur = useCallback(async () => {
+    if (!bisaRetur) return;
+    try {
+      const batas = new Date(Date.now() - HARI_RIWAYAT_CANCEL * 864e5).toISOString();
+      const rows = await sbAll(
+        `resi_retur?select=${KOLOM_RETUR}&created_at=gte.${encodeURIComponent(batas)}&order=created_at.desc,id.desc`
+      );
+      setReturRows(rows || []);
+      setGalatRetur("");
+    } catch (e) {
+      setGalatRetur(e.message || "Gagal memuat data retur resi.");
+    }
+  }, [bisaRetur]);
+
   // Orderan (resi -> barang) hanya dimuat SEKALI per buka halaman / ganti tanggal / "Muat ulang"
   // (tidak di-poll) supaya hemat egress; pencocokan saat scan dikerjakan di perangkat.
   const muatOrderan = useCallback(async () => {
@@ -296,14 +321,14 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     setMemuat(true);
     setGalat("");
     try {
-      await Promise.all([muatScan(rentang[0], rentang[1]), muatCancel()]);
+      await Promise.all([muatScan(rentang[0], rentang[1]), muatCancel(), muatRetur()]);
     } catch (e) {
       setGalat(e.message || "Gagal memuat data scan resi.");
     } finally {
       setMemuat(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [muatScan, muatCancel, rentang[0], rentang[1]]);
+  }, [muatScan, muatCancel, muatRetur, rentang[0], rentang[1]]);
 
   useEffect(() => {
     muatSemua();
@@ -1141,6 +1166,207 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     }
   };
 
+  // ---------------- RETUR RESI ----------------
+  // Scan resi paket yang BALIK ke gudang. Jenisnya ditentukan otomatis:
+  //  - cancel        : resi ada di Daftar Cancel (pesanan batal, paket sudah terlanjur keluar)
+  //  - kirim_balik   : resi pernah di-scan kirim tapi BUKAN cancel (gagal kirim / ditolak / alamat salah)
+  //  - tidak_dikenal : tidak ada di keduanya -> minta konfirmasi dulu sebelum dicatat
+  // Satu resi hanya bisa dicatat balik SEKALI (unik per PT). Cek ke server dilakukan per scan, jadi
+  // tidak bergantung pada rentang tanggal yang sedang dimuat di layar.
+  const [returInput, setReturInput] = useState("");
+  const [hasilRetur, setHasilRetur] = useState(null);
+  const returInputRef = useRef(null);
+  const antreanRetur = useRef(Promise.resolve());
+  const returMap = useMemo(() => new Map(returRows.map((r) => [r.resi, r])), [returRows]);
+  const refRetur = useRef({});
+  refRetur.current = { returMap, suara, operator };
+  const [returTampil, setReturTampil] = useState("menunggu"); // menunggu | diterima
+  const [modeMenunggu, setModeMenunggu] = useState("dikirim"); // dikirim = cancel yg terlanjur keluar | semua
+  const [tglRetur, setTglRetur] = useState(hariIni());
+  const [semuaTglRetur, setSemuaTglRetur] = useState(false);
+  const [cariRetur, setCariRetur] = useState("");
+
+  // Info scan untuk resi cancel: menentukan mana yang "terlanjur dikirim" (di-scan SEBELUM cancel diketahui).
+  const [scanCancel, setScanCancel] = useState(() => new Map());
+  const cekScanRef = useRef(new Set());
+  useEffect(() => {
+    if (sub !== "retur" || !bisaRetur || memuat) return undefined;
+    const belum = cancelRows.map((r) => r.resi).filter((x) => !cekScanRef.current.has(x));
+    if (!belum.length) return undefined;
+    let batal = false;
+    (async () => {
+      try {
+        const potong = [];
+        for (let i = 0; i < belum.length; i += 80) potong.push(belum.slice(i, i + 80));
+        const hasilMap = new Map();
+        for (let i = 0; i < potong.length; i += 4) {
+          const grup = await Promise.all(
+            potong.slice(i, i + 4).map((p) =>
+              sb(`resi_scan?select=resi,ekspedisi,tanggal,created_at,sesi&resi=in.(${p.map(encodeURIComponent).join(",")})`)
+            )
+          );
+          grup.flat().forEach((x) => x && hasilMap.set(x.resi, x));
+        }
+        if (batal) return;
+        belum.forEach((x) => cekScanRef.current.add(x));
+        setScanCancel((lama) => {
+          const m = new Map(lama);
+          hasilMap.forEach((v, k) => m.set(k, v));
+          return m;
+        });
+      } catch {
+        // gagal sesaat — dicoba lagi saat tab Retur dibuka berikutnya
+      }
+    })();
+    return () => { batal = true; };
+  }, [sub, bisaRetur, memuat, cancelRows]);
+
+  // Cancel yang belum dikonfirmasi balik. "terlanjur" = paketnya sudah di-scan kirim sebelum cancel diketahui.
+  const menunggu = useMemo(
+    () =>
+      cancelRows
+        .filter((c) => !returMap.has(c.resi))
+        .map((c) => {
+          const sc = scanCancel.get(c.resi) || null;
+          return { ...c, scan: sc, terlanjur: !!sc && new Date(sc.created_at) < new Date(c.created_at) };
+        }),
+    [cancelRows, returMap, scanCancel]
+  );
+  const menungguDikirim = useMemo(() => menunggu.filter((r) => r.terlanjur), [menunggu]);
+  const menungguView = useMemo(() => {
+    const dasar = modeMenunggu === "dikirim" ? menungguDikirim : menunggu;
+    const q = cariRetur.trim().toUpperCase();
+    return q ? dasar.filter((r) => r.resi.includes(q) || (r.no_pesanan || "").toUpperCase().includes(q)) : dasar;
+  }, [modeMenunggu, menungguDikirim, menunggu, cariRetur]);
+  const diterimaView = useMemo(() => {
+    const dasar = semuaTglRetur ? returRows : returRows.filter((r) => r.tanggal === tglRetur);
+    const q = cariRetur.trim().toUpperCase();
+    return q ? dasar.filter((r) => r.resi.includes(q) || (r.no_pesanan || "").toUpperCase().includes(q)) : dasar;
+  }, [returRows, tglRetur, semuaTglRetur, cariRetur]);
+  const returHariIni = useMemo(() => returRows.filter((r) => r.tanggal === hariIni()).length, [returRows]);
+
+  const kerjakanRetur = useCallback(async (raw) => {
+    const { returMap: rmap, suara: bunyiAktif, operator: op } = refRetur.current;
+    const bip = (t) => bunyiAktif && bunyi(t);
+    const resi = normalisasiResi(raw);
+    if (!resi) {
+      setHasilRetur({ tipe: "err", resi: String(raw).trim().slice(0, 60), info: "Bukan format resi yang valid (6–40 karakter huruf/angka)." });
+      bip("dup");
+      return;
+    }
+    if (bukanResi(resi)) {
+      setHasilRetur({ tipe: "err", resi, info: "Ini bukan nomor resi (hanya angka pendek) — kemungkinan QR/barcode lain di paket. TIDAK disimpan. Arahkan ke barcode resi (garis)." });
+      bip("dup");
+      return;
+    }
+    const sudah = rmap.get(resi);
+    if (sudah) {
+      setHasilRetur({
+        tipe: "dup", judul: "SUDAH PERNAH DI-RETUR", resi, ekspedisi: sudah.ekspedisi,
+        info: `Sudah dicatat balik ${formatTanggalID(sudah.tanggal)} pukul ${jam(sudah.created_at)}${sudah.diterima_oleh ? ` oleh ${sudah.diterima_oleh}` : ""}.`,
+      });
+      bip("dup");
+      return;
+    }
+    // Cek ke server: pernah di-scan kirim? ada di daftar cancel? ada di orderan (untuk tampilkan barang)?
+    let sc = null, cn = null, od = null;
+    try {
+      const q = encodeURIComponent(resi);
+      const [a, b, c] = await Promise.all([
+        sb(`resi_scan?select=resi,ekspedisi,tanggal,created_at,sesi&resi=eq.${q}&limit=1`),
+        sb(`resi_cancel?select=${KOLOM_CANCEL}&resi=eq.${q}&limit=1`),
+        sb(`resi_barang?select=${KOLOM_ORDERAN}&resi=eq.${q}&order=tanggal.desc&limit=1`).catch(() => []),
+      ]);
+      sc = a?.[0] || null; cn = b?.[0] || null; od = c?.[0] || null;
+    } catch (e) {
+      setHasilRetur({ tipe: "err", resi, info: `Gagal mengecek resi: ${e.message || "jaringan bermasalah"}. TIDAK dicatat — scan ulang.` });
+      bip("dup");
+      return;
+    }
+    const ekspedisi = sc?.ekspedisi && sc.ekspedisi !== "LAINNYA" ? sc.ekspedisi : deteksiEkspedisi(resi);
+    const jenis = cn ? "cancel" : sc ? "kirim_balik" : "tidak_dikenal";
+    if (jenis === "tidak_dikenal") {
+      bip("asing");
+      const setuju = await mintaKonfirm({
+        resi, ekspedisi, judul: "Resi tidak dikenal",
+        teks: "Resi ini tidak ada di Daftar Cancel maupun di riwayat scan kirim. Kemungkinan salah scan, atau paket dari sistem/tanggal lain. Tetap catat sebagai retur?",
+      });
+      if (!setuju) {
+        setHasilRetur({ tipe: "err", resi, ekspedisi, info: "Resi tidak dikenal — TIDAK dicatat (dibatalkan oleh operator)." });
+        return;
+      }
+    }
+    try {
+      const res = await sb("resi_retur", {
+        method: "POST",
+        body: JSON.stringify({
+          resi, ekspedisi, jenis, tanggal: hariIni(), diterima_oleh: op,
+          no_pesanan: cn?.no_pesanan || od?.order_id || null,
+          platform: cn?.platform || od?.platform || null,
+        }),
+      });
+      const baris = Array.isArray(res) ? res[0] : res;
+      if (baris) setReturRows((l) => [baris, ...l.filter((x) => x.id !== baris.id)]);
+    } catch (e) {
+      if (e.pgCode === "23505") {
+        // Sudah dicatat dari perangkat lain.
+        setHasilRetur({ tipe: "dup", judul: "SUDAH PERNAH DI-RETUR", resi, ekspedisi, info: "Sudah dicatat balik (mungkin dari perangkat lain)." });
+        bip("dup");
+        muatRetur();
+        return;
+      }
+      setHasilRetur({ tipe: "err", resi, ekspedisi, info: `Gagal menyimpan: ${e.message || "jaringan bermasalah"}. TIDAK dicatat — scan ulang.` });
+      bip("dup");
+      return;
+    }
+    const infoDikirim = sc ? `Dikirim ${formatTanggalID(sc.tanggal)} pukul ${jam(sc.created_at)} (Sesi ${sc.sesi || 1}).` : "";
+    if (jenis === "cancel") {
+      setHasilRetur({
+        tipe: "ok", retur: true, judul: "RETUR CANCEL DITERIMA", resi, ekspedisi, barang: od?.barang, orderId: od?.order_id || cn.no_pesanan,
+        info: [cn.platform, cn.alasan, infoDikirim].filter(Boolean).join(" · ") || "Paket cancel sudah kembali ke gudang.",
+      });
+      bip("retur");
+    } else if (jenis === "kirim_balik") {
+      setHasilRetur({
+        tipe: "ok", retur: true, judul: "PAKET KEMBALI DITERIMA", resi, ekspedisi, barang: od?.barang, orderId: od?.order_id,
+        info: `${infoDikirim} Bukan pesanan cancel — cek penyebab kembalinya (gagal kirim / ditolak / alamat salah).`,
+      });
+      bip("retur");
+    } else {
+      setHasilRetur({
+        tipe: "asing", retur: true, judul: "TIDAK DIKENAL — TERCATAT SEBAGAI RETUR", resi, ekspedisi,
+        info: "Tidak ada di Daftar Cancel maupun riwayat scan kirim; tetap dicatat atas konfirmasi Anda.",
+      });
+      bip("asing");
+    }
+  }, [mintaKonfirm, muatRetur]);
+
+  const prosesRetur = useCallback(
+    (raw) => {
+      antreanRetur.current = antreanRetur.current.then(() => kerjakanRetur(raw)).catch(() => {});
+    },
+    [kerjakanRetur]
+  );
+  const kirimInputRetur = () => {
+    const v = returInput;
+    setReturInput("");
+    if (v.trim()) prosesRetur(v);
+    returInputRef.current?.focus();
+  };
+  useEffect(() => {
+    if (sub === "retur" && bisaRetur) returInputRef.current?.focus();
+  }, [sub, bisaRetur, memuat]);
+
+  const hapusRetur = async (r) => {
+    if (!window.confirm(`Batalkan catatan retur ${r.resi}? (resi ini kembali berstatus belum balik)`)) return;
+    try {
+      await sb(`resi_retur?id=eq.${r.id}`, { method: "DELETE", prefer: "return=minimal" });
+      setReturRows((l) => l.filter((x) => x.id !== r.id));
+    } catch (e) {
+      toast(e.message, "err");
+    }
+  };
+
   // Filter tanggal daftar cancel: default hari ini, bisa pilih hari lain atau semua tanggal.
   const [tglCancel, setTglCancel] = useState(hariIni());
   const [semuaTglCancel, setSemuaTglCancel] = useState(false);
@@ -1160,10 +1386,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     </button>
   );
 
-  const judul = { scan: "Scan Resi", cancel: "Daftar Resi Cancel", rekap: "Rekap Scan Resi" }[sub] || "Scan Resi";
+  const judul = { scan: "Scan Resi", cancel: "Daftar Resi Cancel", retur: "Retur Resi", rekap: "Rekap Scan Resi" }[sub] || "Scan Resi";
   const deskripsi = {
     scan: "Scan resi paket yang mau dikirim. Resi dihitung per ekspedisi, dicocokkan dengan orderan (barang ikut tampil), dan resi yang pesanannya cancel langsung ditandai merah.",
     cancel: "Masukkan resi pesanan yang dibatalkan (tempel / upload export marketplace). Resi ini otomatis terfilter saat di-scan.",
+    retur: "Scan resi paket yang BALIK ke gudang untuk mengonfirmasi bahwa paket cancel / gagal kirim sudah kembali. Resi yang belum balik tetap terdaftar di tab \"Menunggu balik\".",
     rekap: "Rekap jumlah resi per ekspedisi untuk rentang tanggal, bisa diekspor ke Excel.",
   }[sub];
 
@@ -1175,14 +1402,14 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4">
           <div className="w-full max-w-sm rounded-xl border-2 border-amber-400/70 bg-slate-950 p-5 text-amber-100">
             <div className="flex items-center gap-2 text-lg font-bold">
-              <AlertTriangle size={26} /> Tidak ada di orderan
+              <AlertTriangle size={26} /> {konfirm.judul || "Tidak ada di orderan"}
             </div>
             <div className="mt-2 font-mono text-base break-all text-white">{konfirm.resi}</div>
             <div className="mt-1 text-sm">
-              {labelEkspedisi(konfirm.ekspedisi)} · akan masuk Sesi {konfirm.sesi}
+              {labelEkspedisi(konfirm.ekspedisi)}{konfirm.sesi ? ` · akan masuk Sesi ${konfirm.sesi}` : ""}
             </div>
             <p className="mt-3 text-sm opacity-90">
-              Resi ini tidak ada di daftar orderan. Kemungkinan salah paket, barcode lain di label, atau file orderan terbaru belum di-import. Simpan tetap?
+              {konfirm.teks || "Resi ini tidak ada di daftar orderan. Kemungkinan salah paket, barcode lain di label, atau file orderan terbaru belum di-import. Simpan tetap?"}
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button type="button" onClick={() => putuskan(false)} className="rounded-lg border border-slate-600 py-3 text-sm font-semibold text-slate-100">
@@ -1857,6 +2084,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant">{labelEkspedisi(deteksiEkspedisi(r.resi))}</td>
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{[r.platform, r.no_pesanan].filter(Boolean).join(" · ")}</td>
                       <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{formatTanggalID(tglWIB(r.created_at))}</td>
+                      <td className="px-2 py-2">{bisaRetur && returMap.has(r.resi) && <Badge color="emerald">Sudah balik</Badge>}</td>
                       <td className="px-3 py-2 text-right">
                         <button type="button" onClick={() => hapusCancel(r)} className="text-md-on-surface-variant hover:text-red-400" aria-label="Hapus">
                           <Trash2 size={14} />
@@ -1869,6 +2097,182 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
               {cancelTampil.length > BATAS_BARIS && (
                 <div className="px-4 py-2 text-xs text-md-on-surface-variant border-t border-md-outline-variant">
                   Menampilkan {BATAS_BARIS} dari {cancelTampil.length} — pakai pencarian untuk menemukan resi tertentu.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {sub === "retur" && !bisaRetur && <EmptyState label="Retur Resi belum dibuka untuk role ini." />}
+      {sub === "retur" && bisaRetur && (
+        <div className="space-y-5">
+          {galatRetur && (
+            <div className="rounded-md-lg bg-md-error-container text-md-on-error-container text-sm p-3">
+              Data retur belum bisa dimuat: {galatRetur}. Pastikan retur_resi.sql sudah dijalankan di Supabase.
+            </div>
+          )}
+          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  ref={returInputRef}
+                  value={returInput}
+                  onChange={(e) => setReturInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), kirimInputRetur())}
+                  placeholder="Scan / ketik resi paket yang balik lalu Enter"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  className={`${inputClass} font-mono text-base`}
+                />
+                <TombolScanKamera continuous format="resi" label="Kamera" judul="Scan Retur Resi" onDetect={prosesRetur} hasil={hasilRetur} renderHasil={(h) => <KartuHasil hasil={h} />} />
+                <button type="button" onClick={gantiSuara} className="px-3 rounded-lg border border-md-outline-variant text-md-on-surface-variant" aria-label="Suara">
+                  {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                </button>
+              </div>
+              <KartuHasil hasil={hasilRetur} />
+            </div>
+            <div className="grid grid-cols-3 gap-3 lg:grid-cols-1">
+              <StatCard label="Balik hari ini" value={returHariIni} icon={PackageCheck} accent="text-emerald-300" />
+              <StatCard label="Cancel terlanjur dikirim, belum balik" value={menungguDikirim.length} accent={menungguDikirim.length ? "text-red-400" : undefined} onClick={() => { setReturTampil("menunggu"); setModeMenunggu("dikirim"); }} />
+              <StatCard label="Semua cancel belum dikonfirmasi" value={menunggu.length} onClick={() => { setReturTampil("menunggu"); setModeMenunggu("semua"); }} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setReturTampil("menunggu")}
+              className={`text-xs px-3 py-1.5 rounded-full border ${returTampil === "menunggu" ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+            >
+              Menunggu balik ({modeMenunggu === "dikirim" ? menungguDikirim.length : menunggu.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setReturTampil("diterima")}
+              className={`text-xs px-3 py-1.5 rounded-full border ${returTampil === "diterima" ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+            >
+              Sudah diterima ({returRows.length})
+            </button>
+            <div className="relative ml-auto w-64">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-md-on-surface-variant" />
+              <input value={cariRetur} onChange={(e) => setCariRetur(e.target.value)} placeholder="Cari resi / no. pesanan" className={`${inputClass} pl-9`} />
+            </div>
+          </div>
+
+          {returTampil === "menunggu" && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModeMenunggu("dikirim")}
+                  className={`text-xs px-3 py-1.5 rounded-full border ${modeMenunggu === "dikirim" ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                >
+                  Terlanjur dikirim ({menungguDikirim.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModeMenunggu("semua")}
+                  className={`text-xs px-3 py-1.5 rounded-full border ${modeMenunggu === "semua" ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                >
+                  Semua cancel ({menunggu.length})
+                </button>
+                <span className="text-xs text-md-on-surface-variant">
+                  {modeMenunggu === "dikirim"
+                    ? "Resi cancel yang paketnya sudah di-scan kirim sebelum cancel diketahui — harus balik ke gudang."
+                    : `Semua resi cancel (${HARI_RIWAYAT_CANCEL} hari terakhir) yang belum dikonfirmasi balik, termasuk yang tertahan di gudang.`}
+                </span>
+                {menungguView.length > 0 && (
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(menungguView.map((r) => r.resi).join("\n"))} className={`${btnText} ml-auto`}>
+                    <Copy size={13} /> Salin daftar resi
+                  </button>
+                )}
+              </div>
+              {menungguView.length === 0 ? (
+                <EmptyState label={modeMenunggu === "dikirim" ? "Tidak ada paket cancel yang menunggu balik." : "Semua resi cancel sudah dikonfirmasi."} />
+              ) : (
+                <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {menungguView.slice(0, BATAS_BARIS).map((r) => (
+                        <tr key={r.id} className="border-b border-md-outline-variant last:border-0">
+                          <td className="px-4 py-2 font-mono text-md-on-surface">{r.resi}</td>
+                          <td className="px-2 py-2 text-xs text-md-on-surface-variant">{labelEkspedisi(deteksiEkspedisi(r.resi))}</td>
+                          <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{[r.platform, r.no_pesanan].filter(Boolean).join(" · ")}</td>
+                          <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">Cancel {formatTanggalID(tglWIB(r.created_at))}</td>
+                          <td className="px-3 py-2 text-right">
+                            {r.terlanjur ? <Badge color="red">Sudah dikirim {formatTanggalID(r.scan.tanggal)}</Badge> : <Badge color="slate">Belum keluar gudang</Badge>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {menungguView.length > BATAS_BARIS && (
+                    <div className="px-4 py-2 text-xs text-md-on-surface-variant border-t border-md-outline-variant">
+                      Menampilkan {BATAS_BARIS} dari {menungguView.length} — pakai pencarian untuk menemukan resi tertentu.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {returTampil === "diterima" && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="w-48">
+                  <Field label="Tanggal balik">
+                    <InputTanggal value={tglRetur} onChange={(v) => { if (v) { setTglRetur(v); setSemuaTglRetur(false); } }} />
+                  </Field>
+                </div>
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => { setTglRetur(hariIni()); setSemuaTglRetur(false); }}
+                    className={`text-xs px-3 py-1.5 rounded-full border ${!semuaTglRetur && tglRetur === hariIni() ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                  >
+                    Hari ini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSemuaTglRetur(true)}
+                    className={`text-xs px-3 py-1.5 rounded-full border ${semuaTglRetur ? "bg-md-primary-container text-md-on-primary-container border-transparent" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                  >
+                    Semua ({HARI_RIWAYAT_CANCEL} hari)
+                  </button>
+                </div>
+                <div className="mb-3 text-sm text-md-on-surface-variant">
+                  {diterimaView.length} paket balik {semuaTglRetur ? `(${HARI_RIWAYAT_CANCEL} hari terakhir)` : `pada ${formatTanggalID(tglRetur)}`}
+                </div>
+              </div>
+              {diterimaView.length === 0 ? (
+                <EmptyState label="Belum ada paket balik yang dicatat." />
+              ) : (
+                <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {diterimaView.slice(0, BATAS_BARIS).map((r) => (
+                        <tr key={r.id} className="border-b border-md-outline-variant last:border-0">
+                          <td className="px-4 py-2 font-mono text-md-on-surface">{r.resi}</td>
+                          <td className="px-2 py-2 text-xs text-md-on-surface-variant">{labelEkspedisi(r.ekspedisi || deteksiEkspedisi(r.resi))}</td>
+                          <td className="px-2 py-2"><Badge color={WARNA_JENIS_RETUR[r.jenis] || "slate"}>{LABEL_JENIS_RETUR[r.jenis] || r.jenis}</Badge></td>
+                          <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{[r.platform, r.no_pesanan].filter(Boolean).join(" · ")}</td>
+                          <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden md:table-cell">{formatTanggalID(r.tanggal)} · {jam(r.created_at)}{r.diterima_oleh ? ` · ${r.diterima_oleh}` : ""}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button type="button" onClick={() => hapusRetur(r)} className="text-md-on-surface-variant hover:text-red-400" aria-label="Batalkan retur">
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {diterimaView.length > BATAS_BARIS && (
+                    <div className="px-4 py-2 text-xs text-md-on-surface-variant border-t border-md-outline-variant">
+                      Menampilkan {BATAS_BARIS} dari {diterimaView.length} — pakai pencarian untuk menemukan resi tertentu.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

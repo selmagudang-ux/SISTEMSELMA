@@ -383,12 +383,14 @@ export const NAV = [
       },
       // Baru — Scan Resi: scan resi paket yang mau dikirim, hitung per ekspedisi, dan
       // otomatis pisahkan resi pesanan yang CANCEL. Halaman: pages/ScanResi.jsx
-      // (tabel resi_scan & resi_cancel, lihat scan_resi.sql).
+      // (tabel resi_scan & resi_cancel, lihat scan_resi.sql). Sub "Retur Resi": konfirmasi paket
+      // cancel / gagal kirim yang sudah balik ke gudang (tabel resi_retur, lihat retur_resi.sql).
       {
         key: "scan-resi", label: "Scan Resi", icon: ScanLine,
         children: [
           { key: "scan", label: "Scan Resi" },
           { key: "cancel", label: "Daftar Cancel" },
+          { key: "retur", label: "Retur Resi", onlyRole: "superappa" }, // sementara khusus Super Appa
           { key: "rekap", label: "Rekap" },
         ],
       },

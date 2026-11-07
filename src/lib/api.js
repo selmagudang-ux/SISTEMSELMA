@@ -133,6 +133,8 @@ export const TABEL_PER_PT = new Set([
   "resi_scan", "resi_cancel", "resi_barang",
   // Sesi scan & pengiriman (scan_resi_sesi.sql).
   "resi_sesi",
+  // Retur Resi: konfirmasi paket cancel / gagal kirim yang balik ke gudang (retur_resi.sql).
+  "resi_retur",
   // Log import orderan (resi_import_log.sql) — hanya dibaca role superappa.
   "resi_import_log",
 ]);
