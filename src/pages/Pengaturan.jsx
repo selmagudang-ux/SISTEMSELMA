@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb, sbAll, RUMUS_HARGA_BAWAAN, rumusHargaEntitas, daftarkanProfilEntitas, entitasSesi } from "../lib/api";
-import { ROLES, roleLabel, isSuperadminLike } from "../lib/constants";
+import { ROLES, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, NAV, allowedMenus, allowedSubMenus, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
@@ -22,6 +22,7 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
         <PageHeader title="Pengaturan" />
         <EmptyState label="Data pengaturan belum tersedia di Supabase." />
         {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
+        {isSuperappa && <HakAkses showToast={showToast} />}
       </div>
     );
   }
@@ -41,6 +42,8 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
       {isSuperappa && <FotoYatimCleaner reload={reload} showToast={showToast} />}
 
       {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
+
+      {isSuperappa && <HakAkses showToast={showToast} />}
     </div>
   );
 }
@@ -299,6 +302,160 @@ function MaintenanceToggle({ settings, reload, showToast }) {
           <AlertTriangle size={13} className="flex-shrink-0" /> Mode perbaikan sedang AKTIF sekarang.
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// HAK AKSES (khusus Super Appa, hanya MELIHAT — tidak mengubah apa pun).
+//  1. Akun login: role ASLI (superappa tidak disamarkan di sini), PT, dan apakah akun itu bisa login Kasir.
+//  2. Menu per role: menu & sub-menu yang terbuka untuk satu role di PT tertentu — dihitung dari aturan
+//     yang sama dengan sidebar (allowedMenus / allowedSubMenus / onlyRole), termasuk fitur yang dimatikan
+//     per perusahaan di Kelola Perusahaan.
+// ---------------------------------------------------------------------------
+const ROLE_ASLI = [{ key: "superappa", label: "Super Appa (tampil sebagai \"Super Admin\")" }, ...ROLES];
+
+function menuTerbukaUntukRole(role, entitas, fiturMati) {
+  const nodes = filterNavByAllowed(NAV, allowedMenus(role, entitas, fiturMati), role);
+  const hasil = [];
+  const jalan = (daftar, grup) =>
+    daftar.forEach((n) => {
+      if (n.group) {
+        jalan(n.children || [], n.label);
+        return;
+      }
+      const batas = allowedSubMenus(role, n.key);
+      const subs = n.children ? n.children.filter((c) => !batas || batas.includes(c.key)).map((c) => c.label) : [];
+      hasil.push({ key: n.key, grup, label: n.label, subs });
+    });
+  jalan(nodes, "");
+  return hasil;
+}
+
+function HakAkses({ showToast }) {
+  const [users, setUsers] = useState(null);
+  const [entitasList, setEntitasList] = useState([]);
+  const [fiturRows, setFiturRows] = useState([]);
+  const [memuat, setMemuat] = useState(true);
+  const [role, setRole] = useState("gudang");
+  const [pt, setPt] = useState("OPS");
+
+  useEffect(() => {
+    let batal = false;
+    (async () => {
+      try {
+        const [u, e, f] = await Promise.all([
+          listUsers(),
+          sb("master_data?tipe=eq.entitas&select=kode,label&order=kode").catch(() => []),
+          sb("master_data?tipe=eq.entitas_fitur&select=kode,label").catch(() => []),
+        ]);
+        if (batal) return;
+        setUsers(Array.isArray(u) ? u : []);
+        setEntitasList(Array.isArray(e) ? e : []);
+        setFiturRows(Array.isArray(f) ? f : []);
+      } catch (err) {
+        if (!batal) showToast(err.message || "Gagal memuat daftar akun", "err");
+      } finally {
+        if (!batal) setMemuat(false);
+      }
+    })();
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const namaPT = (kode) => entitasList.find((x) => x.kode === kode)?.label || (kode === "OPS" ? "Selma" : kode);
+  const opsiPT = [{ value: "OPS", label: namaPT("OPS") }, ...entitasList.filter((x) => x.kode !== "OPS").map((x) => ({ value: x.kode, label: x.label || x.kode }))];
+  const fiturMati = fiturMatiEntitas({ entitas_fitur: fiturRows }, pt);
+  const menu = menuTerbukaUntukRole(role, pt, fiturMati);
+  const grupMenu = [...new Set(menu.map((m) => m.grup))];
+  const urut = (users || []).slice().sort((a, b) => String(a.role).localeCompare(String(b.role)) || String(a.username).localeCompare(String(b.username)));
+  const akunKasir = urut.filter((u) => ROLE_BOLEH_KASIR.includes(u.role));
+  const labelRole = (k) => ROLE_ASLI.find((r) => r.key === k)?.label || k;
+
+  return (
+    <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
+      <div className="text-sm font-semibold mb-1">Hak Akses (khusus Super Appa)</div>
+      <p className="text-xs text-slate-500 mb-4 max-w-xl">
+        Hanya untuk melihat: role asli tiap akun, siapa yang bisa login Kasir, dan menu apa saja yang terbuka untuk tiap role.
+        Untuk mengubah role akun, ubah kolom role di tabel app_users.
+      </p>
+
+      <div className="rounded-lg border border-slate-800 p-3 mb-4">
+        <div className="text-xs font-semibold text-slate-300 mb-1">Login aplikasi Kasir (/kasir)</div>
+        <p className="text-xs text-slate-500 mb-2">
+          Role yang diizinkan: {ROLE_BOLEH_KASIR.map((r) => labelRole(r)).join(", ")}. Role lain ditolak dengan pesan "Tidak punya akses kasir".
+        </p>
+        {memuat ? (
+          <div className="text-xs text-slate-500">Memuat…</div>
+        ) : akunKasir.length === 0 ? (
+          <div className="text-xs text-amber-300">Belum ada akun dengan role yang diizinkan.</div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {akunKasir.map((u) => (
+              <span key={u.id} className="text-xs bg-emerald-400/15 text-emerald-300 rounded-full px-2.5 py-1">
+                @{u.username} · {u.nama} · {namaPT(u.entitas || "OPS")}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="text-xs font-semibold text-slate-300 mb-2">Akun & role asli</div>
+      {memuat ? (
+        <div className="text-xs text-slate-500">Memuat daftar akun…</div>
+      ) : urut.length === 0 ? (
+        <EmptyState label="Belum ada akun." />
+      ) : (
+        <div className="divide-y divide-slate-800 border border-slate-800 rounded-lg overflow-hidden mb-5">
+          {urut.map((u) => (
+            <div key={u.id} className="px-3 py-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-slate-200 truncate">{u.nama}</div>
+                <div className="text-[11px] text-slate-500 truncate">@{u.username} · {namaPT(u.entitas || "OPS")}</div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="font-mono text-[11px] bg-slate-800 text-slate-300 rounded px-2 py-0.5">{u.role}</span>
+                {ROLE_BOLEH_KASIR.includes(u.role) && <span className="text-[11px] bg-emerald-400/15 text-emerald-300 rounded-full px-2 py-0.5">Kasir</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="text-xs font-semibold text-slate-300 mb-2">Menu yang terbuka per role</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <Field label="Role">
+          <SearchableSelect value={role} onChange={setRole} options={ROLE_ASLI.map((r) => ({ value: r.key, label: `${r.label} (${r.key})` }))} />
+        </Field>
+        <Field label="PT akun">
+          <SearchableSelect value={pt} onChange={setPt} options={opsiPT} />
+        </Field>
+      </div>
+      {fiturMati.length > 0 && (
+        <p className="text-[11px] text-slate-500 mb-2">Fitur yang dimatikan untuk {namaPT(pt)} (Kelola Perusahaan) sudah diperhitungkan: {fiturMati.join(", ")}.</p>
+      )}
+      {menu.length === 0 ? (
+        <EmptyState label="Tidak ada menu di sidebar untuk kombinasi ini." />
+      ) : (
+        <div className="space-y-3">
+          {grupMenu.map((g) => (
+            <div key={g || "_"} className="border border-slate-800 rounded-lg overflow-hidden">
+              {g && <div className="px-3 py-1.5 text-[11px] font-semibold tracking-wide text-slate-400 bg-slate-900/60">{g}</div>}
+              <div className="divide-y divide-slate-800">
+                {menu.filter((m) => m.grup === g).map((m) => (
+                  <div key={m.key} className="px-3 py-2">
+                    <div className="text-sm text-slate-200">{m.label}</div>
+                    {m.subs.length > 0 && <div className="text-[11px] text-slate-500 mt-0.5">{m.subs.join(" · ")}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-slate-500 mt-3">
+        Ini membatasi tampilan menu di aplikasi, bukan pengaman di sisi database.
+      </p>
     </div>
   );
 }

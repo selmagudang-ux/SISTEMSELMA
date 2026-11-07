@@ -596,6 +596,11 @@ export function withParentBadges(nav, rawBadges) {
 // dibuat/diubah lewat dropdown UI. Untuk membuat akun dengan role ini, isi
 // kolom `role` = "superappa" langsung lewat Supabase (SQL editor / table
 // editor), bukan lewat form "Tambah User".
+// Role yang boleh membuka aplikasi kasir (/kasir). SEMENTARA hanya superappa (tahap uji coba).
+// Untuk membuka ke kasir lagi nanti, tambahkan "kasir" (dan "superadmin") ke daftar ini.
+// Dibaca oleh pages/kasir/KasirApp.jsx (penjaga login) dan panel "Hak Akses" di Pengaturan.
+export const ROLE_BOLEH_KASIR = ["superappa"];
+
 export const ROLES = [
   { key: "superadmin", label: "Super Admin" },
   { key: "owner", label: "Pemilik" },

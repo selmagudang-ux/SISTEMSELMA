@@ -3,6 +3,7 @@ import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, D
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
+import { ROLE_BOLEH_KASIR } from "../../lib/constants";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
 import BarangToko from "./BarangToko";
@@ -28,9 +29,8 @@ import { bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLa
 //   (hitung kas, selisih) saat selesai; Riwayat berisi rekap per kasir, void & retur.
 // =========================================================
 
-// Role yang boleh membuka /kasir. SEMENTARA hanya superappa (tahap uji coba).
-// Untuk membuka ke kasir lagi nanti, tambahkan "kasir" (dan "superadmin") ke daftar ini.
-const ROLE_BOLEH_KASIR = ["superappa"];
+// Role yang boleh membuka /kasir didefinisikan di lib/constants.js (ROLE_BOLEH_KASIR),
+// supaya panel "Hak Akses" di Pengaturan selalu sama dengan yang dipakai di sini.
 
 export default function KasirApp() {
   const [session, setSession] = useState(() => getSession());
