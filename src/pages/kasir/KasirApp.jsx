@@ -3,7 +3,8 @@ import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, D
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
-import { ROLE_BOLEH_KASIR } from "../../lib/constants";
+import { bolehKasir as bolehKasirRole, setAksesRole } from "../../lib/constants";
+import { sb } from "../../lib/api";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
 import BarangToko from "./BarangToko";
@@ -44,7 +45,26 @@ export default function KasirApp() {
   const [tutupBuka, setTutupBuka] = useState(false);
 
   const idSesi = session?.id;
-  const bolehKasir = !!session && ROLE_BOLEH_KASIR.includes(session.role);
+  // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
+  const [aksesSiap, setAksesSiap] = useState(false);
+  useEffect(() => {
+    if (!session) return undefined;
+    if (session.role === "superappa") {
+      setAksesSiap(true);
+      return undefined;
+    }
+    let batal = false;
+    setAksesSiap(false);
+    sb("master_data?tipe=eq.role_akses&select=kode,label")
+      .then((rows) => setAksesRole(Array.isArray(rows) ? rows : []))
+      .catch(() => setAksesRole([])) // gagal muat -> pakai aturan bawaan
+      .finally(() => !batal && setAksesSiap(true));
+    return () => {
+      batal = true;
+    };
+  }, [session?.id, session?.role]);
+
+  const bolehKasir = !!session && aksesSiap && bolehKasirRole(session.role);
   useEffect(() => {
     if (!bolehKasir) return undefined;
     let batal = false;
@@ -90,7 +110,15 @@ export default function KasirApp() {
     );
   }
 
-  if (!ROLE_BOLEH_KASIR.includes(session.role)) {
+  if (!aksesSiap) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-400 flex items-center justify-center">
+        <Loader2 size={20} className="animate-spin" />
+      </div>
+    );
+  }
+
+  if (!bolehKasirRole(session.role)) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
         <div className="max-w-sm text-center">

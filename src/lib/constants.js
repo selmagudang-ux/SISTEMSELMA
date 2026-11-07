@@ -523,7 +523,7 @@ export function filterNavByAllowed(nodes, allowedMenuKeys, role) {
   // Sub-menu bertanda onlyRole hanya tampil untuk role itu.
   const sembunyikanSub = (n) => {
     if (!n.children) return n;
-    const subs = n.key === "holding" || n.key === "perusahaan" || n.key === "keuangan" ? allowedSubMenus(role, n.key) : null;
+    const subs = n.key === "holding" || n.key === "perusahaan" || n.key === "keuangan" || adaOverrideSub(role, n.key) ? allowedSubMenus(role, n.key) : null;
     return {
       ...n,
       children: n.children.filter((c) => (!c.onlyRole || c.onlyRole === role) && (!subs || subs.includes(c.key))),
@@ -599,7 +599,51 @@ export function withParentBadges(nav, rawBadges) {
 // Role yang boleh membuka aplikasi kasir (/kasir). SEMENTARA hanya superappa (tahap uji coba).
 // Untuk membuka ke kasir lagi nanti, tambahkan "kasir" (dan "superadmin") ke daftar ini.
 // Dibaca oleh pages/kasir/KasirApp.jsx (penjaga login) dan panel "Hak Akses" di Pengaturan.
-export const ROLE_BOLEH_KASIR = ["superappa"];
+export const ROLE_BOLEH_KASIR = ["superappa", "kasir"];
+
+// Role yang bawaannya hanya boleh MELIHAT data (tidak bisa tambah/ubah/hapus). Dipakai lib/api.js.
+export const ROLE_HANYA_LIHAT_BAWAAN = ["owner", "pemegang_saham"];
+
+// ---------------------------------------------------------------------------
+// HAK AKSES YANG BISA DIATUR SUPER APPA (Pengaturan > Hak Akses).
+// Disimpan di master_data tipe "role_akses": kode = key role, label = JSON:
+//   { menus: ["grosir", ...], subs: { grosir: ["pesanan", ...] }, kasir: true|false, hanyaLihat: true|false }
+// Kolom yang tidak ada di JSON = pakai aturan bawaan di kode (ROLE_MENUS dst).
+// Role "superappa" TIDAK PERNAH bisa diubah/dikunci, supaya Super Appa tidak bisa mengunci dirinya sendiri.
+// Override dimuat oleh App.jsx (dari master) dan KasirApp.jsx (fetch sendiri) lewat setAksesRole().
+// ---------------------------------------------------------------------------
+let AKSES_ROLE = {};
+export function setAksesRole(rows) {
+  const hasil = {};
+  (rows || []).forEach((r) => {
+    const role = String(r?.kode || "").trim();
+    if (!role || role === "superappa") return;
+    try {
+      const o = JSON.parse(r.label || "{}");
+      if (o && typeof o === "object" && !Array.isArray(o)) hasil[role] = o;
+    } catch {
+      /* baris rusak diabaikan -> role itu memakai aturan bawaan */
+    }
+  });
+  AKSES_ROLE = hasil;
+}
+export function aksesRoleTersimpan(role) {
+  return AKSES_ROLE[role] || null;
+}
+// Boleh membuka aplikasi kasir (/kasir)?
+export function bolehKasir(role) {
+  if (role === "superappa") return true;
+  const o = AKSES_ROLE[role];
+  if (o && typeof o.kasir === "boolean") return o.kasir;
+  return ROLE_BOLEH_KASIR.includes(role);
+}
+// Role ini hanya boleh melihat data (read-only)? Dipakai lib/api.js untuk memblokir POST/PATCH/DELETE.
+export function roleHanyaLihat(role) {
+  if (role === "superappa") return false;
+  const o = AKSES_ROLE[role];
+  if (o && typeof o.hanyaLihat === "boolean") return o.hanyaLihat;
+  return ROLE_HANYA_LIHAT_BAWAAN.includes(role);
+}
 
 export const ROLES = [
   { key: "superadmin", label: "Super Admin" },
@@ -735,6 +779,12 @@ const MENU_PT_LAIN = [
 // supaya tidak bisa mengunci dirinya sendiri dari menu Kelola Perusahaan.
 export function allowedMenus(role, entitas, fiturMati = []) {
   let menus = ROLE_MENUS[role] || ["dashboard"];
+  const ov = role !== "superappa" ? AKSES_ROLE[role] : null;
+  if (ov && Array.isArray(ov.menus)) {
+    // Hanya key menu yang valid; "barang-masuk" (izin tombol cepat) ikut "barang-datang".
+    menus = ov.menus.filter((k) => ALL_MENU_KEYS.includes(k) || k === "barang-masuk");
+    if (menus.includes("barang-datang") && !menus.includes("barang-masuk")) menus = [...menus, "barang-masuk"];
+  }
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
     // Dashboard PT sendiri (data dibatasi ke PT-nya di pages/Dashboard.jsx): hanya Super Admin.
     menus = menus.filter((k) => MENU_PT_LAIN.includes(k) || (k === "dashboard" && role === "superadmin"));
@@ -841,6 +891,18 @@ export const SUB_KEUANGAN_LAMA = {
 // Sub-menu apa saja yang boleh dilihat role ini untuk satu menu tertentu.
 // Return null = boleh akses semua anak menu (tidak dibatasi).
 export function allowedSubMenus(role, menuKey) {
+  const ov = role !== "superappa" ? AKSES_ROLE[role]?.subs?.[menuKey] : null;
+  if (Array.isArray(ov)) return ov;
+  return allowedSubMenusBawaan(role, menuKey);
+}
+
+// Ada pembatasan sub-menu tersimpan (dari Hak Akses) untuk role+menu ini?
+export function adaOverrideSub(role, menuKey) {
+  return role !== "superappa" && Array.isArray(AKSES_ROLE[role]?.subs?.[menuKey]);
+}
+
+// Aturan sub-menu BAWAAN (tanpa override Hak Akses) — dipakai juga editor Hak Akses sebagai nilai awal.
+export function allowedSubMenusBawaan(role, menuKey) {
   // Tab "Riwayat Perubahan" (Keuangan > Pengaturan): hanya superappa (guard di pages/Keuangan.jsx).
   // Holding: Pemegang Saham hanya Grup (tab Konsolidasi saja); Pemilik & Super Appa semua sub.
   // Perusahaan Grup: Pemegang Saham hanya Ringkasan (tab Konsolidasi saja);
@@ -861,6 +923,11 @@ export function allowedSubMenus(role, menuKey) {
     return ROLE_SUBMENUS[role]?.[menuKey] || ["transaksi", "kas", "laporan", "pengaturan"];
   }
   return ROLE_SUBMENUS[role]?.[menuKey] || null;
+}
+
+// Daftar menu BAWAAN sebuah role (tanpa override) — nilai awal editor Hak Akses.
+export function menuBawaanRole(role) {
+  return (ROLE_MENUS[role] || ["dashboard"]).slice();
 }
 
 export function roleLabel(role) {

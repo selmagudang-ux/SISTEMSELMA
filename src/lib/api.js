@@ -1,3 +1,4 @@
+import { roleHanyaLihat } from "./constants";
 // =========================================================
 // KONEKSI SUPABASE (REST / PostgREST — anon key)
 // =========================================================
@@ -49,7 +50,7 @@ function friendlyDbError(parsed, status) {
 // untuk semua role, jadi enforcement yang benar-benar tidak bisa ditembus
 // tetap harus lewat RLS/policy di database kalau suatu saat dibutuhkan.
 const SESSION_KEY_LOKAL = "selma_session";
-const ROLE_READONLY = ["owner", "pemegang_saham"];
+// Daftar role read-only sekarang dikelola lewat roleHanyaLihat() di lib/constants.js (bisa diatur Super Appa).
 
 // Identitas user yang sedang login, dikirim sebagai header di SETIAP request
 // tulis (POST/PATCH/DELETE) supaya trigger audit di database
@@ -297,7 +298,7 @@ export async function sb(path, opts = {}) {
   const tPT = terapkanEntitasPT(path, method, opts.body);
   path = tPT.path;
   if (tPT.body !== opts.body) opts = { ...opts, body: tPT.body };
-  if (method !== "GET" && ROLE_READONLY.includes(roleSaatIni()) && !bolehWalauReadOnly(path, method, opts)) {
+  if (method !== "GET" && roleHanyaLihat(roleSaatIni()) && !bolehWalauReadOnly(path, method, opts)) {
     throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menambah, mengubah, atau menghapus data.");
   }
   const res = await fetchBatas(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -2393,7 +2394,7 @@ async function panggilGaji(fn, body) {
 // disimpan di browser). Role owner read-only: hanya boleh aksi baca.
 const AKSI_GAJI_BACA = ["cek", "daftar"];
 async function gajiAdmin(aksi, passwordAdmin, data = {}) {
-  if (ROLE_READONLY.includes(roleSaatIni()) && !AKSI_GAJI_BACA.includes(aksi)) {
+  if (roleHanyaLihat(roleSaatIni()) && !AKSI_GAJI_BACA.includes(aksi)) {
     throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menyiapkan, menyerahkan, atau mengubah gaji.");
   }
   if (!passwordAdmin) throw new Error("Password admin wajib diisi.");

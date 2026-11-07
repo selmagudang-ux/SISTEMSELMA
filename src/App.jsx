@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } fro
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, fiturMatiEntitas, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
@@ -418,7 +418,12 @@ function MainApp({ session, onLogout }) {
   const [master, setMaster] = useState({});
   // Fitur yang dimatikan Super Appa untuk perusahaan akun ini (master_data tipe "entitas_fitur").
   const fiturMati = useMemo(() => fiturMatiEntitas(master, session.entitas), [master, session.entitas]);
-  const allowed = useMemo(() => allowedMenus(session.role, session.entitas, fiturMati), [session.role, session.entitas, fiturMati]);
+  // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dipasang SEBELUM menu dihitung,
+  // jadi allowedMenus/allowedSubMenus di bawah (dan sidebar) langsung memakainya.
+  const allowed = useMemo(() => {
+    setAksesRole(master?.role_akses);
+    return allowedMenus(session.role, session.entitas, fiturMati);
+  }, [master, session.role, session.entitas, fiturMati]);
   const [settings, setSettings] = useState(null);
   const [penempatan, setPenempatan] = useState([]);
   // stockHistory di sini SENGAJA cuma baris TERBARU per SKU (dari view

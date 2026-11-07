@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb, sbAll, RUMUS_HARGA_BAWAAN, rumusHargaEntitas, daftarkanProfilEntitas, entitasSesi } from "../lib/api";
-import { ROLES, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, NAV, allowedMenus, allowedSubMenus, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
+import { ROLES, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, ROLE_HANYA_LIHAT_BAWAAN, NAV, allowedMenus, allowedSubMenus, allowedSubMenusBawaan, menuBawaanRole, aksesRoleTersimpan, bolehKasir, setAksesRole, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
@@ -22,7 +22,7 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
         <PageHeader title="Pengaturan" />
         <EmptyState label="Data pengaturan belum tersedia di Supabase." />
         {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
-        {isSuperappa && <HakAkses showToast={showToast} />}
+        {isSuperappa && <HakAkses showToast={showToast} reload={reload} />}
       </div>
     );
   }
@@ -43,7 +43,7 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
 
       {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
 
-      {isSuperappa && <HakAkses showToast={showToast} />}
+      {isSuperappa && <HakAkses showToast={showToast} reload={reload} />}
     </div>
   );
 }
@@ -332,10 +332,155 @@ function menuTerbukaUntukRole(role, entitas, fiturMati) {
   return hasil;
 }
 
-function HakAkses({ showToast }) {
+// ---------------------------------------------------------------------------
+// EDITOR HAK AKSES per role (khusus Super Appa). Tersimpan di master_data tipe "role_akses"
+// (kode = role, label = JSON) — tanpa SQL tambahan. Yang bisa diatur: menu & sub-menu yang terbuka,
+// boleh/tidaknya login Kasir, dan mode "hanya lihat" (tidak bisa tambah/ubah/hapus data).
+// Super Appa sendiri tidak bisa diubah supaya tidak bisa mengunci dirinya sendiri.
+// ---------------------------------------------------------------------------
+function daftarMenuEditor() {
+  const hasil = [];
+  const jalan = (nodes, grup) =>
+    nodes.forEach((n) => {
+      if (n.group) return jalan(n.children || [], n.label);
+      hasil.push({
+        key: n.key,
+        grup,
+        label: n.label,
+        subs: (n.children || []).filter((c) => !c.onlyRole).map((c) => ({ key: c.key, label: c.label })),
+      });
+    });
+  jalan(NAV, "");
+  return hasil;
+}
+
+function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
+  const daftar = daftarMenuEditor();
+  const tersimpan = aksesRoleTersimpan(role);
+
+  const awal = () => {
+    const menus = new Set(tersimpan?.menus || menuBawaanRole(role));
+    const subs = {};
+    daftar.forEach((m) => {
+      if (!m.subs.length) return;
+      const semua = m.subs.map((s) => s.key);
+      const bawaan = Array.isArray(tersimpan?.subs?.[m.key]) ? tersimpan.subs[m.key] : allowedSubMenusBawaan(role, m.key);
+      subs[m.key] = new Set(bawaan ? bawaan.filter((k) => semua.includes(k)) : semua);
+    });
+    return {
+      menus,
+      subs,
+      kasir: typeof tersimpan?.kasir === "boolean" ? tersimpan.kasir : ROLE_BOLEH_KASIR.includes(role),
+      hanyaLihat: typeof tersimpan?.hanyaLihat === "boolean" ? tersimpan.hanyaLihat : ROLE_HANYA_LIHAT_BAWAAN.includes(role),
+    };
+  };
+  const [d, setD] = useState(awal);
+  // Ganti role / data tersimpan berubah -> muat ulang isian.
+  useEffect(() => {
+    setD(awal());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, rows]);
+
+  const toggleMenu = (key) =>
+    setD((p) => {
+      const menus = new Set(p.menus);
+      menus.has(key) ? menus.delete(key) : menus.add(key);
+      return { ...p, menus };
+    });
+  const toggleSub = (menuKey, subKey) =>
+    setD((p) => {
+      const cur = new Set(p.subs[menuKey] || []);
+      cur.has(subKey) ? cur.delete(subKey) : cur.add(subKey);
+      return { ...p, subs: { ...p.subs, [menuKey]: cur } };
+    });
+  const grupMenu = (g) => daftar.filter((m) => m.grup === g);
+  const semuaGrup = [...new Set(daftar.map((m) => m.grup))];
+
+  const simpan = () => {
+    const menus = daftar.filter((m) => d.menus.has(m.key)).map((m) => m.key);
+    // Menu yang tidak tampil di editor (mis. "barang-masuk") ikut otomatis lewat allowedMenus.
+    const subs = {};
+    daftar.forEach((m) => {
+      if (!m.subs.length || !d.menus.has(m.key)) return;
+      const semua = m.subs.map((s) => s.key);
+      const pilih = semua.filter((k) => d.subs[m.key]?.has(k));
+      const bawaan = allowedSubMenusBawaan(role, m.key);
+      const sama = (bawaan ? bawaan.filter((k) => semua.includes(k)) : semua).slice().sort().join("|") === pilih.slice().sort().join("|");
+      if (!sama) subs[m.key] = pilih;
+    });
+    onSimpan(role, { menus, subs, kasir: d.kasir, hanyaLihat: d.hanyaLihat });
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-800 p-3 mb-4">
+      <div className="text-xs font-semibold text-slate-300 mb-1">Atur akses role</div>
+      <p className="text-[11px] text-slate-500 mb-3">
+        Centang menu & sub-menu yang boleh dibuka role ini. Berlaku untuk SEMUA akun dengan role tersebut (setelah mereka muat ulang halaman).
+        {tersimpan ? " Role ini sudah punya pengaturan khusus." : " Sekarang masih memakai aturan bawaan."}
+      </p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+        <label className="flex items-start gap-2 text-sm text-slate-200 border border-slate-800 rounded-lg px-3 py-2 cursor-pointer">
+          <input type="checkbox" className="mt-1" checked={d.kasir} onChange={(e) => setD((p) => ({ ...p, kasir: e.target.checked }))} />
+          <span>Boleh login aplikasi Kasir (/kasir)</span>
+        </label>
+        <label className="flex items-start gap-2 text-sm text-slate-200 border border-slate-800 rounded-lg px-3 py-2 cursor-pointer">
+          <input type="checkbox" className="mt-1" checked={d.hanyaLihat} onChange={(e) => setD((p) => ({ ...p, hanyaLihat: e.target.checked }))} />
+          <span>
+            Hanya lihat (read-only)
+            <span className="block text-[11px] text-slate-500">Tidak bisa tambah / ubah / hapus data.</span>
+          </span>
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        {semuaGrup.map((g) => (
+          <div key={g || "_"} className="border border-slate-800 rounded-lg overflow-hidden">
+            {g && <div className="px-3 py-1.5 text-[11px] font-semibold tracking-wide text-slate-400 bg-slate-900/60">{g}</div>}
+            <div className="divide-y divide-slate-800">
+              {grupMenu(g).map((m) => (
+                <div key={m.key} className="px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer">
+                    <input type="checkbox" checked={d.menus.has(m.key)} onChange={() => toggleMenu(m.key)} />
+                    {m.label}
+                  </label>
+                  {m.subs.length > 0 && d.menus.has(m.key) && (
+                    <div className="mt-1.5 ml-6 flex flex-wrap gap-x-4 gap-y-1">
+                      {m.subs.map((s) => (
+                        <label key={s.key} className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+                          <input type="checkbox" checked={!!d.subs[m.key]?.has(s.key)} onChange={() => toggleSub(m.key, s.key)} />
+                          {s.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 mt-3">
+        <button disabled={menyimpan} onClick={simpan} className="text-xs font-medium bg-amber-500 text-slate-950 hover:bg-amber-400 disabled:opacity-50 px-3 py-2 rounded-lg">
+          {menyimpan ? "Menyimpan…" : "Simpan akses role"}
+        </button>
+        {tersimpan && (
+          <button disabled={menyimpan} onClick={() => onReset(role)} className="text-xs text-slate-400 hover:text-slate-200 border border-slate-700 px-3 py-2 rounded-lg disabled:opacity-50">
+            Kembalikan ke bawaan
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HakAkses({ showToast, reload }) {
   const [users, setUsers] = useState(null);
   const [entitasList, setEntitasList] = useState([]);
   const [fiturRows, setFiturRows] = useState([]);
+  const [aksesRows, setAksesRows] = useState([]);
+  const [menyimpan, setMenyimpan] = useState(false);
   const [memuat, setMemuat] = useState(true);
   const [role, setRole] = useState("gudang");
   const [pt, setPt] = useState("OPS");
@@ -344,15 +489,18 @@ function HakAkses({ showToast }) {
     let batal = false;
     (async () => {
       try {
-        const [u, e, f] = await Promise.all([
+        const [u, e, f, a] = await Promise.all([
           listUsers(),
           sb("master_data?tipe=eq.entitas&select=kode,label&order=kode").catch(() => []),
           sb("master_data?tipe=eq.entitas_fitur&select=kode,label").catch(() => []),
+          sb("master_data?tipe=eq.role_akses&select=id,kode,label").catch(() => []),
         ]);
         if (batal) return;
         setUsers(Array.isArray(u) ? u : []);
         setEntitasList(Array.isArray(e) ? e : []);
         setFiturRows(Array.isArray(f) ? f : []);
+        setAksesRows(Array.isArray(a) ? a : []);
+        setAksesRole(Array.isArray(a) ? a : []);
       } catch (err) {
         if (!batal) showToast(err.message || "Gagal memuat daftar akun", "err");
       } finally {
@@ -363,27 +511,64 @@ function HakAkses({ showToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const muatUlangAkses = async () => {
+    const a = await sb("master_data?tipe=eq.role_akses&select=id,kode,label");
+    const rows = Array.isArray(a) ? a : [];
+    setAksesRows(rows);
+    setAksesRole(rows);
+    if (typeof reload === "function") reload();
+  };
+  const simpanAkses = async (roleKey, data) => {
+    setMenyimpan(true);
+    try {
+      const label = JSON.stringify(data);
+      const ada = aksesRows.find((r) => r.kode === roleKey);
+      if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label }) });
+      else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "role_akses", kode: roleKey, label }) });
+      await muatUlangAkses();
+      showToast(`Hak akses role "${labelRole(roleKey)}" disimpan`, "ok");
+    } catch (err) {
+      showToast(err.message || "Gagal menyimpan hak akses", "err");
+    } finally {
+      setMenyimpan(false);
+    }
+  };
+  const resetAkses = async (roleKey) => {
+    if (!window.confirm(`Kembalikan hak akses role "${labelRole(roleKey)}" ke aturan bawaan?`)) return;
+    setMenyimpan(true);
+    try {
+      const ada = aksesRows.find((r) => r.kode === roleKey);
+      if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+      await muatUlangAkses();
+      showToast("Hak akses dikembalikan ke bawaan", "ok");
+    } catch (err) {
+      showToast(err.message || "Gagal mengembalikan hak akses", "err");
+    } finally {
+      setMenyimpan(false);
+    }
+  };
+
   const namaPT = (kode) => entitasList.find((x) => x.kode === kode)?.label || (kode === "OPS" ? "Selma" : kode);
   const opsiPT = [{ value: "OPS", label: namaPT("OPS") }, ...entitasList.filter((x) => x.kode !== "OPS").map((x) => ({ value: x.kode, label: x.label || x.kode }))];
   const fiturMati = fiturMatiEntitas({ entitas_fitur: fiturRows }, pt);
   const menu = menuTerbukaUntukRole(role, pt, fiturMati);
   const grupMenu = [...new Set(menu.map((m) => m.grup))];
   const urut = (users || []).slice().sort((a, b) => String(a.role).localeCompare(String(b.role)) || String(a.username).localeCompare(String(b.username)));
-  const akunKasir = urut.filter((u) => ROLE_BOLEH_KASIR.includes(u.role));
+  const akunKasir = urut.filter((u) => bolehKasir(u.role));
   const labelRole = (k) => ROLE_ASLI.find((r) => r.key === k)?.label || k;
 
   return (
     <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
       <div className="text-sm font-semibold mb-1">Hak Akses (khusus Super Appa)</div>
       <p className="text-xs text-slate-500 mb-4 max-w-xl">
-        Hanya untuk melihat: role asli tiap akun, siapa yang bisa login Kasir, dan menu apa saja yang terbuka untuk tiap role.
-        Untuk mengubah role akun, ubah kolom role di tabel app_users.
+        Atur apa yang boleh dilakukan tiap role: menu & sub-menu, login Kasir, dan mode hanya-lihat. Role asli tiap akun ditampilkan di bawah.
+        Untuk mengganti role sebuah akun, ubah lewat Kelola User / kolom role di tabel app_users.
       </p>
 
       <div className="rounded-lg border border-slate-800 p-3 mb-4">
         <div className="text-xs font-semibold text-slate-300 mb-1">Login aplikasi Kasir (/kasir)</div>
         <p className="text-xs text-slate-500 mb-2">
-          Role yang diizinkan: {ROLE_BOLEH_KASIR.map((r) => labelRole(r)).join(", ")}. Role lain ditolak dengan pesan "Tidak punya akses kasir".
+          Role yang diizinkan: {ROLE_ASLI.filter((r) => bolehKasir(r.key)).map((r) => labelRole(r.key)).join(", ") || "-"}. Role lain ditolak dengan pesan "Tidak punya akses kasir". Atur di bagian "Atur akses role" di bawah.
         </p>
         {memuat ? (
           <div className="text-xs text-slate-500">Memuat…</div>
@@ -415,14 +600,27 @@ function HakAkses({ showToast }) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="font-mono text-[11px] bg-slate-800 text-slate-300 rounded px-2 py-0.5">{u.role}</span>
-                {ROLE_BOLEH_KASIR.includes(u.role) && <span className="text-[11px] bg-emerald-400/15 text-emerald-300 rounded-full px-2 py-0.5">Kasir</span>}
+                {bolehKasir(u.role) && <span className="text-[11px] bg-emerald-400/15 text-emerald-300 rounded-full px-2 py-0.5">Kasir</span>}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="text-xs font-semibold text-slate-300 mb-2">Menu yang terbuka per role</div>
+      <div className="text-xs font-semibold text-slate-300 mb-2">Atur akses per role</div>
+      <div className="mb-3 max-w-sm">
+        <Field label="Role yang diatur">
+          <SearchableSelect value={role} onChange={setRole} options={ROLES.map((r) => ({ value: r.key, label: `${r.label} (${r.key})` }))} />
+        </Field>
+      </div>
+      {memuat ? null : role === "superappa" ? (
+        <div className="text-xs text-slate-500 border border-slate-800 rounded-lg px-3 py-2 mb-4">Super Appa selalu akses penuh dan tidak bisa diubah. Pilih role lain.</div>
+      ) : (
+        <EditorAksesRole key={role} role={role} rows={aksesRows} onSimpan={simpanAkses} onReset={resetAkses} menyimpan={menyimpan} />
+      )}
+      <p className="text-[11px] text-slate-500 mb-5">Super Appa selalu punya akses penuh dan tidak bisa diubah di sini.</p>
+
+      <div className="text-xs font-semibold text-slate-300 mb-2">Pratinjau menu yang terbuka (per role & PT)</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
         <Field label="Role">
           <SearchableSelect value={role} onChange={setRole} options={ROLE_ASLI.map((r) => ({ value: r.key, label: `${r.label} (${r.key})` }))} />
@@ -454,7 +652,7 @@ function HakAkses({ showToast }) {
         </div>
       )}
       <p className="text-[11px] text-slate-500 mt-3">
-        Ini membatasi tampilan menu di aplikasi, bukan pengaman di sisi database.
+        Ini membatasi tampilan menu & tombol tulis di aplikasi, bukan pengaman di sisi database (anon key sama untuk semua role).
       </p>
     </div>
   );
