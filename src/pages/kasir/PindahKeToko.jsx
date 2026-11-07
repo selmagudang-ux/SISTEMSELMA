@@ -7,7 +7,7 @@ import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 // PINDAHKAN SKU DARI MASTER BARANG (gudang) KE BARANG TOKO (kasir).
 // - Membuat baris master_toko dari data SKU:
 //     kode   = KODE ENTITAS-nomor urut (mis. OPS-0001), nomor lanjut dari yang terbesar
-//     nama   = nama subkategori + nomor urut per subkategori (mis. "Kemeja 12")
+//     nama   = nama subkategori + nomor urut per subkategori (mis. "cincin 1"), nomor lanjut dari yang terbesar
 //     barcode = SKU gudang (bukan kode toko), foto = foto SKU di gudang (kalau sudah ada)
 //     harga jual = Ecer, HPP = HPP, sku_gudang = SKU (tertaut, jadi bisa dimutasi stoknya).
 // - Kalau SKU sudah ada di Barang Toko (dicek lewat sku_gudang), tidak dibuat dobel (dilewati).
@@ -55,7 +55,7 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
       const m = String(t.kode || "").toUpperCase().match(new RegExp(`^${prefix}-(\\d+)$`));
       if (m) nomorKode = Math.max(nomorKode, parseInt(m[1], 10));
     }
-    // Nomor urut nama per subkategori ("Kemeja 12"): lanjut dari yang terbesar.
+    // Nomor urut nama per subkategori ("cincin"): lanjut dari yang terbesar.
     const nomorNama = new Map();
     const urutNama = (label) => {
       if (!nomorNama.has(label)) {

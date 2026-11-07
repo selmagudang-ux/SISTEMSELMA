@@ -14,12 +14,12 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 //  - Barcode BEBAS: boleh diisi di kolom "Barcode" (opsional); kosong = sama dengan kode toko.
 //    Barang tidak ditautkan ke SKU gudang.
 //  - Variasi (opsional): kolom "Variasi" (mis. Merah, atau Merah / L). Tiap variasi = SATU BARIS sendiri
-//    (stok, barcode, foto sendiri); nama barang disimpan "Nama - Variasi", mis. "Kemeja Flanel 1 - Merah - L".
+//    (stok, barcode, foto sendiri); nama barang disimpan "Nama - Variasi", mis. "Cincin - S6".
 //  - Barang yang namanya sudah ada di Barang Toko (atau dobel di file) DILEWATI.
 //  - Foto lewat LINK: kolom "Foto (link)" berisi alamat gambar https://… ; disimpan apa adanya di foto_url
 //    (tidak diunggah ulang). Kalau ada file foto yang cocok juga, file itu yang dipakai.
 //  - Foto (opsional): pilih banyak foto sekaligus; nama file = Barcode barang (kalau diisi) atau Nama barang,
-//    mis. 8991234567890.jpg atau "Kemeja Flanel 1.jpg". Diunggah setelah barang dibuat.
+//    mis. 8991234567890.jpg atau "cincin.jpg". Diunggah setelah barang dibuat.
 //  - Stok awal dicatat lewat fungsi toko_opname supaya ada riwayatnya di toko_stok_mutasi.
 // =========================================================
 
@@ -104,10 +104,9 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           { key: "foto", label: "Foto (link)" },
         ],
         rows: [
-          { nama: "Kemeja Flanel 1", variasi: "Merah / L", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, sku: "", barcode: "8991234567890", foto: "https://contoh.com/kemeja-1.jpg" },
-          { nama: "Kemeja Flanel 1", variasi: "Merah / XL", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 6, sku: "", barcode: "8991234567891", foto: "" },
-          { nama: "Kemeja Flanel 2", variasi: "", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, sku: "SKU-CONTOH-001", barcode: "", foto: "" },
-        ],
+          { nama: "Cincin", variasi: "S6", kategori: "cincin", hpp: 35000, harga: 59000, stok: 10, sku: "SKU-CONTOH-001", barcode: "SKU-CONTOH-001", foto: "https://contoh.com/cincin1.jpg" },
+          { nama: "kalung", variasi: "", kategori: "kalung", hpp: 55000, harga: 109000, stok: 6, sku: "SKU-CONTOH-002", barcode: "SKU-CONTOH-002", foto: "" },
+          ],
       },
     ]);
 
@@ -328,7 +327,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
         )}
       </div>
       <div className="text-[11px] text-slate-500 leading-snug">
-        Nama file foto = <b className="text-slate-300">Barcode</b> barang (kalau diisi) atau <b className="text-slate-300">Nama</b> barang, mis. <span className="font-mono">Kemeja Flanel 1.jpg</span>.
+        Nama file foto = <b className="text-slate-300">Barcode</b> barang (kalau diisi) atau <b className="text-slate-300">Nama</b> barang, mis. <span className="font-mono">cincin1.jpg</span>.
       </div>
 
       {baris && (
