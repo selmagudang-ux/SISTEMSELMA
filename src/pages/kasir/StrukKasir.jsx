@@ -205,7 +205,10 @@ export default function ModalStruk({ struk, onClose }) {
           const awal = desktop.cetakStruk ? desktop.cetakStruk(barisPrinter(struk)) : Promise.resolve({ ok: false, error: "mode-html" });
           awal
             .catch(() => ({ ok: false, error: "mode-html" }))
-            .then((r) => (r && r.ok === false ? viaHtml() : r))
+            .then((r) => {
+              if (r && r.ok === false && r.error && r.error !== "mode-html") setInfo(`Cetak teks gagal (${r.error}). Memakai cara gambar…`);
+              return r && r.ok === false ? viaHtml() : r;
+            })
             .then((r) => {
               if (r && r.ok === false) {
                 setInfo(`Gagal mencetak: ${r.error || "tidak diketahui"}. Mencoba cara biasa…`);
