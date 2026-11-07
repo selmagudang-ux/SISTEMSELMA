@@ -246,8 +246,6 @@ export const NAV = [
             children: [
               { key: "buat", label: "Buat SKU" },
               { key: "master-barang", label: "Master Barang" },
-              // Barang yang dijual di kasir (tabel master_toko) — hanya terlihat oleh superappa.
-              { key: "master-toko", label: "Barang Toko (Kasir)", onlyRole: "superappa" },
               { key: "kategori", label: "Master Data" },
               // Menu "Rusak" dipindahkan ke sini (dari top-level) dan diganti nama
               // jadi "Barang Reject" — daftar barang rusak yang dipisahkan otomatis
@@ -332,6 +330,8 @@ export const NAV = [
             key: "toko-offline", label: "Toko Offline", icon: Home,
             children: [
               { key: "input-harian", label: "Transaksi Offline" },
+              // POS (kasir): Barang Toko + Promo — hanya superappa (halaman dijaga juga di pages/kasir/PosToko.jsx).
+              { key: "pos", label: "POS", onlyRole: "superappa" },
             ],
           },
         ],

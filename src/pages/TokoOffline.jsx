@@ -1,4 +1,5 @@
 import { useState } from "react";
+import PosToko from "./kasir/PosToko";
 import { Home, Plus, Trash2, Wallet, Landmark, TrendingUp, AlertTriangle } from "lucide-react";
 import {
   PageHeader, EmptyState, StatCard, Field, InputTanggal, InputRupiah,
@@ -90,7 +91,7 @@ function awalBulanIni() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-export default function TokoOffline({ master = {}, keuanganTransaksi = [], reload, showToast }) {
+function TransaksiOffline({ master = {}, keuanganTransaksi = [], reload, showToast }) {
   const todayIso = hariIniIso();
   const [tanggal, setTanggal] = useState(todayIso);
   const [cash, setCash] = useState("");
@@ -410,4 +411,11 @@ export default function TokoOffline({ master = {}, keuanganTransaksi = [], reloa
       )}
     </div>
   );
+}
+
+// Pintu masuk menu Toko Offline. Sub-menu "pos" (Barang Toko + Promo) dipisah ke komponen sendiri
+// supaya hook milik Transaksi Offline tidak ikut berpindah-pindah saat sub-menu berganti.
+export default function TokoOffline({ sub, ...props }) {
+  if (sub === "pos") return <PosToko reload={props.reload} />;
+  return <TransaksiOffline {...props} />;
 }

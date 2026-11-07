@@ -322,7 +322,8 @@ function KonfirmasiHapus({ promo, onClose, onSelesai }) {
   );
 }
 
-export default function PromoToko({ onClose }) {
+// inline = tampil sebagai isi halaman (menu Toko Offline > POS > Promo), bukan layar penuh dengan tombol tutup.
+export default function PromoToko({ onClose, inline = false }) {
   const [rows, setRows] = useState(null);
   const [barang, setBarang] = useState([]);
   const [err, setErr] = useState("");
@@ -393,15 +394,17 @@ export default function PromoToko({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[65] bg-slate-950 text-slate-100 flex flex-col">
+    <div className={inline ? "rounded-xl border border-slate-800 bg-slate-950 text-slate-100 flex flex-col min-h-[60vh]" : "fixed inset-0 z-[65] bg-slate-950 text-slate-100 flex flex-col"}>
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
         <div>
           <div className="font-bold text-sm">Promo Kasir</div>
           <div className="text-[11px] text-slate-500">{rows ? `${hitung.berjalan} berjalan · ${hitung.semua} promo` : "Memuat…"} · diskon per barang dengan tanggal mulai & selesai</div>
         </div>
-        <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
-          <X size={18} />
-        </button>
+        {!inline && (
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
+            <X size={18} />
+          </button>
+        )}
       </header>
 
       <div className="p-3 space-y-2.5 border-b border-slate-800">
