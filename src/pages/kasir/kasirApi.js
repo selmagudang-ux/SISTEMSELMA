@@ -286,6 +286,42 @@ export async function tutupShift({ shiftId, kasAkhir, catatan }) {
   });
 }
 
+// ---------- rincian penjualan satu shift (layar Tutup Kasir + cetak) ----------
+// Mengembalikan { transaksi, items, pembayaran } untuk semua transaksi (termasuk void/retur)
+// yang tercatat di shift itu, urut waktu naik.
+export async function muatRincianShift(shiftId) {
+  const T = SKEMA.trx;
+  const transaksi = (await sbAll(`kasir_transaksi?select=*&${T.shiftId}=eq.${encodeURIComponent(shiftId)}&order=${T.waktu}.asc`)) || [];
+  const items = [];
+  const pembayaran = [];
+  for (let i = 0; i < transaksi.length; i += 40) {
+    const ids = transaksi.slice(i, i + 40).map((r) => encodeURIComponent(r[T.id])).join(",");
+    const [it, by] = await Promise.all([
+      sb(`kasir_item?select=*&${SKEMA.item.trxId}=in.(${ids})`),
+      sb(`kasir_pembayaran?select=*&${SKEMA.bayar.trxId}=in.(${ids})`),
+    ]);
+    items.push(...(it || []));
+    pembayaran.push(...(by || []));
+  }
+  return { transaksi, items, pembayaran };
+}
+
+// Nomor urut shift DALAM HARI (reset tiap hari, hari kalender WIB): shift pertama yang dibuka
+// hari itu = 1, berikutnya 2, dst. Dihitung dari jam buka semua shift PT ini di hari yang sama.
+export const HARI_WIB = "Asia/Jakarta";
+export const tanggalWib = (v) => new Date(v).toLocaleDateString("en-CA", { timeZone: HARI_WIB }); // YYYY-MM-DD
+export async function nomorShiftHarian(shift) {
+  const tgl = tanggalWib(shift.buka_at);
+  const awal = new Date(`${tgl}T00:00:00+07:00`);
+  const akhir = new Date(awal.getTime() + 24 * 3600 * 1000);
+  const rows =
+    (await sb(
+      `kasir_shift?select=id,buka_at&buka_at=gte.${encodeURIComponent(awal.toISOString())}&buka_at=lt.${encodeURIComponent(akhir.toISOString())}&order=buka_at.asc,id.asc`
+    )) || [];
+  const idx = rows.findIndex((r) => String(r.id) === String(shift.id));
+  return { nomor: idx >= 0 ? idx + 1 : rows.length + 1, tanggal: tgl };
+}
+
 // Id shift yang masih buka (semua kasir di PT ini) — untuk tahu transaksi mana yang masih bisa di-void.
 export async function muatIdShiftBuka() {
   const rows = (await sb("kasir_shift?select=id&status=eq.buka")) || [];

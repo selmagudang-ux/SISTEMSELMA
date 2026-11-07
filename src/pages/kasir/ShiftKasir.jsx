@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut, Download } from "lucide-react";
 import { fmtRp } from "../../lib/api";
-import { bukaShift, ringkasShift, tutupShift, pesanErrorKasir } from "./kasirApi";
-import { tglJamId } from "./kasirStruk";
+import { bukaShift, ringkasShift, tutupShift, pesanErrorKasir, muatRincianShift, nomorShiftHarian, muatMaster } from "./kasirApi";
+import { tglJamId, identitasStruk } from "./kasirStruk";
+import { RincianShiftPanel, cetakRincianShift } from "./ShiftRincian";
 import { bukaLaciSaatBukaKasir, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLaci";
 
 // =========================================================
@@ -122,16 +123,58 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
   const [hasil, setHasil] = useState(null);
+  const [rincian, setRincian] = useState(null); // { transaksi, items, pembayaran }
+  const [memuatRincian, setMemuatRincian] = useState(true);
+  const [errRincian, setErrRincian] = useState("");
+  const [nomorHarian, setNomorHarian] = useState(null); // { nomor, tanggal } — nomor shift, reset tiap hari
+  const [mencetak, setMencetak] = useState(false);
 
   useEffect(() => {
     let batal = false;
     ringkasShift(shift.id)
       .then((r) => !batal && setRingkas(r))
       .catch((e) => !batal && setError(pesanErrorKasir(e, "koreksi").pesan));
+    muatRincianShift(shift.id)
+      .then((r) => !batal && setRincian(r))
+      .catch((e) => !batal && setErrRincian(e?.message || "Rincian penjualan gagal dimuat"))
+      .finally(() => !batal && setMemuatRincian(false));
+    nomorShiftHarian(shift)
+      .then((n) => !batal && setNomorHarian(n))
+      .catch(() => {});
     return () => {
       batal = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shift.id]);
+
+  const cetakRincian = async () => {
+    if (!rincian || mencetak) return;
+    setMencetak(true);
+    try {
+      let identitas = { nama: "" };
+      try {
+        identitas = identitasStruk(await muatMaster());
+      } catch {
+        /* kop kosong, tetap cetak */
+      }
+      await cetakRincianShift({
+        rincian,
+        info: {
+          identitas,
+          shift: { ...shift, ...(hasil?.tutup_at ? { tutup_at: hasil.tutup_at } : {}) },
+          nomorHarian: nomorHarian?.nomor ?? "",
+          tanggal: nomorHarian?.tanggal || new Date(shift.buka_at).toISOString().slice(0, 10),
+          kasir: shift.kasir_nama,
+          ringkas,
+          hasil,
+        },
+      });
+    } catch (e) {
+      setError(e?.message || "Gagal mencetak rincian");
+    } finally {
+      setMencetak(false);
+    }
+  };
 
   const sistem = Number(ringkas?.kas_sistem) || 0;
   const selisih = kasAkhir === "" ? null : kasAkhir - sistem;
@@ -156,12 +199,15 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={() => !saving && !hasil && onClose()}>
       <div
-        className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto"
+        className="w-full sm:max-w-lg bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div>
-            <div className="font-bold">{hasil ? "Kasir ditutup" : "Tutup Kasir"}</div>
+            <div className="font-bold">
+              {hasil ? "Kasir ditutup" : "Tutup Kasir"}
+              {nomorHarian && <span className="ml-2 text-xs font-semibold text-amber-400">Shift {nomorHarian.nomor} hari ini</span>}
+            </div>
             <div className="text-xs text-slate-500">Dibuka {tglJamId(shift.buka_at)}</div>
           </div>
           {!hasil && (
@@ -198,6 +244,8 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
               </div>
             </>
           )}
+
+          <RincianShiftPanel rincian={rincian} memuat={memuatRincian} error={errRincian} onCetak={cetakRincian} mencetak={mencetak} />
 
           {hasil ? (
             <>
