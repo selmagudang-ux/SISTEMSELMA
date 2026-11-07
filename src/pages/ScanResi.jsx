@@ -9,6 +9,7 @@ import {
 } from "../components/ui";
 import { TombolScanKamera } from "../components/ScanKamera";
 import { sb, sbAll } from "../lib/api";
+import { allowedSubMenus, adaOverrideSub } from "../lib/constants";
 import { downloadXlsx } from "../lib/exportData";
 import { parseFileOrderan, ringkasBarang } from "../lib/resiOrderan";
 import { ambilInfoPerangkat } from "../lib/infoPerangkat";
@@ -235,7 +236,10 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const toast = useCallback((m, k) => showToast?.(m, k), [showToast]);
   const operator = session?.nama || session?.username || null;
   // Retur Resi sementara KHUSUS Super Appa (sub-menu juga disembunyikan dari sidebar lewat onlyRole di constants.js).
-  const bisaRetur = session?.role === "superappa";
+  // Bisa dibuka juga oleh role lain kalau Super Appa memberi akses sub-menu "Retur Resi" di Pengaturan > Hak Akses.
+  const bisaRetur =
+    session?.role === "superappa" ||
+    (adaOverrideSub(session?.role, "scan-resi") && allowedSubMenus(session?.role, "scan-resi").includes("retur"));
 
   // ---------------- data ----------------
   const [hari, setHari] = useState(hariIni());

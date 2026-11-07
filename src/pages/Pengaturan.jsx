@@ -347,11 +347,22 @@ function daftarMenuEditor() {
         key: n.key,
         grup,
         label: n.label,
-        subs: (n.children || []).filter((c) => !c.onlyRole).map((c) => ({ key: c.key, label: c.label })),
+        subs: (n.children || []).map((c) => ({ key: c.key, label: c.label, onlyRole: c.onlyRole || null })),
       });
     });
   jalan(NAV, "");
   return hasil;
+}
+
+// Sub-menu yang terbuka BAWAAN untuk role ini (tanpa override). Sub bertanda onlyRole hanya ikut untuk role itu.
+function subBawaanEditor(role, m) {
+  const semua = m.subs.map((s) => s.key);
+  const bawaan = allowedSubMenusBawaan(role, m.key);
+  const dasar = bawaan ? bawaan.filter((k) => semua.includes(k)) : semua;
+  return dasar.filter((k) => {
+    const s = m.subs.find((x) => x.key === k);
+    return !s?.onlyRole || s.onlyRole === role;
+  });
 }
 
 function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
@@ -364,8 +375,8 @@ function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
     daftar.forEach((m) => {
       if (!m.subs.length) return;
       const semua = m.subs.map((s) => s.key);
-      const bawaan = Array.isArray(tersimpan?.subs?.[m.key]) ? tersimpan.subs[m.key] : allowedSubMenusBawaan(role, m.key);
-      subs[m.key] = new Set(bawaan ? bawaan.filter((k) => semua.includes(k)) : semua);
+      const awalSub = Array.isArray(tersimpan?.subs?.[m.key]) ? tersimpan.subs[m.key] : subBawaanEditor(role, m);
+      subs[m.key] = new Set(awalSub.filter((k) => semua.includes(k)));
     });
     return {
       menus,
@@ -404,8 +415,7 @@ function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
       if (!m.subs.length || !d.menus.has(m.key)) return;
       const semua = m.subs.map((s) => s.key);
       const pilih = semua.filter((k) => d.subs[m.key]?.has(k));
-      const bawaan = allowedSubMenusBawaan(role, m.key);
-      const sama = (bawaan ? bawaan.filter((k) => semua.includes(k)) : semua).slice().sort().join("|") === pilih.slice().sort().join("|");
+      const sama = subBawaanEditor(role, m).slice().sort().join("|") === pilih.slice().sort().join("|");
       if (!sama) subs[m.key] = pilih;
     });
     onSimpan(role, { menus, subs, kasir: d.kasir, hanyaLihat: d.hanyaLihat });
@@ -450,6 +460,7 @@ function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
                         <label key={s.key} className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
                           <input type="checkbox" checked={!!d.subs[m.key]?.has(s.key)} onChange={() => toggleSub(m.key, s.key)} />
                           {s.label}
+                          {s.onlyRole && <span className="text-[10px] text-amber-400/80">(bawaan: khusus Super Appa)</span>}
                         </label>
                       ))}
                     </div>

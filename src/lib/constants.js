@@ -526,7 +526,9 @@ export function filterNavByAllowed(nodes, allowedMenuKeys, role) {
     const subs = n.key === "holding" || n.key === "perusahaan" || n.key === "keuangan" || adaOverrideSub(role, n.key) ? allowedSubMenus(role, n.key) : null;
     return {
       ...n,
-      children: n.children.filter((c) => (!c.onlyRole || c.onlyRole === role) && (!subs || subs.includes(c.key))),
+      // Sub-menu "onlyRole" tampil untuk role itu, ATAU untuk role lain yang SECARA EKSPLISIT diberi akses
+      // oleh Super Appa lewat Hak Akses (ada di daftar sub override).
+      children: n.children.filter((c) => (!c.onlyRole || c.onlyRole === role || (adaOverrideSub(role, n.key) && subs && subs.includes(c.key))) && (!subs || subs.includes(c.key))),
     };
   };
   if (!allowedMenuKeys) return nodes.map(sembunyikanSub);
