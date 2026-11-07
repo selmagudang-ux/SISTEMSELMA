@@ -28,7 +28,7 @@ const namaKey = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim()
 
 const ALIAS = {
   nama: ["nama", "namabarang"],
-  variasi: ["variasi", "varian", "variation", "namavariasi"],
+  variasi: ["variasi", "varian", "variation", "namavariasi", "variasiopsional", "varianopsional"],
   kategori: ["kategori"],
   hpp: ["hpp", "hargabeli", "modal"],
   harga: ["hargajual", "harga", "hargaecer"],
@@ -53,7 +53,11 @@ async function bacaFile(file) {
   if (iHeader < 0) throw new Error('Kolom "Nama" tidak ditemukan. Pakai template yang bisa diunduh di layar ini.');
   const kolom = {};
   aoa[iHeader].forEach((c, i) => {
-    for (const [k, alias] of Object.entries(ALIAS)) if (kolom[k] === undefined && alias.includes(norm(c))) kolom[k] = i;
+    const n = norm(c);
+    for (const [k, alias] of Object.entries(ALIAS)) {
+      if (kolom[k] !== undefined) continue;
+      if (alias.includes(n) || (k === "variasi" && /^(variasi|varian|variation)/.test(n))) kolom[k] = i;
+    }
   });
   if (kolom.harga === undefined) throw new Error('Kolom "Harga Jual" tidak ditemukan. Pakai template yang bisa diunduh di layar ini.');
   return aoa
@@ -142,7 +146,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           else if (bc && barcodeAda.has(bc.toLowerCase())) { status = "salah"; pesan = "Barcode sudah dipakai barang lain"; }
           else if (bc && barcodeFile.has(bc.toLowerCase())) { status = "salah"; pesan = "Barcode dobel di file"; }
           else if (ada.has(namaKey(d.nama))) { status = "lewati"; pesan = "Sudah ada di Barang Toko"; }
-          else if (dalamFile.has(namaKey(d.nama))) { status = "lewati"; pesan = "Nama dobel di file"; }
+          else if (dalamFile.has(namaKey(d.nama))) { status = "lewati"; pesan = d.variasi ? "Nama + variasi dobel di file" : "Nama dobel di file (beda variasi? isi kolom Variasi)"; }
           if (status === "ok") { dalamFile.add(namaKey(d.nama)); if (bc) barcodeFile.add(bc.toLowerCase()); }
           const adaLink = /^https?:\/\/\S+$/i.test(d.fotoMentah);
           return { ...d, barcode: bc, sku: skuAsli || "", fotoUrl: adaLink ? d.fotoMentah : "", fotoSalah: !!d.fotoMentah && !adaLink, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
