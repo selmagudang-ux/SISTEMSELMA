@@ -164,7 +164,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
       terakhirMuat.current = Date.now();
       setSkuList(rows.filter((s) => !s.nonaktif));
       // Kalau promo gagal dimuat, pakai promo terakhir yang berhasil dimuat (jangan hilang mendadak).
-      const peta = rowsPromo ? petaPromoAktif(rowsPromo, new Map(rows.map((s) => [s.sku, Number(s.ecer) || 0]))) : promoRef.current;
+      const peta = rowsPromo ? petaPromoAktif(rowsPromo, new Map(rows.map((s) => [s.sku, { harga: Number(s.ecer) || 0, kategori: s.kategori }]))) : promoRef.current;
       promoRef.current = peta;
       setPromoMap(peta);
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows, peta);
@@ -578,7 +578,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
                   {it.promo && (
                     <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
                       <span className={`inline-flex items-center gap-1 font-semibold ${it.promoLepas ? "text-slate-500 line-through" : "text-emerald-400"}`}>
-                        <BadgePercent size={13} /> Promo {labelDiskon(it.promo)}
+                        <BadgePercent size={13} /> Promo {labelDiskon(it.promo)}{it.promo.kategori ? ` · ${it.promo.kategori}` : ""}
                         {!it.promoLepas && h.diskonPromo > 0 && <span className="tabular-nums">· − {fmtRp(h.diskonPromo)}</span>}
                       </span>
                       <button

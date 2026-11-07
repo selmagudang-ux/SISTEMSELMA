@@ -12,12 +12,13 @@ import {
   labelDiskon,
   tglPendek,
   hargaSetelahPromo,
+  normKat,
 } from "./kasirPromo";
 import { inp } from "./BarangToko";
 
 // =========================================================
 // KELOLA PROMO KASIR (hanya superappa) — dibuka dari tombol "Promo" di header kasir.
-// Promo per barang: SKU toko + diskon % atau Rp per pcs + tanggal mulai & selesai (keduanya ikut berlaku).
+// Promo per barang (SKU toko) ATAU per kategori (semua barang di kategori itu) + diskon % atau Rp per pcs + tanggal mulai & selesai (keduanya ikut berlaku).
 // Promo yang sedang berjalan otomatis terpasang di keranjang kasir; kasir bisa melepasnya per item.
 // Kalau satu SKU punya beberapa promo yang berjalan bersamaan, dipakai yang potongannya paling besar.
 // =========================================================
@@ -59,7 +60,18 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
   const baru = !promo?.id;
   const hari = tanggalHariIni();
   const peta = useMemo(() => new Map(barang.map((b) => [b.kode, b])), [barang]);
+  // Sasaran promo: "sku" (barang tertentu) atau "kategori" (semua barang di kategori itu).
+  const [sasaran, setSasaran] = useState(promo?.kategori && !promo?.sku ? "kategori" : "sku");
   const [terpilih, setTerpilih] = useState(() => (promo?.sku ? [promo.sku] : []));
+  const [katTerpilih, setKatTerpilih] = useState(() => (promo?.kategori && !promo?.sku ? [promo.kategori] : []));
+  const daftarKategori = useMemo(() => {
+    const m = new Map();
+    barang.forEach((b) => {
+      const k = String(b.kategori || "").trim();
+      if (k && !b.nonaktif) m.set(normKat(k), { nama: k, jumlah: (m.get(normKat(k))?.jumlah || 0) + 1 });
+    });
+    return [...m.entries()].map(([nk, v]) => ({ nk, ...v })).sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [barang]);
   const [cari, setCari] = useState("");
   const [tipe, setTipe] = useState(promo?.tipe || "persen");
   const [nilai, setNilai] = useState(promo?.nilai != null ? String(promo.nilai) : "");
@@ -83,20 +95,32 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
 
   const simpan = async () => {
     setError("");
-    if (!terpilih.length) return setError("Pilih minimal satu barang.");
+    const perKategori = sasaran === "kategori";
+    if (perKategori && !katTerpilih.length) return setError("Pilih minimal satu kategori.");
+    if (!perKategori && !terpilih.length) return setError("Pilih minimal satu barang.");
     if (n <= 0) return setError("Isi besar diskon (lebih dari 0).");
     if (tipe === "persen" && n > 100) return setError("Diskon persen maksimal 100.");
     if (!mulai || !selesai) return setError("Isi tanggal mulai dan selesai.");
     if (selesai < mulai) return setError("Tanggal selesai tidak boleh sebelum tanggal mulai.");
     if (tipe === "rp") {
-      const kebesaran = terpilih.find((k) => n >= (Number(peta.get(k)?.harga_jual) || 0));
-      if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${kebesaran} (${fmtRp(peta.get(kebesaran)?.harga_jual)}).`);
+      if (perKategori) {
+        for (const k of katTerpilih) {
+          const murah = barang.filter((b) => !b.nonaktif && normKat(b.kategori) === normKat(k) && Number(b.harga_jual) > 0).sort((a, b) => a.harga_jual - b.harga_jual)[0];
+          if (murah && n >= Number(murah.harga_jual)) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${murah.kode} (${fmtRp(murah.harga_jual)}) di kategori ${k}.`);
+        }
+      } else {
+        const kebesaran = terpilih.find((k) => n >= (Number(peta.get(k)?.harga_jual) || 0));
+        if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${kebesaran} (${fmtRp(peta.get(kebesaran)?.harga_jual)}).`);
+      }
     }
     setSaving(true);
     try {
       const data = { tipe, nilai: n, mulai, selesai, nama: nama.trim() || null };
-      if (baru) await tambahPromo(terpilih.map((sku) => ({ sku, aktif: true, ...data })));
-      else await ubahPromo(promo.id, { sku: terpilih[0], ...data });
+      if (baru) {
+        await tambahPromo(perKategori ? katTerpilih.map((kategori) => ({ sku: null, kategori, aktif: true, ...data })) : terpilih.map((sku) => ({ sku, kategori: null, aktif: true, ...data })));
+      } else {
+        await ubahPromo(promo.id, perKategori ? { sku: null, kategori: katTerpilih[0], ...data } : { sku: terpilih[0], kategori: null, ...data });
+      }
       onSelesai();
     } catch (e) {
       setError(String(e?.message || e));
@@ -107,6 +131,50 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
 
   return (
     <Kerangka judul={baru ? "Tambah promo" : "Ubah promo"} onClose={onClose}>
+      {baru && (
+        <div className="flex p-0.5 rounded-lg bg-slate-950 border border-slate-800">
+          {[
+            ["sku", "Per barang"],
+            ["kategori", "Per kategori"],
+          ].map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setSasaran(k)}
+              className={`flex-1 px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${sasaran === k ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {sasaran === "kategori" ? (
+        <div>
+          <label className="text-xs text-slate-400 mb-1 block">
+            Kategori {baru && <span className="text-slate-600">(boleh lebih dari satu — berlaku untuk semua barang di kategori itu)</span>}
+          </label>
+          {daftarKategori.length === 0 ? (
+            <div className="text-xs text-slate-500">Belum ada barang toko yang punya kategori.</div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {daftarKategori.map((k) => {
+                const aktif = katTerpilih.some((x) => normKat(x) === k.nk);
+                return (
+                  <button
+                    key={k.nk}
+                    type="button"
+                    onClick={() => setKatTerpilih((t) => (baru ? (aktif ? t.filter((x) => normKat(x) !== k.nk) : [...t, k.nama]) : [k.nama]))}
+                    className={`text-xs px-3 py-1.5 rounded-full border ${aktif ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300 hover:border-amber-500/60"}`}
+                  >
+                    {k.nama} <span className={aktif ? "text-slate-800" : "text-slate-500"}>({k.jumlah})</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
       <div>
         <label className="text-xs text-slate-400 mb-1 block">Barang {baru && <span className="text-slate-600">(boleh lebih dari satu)</span>}</label>
         {terpilih.length > 0 && (
@@ -150,6 +218,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
           </div>
         )}
       </div>
+      )}
 
       <div>
         <label className="text-xs text-slate-400 mb-1 block">Diskon</label>
@@ -171,7 +240,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
           </div>
           <input type="number" inputMode="decimal" min="0" value={nilai} onChange={(e) => setNilai(e.target.value)} placeholder="0" className={`${inp} tabular-nums`} />
         </div>
-        {contoh && n > 0 && (tipe === "persen" || n < contohHarga) && (
+        {sasaran === "sku" && contoh && n > 0 && (tipe === "persen" || n < contohHarga) && (
           <div className="text-[11px] text-slate-500 mt-1.5">
             Contoh {contoh.kode}: {fmtRp(contohHarga)} → <span className="text-emerald-400 font-semibold">{fmtRp(hargaSetelahPromo(contohHarga, { tipe, nilai: n }))}</span> per pcs
           </div>
@@ -232,7 +301,7 @@ function KonfirmasiHapus({ promo, onClose, onSelesai }) {
     }
   };
   return (
-    <Kerangka judul={`Hapus promo ${promo.sku}`} onClose={onClose}>
+    <Kerangka judul={`Hapus promo ${promo.sku || promo.kategori}`} onClose={onClose}>
       <div className="text-sm text-slate-300">
         Promo {labelDiskon(promo)} ({tglPendek(promo.mulai)} – {tglPendek(promo.selesai)}) akan dihapus. Transaksi yang sudah tersimpan tidak berubah.
       </div>
@@ -266,7 +335,7 @@ export default function PromoToko({ onClose }) {
   const muat = async () => {
     setErr("");
     try {
-      const [p, b] = await Promise.all([muatSemuaPromo(), sbAll("master_toko?select=kode,nama,harga_jual,nonaktif&order=kode")]);
+      const [p, b] = await Promise.all([muatSemuaPromo(), sbAll("master_toko?select=kode,nama,kategori,harga_jual,nonaktif&order=kode")]);
       setRows(p);
       setBarang(b || []);
     } catch (e) {
@@ -297,7 +366,7 @@ export default function PromoToko({ onClose }) {
       .filter((p) => filter === "semua" || p.status === filter)
       .filter((p) => {
         if (!kata.length) return true;
-        const j = `${p.sku} ${peta.get(p.sku)?.nama || ""} ${p.nama || ""}`.toLowerCase();
+        const j = `${p.sku || ""} ${p.kategori || ""} ${peta.get(p.sku)?.nama || ""} ${p.nama || ""}`.toLowerCase();
         return kata.every((k) => j.includes(k));
       })
       .sort((a, b) => urut[a.status] - urut[b.status] || String(a.selesai).localeCompare(String(b.selesai)));
@@ -385,7 +454,9 @@ export default function PromoToko({ onClose }) {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
             {tampil.map((p) => {
-              const b = peta.get(p.sku);
+              const perKat = !p.sku && !!p.kategori;
+              const b = perKat ? null : peta.get(p.sku);
+              const jumlahBarang = perKat ? barang.filter((x) => !x.nonaktif && normKat(x.kategori) === normKat(p.kategori)).length : 0;
               const harga = Number(b?.harga_jual) || 0;
               const st = STATUS[p.status];
               const potong = hitungDiskonPromo(harga, 1, p);
@@ -393,9 +464,11 @@ export default function PromoToko({ onClose }) {
                 <div key={p.id} className={`rounded-2xl p-3.5 border bg-slate-900/70 ${p.status === "berjalan" ? "border-emerald-500/40" : "border-slate-800"}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-100 leading-snug">{b?.nama || <span className="text-red-400">Barang tidak ditemukan</span>}</div>
+                      <div className="text-sm font-semibold text-slate-100 leading-snug">
+                        {perKat ? `Kategori ${p.kategori}` : b?.nama || <span className="text-red-400">Barang tidak ditemukan</span>}
+                      </div>
                       <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        {p.sku}
+                        {perKat ? `${jumlahBarang} barang aktif` : p.sku}
                         {p.nama ? ` · ${p.nama}` : ""}
                       </div>
                     </div>

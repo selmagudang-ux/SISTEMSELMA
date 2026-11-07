@@ -4,14 +4,18 @@ import { hitungDiskonPromo } from "./kasirHitung";
 // =========================================================
 // KASIR — PROMO PER BARANG
 // Tabel: kasir_promo (lihat supabase/migrations/20261107_kasir_promo.sql).
-// Satu baris = satu SKU toko (master_toko.kode) + diskon % atau Rp PER PCS + tanggal mulai & selesai.
+// Satu baris = satu SKU toko (master_toko.kode) ATAU satu kategori toko (master_toko.kategori)
+// + diskon % atau Rp PER PCS + tanggal mulai & selesai. Promo kategori berlaku untuk semua barang di kategori itu.
 // Promo yang sedang berjalan otomatis terpasang sebagai diskon item di keranjang kasir
 // (lihat hitungItem di kasirHitung.js). Di database tidak ada yang berubah: transaksi tetap
 // menyimpan diskon item dalam rupiah, jadi fungsi kasir_simpan_transaksi tidak perlu diubah.
 // Tabel ini tidak masuk TABEL_PER_PT di lib/api.js, jadi kolom & filter `entitas` diurus di sini.
 // =========================================================
 
-const KOLOM = "id,sku,nama,tipe,nilai,mulai,selesai,aktif,created_at";
+const KOLOM = "id,sku,kategori,nama,tipe,nilai,mulai,selesai,aktif,created_at";
+
+// Kategori dicocokkan tanpa peduli huruf besar/kecil dan spasi di pinggir.
+export const normKat = (k) => String(k || "").trim().toLowerCase();
 
 // Tanggal hari ini (YYYY-MM-DD) menurut WIB, bukan jam perangkat — supaya promo ganti hari tepat tengah malam WIB.
 export function tanggalHariIni() {
@@ -50,18 +54,32 @@ export function hargaSetelahPromo(harga, promo) {
   return h - hitungDiskonPromo(h, 1, promo);
 }
 
-// Dari daftar promo -> Map(sku -> promo terbaik yang BERJALAN hari ini).
-// Kalau satu SKU punya beberapa promo yang tumpang tindih, dipakai yang potongannya paling besar.
-export function petaPromoAktif(rows, hargaPerSku, hariIni = tanggalHariIni()) {
-  const peta = new Map();
-  const potongan = new Map();
+// Dari daftar promo -> Map(sku -> promo terbaik yang BERJALAN hari ini), untuk semua barang toko.
+// infoSku: Map(sku -> { harga, kategori }). Promo bisa per SKU atau per kategori; kalau satu barang
+// kena beberapa promo sekaligus, dipakai yang potongannya paling besar (per pcs).
+export function petaPromoAktif(rows, infoSku, hariIni = tanggalHariIni()) {
+  const perSku = new Map();
+  const perKat = new Map();
   for (const p of rows || []) {
     if (statusPromo(p, hariIni) !== "berjalan") continue;
-    const harga = Number(hargaPerSku?.get?.(p.sku)) || 0;
-    const potong = hitungDiskonPromo(harga, 1, p);
-    if (potongan.has(p.sku) && potong <= potongan.get(p.sku)) continue;
-    potongan.set(p.sku, potong);
-    peta.set(p.sku, { id: p.id, sku: p.sku, nama: p.nama || "", tipe: p.tipe, nilai: Number(p.nilai) || 0, selesai: p.selesai });
+    if (p.sku) (perSku.get(p.sku) || perSku.set(p.sku, []).get(p.sku)).push(p);
+    else if (p.kategori) (perKat.get(normKat(p.kategori)) || perKat.set(normKat(p.kategori), []).get(normKat(p.kategori))).push(p);
+  }
+  const peta = new Map();
+  for (const [sku, info] of infoSku || []) {
+    const calon = [...(perSku.get(sku) || []), ...(perKat.get(normKat(info?.kategori)) || [])];
+    let terbaik = null;
+    let potongMaks = -1;
+    for (const p of calon) {
+      const potong = hitungDiskonPromo(Number(info?.harga) || 0, 1, p);
+      if (potong > potongMaks) {
+        potongMaks = potong;
+        terbaik = p;
+      }
+    }
+    if (terbaik) {
+      peta.set(sku, { id: terbaik.id, sku, nama: terbaik.nama || "", tipe: terbaik.tipe, nilai: Number(terbaik.nilai) || 0, selesai: terbaik.selesai, kategori: terbaik.sku ? "" : terbaik.kategori });
+    }
   }
   return peta;
 }
