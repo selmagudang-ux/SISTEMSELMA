@@ -119,6 +119,21 @@ function StrukIsi({ s }) {
   );
 }
 
+// HTML mandiri untuk dicetak di aplikasi desktop: isi struk + seluruh CSS halaman (Tailwind), latar putih, tanpa margin.
+function htmlCetak(el) {
+  let css = "";
+  for (const sh of Array.from(document.styleSheets)) {
+    try {
+      for (const r of Array.from(sh.cssRules)) css += `${r.cssText}\n`;
+    } catch {
+      /* stylesheet lintas-origin (mis. font) dilewati */
+    }
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style>` +
+    `<style>html,body{margin:0;padding:0;background:#fff;color:#000}@page{margin:0}</style></head>` +
+    `<body>${el.outerHTML}</body></html>`;
+}
+
 export default function ModalStruk({ struk, onClose }) {
   const printRef = useRef(null);
   const [mencetak, setMencetak] = useState(false);
@@ -141,6 +156,22 @@ export default function ModalStruk({ struk, onClose }) {
             document.head.appendChild(tag);
           }
           tag.textContent = `@media print { @page { size: 80mm ${mm}mm; margin: 0; } }`;
+        }
+        const mmCetak = el ? Math.ceil((el.getBoundingClientRect().height / 96) * 25.4 + 8) : 150;
+        const desktop = typeof window !== "undefined" ? window.selmaDesktop : null;
+        if (desktop?.cetakHtml && el) {
+          // Aplikasi desktop: cetak dari HTML mandiri di jendela tersembunyi (lebih andal di printer thermal).
+          desktop
+            .cetakHtml(htmlCetak(el), mmCetak)
+            .then((r) => {
+              if (r && r.ok === false) {
+                setInfo(`Gagal mencetak: ${r.error || "tidak diketahui"}. Mencoba cara biasa…`);
+                window.print();
+              }
+            })
+            .catch(() => window.print())
+            .finally(() => setMencetak(false));
+          return;
         }
         window.print();
         setTimeout(() => setMencetak(false), 500);
