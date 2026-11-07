@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Loader2, Check, AlertCircle, FileDown, FileUp } from "lucide-react";
-import { sb, entitasSesi, fmtRp } from "../../lib/api";
+import { useMemo, useState } from "react";
+import { Loader2, Check, AlertCircle, FileDown, FileUp, ImagePlus } from "lucide-react";
+import { sb, entitasSesi, fmtRp, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { downloadXlsx } from "../../lib/exportData";
 import { Kerangka, Galat, pesanError } from "./BarangToko";
 
@@ -11,6 +11,8 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 //  - Barcode BEBAS: boleh diisi di kolom "Barcode" (opsional); kosong = sama dengan kode toko.
 //    Barang tidak ditautkan ke SKU gudang.
 //  - Barang yang namanya sudah ada di Barang Toko (atau dobel di file) DILEWATI.
+//  - Foto (opsional): pilih banyak foto sekaligus; nama file = Barcode barang (kalau diisi) atau Nama barang,
+//    mis. 8991234567890.jpg atau "Kemeja Flanel 1.jpg". Diunggah setelah barang dibuat.
 //  - Stok awal dicatat lewat fungsi toko_opname supaya ada riwayatnya di toko_stok_mutasi.
 // =========================================================
 
@@ -65,6 +67,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
   const [error, setError] = useState("");
   const [proses, setProses] = useState(null); // teks progres
   const [hasil, setHasil] = useState(null);
+  const [fotoFiles, setFotoFiles] = useState([]);
 
   const unduhTemplate = () =>
     downloadXlsx("template-import-barang-toko.xlsx", [
@@ -120,11 +123,23 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
     }
   };
 
+  // Pasangkan foto ke baris: nama file (tanpa ekstensi) = barcode, kalau tidak ada = nama barang.
+  const fotoPerBaris = useMemo(() => {
+    const m = new Map();
+    if (!baris || !fotoFiles.length) return m;
+    const peta = new Map(fotoFiles.map((f) => [namaKey(f.name.replace(/\.[^.]+$/, "")), f]));
+    for (const b of baris) {
+      const f = (b.barcode && peta.get(namaKey(b.barcode))) || peta.get(namaKey(b.nama));
+      if (f) m.set(b.baris, f);
+    }
+    return m;
+  }, [baris, fotoFiles]);
+
   const jalankan = async () => {
     const valid = baris.filter((b) => b.status === "ok");
     if (!valid.length) return;
     setError("");
-    const out = { dibuat: 0, stok: 0, dilewati: baris.filter((b) => b.status === "lewati").length, salah: baris.filter((b) => b.status === "salah").length, gagal: [] };
+    const out = { dibuat: 0, stok: 0, foto: 0, dilewati: baris.filter((b) => b.status === "lewati").length, salah: baris.filter((b) => b.status === "salah").length, gagal: [] };
     try {
       const prefix = String(entitasSesi()).toUpperCase();
       let nomor = 0;
@@ -182,6 +197,28 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
         }
       };
       await Promise.all([kerja(), kerja(), kerja(), kerja()]);
+
+      // 3) Foto: unggah yang cocok, 3 sekaligus, lalu simpan alamatnya di foto_url.
+      const perluFoto = tersimpan.filter((b) => fotoPerBaris.has(b.baris));
+      let fSelesai = 0;
+      let fAntre = 0;
+      const kerjaFoto = async () => {
+        while (fAntre < perluFoto.length) {
+          const b = perluFoto[fAntre++];
+          try {
+            const kecil = await kompresFotoProduk(fotoPerBaris.get(b.baris));
+            const ext = (kecil.name.split(".").pop() || "jpg").toLowerCase();
+            const url = await sbUploadFoto(kecil, `toko/${b.kode.replace(/[^a-zA-Z0-9-_]/g, "-")}-${Date.now()}.${ext}`);
+            await sb(`master_toko?kode=eq.${encodeURIComponent(b.kode)}`, { method: "PATCH", body: JSON.stringify({ foto_url: url }) });
+            out.foto += 1;
+          } catch (e) {
+            out.gagal.push(`${b.kode} ${b.nama}: foto gagal — ${pesanError(e)}`);
+          }
+          fSelesai += 1;
+          setProses(`Mengunggah foto ${fSelesai} / ${perluFoto.length}…`);
+        }
+      };
+      if (perluFoto.length) await Promise.all([kerjaFoto(), kerjaFoto(), kerjaFoto()]);
     } catch (e) {
       out.gagal.push(pesanError(e));
     }
@@ -194,6 +231,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
       <Kerangka judul="Hasil import Barang Toko" onClose={() => onSelesai(hasil)}>
         <div className="space-y-1.5 text-sm">
           <div className="flex items-center gap-2 text-emerald-300"><Check size={15} /> {hasil.dibuat} barang ditambahkan</div>
+          {hasil.foto > 0 && <div className="text-slate-300">{hasil.foto} foto tersimpan</div>}
           {hasil.stok > 0 && <div className="text-slate-300">{hasil.stok} barang sudah diisi stok awalnya</div>}
           {hasil.dilewati > 0 && <div className="text-slate-400">{hasil.dilewati} dilewati (sudah ada atau dobel di file)</div>}
           {hasil.salah > 0 && <div className="text-amber-300">{hasil.salah} baris tidak valid dan tidak diimpor</div>}
@@ -232,12 +270,36 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
 
       <Galat pesan={error} />
 
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer">
+          <ImagePlus size={14} /> {fotoFiles.length ? `${fotoFiles.length} foto dipilih` : "Pilih foto (opsional)"}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            disabled={!!proses}
+            onChange={(e) => {
+              setFotoFiles(Array.from(e.target.files || []));
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {fotoFiles.length > 0 && (
+          <button type="button" onClick={() => setFotoFiles([])} disabled={!!proses} className="text-xs text-red-400 hover:text-red-300">Kosongkan</button>
+        )}
+      </div>
+      <div className="text-[11px] text-slate-500 leading-snug">
+        Nama file foto = <b className="text-slate-300">Barcode</b> barang (kalau diisi) atau <b className="text-slate-300">Nama</b> barang, mis. <span className="font-mono">Kemeja Flanel 1.jpg</span>.
+      </div>
+
       {baris && (
         <>
           <div className="text-xs text-slate-400">
             {namaFile}: <span className="text-emerald-300">{jumlah.ok} siap diimpor</span>
             {jumlah.lewati > 0 && <span className="text-slate-300"> · {jumlah.lewati} dilewati</span>}
             {jumlah.salah > 0 && <span className="text-amber-300"> · {jumlah.salah} tidak valid</span>}
+            {fotoFiles.length > 0 && <span className="text-sky-300"> · {baris.filter((b) => b.status === "ok" && fotoPerBaris.has(b.baris)).length} foto cocok</span>}
           </div>
           <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-800">
             <table className="w-full text-xs">
@@ -246,6 +308,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                   <th className="font-medium px-3 py-1.5">Nama</th>
                   <th className="font-medium px-2 py-1.5 text-right">Harga</th>
                   <th className="font-medium px-2 py-1.5 text-right">Stok</th>
+                  <th className="font-medium px-2 py-1.5">Foto</th>
                   <th className="font-medium px-3 py-1.5">Status</th>
                 </tr>
               </thead>
@@ -255,6 +318,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                     <td className="px-3 py-1.5">{b.nama || "(kosong)"}</td>
                     <td className="px-2 py-1.5 text-right">{b.harga > 0 ? fmtRp(b.harga) : "–"}</td>
                     <td className="px-2 py-1.5 text-right">{b.stok}</td>
+                    <td className="px-2 py-1.5">{fotoPerBaris.has(b.baris) ? "✓" : "–"}</td>
                     <td className={`px-3 py-1.5 ${b.status === "ok" ? "text-emerald-300" : b.status === "lewati" ? "text-slate-400" : "text-amber-300"}`}>
                       {b.status === "ok" ? "Siap" : b.pesan}
                     </td>
