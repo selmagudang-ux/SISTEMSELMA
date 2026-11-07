@@ -11,6 +11,8 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 //  - Barcode BEBAS: boleh diisi di kolom "Barcode" (opsional); kosong = sama dengan kode toko.
 //    Barang tidak ditautkan ke SKU gudang.
 //  - Barang yang namanya sudah ada di Barang Toko (atau dobel di file) DILEWATI.
+//  - Foto lewat LINK: kolom "Foto (link)" berisi alamat gambar https://… ; disimpan apa adanya di foto_url
+//    (tidak diunggah ulang). Kalau ada file foto yang cocok juga, file itu yang dipakai.
 //  - Foto (opsional): pilih banyak foto sekaligus; nama file = Barcode barang (kalau diisi) atau Nama barang,
 //    mis. 8991234567890.jpg atau "Kemeja Flanel 1.jpg". Diunggah setelah barang dibuat.
 //  - Stok awal dicatat lewat fungsi toko_opname supaya ada riwayatnya di toko_stok_mutasi.
@@ -26,6 +28,7 @@ const ALIAS = {
   harga: ["hargajual", "harga", "hargaecer"],
   stok: ["stokawal", "stok", "jumlah"],
   barcode: ["barcode", "kodebarcode", "barcodeopsional"],
+  foto: ["fotolink", "linkfoto", "fotourl", "urlfoto", "linkgambar", "gambar", "foto"],
 };
 
 function angka(v) {
@@ -58,6 +61,7 @@ async function bacaFile(file) {
       harga: angka(r[kolom.harga]),
       stok: kolom.stok === undefined ? 0 : angka(r[kolom.stok]),
       barcode: kolom.barcode === undefined ? "" : String(r[kolom.barcode] ?? "").trim(),
+      fotoMentah: kolom.foto === undefined ? "" : String(r[kolom.foto] ?? "").trim(),
     }));
 }
 
@@ -80,10 +84,11 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           { key: "harga", label: "Harga Jual" },
           { key: "stok", label: "Stok Awal" },
           { key: "barcode", label: "Barcode (opsional)" },
+          { key: "foto", label: "Foto (link)" },
         ],
         rows: [
-          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, barcode: "8991234567890" },
-          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, barcode: "" },
+          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, barcode: "8991234567890", foto: "https://contoh.com/kemeja-1.jpg" },
+          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, barcode: "", foto: "" },
         ],
       },
     ]);
@@ -115,7 +120,8 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           else if (ada.has(namaKey(d.nama))) { status = "lewati"; pesan = "Sudah ada di Barang Toko"; }
           else if (dalamFile.has(namaKey(d.nama))) { status = "lewati"; pesan = "Nama dobel di file"; }
           if (status === "ok") { dalamFile.add(namaKey(d.nama)); if (d.barcode) barcodeFile.add(d.barcode.toLowerCase()); }
-          return { ...d, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
+          const adaLink = /^https?:\/\/\S+$/i.test(d.fotoMentah);
+          return { ...d, fotoUrl: adaLink ? d.fotoMentah : "", fotoSalah: !!d.fotoMentah && !adaLink, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
         })
       );
     } catch (err) {
@@ -139,7 +145,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
     const valid = baris.filter((b) => b.status === "ok");
     if (!valid.length) return;
     setError("");
-    const out = { dibuat: 0, stok: 0, foto: 0, dilewati: baris.filter((b) => b.status === "lewati").length, salah: baris.filter((b) => b.status === "salah").length, gagal: [] };
+    const out = { dibuat: 0, stok: 0, foto: 0, fotoLink: 0, dilewati: baris.filter((b) => b.status === "lewati").length, salah: baris.filter((b) => b.status === "salah").length, gagal: [] };
     try {
       const prefix = String(entitasSesi()).toUpperCase();
       let nomor = 0;
@@ -165,12 +171,14 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                 barcode: b.barcode || b.kode,
                 harga_jual: b.harga,
                 hpp: b.hpp,
+                foto_url: b.fotoUrl || null,
                 nonaktif: false,
               }))
             ),
           });
           tersimpan.push(...bagian);
           out.dibuat += bagian.length;
+          out.fotoLink += bagian.filter((b) => b.fotoUrl).length;
         } catch (e) {
           out.gagal.push(`Baris ${bagian[0].baris}–${bagian[bagian.length - 1].baris}: ${pesanError(e)}`);
         }
@@ -231,6 +239,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
       <Kerangka judul="Hasil import Barang Toko" onClose={() => onSelesai(hasil)}>
         <div className="space-y-1.5 text-sm">
           <div className="flex items-center gap-2 text-emerald-300"><Check size={15} /> {hasil.dibuat} barang ditambahkan</div>
+          {hasil.fotoLink > 0 && <div className="text-slate-300">{hasil.fotoLink} foto dipasang dari link</div>}
           {hasil.foto > 0 && <div className="text-slate-300">{hasil.foto} foto tersimpan</div>}
           {hasil.stok > 0 && <div className="text-slate-300">{hasil.stok} barang sudah diisi stok awalnya</div>}
           {hasil.dilewati > 0 && <div className="text-slate-400">{hasil.dilewati} dilewati (sudah ada atau dobel di file)</div>}
@@ -254,7 +263,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
   return (
     <Kerangka judul="Import Barang Toko dari file" onClose={proses ? () => {} : onClose}>
       <div className="text-xs text-slate-400 leading-relaxed">
-        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko). Kode toko dibuat otomatis (contoh OPS-0001).
+        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko) dan <b className="text-slate-200">Foto (link)</b> (alamat gambar yang diawali https://). Kode toko dibuat otomatis (contoh OPS-0001).
         Barang yang namanya sudah ada dilewati.
       </div>
 
@@ -318,7 +327,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                     <td className="px-3 py-1.5">{b.nama || "(kosong)"}</td>
                     <td className="px-2 py-1.5 text-right">{b.harga > 0 ? fmtRp(b.harga) : "–"}</td>
                     <td className="px-2 py-1.5 text-right">{b.stok}</td>
-                    <td className="px-2 py-1.5">{fotoPerBaris.has(b.baris) ? "✓" : "–"}</td>
+                    <td className="px-2 py-1.5">{fotoPerBaris.has(b.baris) ? "✓ file" : b.fotoUrl ? "✓ link" : b.fotoSalah ? <span className="text-amber-300">link salah</span> : "–"}</td>
                     <td className={`px-3 py-1.5 ${b.status === "ok" ? "text-emerald-300" : b.status === "lewati" ? "text-slate-400" : "text-amber-300"}`}>
                       {b.status === "ok" ? "Siap" : b.pesan}
                     </td>
