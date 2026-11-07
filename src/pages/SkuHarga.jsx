@@ -92,22 +92,6 @@ function BuatSkuList({ items, setModal, session }) {
               </div>
             </button>
           ))}
-          {sisa > 0 && (
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <button
-                onClick={() => setBatas((b) => b + 60)}
-                className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-4 py-2 rounded-lg"
-              >
-                Tampilkan 60 lagi (sisa {sisa})
-              </button>
-              <button
-                onClick={() => setBatas(filtered.length)}
-                className="text-[11px] text-slate-500 hover:text-slate-300 underline"
-              >
-                Tampilkan semua
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>
@@ -1103,6 +1087,22 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
               </div>
             </div>
           ))}
+          {sisa > 0 && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => setBatas((b) => b + 60)}
+                className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-4 py-2 rounded-lg"
+              >
+                Tampilkan 60 lagi (sisa {sisa})
+              </button>
+              <button
+                onClick={() => setBatas(filtered.length)}
+                className="text-[11px] text-slate-500 hover:text-slate-300 underline"
+              >
+                Tampilkan semua
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
