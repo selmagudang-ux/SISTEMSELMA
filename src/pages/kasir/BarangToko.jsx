@@ -401,6 +401,90 @@ function FormHapus({ barang, onSelesai, onClose }) {
   );
 }
 
+// ---------------------------------------------------------
+// DAFTAR BARANG: filter, urutan, dan komponen baris.
+// Layar lebar (lg ke atas) = tabel; layar sempit = kartu rapat. Daftar tampil bertahap (50 per tahap)
+// supaya tetap ringan walau barang toko sampai ribuan.
+// ---------------------------------------------------------
+const PER_TAHAP = 50;
+const FILTER = [
+  ["semua", "Semua"],
+  ["ada", "Ada stok"],
+  ["habis", "Stok habis"],
+  ["tanpafoto", "Tanpa foto"],
+  ["nonaktif", "Nonaktif"],
+];
+const URUTAN = [
+  ["kode", "Urut: Kode"],
+  ["nama", "Urut: Nama A–Z"],
+  ["stok-asc", "Urut: Stok terkecil"],
+  ["stok-desc", "Urut: Stok terbanyak"],
+  ["harga-asc", "Urut: Harga termurah"],
+  ["harga-desc", "Urut: Harga termahal"],
+];
+const KOLOM = "lg:grid-cols-[3rem_minmax(0,1fr)_9rem_6rem_6.5rem_4rem_9rem]";
+const kolator = new Intl.Collator("id", { numeric: true, sensitivity: "base" });
+const stokAngka = (r) => Number(r.stok) || 0;
+const cocokFilter = (r, f) =>
+  f === "habis" ? stokAngka(r) <= 0 : f === "ada" ? stokAngka(r) > 0 : f === "tanpafoto" ? !r.foto_url : f === "nonaktif" ? !!r.nonaktif : true;
+const PEMBANDING = {
+  kode: (a, b) => kolator.compare(a.kode || "", b.kode || ""),
+  nama: (a, b) => kolator.compare(a.nama || "", b.nama || ""),
+  "stok-asc": (a, b) => stokAngka(a) - stokAngka(b) || kolator.compare(a.nama || "", b.nama || ""),
+  "stok-desc": (a, b) => stokAngka(b) - stokAngka(a) || kolator.compare(a.nama || "", b.nama || ""),
+  "harga-asc": (a, b) => (Number(a.harga_jual) || 0) - (Number(b.harga_jual) || 0) || kolator.compare(a.nama || "", b.nama || ""),
+  "harga-desc": (a, b) => (Number(b.harga_jual) || 0) - (Number(a.harga_jual) || 0) || kolator.compare(a.nama || "", b.nama || ""),
+};
+
+function FotoBarang({ r }) {
+  return (
+    <div className="w-12 h-12 flex-shrink-0">
+      {r.foto_url ? (
+        <FotoThumb src={r.foto_url} judul={`${r.kode} · ${r.nama}`} className="w-12 h-12 rounded-lg object-cover bg-slate-800" />
+      ) : (
+        <div className="w-12 h-12 rounded-lg border border-dashed border-slate-800 flex items-center justify-center text-slate-700" title="Belum ada foto">
+          <ImagePlus size={16} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoBarang({ r }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-sm font-medium leading-snug line-clamp-2 break-words" title={r.nama}>
+        {r.nama}
+      </div>
+      <div className="text-[11px] text-slate-500 font-mono truncate">
+        {r.kode}
+        {r.sku_gudang && r.sku_gudang !== r.kode ? ` ← ${r.sku_gudang}` : ""}
+        {r.nonaktif ? <span className="ml-1.5 font-sans text-red-300">· nonaktif</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function AksiBarang({ r, onMutasi, onOpname, onUbah, onHapus }) {
+  const tombol = "p-2 rounded-lg text-slate-400 hover:bg-slate-800";
+  return (
+    <div className="flex items-center gap-0.5 flex-shrink-0">
+      <button onClick={() => onMutasi(r)} title="Mutasi gudang ⇄ toko" className={`${tombol} hover:text-amber-400`}>
+        <ArrowDownToLine size={16} />
+      </button>
+      <button onClick={() => onOpname(r)} title="Opname" className={`${tombol} hover:text-amber-400`}>
+        <ClipboardCheck size={16} />
+      </button>
+      <button onClick={() => onUbah(r)} title="Ubah" className={`${tombol} hover:text-amber-400`}>
+        <Pencil size={16} />
+      </button>
+      <button onClick={() => onHapus(r)} title="Hapus (stok harus 0)" className={`${tombol} hover:text-red-400`}>
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
 // onBerubah: dipanggil setelah mutasi gudang <-> toko, supaya data gudang di SELMA ikut dimuat ulang.
 export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [rows, setRows] = useState(null);
@@ -412,6 +496,10 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [hapus, setHapus] = useState(null);
   const [impor, setImpor] = useState(false);
   const [fotoMassal, setFotoMassal] = useState(false);
+  const [filter, setFilter] = useState("semua");
+  const [kategori, setKategori] = useState("");
+  const [urut, setUrut] = useState("kode");
+  const [batas, setBatas] = useState(PER_TAHAP);
 
   const muat = async () => {
     setError("");
@@ -426,13 +514,46 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
     muat();
   }, []);
 
+  const daftarKategori = useMemo(
+    () => [...new Set((rows || []).map((r) => (r.kategori || "").trim()).filter(Boolean))].sort(kolator.compare),
+    [rows]
+  );
+
+  const hitung = useMemo(() => {
+    const h = { semua: 0, ada: 0, habis: 0, tanpafoto: 0, nonaktif: 0 };
+    for (const r of rows || []) {
+      h.semua++;
+      if (stokAngka(r) > 0) h.ada++;
+      else h.habis++;
+      if (!r.foto_url) h.tanpafoto++;
+      if (r.nonaktif) h.nonaktif++;
+    }
+    return h;
+  }, [rows]);
+
+  const totalStok = useMemo(() => (rows || []).reduce((n, r) => n + stokAngka(r), 0), [rows]);
+
   const tampil = useMemo(() => {
     const kata = q.toLowerCase().split(/\s+/).filter(Boolean);
-    return (rows || []).filter((r) => {
-      const j = [r.kode, r.nama, r.kategori, r.barcode, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
-      return kata.every((k) => j.includes(k));
-    });
-  }, [rows, q]);
+    return (rows || [])
+      .filter((r) => {
+        if (!cocokFilter(r, filter)) return false;
+        if (kategori && (r.kategori || "").trim() !== kategori) return false;
+        if (!kata.length) return true;
+        const j = [r.kode, r.nama, r.kategori, r.barcode, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
+        return kata.every((k) => j.includes(k));
+      })
+      .sort(PEMBANDING[urut] || PEMBANDING.kode);
+  }, [rows, q, filter, kategori, urut]);
+
+  // Ganti pencarian / filter / urutan -> mulai lagi dari tahap pertama.
+  useEffect(() => {
+    setBatas(PER_TAHAP);
+  }, [q, filter, kategori, urut]);
+
+  const terlihat = useMemo(() => tampil.slice(0, batas), [tampil, batas]);
+  const sisa = tampil.length - terlihat.length;
+  const aksi = { onMutasi: setMutasi, onOpname: setOpname, onUbah: (x) => setForm({ barang: x }), onHapus: setHapus };
 
   const selesai = () => {
     setForm(null);
@@ -447,7 +568,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
         <div>
           <div className="font-bold text-sm">Barang Toko (Kasir)</div>
-          <div className="text-[11px] text-slate-500">{rows ? `${rows.length} barang` : "Memuat…"} · stok & harga khusus toko</div>
+          <div className="text-[11px] text-slate-500">{rows ? `${rows.length} barang · ${totalStok.toLocaleString("id-ID")} pcs` : "Memuat…"} · stok & harga khusus toko</div>
         </div>
         {!inline && (
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
@@ -456,30 +577,66 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
         )}
       </header>
 
-      <div className="p-3 flex items-center gap-2 border-b border-slate-800">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode, nama, barcode…" className={`${inp} pl-9`} />
+      <div className="p-3 space-y-2.5 border-b border-slate-800">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[12rem]">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode, nama, barcode…" className={`${inp} pl-9`} />
+          </div>
+          <button
+            onClick={() => setImpor(true)}
+            className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <FileUp size={15} /> Import
+          </button>
+          <button
+            onClick={() => setFotoMassal(true)}
+            title="Foto massal (cocokkan nama file dengan kode/barcode/nama)"
+            className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <ImagePlus size={15} /> Foto
+          </button>
+          <button
+            onClick={() => setForm({ barang: {} })}
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <Plus size={15} /> Tambah
+          </button>
         </div>
-        <button
-          onClick={() => setImpor(true)}
-          className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
-        >
-          <FileUp size={15} /> Import
-        </button>
-        <button
-          onClick={() => setFotoMassal(true)}
-          title="Foto massal (cocokkan nama file dengan kode/barcode/nama)"
-          className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
-        >
-          <ImagePlus size={15} /> Foto
-        </button>
-        <button
-          onClick={() => setForm({ barang: {} })}
-          className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg"
-        >
-          <Plus size={15} /> Tambah
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {FILTER.map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilter(k)}
+              className={`text-xs px-3 py-1.5 rounded-full border ${
+                filter === k ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300 hover:border-amber-500/60"
+              }`}
+            >
+              {label}
+              {rows ? ` (${hitung[k]})` : ""}
+            </button>
+          ))}
+          <div className="flex items-center gap-2 ml-auto">
+            {daftarKategori.length > 1 && (
+              <select value={kategori} onChange={(e) => setKategori(e.target.value)} className={`${inp} !w-auto text-xs !py-1.5 max-w-[11rem]`}>
+                <option value="">Semua kategori</option>
+                {daftarKategori.map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select value={urut} onChange={(e) => setUrut(e.target.value)} className={`${inp} !w-auto text-xs !py-1.5`}>
+              {URUTAN.map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className={inline ? "flex-1 p-3" : "flex-1 overflow-y-auto p-3"}>
@@ -493,45 +650,75 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
             {rows.length === 0 ? "Belum ada barang toko. Tambah manual, import dari file, atau pindahkan dari Master Barang." : "Tidak ada yang cocok."}
           </div>
         ) : (
-          <ul className="space-y-1.5 max-w-3xl mx-auto">
-            {tampil.map((r) => (
-              <li key={r.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-800 ${r.nonaktif ? "opacity-50" : ""}`}>
-                {r.foto_url && (
-                  <FotoThumb
-                    src={r.foto_url}
-                    judul={`${r.kode} · ${r.nama}`}
-                    className="w-11 h-11 rounded-lg object-cover bg-slate-800"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{r.nama}</div>
-                  <div className="text-[11px] text-slate-500 font-mono truncate">
-                    {r.kode}
-                    {r.sku_gudang && r.sku_gudang !== r.kode ? ` ← ${r.sku_gudang}` : ""}
-                    {r.nonaktif ? " · nonaktif" : ""}
-                  </div>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-sm font-semibold text-amber-400">{fmtRp(r.harga_jual)}</div>
-                  <div className={`text-[11px] ${r.stok <= 0 ? "text-red-400" : "text-slate-400"}`}>stok {r.stok}</div>
-                </div>
-                <div className="flex gap-0.5 flex-shrink-0">
-                  <button onClick={() => setMutasi(r)} title="Mutasi gudang ⇄ toko" className="p-2 text-slate-400 hover:text-amber-400">
-                    <ArrowDownToLine size={16} />
-                  </button>
-                  <button onClick={() => setOpname(r)} title="Opname" className="p-2 text-slate-400 hover:text-amber-400">
-                    <ClipboardCheck size={16} />
-                  </button>
-                  <button onClick={() => setForm({ barang: r })} title="Ubah" className="p-2 text-slate-400 hover:text-amber-400">
-                    <Pencil size={16} />
-                  </button>
-                  <button onClick={() => setHapus(r)} title="Hapus (stok harus 0)" className="p-2 text-slate-400 hover:text-red-400">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
+          <>
+            <div className="text-[11px] text-slate-500 mb-2">
+              Menampilkan {terlihat.length} dari {tampil.length} barang{tampil.length !== rows.length ? ` (total ${rows.length})` : ""}
+            </div>
+            <ul className="rounded-xl border border-slate-800 divide-y divide-slate-800/70 overflow-hidden">
+              <li className={`hidden lg:grid ${KOLOM} gap-3 items-center px-3 py-2 bg-slate-900/60 text-[11px] uppercase tracking-wide text-slate-500`}>
+                <span />
+                <span>Barang</span>
+                <span>Kategori</span>
+                <span className="text-right">HPP</span>
+                <span className="text-right">Harga jual</span>
+                <span className="text-right">Stok</span>
+                <span className="text-right pr-2">Aksi</span>
               </li>
-            ))}
-          </ul>
+              {terlihat.map((r) => {
+                const habis = stokAngka(r) <= 0;
+                return (
+                  <li key={r.id} className={`hover:bg-slate-900/50 ${r.nonaktif ? "opacity-50" : ""}`}>
+                    {/* Layar lebar: baris tabel */}
+                    <div className={`hidden lg:grid ${KOLOM} gap-3 items-center px-3 py-2`}>
+                      <FotoBarang r={r} />
+                      <InfoBarang r={r} />
+                      <div className="text-xs text-slate-400 truncate" title={r.kategori || ""}>
+                        {r.kategori || "–"}
+                      </div>
+                      <div className="text-right text-xs text-slate-400 tabular-nums">{r.hpp ? fmtRp(r.hpp) : "–"}</div>
+                      <div className="text-right text-sm font-semibold text-amber-400 tabular-nums">{fmtRp(r.harga_jual)}</div>
+                      <div className={`text-right text-sm tabular-nums ${habis ? "text-red-400 font-semibold" : "text-slate-200"}`}>{stokAngka(r)}</div>
+                      <div className="flex justify-end">
+                        <AksiBarang r={r} {...aksi} />
+                      </div>
+                    </div>
+
+                    {/* Layar sempit: kartu rapat */}
+                    <div className="lg:hidden p-3">
+                      <div className="flex items-start gap-3">
+                        <FotoBarang r={r} />
+                        <div className="min-w-0 flex-1">
+                          <InfoBarang r={r} />
+                          {r.kategori && <div className="mt-0.5 text-[11px] text-slate-500 truncate">{r.kategori}</div>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-sm font-semibold text-amber-400 tabular-nums">{fmtRp(r.harga_jual)}</div>
+                          <div className={`text-[11px] ${habis ? "text-red-400 font-semibold" : "text-slate-400"}`}>stok {stokAngka(r)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between border-t border-slate-800/70 pt-1">
+                        <span className="text-[11px] text-slate-500">{r.hpp ? `HPP ${fmtRp(r.hpp)}` : "HPP belum diisi"}</span>
+                        <AksiBarang r={r} {...aksi} />
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {sisa > 0 && (
+              <div className="flex items-center justify-center gap-3 pt-3">
+                <button
+                  onClick={() => setBatas((n) => n + PER_TAHAP)}
+                  className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-4 py-2 rounded-lg"
+                >
+                  Tampilkan {Math.min(PER_TAHAP, sisa)} lagi (sisa {sisa})
+                </button>
+                <button onClick={() => setBatas(tampil.length)} className="text-[11px] text-slate-500 hover:text-slate-300 underline">
+                  Tampilkan semua
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

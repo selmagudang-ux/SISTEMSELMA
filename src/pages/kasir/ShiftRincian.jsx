@@ -229,8 +229,8 @@ export async function cetakRincianShift({ rincian, info }) {
   if (k) {
     bagian.push("<b>KAS LACI</b>");
     bagian.push(baris("Kas awal", fmtRp(k.kas_awal)));
-    bagian.push(baris("+ Penjualan cash", fmtRp(k.penjualan_cash)));
-    bagian.push(baris("- Retur cash", fmtRp(k.retur_cash)));
+    if (k.penjualan_cash != null) bagian.push(baris("+ Penjualan cash", fmtRp(k.penjualan_cash)));
+    if (k.retur_cash != null) bagian.push(baris("- Retur cash", fmtRp(k.retur_cash)));
     bagian.push(baris("Kas seharusnya", fmtRp(k.kas_sistem), true));
     if (hasil) {
       bagian.push(baris("Uang dihitung", fmtRp(hasil.kas_akhir)));

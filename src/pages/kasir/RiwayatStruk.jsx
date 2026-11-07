@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Loader2, AlertCircle, Receipt, RefreshCw, Undo2, Ban, Trash2 } from "lucide-react";
+import { X, Loader2, AlertCircle, Receipt, RefreshCw, Undo2, Ban, Trash2, Printer } from "lucide-react";
 import { fmtRp } from "../../lib/api";
-import { muatMaster, muatRiwayat, muatStrukDariDb, muatDaftarShift, muatIdShiftBuka, ROLE_BOLEH_VOID, BATAS_RIWAYAT, SKEMA } from "./kasirApi";
+import { muatMaster, muatRiwayat, muatStrukDariDb, muatDaftarShift, muatIdShiftBuka, muatRincianShift, ringkasShift, nomorShiftHarian, ROLE_BOLEH_VOID, BATAS_RIWAYAT, SKEMA } from "./kasirApi";
 import { identitasStruk, tglJamId } from "./kasirStruk";
 import ModalStruk from "./StrukKasir";
+import { cetakRincianShift } from "./ShiftRincian";
 import { ModalVoid, ModalRetur, ModalHapus } from "./KoreksiTransaksi";
 
 // =========================================================
 // KASIR — RIWAYAT TRANSAKSI, SHIFT, VOID & RETUR
 //  Tab Transaksi: rentang tanggal, filter kasir, ringkasan per kasir, cetak ulang struk,
 //                 tombol Retur / Void per transaksi.
-//  Tab Shift    : kas awal, kas akhir & selisih tiap shift.
+//  Tab Shift    : kas awal, kas akhir & selisih tiap shift; tombol Cetak untuk mencetak ulang rincian penjualan shift.
 // Role kasir hanya melihat miliknya sendiri; superadmin/superappa melihat semua kasir.
 // =========================================================
 
@@ -59,6 +60,7 @@ export default function RiwayatStruk({ session, shift, onClose }) {
   const [error, setError] = useState("");
   const [master, setMaster] = useState(null);
   const [membuka, setMembuka] = useState(null);
+  const [mencetakShift, setMencetakShift] = useState(null); // id shift yang sedang dicetak
   const [struk, setStruk] = useState(null);
   const [aksi, setAksi] = useState(null); // { tipe: "void" | "retur", row }
 
@@ -99,6 +101,52 @@ export default function RiwayatStruk({ session, shift, onClose }) {
       setError(e.message || "Gagal membuka struk");
     } finally {
       setMembuka(null);
+    }
+  };
+
+  // Cetak ulang rincian penjualan satu shift (sama dengan cetakan di layar Tutup Kasir).
+  // Nilai penutupan (kas akhir, selisih, catatan) diambil dari yang tersimpan di shift;
+  // rincian transaksi dimuat ulang dari database.
+  const cetakUlangShift = async (s) => {
+    if (mencetakShift) return;
+    setMencetakShift(s.id);
+    setError("");
+    try {
+      const [rincian, nomor, hitungKas] = await Promise.all([
+        muatRincianShift(s.id),
+        nomorShiftHarian(s),
+        ringkasShift(s.id).catch(() => null),
+      ]);
+      let identitas = { nama: "" };
+      try {
+        identitas = identitasStruk(master || (await muatMaster()));
+      } catch {
+        /* kop kosong, tetap cetak */
+      }
+      const tutup = s.status === "tutup";
+      let kas = hitungKas ? { ...hitungKas } : {};
+      // Shift sudah ditutup: kalau hitungan ulang tidak lagi cocok dengan kas seharusnya yang tersimpan
+      // (mis. ada retur susulan), rincian cash-nya tidak dicetak supaya tidak membingungkan.
+      if (tutup && s.kas_sistem != null && kas.penjualan_cash != null) {
+        const cocok = num(kas.kas_awal) + num(kas.penjualan_cash) - num(kas.retur_cash) === num(s.kas_sistem);
+        if (!cocok) kas = { ...kas, penjualan_cash: undefined, retur_cash: undefined };
+      }
+      const info = {
+        identitas,
+        shift: s,
+        nomorHarian: nomor.nomor,
+        tanggal: nomor.tanggal,
+        kasir: s.kasir_nama,
+        ringkas: { ...kas, kas_awal: s.kas_awal, kas_sistem: tutup && s.kas_sistem != null ? s.kas_sistem : kas.kas_sistem },
+        hasil: tutup
+          ? { ...kas, kas_awal: s.kas_awal, kas_sistem: s.kas_sistem ?? kas.kas_sistem, kas_akhir: s.kas_akhir, selisih: s.selisih, catatan: s.catatan_tutup, tutup_at: s.tutup_at }
+          : null,
+      };
+      await cetakRincianShift({ rincian, info });
+    } catch (e) {
+      setError(e?.message || "Gagal mencetak rincian shift");
+    } finally {
+      setMencetakShift(null);
     }
   };
 
@@ -376,9 +424,20 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                     <li key={s.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-xs">
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold text-sm">{s.kasir_nama || "(tanpa nama)"}</div>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${tutup ? "bg-slate-700/60 text-slate-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-                          {tutup ? "DITUTUP" : "MASIH BUKA"}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${tutup ? "bg-slate-700/60 text-slate-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                            {tutup ? "DITUTUP" : "MASIH BUKA"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => cetakUlangShift(s)}
+                            disabled={!!mencetakShift}
+                            title="Cetak rincian penjualan shift ini"
+                            className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 disabled:opacity-40 text-slate-200 text-xs font-medium px-2.5 py-1.5 rounded-lg"
+                          >
+                            {mencetakShift === s.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Cetak
+                          </button>
+                        </div>
                       </div>
                       <div className="text-slate-500 mt-0.5">
                         {tglJamId(s.buka_at)}
