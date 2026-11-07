@@ -8,7 +8,9 @@ import { tglJamId } from "./kasirStruk";
 // RINCIAN PENJUALAN SHIFT — dipakai di layar Tutup Kasir.
 //  - olahRincian()      : ubah data mentah (transaksi, item, pembayaran) jadi ringkasan + daftar
 //  - RincianShiftPanel  : bagian yang bisa dibuka/tutup di layar Tutup Kasir
-//  - cetakRincianShift(): cetak ke printer struk 80mm (aplikasi desktop: langsung; browser: dialog cetak)
+//  - cetakRincianShift(): cetak ke printer struk 80mm — tampilan & jalur cetaknya SAMA dengan struk penjualan
+//                         (StrukKasir.jsx): kop nama + alamat, garis putus-putus, kolom kiri/kanan;
+//                         aplikasi desktop: ESC/POS teks -> HTML; browser: dialog cetak dengan tinggi kertas diukur.
 // Transaksi void tidak dihitung; retur mengurangi nilai penjualan.
 // =========================================================
 
@@ -181,89 +183,149 @@ export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, b
 }
 
 // ---------------------------------------------------------
-// Cetak rincian shift (80mm). `info` = { identitas, shift, nomorHarian, tanggal, kasir, ringkas, hasil }
-//   ringkas : hasil kasir_hitung_shift;  hasil : hasil kasir_tutup_shift (kalau sudah ditutup)
-export async function cetakRincianShift({ rincian, info }) {
+// CETAK RINCIAN SHIFT (80mm) — dibuat semirip mungkin dengan cetak struk (StrukKasir.jsx):
+//  - isi disusun sekali sebagai baris semantik { tipe: "tengah" | "kiri" | "kolom" | "garis" }
+//    (bentuk yang sama dengan barisPrinter() di StrukKasir, jadi printer desktop memperlakukannya sama)
+//  - jalur cetak, urut seperti struk: 1) teks ESC/POS (aplikasi desktop)  2) HTML di jendela tersembunyi
+//    (aplikasi desktop)  3) dialog cetak browser. Tinggi kertas diukur dari isi, bukan "auto".
+//  `info` = { identitas, shift, nomorHarian, tanggal, kasir, ringkas, hasil }
+//    ringkas : hasil kasir_hitung_shift;  hasil : hasil kasir_tutup_shift (kalau sudah ditutup)
+
+function susunBarisRincian({ rincian, info }) {
   const r = olahRincian(rincian);
   const { identitas, shift, nomorHarian, tanggal, ringkas, hasil } = info;
-  const baris = (k, v, tebal) => `<div class="b${tebal ? " t" : ""}"><span>${esc(k)}</span><span>${esc(v)}</span></div>`;
-  const rata = (a, b) => `<div class="b"><span>${esc(a)}</span><span>${esc(b)}</span></div>`;
+  const b = [];
+  const garis = () => b.push({ tipe: "garis" });
+  const tengah = (teks, tebal) => b.push({ tipe: "tengah", teks, ...(tebal ? { tebal: true } : {}) });
+  const kiri = (teks, indent) => b.push({ tipe: "kiri", teks, ...(indent ? { indent } : {}) });
+  const kolom = (k, v, tebal) => b.push({ tipe: "kolom", kiri: k, kanan: v, ...(tebal ? { tebal: true } : {}) });
+  const rp = (n) => fmtRp(n);
 
-  const bagian = [];
-  bagian.push(`<h2>${esc(identitas?.nama || "KASIR")}</h2>`);
-  bagian.push(`<div class="c"><b>RINCIAN PENJUALAN SHIFT ${nomorHarian}</b></div>`);
-  bagian.push(`<div class="c">${esc(tglPanjang(tanggal))}</div><hr>`);
-  bagian.push(`<div>Kasir : ${esc(shift.kasir_nama || info.kasir || "")}</div>`);
-  bagian.push(`<div>Buka  : ${esc(tglJamId(shift.buka_at))}</div>`);
-  if (shift.tutup_at || hasil) bagian.push(`<div>Tutup : ${esc(tglJamId(shift.tutup_at || new Date().toISOString()))}</div>`);
-  else bagian.push(`<div>Dicetak: ${esc(tglJamId(new Date().toISOString()))} (shift belum ditutup)</div>`);
-  bagian.push("<hr>");
+  // Kop: nama + alamat usaha, sama seperti struk.
+  if (identitas?.nama) tengah(identitas.nama, true);
+  for (const a of identitas?.alamat || []) tengah(a);
+  tengah(`RINCIAN PENJUALAN SHIFT ${nomorHarian ?? ""}`.trim(), true);
+  tengah(tglPanjang(tanggal));
+  garis();
+  kiri(`Kasir: ${shift.kasir_nama || info.kasir || ""}`);
+  kiri(`Buka: ${tglJamId(shift.buka_at)}`);
+  if (shift.tutup_at || hasil) kiri(`Tutup: ${tglJamId(shift.tutup_at || new Date().toISOString())}`);
+  else kiri(`Dicetak: ${tglJamId(new Date().toISOString())} (shift belum ditutup)`);
+  garis();
 
-  bagian.push("<b>TRANSAKSI</b>");
-  if (!r.daftar.length) bagian.push("<div>(tidak ada transaksi)</div>");
+  tengah("TRANSAKSI", true);
+  if (!r.daftar.length) kiri("(tidak ada transaksi)");
   for (const d of r.daftar) {
     const tag = d.status === "void" ? " VOID" : d.retur > 0 ? " (retur)" : "";
-    bagian.push(`<div class="b"><span>${esc(jam(d.waktu))} ${esc(String(d.nomor))}${tag}</span><span>${d.status === "void" ? "-" : esc(fmtRp(d.total))}</span></div>`);
-    if (d.metode) bagian.push(`<div class="k">${esc(d.metode)}${d.retur > 0 ? ` · retur ${esc(fmtRp(d.retur))}` : ""}</div>`);
+    kolom(`${jam(d.waktu)} ${d.nomor}${tag}`, d.status === "void" ? "-" : rp(d.total));
+    if (d.metode || d.retur > 0) kiri(`   ${d.metode || ""}${d.retur > 0 ? `${d.metode ? " · " : ""}retur ${rp(d.retur)}` : ""}`);
   }
-  bagian.push("<hr>");
+  garis();
 
-  bagian.push("<b>BARANG TERJUAL</b>");
-  if (!r.barang.length) bagian.push("<div>(belum ada)</div>");
-  for (const b of r.barang) {
-    bagian.push(`<div>${esc(b.nama)}</div>`);
-    bagian.push(`<div class="b k"><span>${esc(b.sku || "")} × ${b.qty}</span><span>${esc(fmtRp(b.nilai))}</span></div>`);
-  }
-  bagian.push(rata("Total barang", `${r.totalQty} pcs`));
-  bagian.push("<hr>");
+  tengah("BARANG TERJUAL", true);
+  if (!r.barang.length) kiri("(belum ada)");
+  const digit = String(r.barang.length).length;
+  const indent = digit + 2;
+  r.barang.forEach((x, i) => {
+    kiri(`${String(i + 1).padStart(digit, " ")}. ${x.nama}`, indent);
+    kolom(`${" ".repeat(indent)}${x.sku ? `${x.sku} × ` : ""}${x.qty}`, rp(x.nilai));
+  });
+  kolom("Total barang", `${r.totalQty} pcs`);
+  garis();
 
-  bagian.push("<b>RINGKASAN</b>");
-  bagian.push(baris(`Transaksi (${r.jumlahTransaksi})`, fmtRp(r.omzet)));
-  if (r.totalRetur > 0) bagian.push(baris(`Retur (${r.jumlahRetur})`, `- ${fmtRp(r.totalRetur)}`));
-  if (r.jumlahVoid > 0) bagian.push(baris("Transaksi void", `${r.jumlahVoid}`));
-  bagian.push(baris("Penjualan bersih", fmtRp(r.bersih), true));
-  for (const [m, v] of Object.entries(r.perMetode)) bagian.push(baris(`  ${m}`, fmtRp(v)));
-  bagian.push("<hr>");
+  tengah("RINGKASAN", true);
+  kolom(`Transaksi (${r.jumlahTransaksi})`, rp(r.omzet));
+  if (r.totalRetur > 0) kolom(`Retur (${r.jumlahRetur})`, `-${rp(r.totalRetur)}`);
+  if (r.jumlahVoid > 0) kolom("Transaksi void", `${r.jumlahVoid}`);
+  kolom("Penjualan bersih", rp(r.bersih), true);
+  for (const [m, v] of Object.entries(r.perMetode)) kolom(`  ${m}`, rp(v));
+  garis();
 
   const k = hasil || ringkas;
   if (k) {
-    bagian.push("<b>KAS LACI</b>");
-    bagian.push(baris("Kas awal", fmtRp(k.kas_awal)));
-    if (k.penjualan_cash != null) bagian.push(baris("+ Penjualan cash", fmtRp(k.penjualan_cash)));
-    if (k.retur_cash != null) bagian.push(baris("- Retur cash", fmtRp(k.retur_cash)));
-    bagian.push(baris("Kas seharusnya", fmtRp(k.kas_sistem), true));
+    tengah("KAS LACI", true);
+    kolom("Kas awal", rp(k.kas_awal));
+    if (k.penjualan_cash != null) kolom("+ Penjualan cash", rp(k.penjualan_cash));
+    if (k.retur_cash != null) kolom("- Retur cash", rp(k.retur_cash));
+    kolom("Kas seharusnya", rp(k.kas_sistem), true);
     if (hasil) {
-      bagian.push(baris("Uang dihitung", fmtRp(hasil.kas_akhir)));
+      kolom("Uang dihitung", rp(hasil.kas_akhir));
       const sel = Number(hasil.selisih) || 0;
-      bagian.push(baris("Selisih", sel === 0 ? "Pas" : sel > 0 ? `Lebih ${fmtRp(sel)}` : `Kurang ${fmtRp(-sel)}`, true));
-      if (hasil.catatan) bagian.push(`<div class="k">Catatan: ${esc(hasil.catatan)}</div>`);
+      kolom("Selisih", sel === 0 ? "Pas" : sel > 0 ? `Lebih ${rp(sel)}` : `Kurang ${rp(-sel)}`, true);
+      if (hasil.catatan) kiri(`Catatan: ${hasil.catatan}`);
     }
-    bagian.push("<hr>");
+    garis();
   }
-  bagian.push('<div class="c k">— selesai —</div>');
+  tengah("— selesai —");
+  return b;
+}
 
-  const css = `@page{size:80mm auto;margin:0}html,body{background:#fff;color:#000}
-    body{margin:0;padding:2mm 4mm 8mm;width:72mm;font:12px/1.4 monospace}
-    h2{text-align:center;font-size:14px;margin:2mm 0}.c{text-align:center}hr{border:0;border-top:1px dashed #000;margin:2mm 0}
-    .b{display:flex;justify-content:space-between;gap:6px}.b span:first-child{min-width:0;overflow-wrap:anywhere}.t{font-weight:bold}.k{font-size:10.5px}`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${bagian.join("")}</body></html>`;
+// HTML mandiri bergaya struk (font mono 12px, lebar 72mm, garis putus-putus hitam, kop nama 15px tebal).
+function htmlRincian(baris, adaNama, mm) {
+  const isi = baris
+    .map((x, i) => {
+      if (x.tipe === "garis") return '<div class="g"></div>';
+      if (x.tipe === "tengah") return `<div class="c${x.tebal ? " t" : ""}${adaNama && i === 0 ? " h" : ""}">${esc(x.teks)}</div>`;
+      if (x.tipe === "kolom") return `<div class="k${x.tebal ? " t" : ""}"><span>${esc(x.kiri)}</span><span>${esc(x.kanan)}</span></div>`;
+      const gantung = x.indent ? ` style="padding-left:${x.indent}ch;text-indent:-${x.indent}ch"` : "";
+      return `<div class="l"${gantung}>${esc(x.teks)}</div>`;
+    })
+    .join("");
+  const css = `${mm ? `@page{size:80mm ${mm}mm;margin:0}` : "@page{margin:0}"}
+    html,body{margin:0;padding:0;background:#fff;color:#000}
+    .w{width:72mm;font:12px/1.375 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;white-space:pre-wrap}
+    .c{text-align:center;margin:2px 0}.c.t{font-weight:bold}.c.h{font-size:15px;margin:4px 0;letter-spacing:.025em}
+    .l{margin:2px 0}.k{display:flex;justify-content:space-between;gap:1ch}.k span:first-child{min-width:0;overflow-wrap:anywhere}.k span:last-child{white-space:nowrap}.k.t{font-weight:bold}
+    .g{border-top:1px dashed #000;margin:6px 0}
+    .w div{break-inside:avoid;page-break-inside:avoid}`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body><div class="w">${isi}</div></body></html>`;
+}
 
-  // Perkiraan tinggi kertas untuk printer desktop (mm); ± 4,6 mm per baris.
-  const mm = Math.ceil((bagian.length + r.daftar.length) * 4.6 + 30);
+// Iframe tersembunyi (di luar layar, bukan display:none supaya tinggi bisa diukur).
+function iframeCetak(html) {
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-99999px;top:0;width:90mm;height:300mm;border:0;";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  return iframe;
+}
+
+// Tinggi kertas (mm) dari tinggi isi sebenarnya + 8mm, sama seperti StrukKasir.
+async function ukurTinggiMm(baris, adaNama) {
+  const iframe = iframeCetak(htmlRincian(baris, adaNama, 0));
+  try {
+    await new Promise((res) => setTimeout(res, 150));
+    const el = iframe.contentWindow.document.querySelector(".w");
+    const px = el ? el.getBoundingClientRect().height : baris.length * 17;
+    return Math.ceil((px / 96) * 25.4 + 8);
+  } finally {
+    iframe.remove();
+  }
+}
+
+export async function cetakRincianShift({ rincian, info }) {
+  const baris = susunBarisRincian({ rincian, info });
+  const adaNama = !!info.identitas?.nama;
   const desktop = typeof window !== "undefined" ? window.selmaDesktop : null;
-  if (desktop?.cetakHtml) {
-    const res = await desktop.cetakHtml(html, mm).catch((e) => ({ ok: false, error: e?.message || String(e) }));
-    if (!res || res.ok !== false) return;
+
+  // Aplikasi desktop, urutan seperti struk: 1) teks ESC/POS (hemat kertas)  2) HTML di jendela tersembunyi.
+  if (desktop?.cetakStruk) {
+    const r = await desktop.cetakStruk(baris).catch(() => ({ ok: false, error: "mode-html" }));
+    if (!r || r.ok !== false) return;
   }
+  const mm = await ukurTinggiMm(baris, adaNama);
+  const html = htmlRincian(baris, adaNama, mm);
+  if (desktop?.cetakHtml) {
+    const r = await desktop.cetakHtml(html, mm).catch((e) => ({ ok: false, error: e?.message || String(e) }));
+    if (!r || r.ok !== false) return;
+  }
+
   // Browser biasa (atau desktop gagal): iframe + dialog cetak.
   await new Promise((resolve) => {
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
-    document.body.appendChild(iframe);
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
+    const iframe = iframeCetak(html);
     const selesai = () => {
       setTimeout(() => iframe.remove(), 1000);
       resolve();
