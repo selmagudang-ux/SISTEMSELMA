@@ -13,6 +13,8 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 //    barang otomatis ditautkan (sku_gudang) supaya bisa mutasi stok gudang ⇄ toko; kalau tidak, barang jadi barang bebas.
 //  - Barcode BEBAS: boleh diisi di kolom "Barcode" (opsional); kosong = sama dengan kode toko.
 //    Barang tidak ditautkan ke SKU gudang.
+//  - Variasi (opsional): kolom "Variasi" (mis. Merah, atau Merah / L). Tiap variasi = SATU BARIS sendiri
+//    (stok, barcode, foto sendiri); nama barang disimpan "Nama - Variasi", mis. "Kemeja Flanel 1 - Merah - L".
 //  - Barang yang namanya sudah ada di Barang Toko (atau dobel di file) DILEWATI.
 //  - Foto lewat LINK: kolom "Foto (link)" berisi alamat gambar https://… ; disimpan apa adanya di foto_url
 //    (tidak diunggah ulang). Kalau ada file foto yang cocok juga, file itu yang dipakai.
@@ -26,6 +28,7 @@ const namaKey = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim()
 
 const ALIAS = {
   nama: ["nama", "namabarang"],
+  variasi: ["variasi", "varian", "variation", "namavariasi"],
   kategori: ["kategori"],
   hpp: ["hpp", "hargabeli", "modal"],
   harga: ["hargajual", "harga", "hargaecer"],
@@ -59,7 +62,10 @@ async function bacaFile(file) {
     .filter(({ r }) => r.some((c) => String(c).trim() !== ""))
     .map(({ baris, r }) => ({
       baris,
-      nama: String(r[kolom.nama] ?? "").trim(),
+      nama: [String(r[kolom.nama] ?? "").trim(), kolom.variasi === undefined ? "" : String(r[kolom.variasi] ?? "").trim().replace(/\s*\/\s*/g, " - ")]
+        .filter(Boolean)
+        .join(" - "),
+      variasi: kolom.variasi === undefined ? "" : String(r[kolom.variasi] ?? "").trim(),
       kategori: kolom.kategori === undefined ? "" : String(r[kolom.kategori] ?? "").trim(),
       hpp: kolom.hpp === undefined ? 0 : angka(r[kolom.hpp]),
       harga: angka(r[kolom.harga]),
@@ -84,6 +90,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
         name: "Barang Toko",
         columns: [
           { key: "nama", label: "Nama" },
+          { key: "variasi", label: "Variasi (opsional)" },
           { key: "kategori", label: "Kategori" },
           { key: "hpp", label: "HPP" },
           { key: "harga", label: "Harga Jual" },
@@ -93,8 +100,9 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           { key: "foto", label: "Foto (link)" },
         ],
         rows: [
-          { nama: "Kemeja Flanel 1", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, sku: "", barcode: "8991234567890", foto: "https://contoh.com/kemeja-1.jpg" },
-          { nama: "Kemeja Flanel 2", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, sku: "SKU-CONTOH-001", barcode: "", foto: "" },
+          { nama: "Kemeja Flanel 1", variasi: "Merah / L", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 10, sku: "", barcode: "8991234567890", foto: "https://contoh.com/kemeja-1.jpg" },
+          { nama: "Kemeja Flanel 1", variasi: "Merah / XL", kategori: "Kemeja", hpp: 35000, harga: 59000, stok: 6, sku: "", barcode: "8991234567891", foto: "" },
+          { nama: "Kemeja Flanel 2", variasi: "", kategori: "Kemeja", hpp: 38000, harga: 65000, stok: 5, sku: "SKU-CONTOH-001", barcode: "", foto: "" },
         ],
       },
     ]);
@@ -280,7 +288,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
   return (
     <Kerangka judul="Import Barang Toko dari file" onClose={proses ? () => {} : onClose}>
       <div className="text-xs text-slate-400 leading-relaxed">
-        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">SKU</b> (bebas, tidak harus ada di Master Barang; jadi barcode barang, dan otomatis tertaut ke gudang kalau kebetulan sama dengan SKU Master Barang), <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko; diabaikan kalau SKU diisi) dan <b className="text-slate-200">Foto (link)</b> (alamat gambar yang diawali https://). Kode toko dibuat otomatis (contoh OPS-0001).
+        Kolom file: <b className="text-slate-200">Nama, Kategori, HPP, Harga Jual, Stok Awal</b>. Kolom opsional: <b className="text-slate-200">SKU</b> (bebas, tidak harus ada di Master Barang; jadi barcode barang, dan otomatis tertaut ke gudang kalau kebetulan sama dengan SKU Master Barang), <b className="text-slate-200">Barcode</b> (bebas; kosong = sama dengan kode toko; diabaikan kalau SKU diisi) dan <b className="text-slate-200">Foto (link)</b> (alamat gambar yang diawali https://). <b className="text-slate-200">Variasi</b> (mis. Merah / L): tiap variasi ditulis di baris sendiri dengan stok &amp; barcode sendiri, namanya jadi "Nama - Variasi". Kode toko dibuat otomatis (contoh OPS-0001).
         Barang yang namanya sudah ada dilewati.
       </div>
 
