@@ -119,6 +119,46 @@ function StrukIsi({ s }) {
   );
 }
 
+// Isi struk sebagai baris semantik untuk dicetak sebagai teks ESC/POS di aplikasi desktop
+// (tata letak/lebar kolom diatur aplikasi desktop sesuai lebar kertas).
+function barisPrinter(s) {
+  const rp = (n) => fmtRp(n);
+  const b = [];
+  if (s.identitas.nama) b.push({ tipe: "tengah", teks: s.identitas.nama, tebal: true });
+  for (const l of s.identitas.alamat) b.push({ tipe: "tengah", teks: l });
+  if (s.salinan) b.push({ tipe: "tengah", teks: "*** CETAK ULANG ***", tebal: true });
+  b.push({ tipe: "garis" });
+  b.push({ tipe: "kiri", teks: `No: ${s.nomor}` });
+  b.push({ tipe: "kiri", teks: `Tanggal: ${tglJamId(s.waktu)}` });
+  if (s.kasir) b.push({ tipe: "kiri", teks: `Kasir: ${s.kasir}` });
+  b.push({ tipe: "garis" });
+  const digit = String(s.items.length).length;
+  const indent = digit + 2;
+  s.items.forEach((it, i) => {
+    b.push({ tipe: "kiri", teks: `${String(i + 1).padStart(digit, " ")}. ${it.nama}`, indent });
+    b.push({ tipe: "kolom", kiri: `${" ".repeat(indent)}${it.qty} x ${rp(it.harga)}`, kanan: rp(it.qty * it.harga) });
+    if (it.diskon > 0) b.push({ tipe: "kolom", kiri: `${" ".repeat(indent)}Diskon`, kanan: `-${rp(it.diskon)}` });
+  });
+  b.push({ tipe: "garis" });
+  if (s.diskonTransaksi > 0) {
+    b.push({ tipe: "kolom", kiri: "Subtotal", kanan: rp(s.subtotal) });
+    b.push({ tipe: "kolom", kiri: "Diskon", kanan: `-${rp(s.diskonTransaksi)}` });
+  }
+  b.push({ tipe: "kolom", kiri: "TOTAL", kanan: rp(s.total), tebal: true });
+  for (const p of s.pembayaran) b.push({ tipe: "kolom", kiri: p.metode, kanan: rp(p.jumlah) });
+  if (s.kembalian > 0) {
+    b.push({ tipe: "kolom", kiri: "Uang diterima", kanan: rp(s.bayar) });
+    b.push({ tipe: "kolom", kiri: "Kembalian", kanan: rp(s.kembalian), tebal: true });
+  }
+  if (s.catatan) {
+    b.push({ tipe: "garis" });
+    b.push({ tipe: "kiri", teks: `Catatan: ${s.catatan}` });
+  }
+  b.push({ tipe: "garis" });
+  b.push({ tipe: "tengah", teks: "Terima kasih sudah berbelanja!" });
+  return b;
+}
+
 // HTML mandiri untuk dicetak di aplikasi desktop: isi struk + seluruh CSS halaman (Tailwind), latar putih, tanpa margin.
 function htmlCetak(el) {
   let css = "";
@@ -159,10 +199,13 @@ export default function ModalStruk({ struk, onClose }) {
         }
         const mmCetak = el ? Math.ceil((el.getBoundingClientRect().height / 96) * 25.4 + 8) : 150;
         const desktop = typeof window !== "undefined" ? window.selmaDesktop : null;
-        if (desktop?.cetakHtml && el) {
-          // Aplikasi desktop: cetak dari HTML mandiri di jendela tersembunyi (lebih andal di printer thermal).
-          desktop
-            .cetakHtml(htmlCetak(el), mmCetak)
+        if (desktop && el && (desktop.cetakStruk || desktop.cetakHtml)) {
+          // Aplikasi desktop, urutan: 1) teks ESC/POS (hemat kertas)  2) HTML di jendela tersembunyi  3) window.print()
+          const viaHtml = () => (desktop.cetakHtml ? desktop.cetakHtml(htmlCetak(el), mmCetak) : Promise.resolve({ ok: false, error: "tidak tersedia" }));
+          const awal = desktop.cetakStruk ? desktop.cetakStruk(barisPrinter(struk)) : Promise.resolve({ ok: false, error: "mode-html" });
+          awal
+            .catch(() => ({ ok: false, error: "mode-html" }))
+            .then((r) => (r && r.ok === false ? viaHtml() : r))
             .then((r) => {
               if (r && r.ok === false) {
                 setInfo(`Gagal mencetak: ${r.error || "tidak diketahui"}. Mencoba cara biasa…`);
