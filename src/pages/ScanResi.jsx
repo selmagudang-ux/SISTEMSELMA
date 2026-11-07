@@ -432,6 +432,59 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   // Sesi aktif = pilihan operator (kalau masih terbuka), kalau tidak: sesi terbuka paling baru.
   const sesi = pilihan && pilihan.hari === hari && sesiTerbuka.includes(pilihan.sesi) ? pilihan.sesi : sesiTerbuka[sesiTerbuka.length - 1];
   const [sesiFilter, setSesiFilter] = useState(null); // null = semua sesi
+  // NAMA PEMEGANG SCAN: tiap sesi wajib diawali nama orang yang memegang scan (bukan nama akun). Nama ini
+  // dicatat di kolom "discan_oleh" setiap resi di sesi itu. Disimpan di perangkat ini per tanggal+sesi,
+  // jadi setelah refresh tidak ditanya lagi; "Ganti" dipakai kalau scanner diserahkan ke orang lain.
+  const [namaSesi, setNamaSesi] = useState(() => {
+    try {
+      const o = JSON.parse(localStorage.getItem("selma-scan-resi-nama-sesi") || "{}");
+      return o && typeof o === "object" ? o : {};
+    } catch {
+      return {};
+    }
+  });
+  const [inputNama, setInputNama] = useState(() => {
+    try {
+      return localStorage.getItem("selma-scan-resi-nama-terakhir") || "";
+    } catch {
+      return "";
+    }
+  });
+  const namaRef = useRef(null);
+  const namaAktif = namaSesi[`${hari}|${sesi}`] || "";
+  const simpanNamaSesi = (nama) => {
+    const kunci = `${hari}|${sesi}`;
+    // buang nama sesi hari lain supaya penyimpanan tidak menumpuk
+    const baru = Object.fromEntries(Object.entries(namaSesi).filter(([k]) => k.startsWith(`${hari}|`)));
+    if (nama) baru[kunci] = nama;
+    else delete baru[kunci];
+    setNamaSesi(baru);
+    try {
+      localStorage.setItem("selma-scan-resi-nama-sesi", JSON.stringify(baru));
+      if (nama) localStorage.setItem("selma-scan-resi-nama-terakhir", nama);
+    } catch {
+      // abaikan
+    }
+  };
+  const mulaiSesi = () => {
+    const nama = inputNama.trim().replace(/\s+/g, " ");
+    if (nama.length < 2) {
+      toast("Isi nama pemegang scan dulu (minimal 2 huruf).", "err");
+      return;
+    }
+    // Scanner keyboard mengirim Enter setelah tiap resi: tolak kalau yang masuk ke kolom ini ternyata nomor resi.
+    if (/\d{6,}/.test(nama)) {
+      toast("Itu terlihat seperti nomor resi, bukan nama. Ketik nama orang yang memegang scan.", "err");
+      setInputNama("");
+      return;
+    }
+    simpanNamaSesi(nama);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+  const gantiPemegang = () => {
+    simpanNamaSesi("");
+    setTimeout(() => namaRef.current?.focus(), 50);
+  };
   const [suara, setSuara] = useState(() => {
     try {
       return localStorage.getItem("selma-scan-resi-suara") !== "off";
@@ -460,7 +513,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     f?.(setuju);
   };
   const ref = useRef({});
-  ref.current = { scans, cancelMap, suara, hari, operator, orderanMap, adaOrderan, sesi };
+  ref.current = { scans, cancelMap, suara, hari, operator: namaAktif || operator, namaAktif, orderanMap, adaOrderan, sesi };
 
   const sedangKirim = useRef(false);
   const kirimAntrean = useCallback(async () => {
@@ -560,6 +613,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const kerjakanScan = useCallback(async (raw) => {
     const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op, orderanMap: omap, adaOrderan: adaO, sesi: sesiAktif } = ref.current;
     const bip = (t) => bunyiAktif && bunyi(t);
+    if (!ref.current.namaAktif) {
+      setHasil({ tipe: "err", resi: String(raw).trim().slice(0, 60), info: "Nama pemegang scan belum diisi untuk sesi ini — TIDAK disimpan. Isi nama dulu, lalu scan ulang." });
+      bip("dup");
+      return;
+    }
     const resi = normalisasiResi(raw);
     if (!resi) {
       setHasil({ tipe: "err", resi: String(raw).trim().slice(0, 60), info: "Bukan format resi yang valid (6–40 karakter huruf/angka)." });
@@ -654,6 +712,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     if (sub === "scan") inputRef.current?.focus();
   }, [sub, memuat]);
 
+  useEffect(() => {
+    if (sub !== "scan" || memuat) return;
+    (namaAktif ? inputRef : namaRef).current?.focus();
+  }, [sub, memuat, sesi, namaAktif]);
+
   const gantiSuara = () => {
     const baru = !suara;
     setSuara(baru);
@@ -740,7 +803,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       const res = await sb("resi_sesi?on_conflict=entitas,tanggal,sesi", {
         method: "POST",
         prefer: "resolution=ignore-duplicates,return=representation",
-        body: JSON.stringify({ tanggal: hari, sesi, ditutup_at: new Date().toISOString(), ditutup_oleh: operator }),
+        body: JSON.stringify({ tanggal: hari, sesi, ditutup_at: new Date().toISOString(), ditutup_oleh: namaAktif || operator }),
       });
       const baris = Array.isArray(res) ? res[0] : res;
       setSesiRows((l) => [...l.filter((x) => !(x.tanggal === hari && x.sesi === sesi)), baris || { tanggal: hari, sesi, ditutup_at: new Date().toISOString() }]);
@@ -1476,6 +1539,33 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
         <div className="space-y-5">
           <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="space-y-3">
+              {!namaAktif ? (
+                <div className="rounded-md-lg border-2 border-amber-400/50 p-4 space-y-3">
+                  <div className="text-sm font-semibold text-md-on-surface">Siapa yang memegang scan Sesi {sesi}?</div>
+                  <p className="text-xs text-md-on-surface-variant">
+                    Nama ini yang tercatat di riwayat setiap resi di sesi ini (bukan nama akun). Isi dulu sebelum mulai scan.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      ref={namaRef}
+                      value={inputNama}
+                      onChange={(e) => setInputNama(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), mulaiSesi())}
+                      placeholder="Nama pemegang scan"
+                      autoComplete="off"
+                      spellCheck={false}
+                      className={inputClass}
+                    />
+                    <button type="button" onClick={mulaiSesi} className={btnFilled}>Mulai Sesi {sesi}</button>
+                  </div>
+                </div>
+              ) : (
+              <>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-md-on-surface-variant">Pemegang scan Sesi {sesi}:</span>
+                <span className="font-semibold text-md-on-surface">{namaAktif}</span>
+                <button type="button" onClick={gantiPemegang} className={btnText}>Ganti</button>
+              </div>
               <div className="flex gap-2">
                 <input
                   ref={inputRef}
@@ -1493,6 +1583,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
               </div>
+              </>
+              )}
               {belumKirim.length > 0 && (
                 <div className="rounded-lg bg-amber-500/15 text-amber-200 text-sm p-3 flex items-center gap-2">
                   <CloudOff size={16} className="shrink-0" />
