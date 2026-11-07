@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { bisa } from "../lib/constants";
 import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download, Package, PackageX, PackageSearch, ArrowDownUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState, Badge, StatCard } from "../components/ui";
 import { fmtTgl, downloadCsv } from "../lib/api";
@@ -45,7 +46,7 @@ export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengaju
 // approve-nya ada di menu sidebar tersendiri "Persetujuan Restok"
 // (owner/superadmin saja — lihat pages/PersetujuanRestock.jsx).
 function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
-  const bisaAjukan = ["gudang", "owner", "superadmin", "superappa"].includes(session?.role);
+  const bisaAjukan = bisa(session?.role, "stok.ajukan_restock");
   const [q, setQ] = useState("");
   const [halaman, setHalaman] = useState(1);
 

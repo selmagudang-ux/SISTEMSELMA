@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { bisa } from "../lib/constants";
 import { Plus, MapPin, PackagePlus, AlertTriangle, ArrowRightLeft, Pencil, Trash2, Warehouse, Search, LayoutGrid, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { sameProdukKecualiUkuran, labelFor, sb, sbAll, nextKode } from "../lib/api";
@@ -663,7 +664,7 @@ function PetaRak({ rak, penempatan, skuMaster, master, pengajuanRestock, session
   (pengajuanRestock || [])
     .filter((p) => p.jenis === "zona" && p.status === "menunggu")
     .forEach((p) => pengajuanZonaMenunggu.set(p.zona, p));
-  const bisaAjukan = ["gudang", "owner", "superadmin", "superappa"].includes(session?.role);
+  const bisaAjukan = bisa(session?.role, "stok.ajukan_restock");
 
   const ajukanZona = (zona) =>
     setModal?.({ type: "ajukan-restock-zona", item: { zona, jumlahKosong: rakKosongPerZona[zona] || 0 } });

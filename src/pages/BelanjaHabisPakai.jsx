@@ -15,7 +15,7 @@ import {
   suggestKode,
 } from "../components/ui";
 import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, lingkupEntitas, entitasSesi } from "../lib/api";
-import { isSuperadminLike } from "../lib/constants";
+import { isSuperadminLike, bisa } from "../lib/constants";
 
 // =========================================================
 // BELANJA BARANG HABIS PAKAI (sub-menu Pengadaan Barang)
@@ -57,7 +57,7 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   // Edit/hapus riwayat stok hanya untuk superadmin / superappa.
-  const bisaUbahRiwayat = isSuperadminLike(session?.role);
+  const bisaUbahRiwayat = bisa(session?.role, "belanja.ubah_riwayat");
 
   // showToast dari App dibuat ulang tiap render — disimpan di ref supaya muat()
   // stabil dan halaman tidak memuat ulang data terus-menerus.

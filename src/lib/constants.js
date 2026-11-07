@@ -161,8 +161,8 @@ export const AMBANG_MENIPIS_RESTOCK = 12;
 // melanjutkan tahap apa pun, role lain hanya boleh untuk tahap yang jadi
 // "tugas"-nya sendiri (lihat STAGE_ROLE di atas).
 export function canAdvanceStage(role, stage) {
-  if (role === "superadmin" || role === "superappa" || role === "owner") return true;
-  return STAGE_ROLE[stage] === role;
+  if (bisa(role, "alur.lanjut_semua_tahap")) return true;
+  return bisa(role, `tahap.${stage}`);
 }
 
 // Helper dipakai di komponen-komponen yang punya fitur khusus "superadmin
@@ -647,6 +647,131 @@ export function roleHanyaLihat(role) {
   return ROLE_HANYA_LIHAT_BAWAAN.includes(role);
 }
 
+// ---------------------------------------------------------------------------
+// HAK AKSI (apa yang boleh DILAKUKAN, bukan cuma menu) — daftar lengkap yang bisa diatur Super Appa.
+// Dipakai lewat bisa(role, "kunci") di seluruh aplikasi. `bawaan` = siapa yang boleh bila Super Appa belum
+// mengatur apa pun (SAMA PERSIS dengan perilaku sebelum fitur ini). Super Appa selalu boleh semuanya.
+// `kunci: true` = terkunci khusus Super Appa (tidak bisa dibagikan): hanya ditampilkan supaya terlihat.
+// ---------------------------------------------------------------------------
+const dari = (...roles) => (r) => roles.includes(r);
+const semuaKecuali = (...roles) => (r) => !roles.includes(r);
+const tak = () => false;
+
+export const GRUP_AKSI = [
+  {
+    grup: "Alur Barang",
+    aksi: [
+      { key: "alur.lanjut_semua_tahap", label: "Melanjutkan barang ke tahap APA PUN di Alur Barang", bawaan: dari("superadmin", "owner") },
+      ...Object.keys(STAGE_ROLE).map((st) => ({
+        key: `tahap.${st}`,
+        label: `Melanjutkan tahap "${STAGE_META[st]?.label || st}" (tugas role ${STAGE_ROLE[st]})`,
+        bawaan: dari(STAGE_ROLE[st]),
+      })),
+      { key: "kelengkapan.ubah_riwayat", label: "Edit / hapus riwayat di Kelengkapan", bawaan: dari("superadmin") },
+      { key: "belanja.ubah_riwayat", label: "Edit / hapus riwayat Belanja Habis Pakai", bawaan: dari("superadmin") },
+    ],
+  },
+  {
+    grup: "SKU & Harga",
+    aksi: [
+      { key: "sku.barang_masuk_banyak", label: "Input Barang Masuk banyak sekaligus", bawaan: dari("superadmin") },
+      { key: "sku.buat_banyak", label: "Buat SKU banyak sekaligus", bawaan: dari("superadmin") },
+      { key: "sku.harga_manual", label: "Isi harga manual saat buat SKU (lewati rumus harga)", bawaan: dari("superadmin") },
+      { key: "sku.edit_harga_langsung", label: "Edit harga langsung (tombol \"Harga Baru\" / pensil di SKU & Harga)", bawaan: dari("superadmin") },
+      { key: "sku.aturan_marketplace", label: "Ubah Aturan Harga Marketplace", bawaan: dari("superadmin") },
+      { key: "sku.pindah_ke_toko", label: "Pindahkan SKU ke Barang Toko (kasir)", bawaan: tak },
+    ],
+  },
+  {
+    grup: "Grosir, Reseller & Marketplace",
+    aksi: [
+      { key: "grosir.edit_pembayaran", label: "Edit pembayaran pesanan grosir", bawaan: tak },
+      { key: "grosir.pindah_ke_reseller", label: "Pindahkan pesanan grosir ke Reseller", bawaan: tak },
+      { key: "grosir.hapus_pesanan", label: "Hapus permanen pesanan grosir yang dibatalkan", bawaan: dari("superadmin") },
+      { key: "grosir.hapus_deposit", label: "Hapus baris deposit pelanggan", bawaan: dari("superadmin") },
+      { key: "reseller.hapus_entri", label: "Hapus entri di Reseller", bawaan: dari("superadmin") },
+      { key: "marketplace.tindak_notif_massal", label: "Tandai notifikasi Cek Marketplace (massal)", bawaan: dari("superadmin") },
+      { key: "scan.hapus_massal", label: "Hapus massal data Scan Resi", bawaan: tak },
+      { key: "scan.lihat_log_import", label: "Lihat riwayat import di Scan Resi", bawaan: tak },
+    ],
+  },
+  {
+    grup: "Stok & Restock",
+    aksi: [
+      { key: "stok.ajukan_restock", label: "Mengajukan restock (Stok & Rak)", bawaan: dari("gudang", "owner", "superadmin") },
+      { key: "restock.setujui", label: "Menyetujui / menolak pengajuan restock", bawaan: dari("owner", "superadmin") },
+    ],
+  },
+  {
+    grup: "Absensi & Penggajian",
+    aksi: [
+      { key: "absensi.edit_manual", label: "Edit absensi manual (Sakit / Izin / Libur)", bawaan: dari("superadmin", "owner") },
+      { key: "absensi.edit_nama", label: "Ubah nama data karyawan", bawaan: dari("superadmin", "owner") },
+      { key: "absensi.edit_jam", label: "Koreksi jam masuk / pulang absen", bawaan: tak },
+      { key: "penggajian.ubah", label: "Menyiapkan / menyerahkan / mengubah gaji", bawaan: semuaKecuali("owner", "pemegang_saham") },
+    ],
+  },
+  {
+    grup: "Keuangan & Holding",
+    aksi: [
+      { key: "holding.transfer_dari_holding", label: "Catat transfer Antar Entitas: dari Holding KE perusahaan", bawaan: dari("owner") },
+      { key: "holding.transfer_ke_holding", label: "Catat transfer Antar Entitas: dari perusahaan KE Holding", bawaan: dari("superadmin") },
+      { key: "holding.transfer_antar_anak", label: "Catat transfer Antar Entitas: antar dua perusahaan", bawaan: tak },
+      { key: "holding.penarikan_pemilik", label: "Catat Penarikan Pemilik", bawaan: dari("owner") },
+      { key: "keuangan.riwayat_perubahan", label: "Lihat tab Riwayat Perubahan Keuangan", bawaan: tak },
+    ],
+  },
+  {
+    grup: "Kasir (/kasir)",
+    aksi: [
+      { key: "kasir.lihat_semua", label: "Melihat transaksi & shift SEMUA kasir (bukan hanya miliknya)", bawaan: semuaKecuali("kasir") },
+      { key: "kasir.void", label: "Membatalkan seluruh transaksi (void)", bawaan: tak },
+      { key: "kasir.barang_toko", label: "Tombol Barang Toko di aplikasi kasir", bawaan: tak },
+      { key: "kasir.promo", label: "Tombol Promo di aplikasi kasir", bawaan: tak },
+      { key: "kasir.buka_laci", label: "Tombol Buka Laci di aplikasi kasir", bawaan: tak },
+    ],
+  },
+  {
+    grup: "Chat & Pengaturan",
+    aksi: [
+      { key: "chat.pengawas", label: "Mode Pengawas di Chat (melihat percakapan orang lain)", bawaan: tak },
+      { key: "pengaturan.kelola_user", label: "Kelola User (tambah / hapus akun, ganti password)", bawaan: dari("superadmin") },
+      { key: "pengaturan.rumus_harga", label: "Ubah Rumus Harga di Pengaturan", bawaan: dari("superadmin") },
+      { key: "pengaturan.pembersih_data", label: "Pembersih data (SKU yatim & foto yatim)", bawaan: tak },
+      { key: "pengaturan.hak_akses", label: "Mengatur Hak Akses (halaman ini)", kunci: true },
+      { key: "pengaturan.mode_perbaikan", label: "Mode Perbaikan (kunci seluruh aplikasi)", kunci: true },
+    ],
+  },
+];
+
+const DAFTAR_AKSI = {};
+GRUP_AKSI.forEach((g) => g.aksi.forEach((a) => { DAFTAR_AKSI[a.key] = a; }));
+
+// Nilai BAWAAN sebuah aksi untuk role (tanpa pengaturan Super Appa).
+export function aksiBawaan(role, kunci) {
+  if (role === "superappa") return !DAFTAR_AKSI[kunci] || true;
+  const a = DAFTAR_AKSI[kunci];
+  if (!a || a.kunci || !a.bawaan) return false;
+  return !!a.bawaan(role);
+}
+
+// Boleh melakukan aksi ini? Super Appa selalu boleh; role lain mengikuti pengaturan Hak Akses
+// (kalau belum diatur: aturan bawaan di atas).
+export function bisa(role, kunci) {
+  if (role === "superappa") return true;
+  const a = DAFTAR_AKSI[kunci];
+  if (!a || a.kunci) return false;
+  const ov = AKSES_ROLE[role]?.aksi?.[kunci];
+  if (typeof ov === "boolean") return ov;
+  return aksiBawaan(role, kunci);
+}
+
+// Boleh membuka sub-menu ini? (untuk halaman yang menjaga dirinya sendiri, mis. POS / Retur Resi)
+export function bolehSub(role, menuKey, subKey) {
+  if (role === "superappa") return true;
+  return adaOverrideSub(role, menuKey) && allowedSubMenus(role, menuKey).includes(subKey);
+}
+
 export const ROLES = [
   { key: "superadmin", label: "Super Admin" },
   { key: "owner", label: "Pemilik" },
@@ -738,22 +863,24 @@ export const ARAH_ANTAR_ENTITAS = {
 // Boleh tidaknya role ini mencatat/mengubah transfer dengan entitas asal & tujuan tertentu.
 // kodeHolding = kode entitas Holding (mis. "HOLD").
 export function bolehTransferAntarEntitas(role, entAsal, entTujuan, kodeHolding) {
-  const a = ARAH_ANTAR_ENTITAS[role];
-  if (!a || !kodeHolding || !entAsal || !entTujuan || entAsal === entTujuan) return false;
-  if (entAsal === kodeHolding) return !!a.dariHolding;
-  if (entTujuan === kodeHolding) return !!a.keHolding;
-  return !!a.antarAnak; // dua perusahaan non-Holding
+  if (!kodeHolding || !entAsal || !entTujuan || entAsal === entTujuan) return false;
+  if (entAsal === kodeHolding) return bisa(role, "holding.transfer_dari_holding");
+  if (entTujuan === kodeHolding) return bisa(role, "holding.transfer_ke_holding");
+  return bisa(role, "holding.transfer_antar_anak"); // dua perusahaan non-Holding
 }
 
 // Siapa boleh mencatat Penarikan Pemilik (uang Holding yang dipakai pribadi).
 export function bisaPenarikanPemilik(role) {
-  return role === "owner" || role === "superappa";
+  return bisa(role, "holding.penarikan_pemilik");
 }
 
 // Role ini punya hak mencatat transfer Antar Entitas arah apa pun?
 export function bisaTransferAntarEntitas(role) {
-  const a = ARAH_ANTAR_ENTITAS[role];
-  return !!a && (a.dariHolding || a.keHolding || a.antarAnak);
+  return (
+    bisa(role, "holding.transfer_dari_holding") ||
+    bisa(role, "holding.transfer_ke_holding") ||
+    bisa(role, "holding.transfer_antar_anak")
+  );
 }
 
 // Akun yang terikat ke PT selain Selma (entitas bukan "OPS") hanya boleh menu yang

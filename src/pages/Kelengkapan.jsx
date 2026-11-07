@@ -13,7 +13,7 @@ import {
   formatTanggalID,
 } from "../components/ui";
 import { sb, sbAll, fmtRp, nextKode, sbUploadFoto, kompresFotoProduk } from "../lib/api";
-import { isSuperadminLike, STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
+import { isSuperadminLike, bisa, STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel } from "../lib/constants";
 
 // =========================================================
 // KELENGKAPAN (sub-menu Pengadaan Barang)
@@ -106,7 +106,7 @@ export default function Kelengkapan({ showToast, session }) {
   const [tahapSiap, setTahapSiap] = useState(true); // false = SQL tahapan/riwayat harga belum dijalankan
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
-  const bisaUbahRiwayat = isSuperadminLike(session?.role);
+  const bisaUbahRiwayat = bisa(session?.role, "kelengkapan.ubah_riwayat");
 
   // showToast dari App dibuat ulang tiap render — simpan di ref supaya muat() stabil.
   const toastRef = useRef(showToast);

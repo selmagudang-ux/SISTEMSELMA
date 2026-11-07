@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { bisa } from "../../lib/constants";
 import { X, Loader2, AlertCircle, Receipt, RefreshCw, Undo2, Ban, Trash2, Printer } from "lucide-react";
 import { fmtRp } from "../../lib/api";
 import { muatMaster, muatRiwayat, muatStrukDariDb, muatDaftarShift, muatIdShiftBuka, muatRincianShift, ringkasShift, nomorShiftHarian, ROLE_BOLEH_VOID, BATAS_RIWAYAT, SKEMA } from "./kasirApi";
@@ -46,8 +47,8 @@ function Badge({ r }) {
 const warnaSelisih = (n) => (n === 0 ? "text-emerald-400" : n > 0 ? "text-amber-400" : "text-red-400");
 
 export default function RiwayatStruk({ session, shift, onClose }) {
-  const semuaKasir = session?.role !== "kasir";
-  const bolehVoidRole = ROLE_BOLEH_VOID.includes(session?.role);
+  const semuaKasir = bisa(session?.role, "kasir.lihat_semua");
+  const bolehVoidRole = bisa(session?.role, "kasir.void");
 
   const [tab, setTab] = useState("transaksi");
   const [dari, setDari] = useState(() => tglInput(new Date()));

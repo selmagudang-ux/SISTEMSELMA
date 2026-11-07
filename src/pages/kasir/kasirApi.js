@@ -1,4 +1,5 @@
 import { sb, sbAll, entitasSesi, cariAtauBuatRekeningTetap } from "../../lib/api";
+import { bisa } from "../../lib/constants";
 import { suggestKode } from "../../components/ui";
 import {
   REKENING_TOKO_OFFLINE_CASH,
@@ -210,7 +211,7 @@ export async function muatRiwayat({ session, sejak, sampai }) {
   const q = [`select=*`, `order=${T.waktu}.desc`, `limit=${BATAS_RIWAYAT}`];
   if (sejak) q.push(`${T.waktu}=gte.${encodeURIComponent(sejak.toISOString())}`);
   if (sampai) q.push(`${T.waktu}=lt.${encodeURIComponent(sampai.toISOString())}`);
-  if (session?.role === "kasir") q.push(`${T.kasirId}=eq.${encodeURIComponent(String(session.id))}`);
+  if (!bisa(session?.role, "kasir.lihat_semua")) q.push(`${T.kasirId}=eq.${encodeURIComponent(String(session.id))}`);
   return (await sb(`kasir_transaksi?${q.join("&")}`)) || [];
 }
 
@@ -332,7 +333,7 @@ export async function muatDaftarShift({ session, sejak, sampai }) {
   const q = [`select=*`, `order=buka_at.desc`, `limit=200`];
   if (sejak) q.push(`buka_at=gte.${encodeURIComponent(sejak.toISOString())}`);
   if (sampai) q.push(`buka_at=lt.${encodeURIComponent(sampai.toISOString())}`);
-  if (session?.role === "kasir") q.push(`kasir_id=eq.${encodeURIComponent(String(session.id))}`);
+  if (!bisa(session?.role, "kasir.lihat_semua")) q.push(`kasir_id=eq.${encodeURIComponent(String(session.id))}`);
   return (await sb(`kasir_shift?${q.join("&")}`)) || [];
 }
 

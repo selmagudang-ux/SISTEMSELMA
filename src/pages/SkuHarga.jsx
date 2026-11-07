@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi } from "../lib/api";
-import { isSuperadminLike } from "../lib/constants";
+import { isSuperadminLike, bisa } from "../lib/constants";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
@@ -53,7 +53,7 @@ function BuatSkuList({ items, setModal, session }) {
   const belumSku = items.filter((i) => i.stage === "sku");
   // Input banyak sekaligus khusus superadmin — role lain tetap pakai alur
   // Buat SKU satu-satu seperti biasa dari daftar barang di bawah.
-  const isSuperadmin = isSuperadminLike(session?.role);
+  const isSuperadmin = bisa(session?.role, "sku.buat_banyak");
   return (
     <div>
       <PageHeader
@@ -477,7 +477,8 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
 }
 
 function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast }) {
-  const isSuperadmin = isSuperadminLike(session?.role);
+  const bolehEditHarga = bisa(session?.role, "sku.edit_harga_langsung");
+  const bolehAturMp = bisa(session?.role, "sku.aturan_marketplace");
 
   // ---- aturan layak jual di Marketplace (panel editornya ada di AturanMpPanel supaya mengetik tidak merender ulang ribuan kartu) ----
   const kodePT = entitasSesi();
@@ -519,7 +520,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   }, [penempatan]);
   // Render kartu bertahap (ribuan kartu sekaligus yang bikin klik menu terasa tersendat).
   const [batas, setBatas] = useState(60);
-  const bolehKeToko = session?.role === "superappa"; // pindah SKU ke Barang Toko (kasir)
+  const bolehKeToko = bisa(session?.role, "sku.pindah_ke_toko"); // pindah SKU ke Barang Toko (kasir)
   const [pindah, setPindah] = useState(null); // array SKU yang akan dipindah ke Barang Toko
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
@@ -780,7 +781,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
         />
       )}
       <AturanMpPanel
-        isSuperadmin={isSuperadmin}
+        isSuperadmin={bolehAturMp}
         master={master}
         kodePT={kodePT}
         barisTersimpan={barisTersimpan}
@@ -937,7 +938,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 Harga Baru
                               </button>
                             )}
-                            {isSuperadmin && (
+                            {bolehEditHarga && (
                               <button
                                 type="button"
                                 onClick={(e) => {

@@ -11,7 +11,7 @@ import {
 import { buatPdfRiwayat } from "../lib/PdfInvoice";
 import { InvoiceWaModal, TombolKirimWa } from "../components/InvoiceWa";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
-import { isSuperadminLike } from "../lib/constants";
+import { isSuperadminLike, bisa } from "../lib/constants";
 import { newItemRow, ItemRow } from "./Grosir";
 
 // =========================================================
@@ -403,7 +403,7 @@ function RiwayatPenagihanPencairan({
   const [jenisFilter, setJenisFilter] = useState("");
   const [menghapusId, setMenghapusId] = useState(null);
   const [pdfId, setPdfId] = useState(null);
-  const isSuperadmin = isSuperadminLike(session?.role);
+  const isSuperadmin = bisa(session?.role, "reseller.hapus_entri");
 
   const namaPelanggan = (id) => (pelangganGrosir || []).find((p) => p.id === id)?.nama || "—";
   const nomorPesananReseller = (id) => (pesananReseller || []).find((p) => p.id === id)?.nomor_pesanan;

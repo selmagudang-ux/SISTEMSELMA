@@ -9,7 +9,7 @@ import {
 } from "../components/ui";
 import { TombolScanKamera } from "../components/ScanKamera";
 import { sb, sbAll } from "../lib/api";
-import { allowedSubMenus, adaOverrideSub } from "../lib/constants";
+import { allowedSubMenus, adaOverrideSub, bisa } from "../lib/constants";
 import { downloadXlsx } from "../lib/exportData";
 import { parseFileOrderan, ringkasBarang } from "../lib/resiOrderan";
 import { ambilInfoPerangkat } from "../lib/infoPerangkat";
@@ -884,7 +884,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const totalCancel = rowsView.length - totalValid;
 
   // ---- hapus massal: HANYA role superappa ----
-  const bisaHapusMassal = session?.role === "superappa";
+  const bisaHapusMassal = bisa(session?.role, "scan.hapus_massal");
   const [pilih, setPilih] = useState(() => new Set());
   const [sedangHapus, setSedangHapus] = useState(false);
   const terpilih = useMemo(() => tampil.filter((r) => pilih.has(r.id)), [tampil, pilih]);
@@ -1013,7 +1013,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const fileCancelKonfirmRef = useRef(null);
 
   // ---- Riwayat import (khusus superappa): siapa, kapan, file apa, dari perangkat mana ----
-  const bolehLihatLogImport = session?.role === "superappa";
+  const bolehLihatLogImport = bisa(session?.role, "scan.lihat_log_import");
   const [bukaLogImport, setBukaLogImport] = useState(false);
   const [logImport, setLogImport] = useState([]);
   const [memuatLogImport, setMemuatLogImport] = useState(false);

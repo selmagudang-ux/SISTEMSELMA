@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { bisa } from "../lib/constants";
 import QRCode from "qrcode";
 import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download } from "lucide-react";
 import {
@@ -112,7 +113,7 @@ async function unduhGambarQr(data) {
 }
 
 export default function Penggajian({ session, master, showToast }) {
-  const readOnly = session?.role === "owner"; // owner hanya melihat
+  const readOnly = !bisa(session?.role, "penggajian.ubah"); // bawaan: owner hanya melihat
   // Penggajian dipisah per perusahaan. Akun biasa memakai perusahaannya sendiri; Super Appa
   // memilih perusahaan lewat dropdown (pilihan yang sama dengan menu Absensi). Gaji hanya boleh
   // keluar dari rekening milik perusahaan itu — server menolak rekening perusahaan lain.

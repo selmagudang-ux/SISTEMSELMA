@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { bisa } from "../lib/constants";
 import {
   ClipboardList, PackageCheck, Trash2, LayoutGrid, Boxes, ShoppingBag,
   Truck, ImageOff, CheckCircle2, Circle, Download,
@@ -89,7 +90,7 @@ export default function PersetujuanRestock({
 // sebelum tab ini ada, cuma dipindah jadi sub-komponen (bukan komponen
 // halaman utama lagi) supaya bisa hidup berdampingan dengan tab baru.
 function TinjauPengajuan({ pengajuanRestock, session, setModal, filterJenis, onNavigate }) {
-  const bisaSetujui = ["owner", "superadmin", "superappa"].includes(session?.role);
+  const bisaSetujui = bisa(session?.role, "restock.setujui");
 
   const semua = pengajuanRestock || [];
   const menunggu = [...semua]

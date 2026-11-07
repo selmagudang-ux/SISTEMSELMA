@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { bisa } from "../lib/constants";
 import { Plus, Trash2, KeyRound, Ban, CheckCircle2, Download, Save, Loader2, ChevronLeft, ChevronRight, Pencil, Stethoscope, Clock } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Field, inputClass, Badge, InputTanggal, formatTanggalID } from "../components/ui";
 import { downloadCsv, kodeHoldingPasti } from "../lib/api";
@@ -103,8 +104,8 @@ export default function Absensi({ sub, showToast, session, master }) {
 // REKAP (Harian & Bulanan) — dihitung dinamis dari data mentah.
 // =========================================================
 function RekapAbsensi({ showToast, role }) {
-  const bolehEdit = ROLE_BOLEH_EDIT.includes(role);
-  const bolehEditJam = ROLE_BOLEH_EDIT_JAM.includes(role);
+  const bolehEdit = bisa(role, "absensi.edit_manual");
+  const bolehEditJam = bisa(role, "absensi.edit_jam");
   const [mode, setMode] = useState("harian"); // harian | mingguan | bulanan
   const [rows, setRows] = useState(null);
   const [karyawanList, setKaryawanList] = useState(null);
@@ -864,7 +865,7 @@ function RekapAbsensi({ showToast, role }) {
 // DATA KARYAWAN — kelola akun absen (terpisah dari akun login SELMA).
 // =========================================================
 function DataKaryawan({ showToast, role }) {
-  const bolehEditNama = ROLE_BOLEH_EDIT.includes(role);
+  const bolehEditNama = bisa(role, "absensi.edit_nama");
   const [list, setList] = useState(null);
   const [form, setForm] = useState({ id_karyawan: "", nama: "", password: "" });
   const [saving, setSaving] = useState(false);

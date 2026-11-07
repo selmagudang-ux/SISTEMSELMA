@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { bisa } from "../lib/constants";
 import { Send, Image as ImageIcon, ArrowLeft, RefreshCw, Eye, X } from "lucide-react";
 import { PageHeader, EmptyState, Badge, inputClass, btnFilled, btnText } from "../components/ui";
 import { roleLabel } from "../lib/constants";
@@ -88,7 +89,7 @@ function DaftarPesan({ pesan, idSaya, kosong }) {
 
 export default function Chat({ session, showToast, onBacaBerubah }) {
   const idSaya = String(session.id);
-  const pengawas = session.role === "superappa";
+  const pengawas = bisa(session.role, "chat.pengawas");
   const [mode, setMode] = useState("saya"); // saya | pengawas
   const [kontak, setKontak] = useState([]);
   const [lawan, setLawan] = useState(null); // objek kontak

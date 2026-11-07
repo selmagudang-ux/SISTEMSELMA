@@ -36,7 +36,7 @@ import {
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
-import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING } from "../lib/constants";
+import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING, bisa, roleHanyaLihat } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { AntarEntitas, Konsolidasi, RingkasanGrup, KelolaPerusahaan } from "./Holding";
 import PenarikanPemilik from "./PenarikanPemilik";
@@ -165,7 +165,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
       { key: "rekening", label: "Rekening & Kategori" },
       { key: "penggunaan", label: "Penggunaan Rekening" },
       { key: "log", label: "Log Keterangan" },
-      ...(session?.role === "superappa" ? [{ key: "riwayat", label: "Riwayat Perubahan" }] : []),
+      ...(bisa(session?.role, "keuangan.riwayat_perubahan") ? [{ key: "riwayat", label: "Riwayat Perubahan" }] : []),
     ],
     grup:
       session?.role === "pemegang_saham"
@@ -220,7 +220,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
   // Akun Pemilik & Pemegang Saham hanya melihat (pagar sebenarnya ada di sb() di lib/api.js;
   // di sini cuma supaya tombol tambah/ubah tidak membuka form yang akan ditolak).
   // Pemilik: read-only di SELMA, tapi bisa membukukan entitas Holding (akun kas, transaksi).
-  const bacaSaja = session?.role === "pemegang_saham" || (session?.role === "owner" && kodeAktif !== kodeHolding);
+  const bacaSaja = roleHanyaLihat(session?.role) && !(session?.role === "owner" && kodeAktif === kodeHolding);
   // Pengecualian: di Holding → Antar Entitas, Pemilik boleh mengubah/menghapus transfer
   // arah Holding → perusahaan (tombolnya sendiri disaring per arah di pages/Holding.jsx).
   const adaPengecualianOwner = modeGrup && sub === "antar-entitas" && session?.role === "owner";
@@ -2900,7 +2900,7 @@ function RiwayatPerubahan({ master = {}, session }) {
   const [q, setQ] = useState("");
   const [hanyaDicek, setHanyaDicek] = useState(false);
 
-  const bolehLihat = session?.role === "superappa";
+  const bolehLihat = bisa(session?.role, "keuangan.riwayat_perubahan");
 
   const muat = async () => {
     if (!bolehLihat) return;

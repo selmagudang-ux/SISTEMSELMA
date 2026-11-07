@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb, sbAll, RUMUS_HARGA_BAWAAN, rumusHargaEntitas, daftarkanProfilEntitas, entitasSesi } from "../lib/api";
-import { ROLES, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, ROLE_HANYA_LIHAT_BAWAAN, NAV, allowedMenus, allowedSubMenus, allowedSubMenusBawaan, menuBawaanRole, aksesRoleTersimpan, bolehKasir, setAksesRole, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
+import { ROLES, bisa, GRUP_AKSI, aksiBawaan, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, ROLE_HANYA_LIHAT_BAWAAN, NAV, allowedMenus, allowedSubMenus, allowedSubMenusBawaan, menuBawaanRole, aksesRoleTersimpan, bolehKasir, setAksesRole, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
@@ -12,6 +12,9 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
   // jalan untuk menyalakan/mematikannya lagi.
   const isSuperappa = session?.role === "superappa";
   const bolehAtur = isSuperadminLike(session?.role);
+  const bolehKelolaUser = bisa(session?.role, "pengaturan.kelola_user");
+  const bolehRumus = bisa(session?.role, "pengaturan.rumus_harga");
+  const bolehPembersih = bisa(session?.role, "pengaturan.pembersih_data");
   // Super Admin tiap PT (Selma, Alivia, dst) hanya melihat Rumus Harga dan Kelola User, keduanya
   // terkunci ke PT akunnya sendiri. Super Appa melihat semuanya dan bebas memilih PT.
   const ptSendiri = isSuperappa ? null : session?.entitas || "OPS";
@@ -21,7 +24,7 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
       <div>
         <PageHeader title="Pengaturan" />
         <EmptyState label="Data pengaturan belum tersedia di Supabase." />
-        {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
+        {bolehKelolaUser && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
         {isSuperappa && <HakAkses showToast={showToast} reload={reload} />}
       </div>
     );
@@ -33,15 +36,15 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
 
       {isSuperappa && <MaintenanceToggle settings={settings} reload={reload} showToast={showToast} />}
 
-      {bolehAtur && (
+      {bolehRumus && (
         <PengaturanPerPT settings={settings} session={session} isSuperappa={isSuperappa} showToast={showToast} />
       )}
 
-      {isSuperappa && <SkuYatimCleaner reload={reload} showToast={showToast} />}
+      {bolehPembersih && <SkuYatimCleaner reload={reload} showToast={showToast} />}
 
-      {isSuperappa && <FotoYatimCleaner reload={reload} showToast={showToast} />}
+      {bolehPembersih && <FotoYatimCleaner reload={reload} showToast={showToast} />}
 
-      {bolehAtur && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
+      {bolehKelolaUser && <UserManager showToast={showToast} ptTetap={ptSendiri} />}
 
       {isSuperappa && <HakAkses showToast={showToast} reload={reload} />}
     </div>
@@ -383,6 +386,11 @@ function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
       subs,
       kasir: typeof tersimpan?.kasir === "boolean" ? tersimpan.kasir : ROLE_BOLEH_KASIR.includes(role),
       hanyaLihat: typeof tersimpan?.hanyaLihat === "boolean" ? tersimpan.hanyaLihat : ROLE_HANYA_LIHAT_BAWAAN.includes(role),
+      aksi: Object.fromEntries(
+        GRUP_AKSI.flatMap((g) => g.aksi)
+          .filter((a) => !a.kunci)
+          .map((a) => [a.key, typeof tersimpan?.aksi?.[a.key] === "boolean" ? tersimpan.aksi[a.key] : aksiBawaan(role, a.key)])
+      ),
     };
   };
   const [d, setD] = useState(awal);
@@ -418,7 +426,14 @@ function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
       const sama = subBawaanEditor(role, m).slice().sort().join("|") === pilih.slice().sort().join("|");
       if (!sama) subs[m.key] = pilih;
     });
-    onSimpan(role, { menus, subs, kasir: d.kasir, hanyaLihat: d.hanyaLihat });
+    // Aksi: simpan HANYA yang berbeda dari aturan bawaan, supaya perubahan bawaan di kode tetap ikut.
+    const aksi = {};
+    GRUP_AKSI.flatMap((g) => g.aksi)
+      .filter((a) => !a.kunci)
+      .forEach((a) => {
+        if (d.aksi[a.key] !== aksiBawaan(role, a.key)) aksi[a.key] = d.aksi[a.key];
+      });
+    onSimpan(role, { menus, subs, kasir: d.kasir, hanyaLihat: d.hanyaLihat, aksi });
   };
 
   return (
@@ -466,6 +481,36 @@ function EditorAksesRole({ role, rows, onSimpan, onReset, menyimpan }) {
                     </div>
                   )}
                 </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="text-xs font-semibold text-slate-300 mt-4 mb-1">Aksi yang boleh dilakukan</div>
+      <p className="text-[11px] text-slate-500 mb-2">
+        Tombol/fitur di dalam halaman (edit, hapus, setujui, dst). Centang = role ini boleh. Yang bertanda "terkunci" hanya untuk Super Appa.
+        {d.hanyaLihat ? " CATATAN: mode \"Hanya lihat\" di atas sedang aktif, jadi semua aksi yang mengubah data tetap ditolak." : ""}
+      </p>
+      <div className="space-y-3">
+        {GRUP_AKSI.map((g) => (
+          <div key={g.grup} className="border border-slate-800 rounded-lg overflow-hidden">
+            <div className="px-3 py-1.5 text-[11px] font-semibold tracking-wide text-slate-400 bg-slate-900/60">{g.grup}</div>
+            <div className="divide-y divide-slate-800">
+              {g.aksi.map((a) => (
+                <label key={a.key} className={`flex items-start gap-2 px-3 py-2 text-sm ${a.kunci ? "text-slate-500" : "text-slate-200 cursor-pointer"}`}>
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    disabled={!!a.kunci}
+                    checked={a.kunci ? false : !!d.aksi[a.key]}
+                    onChange={(e) => setD((p) => ({ ...p, aksi: { ...p.aksi, [a.key]: e.target.checked } }))}
+                  />
+                  <span>
+                    {a.label}
+                    {a.kunci && <span className="ml-1 text-[10px] text-amber-400/80">(terkunci: khusus Super Appa)</span>}
+                  </span>
+                </label>
               ))}
             </div>
           </div>

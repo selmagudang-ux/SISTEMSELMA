@@ -3,7 +3,7 @@ import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, D
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
-import { bolehKasir as bolehKasirRole, setAksesRole } from "../../lib/constants";
+import { bolehKasir as bolehKasirRole, setAksesRole, bisa } from "../../lib/constants";
 import { sb } from "../../lib/api";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
@@ -165,7 +165,7 @@ export default function KasirApp() {
               <Download size={13} /> Unduh Aplikasi
             </a>
           )}
-          {session.role === "superappa" && (
+          {bisa(session.role, "kasir.buka_laci") && (
             <button
               onClick={() => bukaLaciManual({ kasir: session.nama || session.username })}
               title="Cetak slip kecil agar printer membuka laci"
@@ -174,7 +174,7 @@ export default function KasirApp() {
               <Archive size={13} /> Buka Laci
             </button>
           )}
-          {session.role === "superappa" && (
+          {bisa(session.role, "kasir.barang_toko") && (
             <button
               onClick={() => setBarangBuka(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
@@ -182,7 +182,7 @@ export default function KasirApp() {
               <Package size={13} /> Barang Toko
             </button>
           )}
-          {session.role === "superappa" && (
+          {bisa(session.role, "kasir.promo") && (
             <button
               onClick={() => setPromoBuka(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
@@ -240,8 +240,8 @@ export default function KasirApp() {
           }}
         />
       )}
-      {promoBuka && session.role === "superappa" && <PromoToko onClose={() => { setPromoBuka(false); setVersiData((v) => v + 1); }} />}
-      {barangBuka && session.role === "superappa" && <BarangToko onClose={() => { setBarangBuka(false); setVersiData((v) => v + 1); }} />}
+      {promoBuka && bisa(session.role, "kasir.promo") && <PromoToko onClose={() => { setPromoBuka(false); setVersiData((v) => v + 1); }} />}
+      {barangBuka && bisa(session.role, "kasir.barang_toko") && <BarangToko onClose={() => { setBarangBuka(false); setVersiData((v) => v + 1); }} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Trash2, AlertTriangle, Download, RotateCcw, Printer, ArrowRight, Loader2, Pencil } from "lucide-react";
 import { ModalShell, Badge, suggestKode, Field, inputClass, ZoomableImage } from "./ui";
-import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG, KATEGORI_PEMBAYARAN_SUPPLIER, REKENING_PEMBAYARAN_SUPPLIER, REKENING_ONGKIR_BARANG_DATANG } from "../lib/constants";
+import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadminLike, bisa, KONFIRMASI_DATANG_META, KATEGORI_ONGKIR_BARANG_DATANG, KATEGORI_PEMBAYARAN_SUPPLIER, REKENING_PEMBAYARAN_SUPPLIER, REKENING_ONGKIR_BARANG_DATANG } from "../lib/constants";
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
@@ -1803,7 +1803,7 @@ export default function ModalRouter({
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                     <div className="text-emerald-400 font-medium">{fmtRp(b.jumlah)}</div>
-                    {session?.role === "superappa" && (
+                    {bisa(session?.role, "grosir.edit_pembayaran") && (
                       <button
                         onClick={() => setModal({ type: "grosir-edit-pembayaran", item: { pesanan: p, pembayaran: b } })}
                         className="p-1 rounded text-slate-500 hover:text-sky-400 hover:bg-slate-800"
@@ -1853,7 +1853,7 @@ export default function ModalRouter({
             jenis_transaksi-nya apa). Dibatasi KHUSUS role "superappa" (bukan
             superadmin biasa) sesuai permintaan — jangan pakai isSuperadminLike
             di sini karena itu akan ikut meloloskan superadmin biasa juga. */}
-        {!dibatalkan && (!p.jenis_transaksi || p.jenis_transaksi === "grosir") && session?.role === "superappa" && (
+        {!dibatalkan && (!p.jenis_transaksi || p.jenis_transaksi === "grosir") && bisa(session?.role, "grosir.pindah_ke_reseller") && (
           <button
             onClick={() => setModal({ type: "grosir-pindah-ke-reseller", item: p })}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold border border-sky-500/30 text-sky-300 hover:bg-sky-500/10 mb-2"
@@ -1869,7 +1869,7 @@ export default function ModalRouter({
             <Trash2 size={14} /> Batalkan Pesanan
           </button>
         )}
-        {dibatalkan && isSuperadminLike(session?.role) && (
+        {dibatalkan && bisa(session?.role, "grosir.hapus_pesanan") && (
           <button
             onClick={() => setModal({ type: "grosir-hapus-pesanan", item: p })}
             className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white mt-2"
@@ -1886,7 +1886,7 @@ export default function ModalRouter({
     // Lapis keamanan kedua di sisi UI — tombol pemicu di modal detail pesanan
     // sudah disembunyikan untuk role selain superadmin, tapi modal ini juga
     // dijaga sendiri kalau-kalau modal.type ini terpanggil dari jalur lain.
-    if (!isSuperadminLike(session?.role)) {
+    if (!bisa(session?.role, "grosir.hapus_pesanan")) {
       return (
         <ModalShell title="Tidak Diizinkan" onClose={close}>
           <p className="text-xs text-slate-400">Menghapus riwayat pesanan permanen hanya bisa dilakukan oleh Super Admin.</p>
@@ -2539,7 +2539,7 @@ export default function ModalRouter({
   // tapi modal ini juga dijaga di sini untuk jaga-jaga).
   if (modal.type === "grosir-pindah-ke-reseller") {
     const p = modal.item;
-    if (session?.role !== "superappa") {
+    if (!bisa(session?.role, "grosir.pindah_ke_reseller")) {
       return (
         <ModalShell title="Tidak diizinkan" onClose={close}>
           <div className="text-sm text-slate-400">Fitur ini khusus untuk role superappa.</div>
@@ -2595,7 +2595,7 @@ export default function ModalRouter({
   // gabungan dari "Bayar Hutang Pelanggan".
   if (modal.type === "grosir-edit-pembayaran") {
     const { pesanan: p, pembayaran: b } = modal.item;
-    if (session?.role !== "superappa") {
+    if (!bisa(session?.role, "grosir.edit_pembayaran")) {
       return (
         <ModalShell title="Tidak diizinkan" onClose={close}>
           <div className="text-sm text-slate-400">Fitur ini khusus untuk role superappa.</div>
@@ -3172,7 +3172,7 @@ export default function ModalRouter({
         saldoDeposit={saldoDeposit}
         daftarPesanan={daftarRincian}
         onHapusBaris={
-          isSuperadminLike(session?.role)
+          bisa(session?.role, "grosir.hapus_deposit")
             ? (row) =>
                 run(
                   async () => {
@@ -5575,7 +5575,7 @@ export default function ModalRouter({
     // Lapis keamanan kedua di sisi UI — tombol pemicu di SkuHarga.jsx sudah
     // disembunyikan untuk role selain superadmin, tapi modal ini juga dijaga
     // sendiri kalau-kalau modal.type ini terpanggil dari jalur lain.
-    if (!isSuperadminLike(session?.role)) {
+    if (!bisa(session?.role, "sku.edit_harga_langsung")) {
       return (
         <ModalShell title="Tidak Diizinkan" onClose={close}>
           <p className="text-xs text-slate-400">Edit harga langsung hanya bisa dilakukan oleh Super Admin.</p>

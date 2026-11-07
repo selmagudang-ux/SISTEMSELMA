@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { bolehSub } from "../../lib/constants";
 import { PageHeader, EmptyState } from "../../components/ui";
 import { getSession } from "../../lib/auth";
 import BarangToko from "./BarangToko";
@@ -19,7 +20,7 @@ const TAB = [
 export default function PosToko({ reload }) {
   const [tab, setTab] = useState("barang");
   const role = getSession()?.role;
-  if (role !== "superappa") return <EmptyState label="Halaman ini khusus untuk role superappa." />;
+  if (!bolehSub(role, "toko-offline", "pos")) return <EmptyState label="Halaman ini belum dibuka untuk role Anda." />;
 
   return (
     <div>
