@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2, AlertCircle, Tag } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2, AlertCircle, Tag, BadgePercent } from "lucide-react";
 import { sbAll, fmtRp } from "../../lib/api";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
+import { muatPromoKasir, petaPromoAktif, hargaSetelahPromo, labelDiskon, tglPendek } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
 
@@ -51,7 +52,7 @@ function bacaSimpan(session) {
 
 // Samakan isi keranjang dengan data terbaru (harga, stok, SKU yang dinonaktifkan).
 // Dipakai tiap kali daftar barang dimuat — termasuk keranjang yang dipulihkan setelah refresh.
-function sinkronItems(items, rows) {
+function sinkronItems(items, rows, promoMap) {
   const peta = new Map(rows.map((s) => [s.sku, s]));
   const catatan = [];
   const out = [];
@@ -73,7 +74,13 @@ function sinkronItems(items, rows) {
       catatan.push(`${it.sku} jumlah jadi ${stok}`);
     }
     if (harga !== it.harga) catatan.push(`${it.sku} harga jadi ${fmtRp(harga)}`);
-    out.push({ ...it, harga, hpp: Number(s.hpp) || 0, stok, qty });
+    // Promo ikut disinkronkan: mulai, berakhir, atau berubah nilainya sejak barang masuk keranjang.
+    const promoBaru = promoMap?.get(it.sku) || null;
+    const promoLama = it.promo || null;
+    if (promoBaru && !promoLama) catatan.push(`${it.sku} kena promo ${labelDiskon(promoBaru)}`);
+    else if (!promoBaru && promoLama) catatan.push(`promo ${it.sku} sudah berakhir`);
+    else if (promoBaru && promoLama && (promoBaru.id !== promoLama.id || promoBaru.nilai !== promoLama.nilai || promoBaru.tipe !== promoLama.tipe)) catatan.push(`promo ${it.sku} berubah jadi ${labelDiskon(promoBaru)}`);
+    out.push({ ...it, harga, hpp: Number(s.hpp) || 0, stok, qty, promo: promoBaru, promoLepas: promoBaru ? !!it.promoLepas && promoLama?.id === promoBaru.id : false });
   }
   return { items: out, catatan };
 }
@@ -113,6 +120,8 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
 // versiData: angka yang dinaikkan induk (mis. setelah Barang Toko ditutup) supaya daftar barang dimuat ulang.
 export default function LayarKasir({ session, versiData = 0 }) {
   const [skuList, setSkuList] = useState([]);
+  // Map(sku -> promo yang sedang berjalan). Gagal dimuat (mis. tabel belum dibuat) = tanpa promo, kasir tetap jalan.
+  const [promoMap, setPromoMap] = useState(() => new Map());
   const [loading, setLoading] = useState(true);
   const [errMuat, setErrMuat] = useState("");
   const [q, setQ] = useState("");
@@ -130,6 +139,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
   const toastTimer = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const promoRef = useRef(new Map());
 
   const tampilToast = useCallback((pesan, tipe = "err") => {
     clearTimeout(toastTimer.current);
@@ -146,10 +156,18 @@ export default function LayarKasir({ session, versiData = 0 }) {
       setErrMuat("");
     }
     try {
-      const rows = ((await sbAll(`master_toko?select=${KOLOM}&order=kode`)) || []).map(dariToko);
+      const [rowsToko, rowsPromo] = await Promise.all([
+        sbAll(`master_toko?select=${KOLOM}&order=kode`),
+        muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
+      ]);
+      const rows = (rowsToko || []).map(dariToko);
       terakhirMuat.current = Date.now();
       setSkuList(rows.filter((s) => !s.nonaktif));
-      const { items: baru, catatan } = sinkronItems(itemsRef.current, rows);
+      // Kalau promo gagal dimuat, pakai promo terakhir yang berhasil dimuat (jangan hilang mendadak).
+      const peta = rowsPromo ? petaPromoAktif(rowsPromo, new Map(rows.map((s) => [s.sku, Number(s.ecer) || 0]))) : promoRef.current;
+      promoRef.current = peta;
+      setPromoMap(peta);
+      const { items: baru, catatan } = sinkronItems(itemsRef.current, rows, peta);
       if (catatan.length) {
         setItems(baru);
         tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`);
@@ -237,12 +255,12 @@ export default function LayarKasir({ session, versiData = 0 }) {
           ? prev.map((it) => (it.sku === s.sku ? { ...it, qty: it.qty + 1, stok } : it))
           : [
               ...prev,
-              { sku: s.sku, nama: namaTampil(s), harga, hpp: Number(s.hpp) || 0, stok, qty: 1, diskonTipe: "rp", diskonNilai: "" },
+              { sku: s.sku, nama: namaTampil(s), harga, hpp: Number(s.hpp) || 0, stok, qty: 1, diskonTipe: "rp", diskonNilai: "", promo: promoMap.get(s.sku) || null, promoLepas: false },
             ]
       );
       return { ok: true, pesan: `${namaTampil(s)} ditambahkan` };
     },
-    [items]
+    [items, promoMap]
   );
 
   const tambahDariKode = (kode) => {
@@ -405,6 +423,8 @@ export default function LayarKasir({ session, versiData = 0 }) {
                 const harga = Number(s.ecer) || 0;
                 const tidakBisa = stok <= 0 || harga <= 0;
                 const diKeranjang = qtyDiKeranjang.get(s.sku) || 0;
+                const promo = promoMap.get(s.sku) || null;
+                const hargaPromo = promo ? hargaSetelahPromo(harga, promo) : 0;
                 return (
                   <button
                     key={s.id ?? s.sku}
@@ -419,6 +439,11 @@ export default function LayarKasir({ session, versiData = 0 }) {
                     {diKeranjang > 0 && (
                       <span className="absolute top-3 right-3 text-[11px] font-bold bg-amber-500 text-slate-950 rounded-full px-2 py-0.5 tabular-nums">
                         × {diKeranjang}
+                      </span>
+                    )}
+                    {promo && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-500/15 text-emerald-400 rounded-full px-2 py-0.5 mb-2">
+                        <BadgePercent size={12} /> Promo {labelDiskon(promo)}
                       </span>
                     )}
                     <div className="flex gap-3">
@@ -439,9 +464,16 @@ export default function LayarKasir({ session, versiData = 0 }) {
                       </div>
                     </div>
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-dashed border-slate-800">
-                      <span className={`text-base font-bold tabular-nums ${harga > 0 ? "text-amber-400" : "text-red-400"}`}>
-                        {harga > 0 ? fmtRp(harga) : "Harga kosong"}
-                      </span>
+                      {promo && harga > 0 ? (
+                        <span className="flex flex-col leading-tight">
+                          <span className="text-[11px] text-slate-500 line-through tabular-nums">{fmtRp(harga)}</span>
+                          <span className="text-base font-bold tabular-nums text-emerald-400">{fmtRp(hargaPromo)}</span>
+                        </span>
+                      ) : (
+                        <span className={`text-base font-bold tabular-nums ${harga > 0 ? "text-amber-400" : "text-red-400"}`}>
+                          {harga > 0 ? fmtRp(harga) : "Harga kosong"}
+                        </span>
+                      )}
                       <span
                         className={`text-[11px] font-medium rounded-full px-2 py-0.5 tabular-nums ${
                           stok <= 0
@@ -494,7 +526,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
           ) : (
             items.map((it) => {
               const h = hitungItem(it);
-              const terbuka = bukaDiskon.has(it.sku) || h.diskon > 0;
+              const terbuka = bukaDiskon.has(it.sku) || h.diskonManual > 0;
               return (
                 <div key={it.sku} className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5">
                   <div className="flex items-start justify-between gap-2">
@@ -542,6 +574,23 @@ export default function LayarKasir({ session, versiData = 0 }) {
                       <div className="text-[15px] font-bold text-slate-100 tabular-nums">{fmtRp(h.subtotal)}</div>
                     </div>
                   </div>
+
+                  {it.promo && (
+                    <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
+                      <span className={`inline-flex items-center gap-1 font-semibold ${it.promoLepas ? "text-slate-500 line-through" : "text-emerald-400"}`}>
+                        <BadgePercent size={13} /> Promo {labelDiskon(it.promo)}
+                        {!it.promoLepas && h.diskonPromo > 0 && <span className="tabular-nums">· − {fmtRp(h.diskonPromo)}</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => ubahItem(it.sku, { promoLepas: !it.promoLepas })}
+                        title={`Berlaku s/d ${tglPendek(it.promo.selesai)}`}
+                        className="text-slate-500 hover:text-amber-400 font-medium transition-colors"
+                      >
+                        {it.promoLepas ? "Pakai promo" : "Lepas promo"}
+                      </button>
+                    </div>
+                  )}
 
                   {terbuka ? (
                     <div className="mt-2.5">

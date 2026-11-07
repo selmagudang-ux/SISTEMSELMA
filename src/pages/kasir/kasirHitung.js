@@ -15,11 +15,27 @@ export function hitungDiskon(dasar, tipe, nilai) {
   return Math.min(d, d0);
 }
 
-// Satu baris keranjang: { qty, harga, diskonTipe, diskonNilai }
+// Diskon promo (dari tabel kasir_promo) untuk satu baris keranjang.
+// promo: { tipe: "persen" | "rp", nilai }. Untuk "rp", nilai = potongan PER PCS (dikali qty).
+// Tidak pernah melebihi nilai kotor baris itu.
+export function hitungDiskonPromo(kotor, qty, promo) {
+  if (!promo) return 0;
+  const n = Number(promo.nilai) || 0;
+  const k = Number(kotor) || 0;
+  if (n <= 0 || k <= 0) return 0;
+  const d = promo.tipe === "persen" ? Math.round((k * Math.min(n, 100)) / 100) : Math.round(n * (Number(qty) || 0));
+  return Math.min(d, k);
+}
+
+// Satu baris keranjang: { qty, harga, promo, promoLepas, diskonTipe, diskonNilai }
+// Promo (otomatis) dihitung dulu dari harga normal; diskon manual kasir dihitung dari sisanya.
+// "diskon" = promo + manual, itulah yang dikirim ke database & dicetak di struk.
 export function hitungItem(it) {
   const kotor = Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0));
-  const diskon = hitungDiskon(kotor, it.diskonTipe, it.diskonNilai);
-  return { kotor, diskon, subtotal: kotor - diskon };
+  const diskonPromo = it.promo && !it.promoLepas ? hitungDiskonPromo(kotor, it.qty, it.promo) : 0;
+  const diskonManual = hitungDiskon(kotor - diskonPromo, it.diskonTipe, it.diskonNilai);
+  const diskon = diskonPromo + diskonManual;
+  return { kotor, diskonPromo, diskonManual, diskon, subtotal: kotor - diskon };
 }
 
 // Seluruh keranjang + diskon level transaksi: { tipe, nilai }

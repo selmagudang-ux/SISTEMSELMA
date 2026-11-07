@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, Download } from "lucide-react";
+import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
 import BarangToko from "./BarangToko";
+import PromoToko from "./PromoToko";
 import { LayarBukaShift, ModalTutupShift } from "./ShiftKasir";
 import { muatShiftAktif } from "./kasirApi";
 import { tglJamId } from "./kasirStruk";
@@ -22,6 +23,7 @@ import { bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLa
 // TAHAP 2: layar kasir (cari/scan SKU, keranjang, diskon, total) — LayarKasir.jsx.
 // TAHAP 4: tombol Riwayat (cetak ulang struk) — RiwayatStruk.jsx.
 // MASTER TOKO: tombol Barang Toko (hanya superappa) — BarangToko.jsx.
+// PROMO: tombol Promo (hanya superappa) — PromoToko.jsx; promo per barang terpasang otomatis di keranjang.
 // FASE 5: shift — kasir harus Buka Kasir (kas awal) sebelum berjualan, dan Tutup Kasir
 //   (hitung kas, selisih) saat selesai; Riwayat berisi rekap per kasir, void & retur.
 // =========================================================
@@ -34,6 +36,7 @@ export default function KasirApp() {
   const [session, setSession] = useState(() => getSession());
   const [riwayatBuka, setRiwayatBuka] = useState(false);
   const [barangBuka, setBarangBuka] = useState(false);
+  const [promoBuka, setPromoBuka] = useState(false);
   const [versiData, setVersiData] = useState(0); // dinaikkan setelah Barang Toko ditutup -> kasir muat ulang
   // shift: undefined = sedang dicek, null = belum buka, objek = shift yang sedang buka
   const [shift, setShift] = useState(undefined);
@@ -151,6 +154,14 @@ export default function KasirApp() {
               <Package size={13} /> Barang Toko
             </button>
           )}
+          {session.role === "superappa" && (
+            <button
+              onClick={() => setPromoBuka(true)}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
+            >
+              <BadgePercent size={13} /> Promo
+            </button>
+          )}
           {shift && (
             <button
               onClick={() => setTutupBuka(true)}
@@ -201,6 +212,7 @@ export default function KasirApp() {
           }}
         />
       )}
+      {promoBuka && session.role === "superappa" && <PromoToko onClose={() => { setPromoBuka(false); setVersiData((v) => v + 1); }} />}
       {barangBuka && session.role === "superappa" && <BarangToko onClose={() => { setBarangBuka(false); setVersiData((v) => v + 1); }} />}
     </div>
   );
