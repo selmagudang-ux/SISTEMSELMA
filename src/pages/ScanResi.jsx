@@ -402,10 +402,35 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   // ---------------- scan ----------------
   const [input, setInput] = useState("");
   const [hasil, setHasil] = useState(null);
-  // Sesi AKTIF = sesi setelah sesi terakhir yang ditutup (hari ini). Sesi yang sudah ditutup tidak
-  // bisa ditambah lagi; setelah "Tutup sesi", scan berikutnya otomatis masuk sesi berikutnya.
+  // Banyak sesi boleh TERBUKA bersamaan (tidak ada batas jumlah sesi). Sesi terbuka = sesi hari ini yang
+  // belum ditutup (ada di resi_sesi = sudah ditutup). Operator memilih sesi aktif di antara sesi terbuka,
+  // bisa kembali ke sesi sebelumnya selama belum ditutup. Sesi yang sudah ditutup tidak bisa ditambah lagi.
   const sesiHari = useMemo(() => sesiRows.filter((x) => x.tanggal === hari), [sesiRows, hari]);
-  const sesi = useMemo(() => sesiHari.reduce((m, x) => Math.max(m, x.sesi), 0) + 1, [sesiHari]);
+  const tutupSet = useMemo(() => new Set(sesiHari.map((x) => x.sesi)), [sesiHari]);
+  const [baruLokal, setBaruLokal] = useState({ hari: null, list: [] }); // sesi kosong yang baru dibuat di perangkat ini
+  const [pilihan, setPilihan] = useState(() => {
+    try {
+      const o = JSON.parse(localStorage.getItem("selma-scan-resi-sesi-pilih") || "null");
+      return o && o.hari === hariIni() ? o : null;
+    } catch {
+      return null;
+    }
+  });
+  const maxPakai = useMemo(() => {
+    let m = 0;
+    sesiHari.forEach((x) => { if (x.sesi > m) m = x.sesi; });
+    rows.forEach((r) => { if (r.tanggal === hari && r.sesi > m) m = r.sesi; });
+    (baruLokal.hari === hari ? baruLokal.list : []).forEach((n) => { if (n > m) m = n; });
+    return m;
+  }, [sesiHari, rows, baruLokal, hari]);
+  const sesiTerbuka = useMemo(() => {
+    const st = new Set((baruLokal.hari === hari ? baruLokal.list : []).filter((n) => !tutupSet.has(n)));
+    rows.forEach((r) => { if (r.tanggal === hari && !tutupSet.has(r.sesi)) st.add(r.sesi); });
+    if (!st.size) st.add(maxPakai + 1);
+    return [...st].sort((a, b) => a - b);
+  }, [rows, tutupSet, baruLokal, hari, maxPakai]);
+  // Sesi aktif = pilihan operator (kalau masih terbuka), kalau tidak: sesi terbuka paling baru.
+  const sesi = pilihan && pilihan.hari === hari && sesiTerbuka.includes(pilihan.sesi) ? pilihan.sesi : sesiTerbuka[sesiTerbuka.length - 1];
   const [sesiFilter, setSesiFilter] = useState(null); // null = semua sesi
   const [suara, setSuara] = useState(() => {
     try {
@@ -675,9 +700,9 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const daftarSesi = useMemo(() => {
     const m = new Map();
     rows.forEach((r) => m.set(r.sesi, (m.get(r.sesi) || 0) + 1));
-    if (sub === "scan" && !m.has(sesi)) m.set(sesi, 0);
+    if (sub === "scan") sesiTerbuka.forEach((n) => { if (!m.has(n)) m.set(n, 0); });
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
-  }, [rows, sesi, sub]);
+  }, [rows, sesiTerbuka, sub]);
   const infoSesi = useMemo(() => new Map(sesiHari.map((x) => [x.sesi, x])), [sesiHari]);
   // Kunci "tanggal|sesi" -> pengiriman ke-n (dipakai di export Excel, bisa lintas tanggal).
   const kirimPerSesi = useMemo(() => new Map(sesiRows.filter((x) => x.pengiriman).map((x) => [`${x.tanggal}|${x.sesi}`, x.pengiriman])), [sesiRows]);
@@ -685,9 +710,31 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   const [sibukSesi, setSibukSesi] = useState(false);
   const jmlSesiAktif = rows.filter((r) => r.sesi === sesi).length;
 
+  const pilihSesi = (n) => {
+    const o = { hari, sesi: n };
+    setPilihan(o);
+    try {
+      localStorage.setItem("selma-scan-resi-sesi-pilih", JSON.stringify(o));
+    } catch {
+      // abaikan
+    }
+    inputRef.current?.focus();
+  };
+  // Buka sesi baru TANPA menutup sesi yang sedang jalan. Kalau sudah ada sesi terbuka yang masih kosong, pakai itu.
+  const tambahSesi = () => {
+    const kosong = sesiTerbuka.find((n) => !rows.some((r) => r.sesi === n));
+    if (kosong != null) {
+      pilihSesi(kosong);
+      return;
+    }
+    const n = maxPakai + 1;
+    setBaruLokal((b) => ({ hari, list: [...(b.hari === hari ? b.list : []), n] }));
+    pilihSesi(n);
+  };
+
   const tutupSesi = async () => {
     if (sibukSesi || !jmlSesiAktif) return;
-    if (!window.confirm(`Tutup Sesi ${sesi} (${jmlSesiAktif} resi)? Setelah ditutup, Sesi ${sesi} tidak bisa ditambah lagi dan scan berikutnya masuk Sesi ${sesi + 1}.`)) return;
+    if (!window.confirm(`Tutup Sesi ${sesi} (${jmlSesiAktif} resi)? Setelah ditutup, Sesi ${sesi} tidak bisa ditambah lagi.`)) return;
     setSibukSesi(true);
     try {
       const res = await sb("resi_sesi?on_conflict=entitas,tanggal,sesi", {
@@ -697,7 +744,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       });
       const baris = Array.isArray(res) ? res[0] : res;
       setSesiRows((l) => [...l.filter((x) => !(x.tanggal === hari && x.sesi === sesi)), baris || { tanggal: hari, sesi, ditutup_at: new Date().toISOString() }]);
-      toast(`Sesi ${sesi} ditutup. Scan berikutnya masuk Sesi ${sesi + 1}.`);
+      toast(`Sesi ${sesi} ditutup.`);
     } catch (e) {
       toast(e.message || "Gagal menutup sesi.", "err");
     } finally {
@@ -1458,8 +1505,24 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
               )}
               <div className="rounded-md-lg border border-md-outline-variant p-3 space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-md-on-surface">Sesi aktif: Sesi {sesi}</span>
-                  <span className="text-xs text-md-on-surface-variant">{jmlSesiAktif} resi</span>
+                  <span className="text-sm font-semibold text-md-on-surface">Sesi aktif:</span>
+                  {sesiTerbuka.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => pilihSesi(n)}
+                      className={`text-xs px-3 py-1.5 rounded-full border ${n === sesi ? "bg-md-primary-container text-md-on-primary-container border-transparent font-semibold" : "border-md-outline-variant text-md-on-surface-variant"}`}
+                    >
+                      Sesi {n} · {rows.filter((r) => r.sesi === n).length}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={tambahSesi}
+                    className="text-xs px-3 py-1.5 rounded-full border border-dashed border-md-outline-variant text-md-on-surface-variant"
+                  >
+                    + Sesi baru
+                  </button>
                   <button
                     type="button"
                     onClick={tutupSesi}
