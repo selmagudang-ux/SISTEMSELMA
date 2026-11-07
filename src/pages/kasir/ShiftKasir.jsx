@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut, Download } from "lucide-react";
+import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut, Download, Archive } from "lucide-react";
 import { fmtRp } from "../../lib/api";
 import { bukaShift, ringkasShift, tutupShift, pesanErrorKasir, muatRincianShift, nomorShiftHarian, muatMaster } from "./kasirApi";
 import { tglJamId, identitasStruk } from "./kasirStruk";
 import { RincianShiftPanel, cetakRincianShift } from "./ShiftRincian";
-import { bukaLaciSaatBukaKasir, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLaci";
+import { bukaLaciSaatBukaKasir, bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLaci";
 
 // =========================================================
 // KASIR — SHIFT (fase 5)
@@ -128,6 +128,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const [errRincian, setErrRincian] = useState("");
   const [nomorHarian, setNomorHarian] = useState(null); // { nomor, tanggal } — nomor shift, reset tiap hari
   const [mencetak, setMencetak] = useState(false);
+  const [membukaLaci, setMembukaLaci] = useState(false);
 
   useEffect(() => {
     let batal = false;
@@ -173,6 +174,17 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
       setError(e?.message || "Gagal mencetak rincian");
     } finally {
       setMencetak(false);
+    }
+  };
+
+  // Buka laci untuk menghitung uang tunai sebelum tutup kasir.
+  const bukaLaci = async () => {
+    if (membukaLaci) return;
+    setMembukaLaci(true);
+    try {
+      await bukaLaciManual({ kasir: shift.kasir_nama, alasan: "Hitung kas tutup shift" });
+    } finally {
+      setMembukaLaci(false);
     }
   };
 
@@ -245,8 +257,6 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
             </>
           )}
 
-          <RincianShiftPanel rincian={rincian} memuat={memuatRincian} error={errRincian} onCetak={cetakRincian} mencetak={mencetak} />
-
           {hasil ? (
             <>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-5 text-center">
@@ -258,6 +268,14 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
                 </div>
                 {hasil.catatan && <div className="mt-2 text-xs text-slate-400">Catatan: {hasil.catatan}</div>}
               </div>
+              <RincianShiftPanel
+                rincian={rincian}
+                memuat={memuatRincian}
+                error={errRincian}
+                onCetak={cetakRincian}
+                mencetak={mencetak}
+                bukaAwal
+              />
               <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-2xl">
                 Selesai
               </button>
@@ -266,7 +284,17 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
             ringkas && (
               <>
                 <div>
-                  <label className="text-sm font-medium text-slate-300 mb-1.5 block">Uang tunai yang dihitung di laci</label>
+                  <div className="flex items-center justify-between gap-3 mb-1.5">
+                    <label className="text-sm font-medium text-slate-300">Uang tunai yang dihitung di laci</label>
+                    <button
+                      type="button"
+                      onClick={bukaLaci}
+                      disabled={membukaLaci || saving}
+                      className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 disabled:opacity-40 text-slate-200 text-xs font-medium px-3 py-2 rounded-lg"
+                    >
+                      {membukaLaci ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />} Buka Laci
+                    </button>
+                  </div>
                   <InputUang value={kasAkhir} onChange={setKasAkhir} />
                   {selisih !== null && (
                     <div className={`mt-1.5 text-sm font-semibold ${warnaSelisih(selisih)}`}>Selisih: {teksSelisih(selisih)}</div>

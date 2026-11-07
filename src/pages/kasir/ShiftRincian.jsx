@@ -84,8 +84,8 @@ export function olahRincian({ transaksi, items, pembayaran }) {
 }
 
 // ---------------------------------------------------------
-export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak }) {
-  const [buka, setBuka] = useState(false);
+export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, bukaAwal = false }) {
+  const [buka, setBuka] = useState(bukaAwal);
   const [tab, setTab] = useState("transaksi");
   const r = useMemo(() => (rincian ? olahRincian(rincian) : null), [rincian]);
 
