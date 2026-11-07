@@ -4,6 +4,7 @@ import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "
 import { InputRupiah } from "../../components/ui";
 import ImporBarangToko from "./ImporBarangToko";
 import FotoMassalToko from "./FotoMassalToko";
+import { FotoZoom, FotoThumb } from "./FotoZoom";
 
 // =========================================================
 // MASTER BARANG TOKO (offline store) — terpisah dari Master Barang gudang besar.
@@ -85,6 +86,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
   const [fotoFile, setFotoFile] = useState(null); // foto baru yang dipilih (belum diunggah)
   const [fotoUrl, setFotoUrl] = useState(barang.foto_url || ""); // foto tersimpan; kosong = tanpa foto
   const [fotoPreview, setFotoPreview] = useState("");
+  const [zoomFoto, setZoomFoto] = useState(false);
   useEffect(() => {
     if (!fotoFile) return setFotoPreview("");
     const u = URL.createObjectURL(fotoFile);
@@ -174,7 +176,9 @@ function FormBarang({ barang, onSimpan, onClose }) {
         <div className="flex items-center gap-3">
           <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex items-center justify-center flex-shrink-0">
             {fotoPreview || fotoUrl ? (
-              <img src={fotoPreview || fotoUrl} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              <button type="button" onClick={() => setZoomFoto(true)} title="Klik untuk perbesar" className="w-full h-full cursor-zoom-in">
+                <img src={fotoPreview || fotoUrl} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              </button>
             ) : (
               <Camera size={20} className="text-slate-600" />
             )}
@@ -216,6 +220,9 @@ function FormBarang({ barang, onSimpan, onClose }) {
       >
         {saving && <Loader2 size={15} className="animate-spin" />} Simpan
       </button>
+      {zoomFoto && (fotoPreview || fotoUrl) && (
+        <FotoZoom src={fotoPreview || fotoUrl} judul={baru ? f.nama || "Foto barang" : `${barang.kode} · ${f.nama}`} onClose={() => setZoomFoto(false)} />
+      )}
     </Kerangka>
   );
 }
@@ -490,12 +497,10 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
             {tampil.map((r) => (
               <li key={r.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-800 ${r.nonaktif ? "opacity-50" : ""}`}>
                 {r.foto_url && (
-                  <img
+                  <FotoThumb
                     src={r.foto_url}
-                    alt=""
-                    loading="lazy"
-                    className="w-11 h-11 rounded-lg object-cover bg-slate-800 flex-shrink-0"
-                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    judul={`${r.kode} · ${r.nama}`}
+                    className="w-11 h-11 rounded-lg object-cover bg-slate-800"
                   />
                 )}
                 <div className="min-w-0 flex-1">
