@@ -62,10 +62,12 @@ export const simpanPengaturanGaji = (passwordAdmin, baris, entitas) =>
 
 // Hitung komponen gaji satu periode dari absensi (server tidak menyimpan apa pun).
 // periode: "2026-10" | "2026-10-10" | "2026-10-01_2026-10-15"
+// tipeGaji (opsional): "harian" | "bulanan" = hanya hitung karyawan bertipe itu; kosong = semua.
 // Hasil: { data: [{ karyawan_id, gaji_pokok, premi_jabatan, premi_kehadiran, bonus, ringkasan, catatan }],
-//          dilewati: [{ karyawan_id, alasan }] }
-export const hitungGajiOtomatis = (passwordAdmin, periode, entitas) =>
-  panggilGajiAdmin("hitung_otomatis", passwordAdmin, { periode, entitas }).then((r) => ({
+//          dilewati: [{ karyawan_id, alasan }], lainTipe: jumlah karyawan tipe lain yang tidak ikut dihitung }
+export const hitungGajiOtomatis = (passwordAdmin, periode, entitas, tipeGaji) =>
+  panggilGajiAdmin("hitung_otomatis", passwordAdmin, { periode, entitas, tipe_gaji: tipeGaji || null }).then((r) => ({
     data: r.data || [],
     dilewati: r.dilewati || [],
+    lainTipe: r.lain_tipe || 0,
   }));

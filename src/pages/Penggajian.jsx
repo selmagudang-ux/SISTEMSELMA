@@ -48,6 +48,39 @@ function labelPeriode(p) {
 function hariIni() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); // WIB
 }
+// Siklus gaji bergeser, mis. "gaji November" = 23 Okt s/d 22 Nov. Hasilnya tetap berupa periode
+// rentang ("2026-10-23_2026-11-22"), jadi server, QR, dan Keuangan tidak perlu tahu soal siklus.
+// Tanggal mulai dibatasi 2-28 supaya selalu ada di setiap bulan.
+function periodeSiklus(bulanAkhir, hariMulai) {
+  const h = Number(hariMulai);
+  if (!ISO_BULAN.test(bulanAkhir) || !Number.isInteger(h) || h < 2 || h > 28) return "";
+  const [y, m] = bulanAkhir.split("-").map(Number);
+  const dua = (n) => String(n).padStart(2, "0");
+  const yAwal = m === 1 ? y - 1 : y;
+  const mAwal = m === 1 ? 12 : m - 1;
+  return `${yAwal}-${dua(mAwal)}-${dua(h)}_${y}-${dua(m)}-${dua(h - 1)}`;
+}
+// Pilihan layar yang diingat di browser ini (kenyamanan saja; aman kalau penyimpanan gagal).
+const bacaLokal = (kunci, bawaan) => {
+  try { return localStorage.getItem(kunci) || bawaan; } catch { return bawaan; }
+};
+const tulisLokal = (kunci, nilai) => {
+  try { localStorage.setItem(kunci, String(nilai)); } catch { /* abaikan */ }
+};
+const TIPE_PERIODE_VALID = ["bulan", "tanggal", "rentang", "siklus", "mingguan"];
+const bacaTipePeriode = () => {
+  const t = bacaLokal("selma-gaji-tipe-periode", "bulan");
+  return TIPE_PERIODE_VALID.includes(t) ? t : "bulan";
+};
+// Karyawan bulanan dibayar per siklus bulan, harian dibayar per minggu: tombol Hitung otomatis
+// bawaannya hanya mengisi tipe yang cocok dengan periode, supaya keduanya tidak tercampur.
+const bawaanHitungUntuk = (tipe) => (tipe === "bulan" || tipe === "siklus" ? "bulanan" : tipe === "mingguan" ? "harian" : "semua");
+const tambahHari = (iso, n) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const selisihHari = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 function fmtWaktu(iso) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("id-ID", { timeZone: "Asia/Jakarta", dateStyle: "medium", timeStyle: "short" });
@@ -141,16 +174,48 @@ export default function Penggajian({ session, master, showToast }) {
   const [memuat, setMemuat] = useState(false);
   const [sibuk, setSibuk] = useState(null); // id gaji / "simpan" yang sedang diproses
 
-  const [tipePeriode, setTipePeriode] = useState("bulan"); // bulan | tanggal | rentang
+  const [tipePeriode, setTipePeriodeState] = useState(bacaTipePeriode); // bulan | tanggal | rentang | siklus | mingguan
+  const [hitungUntuk, setHitungUntuk] = useState(() => bawaanHitungUntuk(bacaTipePeriode())); // semua | bulanan | harian
+  const setTipePeriode = (t) => {
+    setTipePeriodeState(t);
+    setHitungUntuk(bawaanHitungUntuk(t));
+    tulisLokal("selma-gaji-tipe-periode", t);
+  };
+  const [tglGajian, setTglGajian] = useState(hariIni()); // akhir periode mingguan (hari gajian)
+  const [mulaiManual, setMulaiManual] = useState(null); // null = mulai otomatis
+  const [bulanSiklus, setBulanSiklus] = useState(hariIni().slice(0, 7)); // bulan tempat siklus BERAKHIR
+  const [hariMulai, setHariMulaiState] = useState(() => bacaLokal("selma-gaji-hari-mulai", "23"));
+  const setHariMulai = (v) => { setHariMulaiState(v); tulisLokal("selma-gaji-hari-mulai", v); };
   const [bulan, setBulan] = useState(hariIni().slice(0, 7));
   const [tanggal, setTanggal] = useState(hariIni());
   const [dari, setDari] = useState(hariIni().slice(0, 8) + "01");
   const [sampai, setSampai] = useState(hariIni());
   const rentangValid = ISO_TGL.test(dari) && ISO_TGL.test(sampai) && dari <= sampai;
+  // Periode mingguan (karyawan harian): berakhir di hari gajian, mulai sehari setelah gajian mingguan
+  // sebelumnya. "Gajian sebelumnya" dibaca dari periode gaji pendek (< 28 hari) yang sudah ada dan
+  // berakhir sebelum tanggal gajian ini; periode bulanan/siklus (28 hari ke atas) tidak ikut dihitung.
+  const akhirMingguanSebelumnya = useMemo(() => {
+    if (!ISO_TGL.test(tglGajian)) return null;
+    let akhir = null;
+    gaji.forEach((g) => {
+      if (g.status === "batal") return;
+      const r = String(g.periode || "").split("_");
+      if (r.length !== 2 || !ISO_TGL.test(r[0]) || !ISO_TGL.test(r[1])) return;
+      if (selisihHari(r[0], r[1]) + 1 >= 28) return;
+      if (r[1] < tglGajian && (!akhir || r[1] > akhir)) akhir = r[1];
+    });
+    return akhir;
+  }, [gaji, tglGajian]);
+  const mulaiOtomatis = !ISO_TGL.test(tglGajian) ? "" : akhirMingguanSebelumnya ? tambahHari(akhirMingguanSebelumnya, 1) : tambahHari(tglGajian, -6);
+  const mulaiMingguan = mulaiManual ?? mulaiOtomatis;
+  const mingguanValid = ISO_TGL.test(tglGajian) && ISO_TGL.test(mulaiMingguan) && mulaiMingguan <= tglGajian;
+  const hariMingguan = mingguanValid ? selisihHari(mulaiMingguan, tglGajian) + 1 : 0;
   // String periode yang dikirim ke server; "" = isian belum valid.
   const periode =
     tipePeriode === "bulan" ? (ISO_BULAN.test(bulan) ? bulan : "")
     : tipePeriode === "tanggal" ? (ISO_TGL.test(tanggal) ? tanggal : "")
+    : tipePeriode === "siklus" ? periodeSiklus(bulanSiklus, hariMulai)
+    : tipePeriode === "mingguan" ? (mingguanValid ? `${mulaiMingguan}_${tglGajian}` : "")
     : rentangValid ? `${dari}_${sampai}` : "";
   const [edit, setEdit] = useState({}); // { [karyawan_id]: { nominal, catatan } } — hanya baris yang diubah user
   const [rekening, setRekening] = useState("");
@@ -338,7 +403,7 @@ export default function Penggajian({ session, master, showToast }) {
     }
     setSibuk("hitung");
     try {
-      const { data, dilewati } = await hitungGajiOtomatis(pw, periode, ent);
+      const { data, dilewati, lainTipe } = await hitungGajiOtomatis(pw, periode, ent, hitungUntuk === "semua" ? null : hitungUntuk);
       const bisa = data.filter((h) => {
         const g = gajiPeriode.get(h.karyawan_id);
         return !g || g.status === "draft";
@@ -363,6 +428,7 @@ export default function Penggajian({ session, master, showToast }) {
       });
       const pesan = [`${bisa.length} karyawan terisi otomatis dari absensi. Periksa lalu klik Simpan draft.`];
       if (terkunci > 0) pesan.push(`${terkunci} dilewati karena gajinya sudah diserahkan/diterima.`);
+      if (lainTipe > 0) pesan.push(`${lainTipe} karyawan ${hitungUntuk === "bulanan" ? "harian" : "bulanan"} tidak ikut dihitung.`);
       if (dilewati.length > 0) {
         const nama = dilewati.slice(0, 3).map((d) => peta.get(d.karyawan_id)?.nama || "—").join(", ");
         pesan.push(`${dilewati.length} belum punya tarif (${nama}${dilewati.length > 3 ? ", ..." : ""}) — atur di tab Pengaturan Gaji.`);
@@ -476,7 +542,7 @@ export default function Penggajian({ session, master, showToast }) {
           <div className="mb-3">
             <div className="text-xs text-md-on-surface-variant mb-1">Periode gaji</div>
             <div className="flex flex-wrap gap-2 mb-2">
-              {[["bulan", "Per bulan"], ["tanggal", "Per tanggal"], ["rentang", "Per rentang tanggal"]].map(([k, l]) => (
+              {[["bulan", "Per bulan"], ["siklus", "Siklus bulanan"], ["mingguan", "Mingguan (harian)"], ["tanggal", "Per tanggal"], ["rentang", "Per rentang tanggal"]].map(([k, l]) => (
                 <button key={k} className={tipePeriode === k ? btnFilled : btnOutlined} onClick={() => setTipePeriode(k)}>{l}</button>
               ))}
             </div>
@@ -485,6 +551,26 @@ export default function Penggajian({ session, master, showToast }) {
                 <Field label="Bulan">
                   <input type="month" value={bulan} onChange={(e) => setBulan(e.target.value)} className={inputClass} />
                 </Field>
+              )}
+              {tipePeriode === "siklus" && (
+                <>
+                  <Field label="Gaji untuk bulan">
+                    <input type="month" value={bulanSiklus} onChange={(e) => setBulanSiklus(e.target.value)} className={inputClass} />
+                  </Field>
+                  <Field label="Siklus mulai tanggal (2-28)">
+                    <input type="number" min={2} max={28} value={hariMulai} onChange={(e) => setHariMulai(e.target.value)} className={inputClass} />
+                  </Field>
+                </>
+              )}
+              {tipePeriode === "mingguan" && (
+                <>
+                  <Field label="Tanggal gajian (akhir periode)">
+                    <input type="date" value={tglGajian} onChange={(e) => { setTglGajian(e.target.value); setMulaiManual(null); }} className={inputClass} />
+                  </Field>
+                  <Field label="Mulai dari tanggal">
+                    <input type="date" value={mulaiMingguan} onChange={(e) => setMulaiManual(e.target.value)} className={inputClass} />
+                  </Field>
+                </>
               )}
               {tipePeriode === "tanggal" && (
                 <Field label="Tanggal">
@@ -504,6 +590,25 @@ export default function Penggajian({ session, master, showToast }) {
             </div>
             {tipePeriode === "rentang" && !rentangValid && (
               <p className="text-xs text-red-400">Tanggal "dari" harus sebelum atau sama dengan tanggal "sampai".</p>
+            )}
+            {tipePeriode === "mingguan" && (
+              <p className="text-xs text-md-on-surface-variant">
+                {mulaiManual != null
+                  ? "Tanggal mulai diatur manual. "
+                  : akhirMingguanSebelumnya
+                    ? `Mulai otomatis: sehari setelah gajian mingguan terakhir (${fmtTglPendek(akhirMingguanSebelumnya)}). `
+                    : "Belum ada gaji mingguan sebelumnya, jadi mulai diisi 7 hari sampai tanggal gajian — ubah kalau perlu. "}
+                {mulaiManual != null && <button type="button" className="underline" onClick={() => setMulaiManual(null)}>Pakai otomatis</button>}
+              </p>
+            )}
+            {tipePeriode === "mingguan" && !mingguanValid && (
+              <p className="text-xs text-red-400">Tanggal mulai harus sebelum atau sama dengan tanggal gajian.</p>
+            )}
+            {tipePeriode === "mingguan" && hariMingguan > 14 && (
+              <p className="text-xs text-amber-400">Periode ini {hariMingguan} hari — pastikan tanggal mulai sudah benar.</p>
+            )}
+            {tipePeriode === "siklus" && !periode && (
+              <p className="text-xs text-red-400">Isi bulan dan tanggal mulai siklus (2 sampai 28) dengan benar.</p>
             )}
             {periode && <p className="text-xs text-md-on-surface-variant">Periode terpilih: {labelPeriode(periode)}</p>}
           </div>
@@ -527,10 +632,17 @@ export default function Penggajian({ session, master, showToast }) {
               <p className="text-xs text-md-on-surface-variant">
                 Isi gaji pokok, premi, dan bonus otomatis dari absensi {labelPeriode(periode)} dan tarif di tab Pengaturan Gaji.
               </p>
-              <button className={btnTonal} onClick={hitungOtomatis} disabled={sibuk === "hitung"}>
-                {sibuk === "hitung" ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}
-                Hitung otomatis
-              </button>
+              <div className="flex items-center gap-2">
+                <select value={hitungUntuk} onChange={(e) => setHitungUntuk(e.target.value)} className={`${inputClass} w-auto`} aria-label="Hitung untuk">
+                  <option value="semua">Semua karyawan</option>
+                  <option value="bulanan">Hanya bulanan</option>
+                  <option value="harian">Hanya harian</option>
+                </select>
+                <button className={btnTonal} onClick={hitungOtomatis} disabled={sibuk === "hitung"}>
+                  {sibuk === "hitung" ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}
+                  Hitung otomatis
+                </button>
+              </div>
             </div>
           )}
 
