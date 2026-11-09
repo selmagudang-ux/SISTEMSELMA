@@ -4,6 +4,8 @@ import { PageHeader, EmptyState } from "../../components/ui";
 import { getSession } from "../../lib/auth";
 import BarangToko from "./BarangToko";
 import PromoToko from "./PromoToko";
+import LaporanKasir from "./LaporanKasir";
+import { entitasSesi, lingkupEntitas } from "../../lib/api";
 
 // =========================================================
 // MENU POS di Penjualan > Toko Offline (sejajar dengan Transaksi Offline).
@@ -15,18 +17,21 @@ import PromoToko from "./PromoToko";
 const TAB = [
   ["barang", "Barang Toko"],
   ["promo", "Promo"],
+  ["laporan", "Laporan"],
 ];
 
-export default function PosToko({ reload }) {
+export default function PosToko({ reload, master = {}, keuanganTransaksi = [] }) {
   const [tab, setTab] = useState("barang");
   const role = getSession()?.role;
   if (!bolehSub(role, "toko-offline", "pos")) return <EmptyState label="Halaman ini belum dibuka untuk role Anda." />;
+  // Laporan butuh transaksi Keuangan PT ini (untuk cek sinkron) — saring lewat rekeningnya, sama seperti halaman Keuangan.
+  const lingkup = lingkupEntitas(keuanganTransaksi || [], master, entitasSesi());
 
   return (
     <div>
       <PageHeader
         title="POS"
-        description="Atur barang yang dijual di aplikasi kasir (harga, HPP, stok toko) dan promo per barang atau per kategori. Layar kasir dibuka di alamat /kasir."
+        description="Atur barang yang dijual di aplikasi kasir (harga, HPP, stok toko), promo, dan lihat laporan penjualan kasir. Layar kasir dibuka di alamat /kasir."
         action={
           <a href="/kasir" target="_blank" rel="noreferrer" className="text-xs font-semibold text-md-primary border border-md-outline-variant rounded-full px-3.5 py-2 hover:bg-md-surface-variant whitespace-nowrap">
             Buka Kasir
@@ -47,7 +52,9 @@ export default function PosToko({ reload }) {
           </button>
         ))}
       </div>
-      {tab === "barang" ? <BarangToko inline onBerubah={() => reload?.()} /> : <PromoToko inline />}
+      {tab === "barang" && <BarangToko inline onBerubah={() => reload?.()} />}
+      {tab === "promo" && <PromoToko inline />}
+      {tab === "laporan" && <LaporanKasir master={lingkup.master} keuanganTransaksi={lingkup.transaksi} />}
     </div>
   );
 }

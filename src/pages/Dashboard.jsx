@@ -2569,9 +2569,10 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
   // dari keuangan_transaksi yang ditandai isEntriTokoOffline (lihat
   // pages/TokoOffline.jsx).
   //
-  // Sejak Fase 6 sumber utamanya KASIR (tabel kasir_transaksi/kasir_item/kasir_pembayaran), bukan lagi input
-  // harian manual. Input manual lama (baris keuangan "Toko Offline ·") hanya dihitung untuk tanggal SEBELUM
-  // transaksi kasir pertama, supaya tidak terhitung dobel dengan baris Keuangan yang ditulis kasir sendiri.
+  // Sejak Fase 6 omzet toko offline = input harian manual (baris keuangan "Toko Offline ·", semua tanggal)
+  // + omzet bersih KASIR (tabel kasir_transaksi/kasir_item/kasir_pembayaran) mulai hari pertama kasir dipakai.
+  // CATATAN: kasir menulis baris Keuangannya sendiri lewat fungsi database; kalau keterangan baris itu juga
+  // diawali "Toko Offline ·" maka akan terhitung dobel di sini (lihat isEntriTokoOffline).
   // Data kasir ditarik hanya saat tab "Laporan Toko Offline" dibuka (hemat egress):
   //  - rekapTahun   : omzet per hari setahun (kolom ringan, tanpa barang/pembayaran) -> kartu Bulan & Tahun
   //  - rekapRiwayat : 14 hari terakhir + pembayaran -> kartu Hari Ini & Riwayat Harian (Cash/Cashless)
@@ -2588,11 +2589,9 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
   const memuatKasir = aktifKasir && (rekapTahun.memuat || rekapRiwayat.memuat || rekapBulan.memuat);
   const errorKasir = rekapTahun.error || rekapRiwayat.error || rekapBulan.error;
 
-  // Omzet toko offline untuk rentang [dari, sampai] = input manual lama (sebelum kasir) + omzet bersih kasir.
+  // Omzet toko offline untuk rentang [dari, sampai] = input manual + omzet bersih kasir.
   const ringkasanTO = (rekap, dari, sampai) => {
-    const batasLama = tanggalMulai ? tambahHari(tanggalMulai, -1) : sampai;
-    const sampaiLama = sampai < batasLama ? sampai : batasLama;
-    const lama = dari <= sampaiLama ? ringkasanTokoOffline(keuanganTransaksi, dari, sampaiLama) : { omset: 0 };
+    const lama = ringkasanTokoOffline(keuanganTransaksi, dari, sampai);
     const dariKasir = tanggalMulai && dari < tanggalMulai ? tanggalMulai : dari;
     const hari = tanggalMulai && dariKasir <= sampai ? (rekap.data?.harian || []).filter((h) => h.tanggal >= dariKasir && h.tanggal <= sampai) : [];
     return {
@@ -2604,15 +2603,29 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
   const laporanTokoOfflineBulanan = ringkasanTO(rekapTahun, periodeDari, periodeSampai);
   const laporanTokoOfflineTahunan = ringkasanTO(rekapTahun, awalTahunTerpilih, akhirTahunTerpilih);
 
-  // Riwayat harian: baris input manual lama (sebelum kasir) digabung dengan baris kasir (mulai hari pertama kasir).
+  // Riwayat harian: input manual + kasir digabung per tanggal (kalau satu hari ada keduanya, dijumlahkan).
   const riwayatHarianTO = (() => {
-    const lama = riwayatHarianTokoOffline(keuanganTransaksi, 400)
-      .filter((r) => !tanggalMulai || r.tanggal < tanggalMulai)
-      .map((r) => ({ tanggal: r.tanggal, cash: r.cash, cashless: r.cashless, retur: 0, total: r.cash + r.cashless, jumlahTrx: null }));
-    const kasir = (rekapRiwayat.data?.harian || [])
-      .filter((h) => tanggalMulai && h.tanggal >= tanggalMulai)
-      .map((h) => ({ tanggal: h.tanggal, cash: h.cash, cashless: h.cashless, retur: h.retur, total: h.bersih, jumlahTrx: h.jumlah }));
-    return [...kasir, ...lama].sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0)).slice(0, 10);
+    const peta = new Map();
+    const ambil = (tanggal) => {
+      if (!peta.has(tanggal)) peta.set(tanggal, { tanggal, cash: 0, cashless: 0, retur: 0, total: 0, jumlahTrx: null });
+      return peta.get(tanggal);
+    };
+    for (const r of riwayatHarianTokoOffline(keuanganTransaksi, 400)) {
+      const x = ambil(r.tanggal);
+      x.cash += r.cash;
+      x.cashless += r.cashless;
+      x.total += r.cash + r.cashless;
+    }
+    for (const h of rekapRiwayat.data?.harian || []) {
+      if (!tanggalMulai || h.tanggal < tanggalMulai) continue;
+      const x = ambil(h.tanggal);
+      x.cash += h.cash;
+      x.cashless += h.cashless;
+      x.retur += h.retur;
+      x.total += h.bersih;
+      x.jumlahTrx = h.jumlah;
+    }
+    return [...peta.values()].sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0)).slice(0, 10);
   })();
   const terlarisBulan = barangTerlaris(rekapBulan.data?.perProduk, { urut: "qty", batas: 5 });
   const perKasirBulan = (rekapBulan.data?.perKasir || []).slice(0, 5);
@@ -3356,7 +3369,7 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
               {memuatKasir && <span className="text-[11px] font-normal text-slate-500">memuat data kasir…</span>}
             </div>
             <button
-              onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
+              onClick={() => onNavigate && onNavigate("toko-offline", "pos")}
               className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
             >
               Buka Rekap Kasir <ArrowRight size={11} />
@@ -3375,7 +3388,7 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
             {errorKasir && <div className="mt-3 text-[11px] text-red-300">Data kasir gagal dimuat: {errorKasir}</div>}
             {tanggalMulai && (
               <div className="mt-3 text-[11px] text-slate-500">
-                Omzet bersih (setelah retur, tanpa transaksi void) dari kasir mulai {formatTanggalID(tanggalMulai)}; sebelum itu dari input harian manual lama.
+                Omzet kasir (bersih setelah retur, tanpa void) dihitung mulai {formatTanggalID(tanggalMulai)}, ditambah input harian manual toko offline.
               </div>
             )}
           </div>
@@ -3385,7 +3398,7 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
           <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
             <div className="text-sm font-semibold">Riwayat Harian Toko Offline</div>
             <button
-              onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
+              onClick={() => onNavigate && onNavigate("toko-offline", "pos")}
               className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
             >
               Lihat Rekap Lengkap →
@@ -3430,7 +3443,7 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
               <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
                 <div className="text-sm font-semibold">Barang Terlaris — {periodeLabel}</div>
                 <button
-                  onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
+                  onClick={() => onNavigate && onNavigate("toko-offline", "pos")}
                   className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
                 >
                   Selengkapnya →

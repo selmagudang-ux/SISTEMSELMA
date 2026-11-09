@@ -265,7 +265,7 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
                 )}
                 {sinkron.selisih !== 0 && (
                   <div className="text-xs text-md-on-surface-variant mt-1">
-                    Penyebab umum: retur/void dicatat di Keuangan pada tanggal berbeda dari transaksi aslinya, atau baris Keuangan toko offline diedit/dihapus manual. Coba perlebar rentang ke akhir bulan.
+                    Penyebab umum: retur/void dicatat di Keuangan pada tanggal berbeda dari transaksi aslinya, ada input harian manual Toko Offline di rentang yang sama (ikut terhitung di Keuangan, tidak di kasir), atau baris Keuangan diedit/dihapus manual. Coba perlebar rentang ke akhir bulan.
                   </div>
                 )}
               </div>
