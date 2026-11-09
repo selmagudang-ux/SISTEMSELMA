@@ -11,7 +11,7 @@ import {
   batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, kodeHoldingPasti,
 } from "../lib/api";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
-import { hitungGajiOtomatis } from "../lib/gajiOtomatis";
+import { hitungGajiOtomatis, daftarPengaturanGaji } from "../lib/gajiOtomatis";
 import PengaturanGaji from "../components/PengaturanGaji";
 import { EVENT_PILIH_PERIODE_GAJI } from "../components/PengingatGaji";
 
@@ -184,6 +184,10 @@ export default function Penggajian({ session, master, showToast }) {
     setHitungUntuk(bawaanHitungUntuk(t));
     tulisLokal("selma-gaji-tipe-periode", t);
   };
+  // Opsi lanjutan (periode per bulan/tanggal/rentang, tanggal mulai, masa berlaku QR) disembunyikan
+  // kecuali sedang memakai periode selain dua gajian utama (mingguan & bulanan tgl 23).
+  const [lanjutan, setLanjutan] = useState(() => !["mingguan", "siklus"].includes(bacaTipePeriode()));
+  const [tipeKaryawan, setTipeKaryawan] = useState(() => new Map()); // karyawan_id -> "harian" | "bulanan"
   const [tglGajian, setTglGajian] = useState(hariIni()); // akhir periode mingguan (hari gajian)
   const [mulaiManual, setMulaiManual] = useState(null); // null = mulai otomatis
   const [bulanSiklus, setBulanSiklus] = useState(hariIni().slice(0, 7)); // bulan tempat siklus BERAKHIR
@@ -228,6 +232,16 @@ export default function Penggajian({ session, master, showToast }) {
 
   const peta = useMemo(() => new Map(karyawan.map((k) => [k.id, k])), [karyawan]);
   const karyawanAktif = useMemo(() => karyawan.filter((k) => k.aktif), [karyawan]);
+  // Gajian mingguan hanya untuk karyawan harian (yang belum diatur tetap tampil supaya bisa diisi manual);
+  // gajian bulanan menampilkan semua karyawan (harian ikut untuk premi).
+  const daftarTampil = useMemo(
+    () => (tipePeriode === "mingguan"
+      ? karyawanAktif.filter((k) => { const t = tipeKaryawan.get(k.id); return !t || t === "harian"; })
+      : karyawanAktif),
+    [karyawanAktif, tipeKaryawan, tipePeriode]
+  );
+  // Premi dibayar bulanan, jadi kolomnya tidak perlu di gajian mingguan.
+  const komponenTampil = tipePeriode === "mingguan" ? KOMPONEN.filter((c) => c.k === "gaji_pokok" || c.k === "bonus") : KOMPONEN;
 
   // Kalau password ditolak server, kembali ke layar kunci.
   const tanganiError = useCallback((e, fallback) => {
@@ -240,9 +254,14 @@ export default function Penggajian({ session, master, showToast }) {
     if (!kata) return;
     setMemuat(true);
     try {
-      const [g, k] = await Promise.all([daftarGaji(kata, { entitas: ent }), listKaryawan(true, ent)]);
+      const [g, k, pg] = await Promise.all([
+        daftarGaji(kata, { entitas: ent }),
+        listKaryawan(true, ent),
+        daftarPengaturanGaji(kata, ent).catch(() => []), // gagal = daftar tidak difilter per tipe
+      ]);
       setGaji(g || []);
       setKaryawan(k || []);
+      setTipeKaryawan(new Map((pg || []).map((r) => [r.karyawan_id, r.tipe_gaji])));
     } catch (e) {
       tanganiError(e, "Gagal memuat data gaji.");
     } finally {
@@ -534,7 +553,7 @@ export default function Penggajian({ session, master, showToast }) {
     );
   }
 
-  const totalDraft = karyawanAktif.reduce((s, k) => s + (totalKomponen(nilaiBaris(k.id))), 0);
+  const totalDraft = daftarTampil.reduce((s, k) => s + (totalKomponen(nilaiBaris(k.id))), 0);
   const riwayat = gaji.filter((g) => !filterKaryawan || g.karyawan_id === filterKaryawan);
 
   return (
@@ -567,12 +586,18 @@ export default function Penggajian({ session, master, showToast }) {
       {tab === "siapkan" && (
         <>
           <div className="mb-3">
-            <div className="text-xs text-md-on-surface-variant mb-1">Periode gaji</div>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {[["siklus", "Gajian bulanan (tgl 23)"], ["mingguan", "Gajian mingguan (Sabtu/Minggu)"], ["bulan", "Per bulan kalender"], ["tanggal", "Per tanggal"], ["rentang", "Per rentang tanggal"]].map(([k, l]) => (
-                <button key={k} className={tipePeriode === k ? btnFilled : btnOutlined} onClick={() => setTipePeriode(k)}>{l}</button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <button className={tipePeriode === "mingguan" ? btnFilled : btnOutlined} onClick={() => setTipePeriode("mingguan")}>Gajian mingguan</button>
+              <button className={tipePeriode === "siklus" ? btnFilled : btnOutlined} onClick={() => setTipePeriode("siklus")}>Gajian bulanan (tgl 23)</button>
+              <button className={btnText} onClick={() => setLanjutan((v) => !v)}>{lanjutan ? "Sembunyikan opsi lanjutan" : "Opsi lanjutan"}</button>
             </div>
+            {lanjutan && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {[["bulan", "Per bulan kalender"], ["tanggal", "Per tanggal"], ["rentang", "Per rentang tanggal"]].map(([k, l]) => (
+                  <button key={k} className={tipePeriode === k ? btnTonal : btnOutlined} onClick={() => setTipePeriode(k)}>{l}</button>
+                ))}
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-3">
               {tipePeriode === "bulan" && (
                 <Field label="Bulan">
@@ -584,9 +609,11 @@ export default function Penggajian({ session, master, showToast }) {
                   <Field label="Gaji untuk bulan">
                     <input type="month" value={bulanSiklus} onChange={(e) => setBulanSiklus(e.target.value)} className={inputClass} />
                   </Field>
-                  <Field label="Siklus mulai tanggal (2-28)">
-                    <input type="number" min={2} max={28} value={hariMulai} onChange={(e) => setHariMulai(e.target.value)} className={inputClass} />
-                  </Field>
+                  {lanjutan && (
+                    <Field label="Siklus mulai tanggal (2-28)">
+                      <input type="number" min={2} max={28} value={hariMulai} onChange={(e) => setHariMulai(e.target.value)} className={inputClass} />
+                    </Field>
+                  )}
                 </>
               )}
               {tipePeriode === "mingguan" && (
@@ -594,9 +621,11 @@ export default function Penggajian({ session, master, showToast }) {
                   <Field label="Tanggal gajian (akhir periode)">
                     <input type="date" value={tglGajian} onChange={(e) => { setTglGajian(e.target.value); setMulaiManual(null); }} className={inputClass} />
                   </Field>
-                  <Field label="Mulai dari tanggal">
-                    <input type="date" value={mulaiMingguan} onChange={(e) => setMulaiManual(e.target.value)} className={inputClass} />
-                  </Field>
+                  {(lanjutan || mulaiManual != null) && (
+                    <Field label="Mulai dari tanggal">
+                      <input type="date" value={mulaiMingguan} onChange={(e) => setMulaiManual(e.target.value)} className={inputClass} />
+                    </Field>
+                  )}
                 </>
               )}
               {tipePeriode === "tanggal" && (
@@ -618,7 +647,7 @@ export default function Penggajian({ session, master, showToast }) {
             {tipePeriode === "rentang" && !rentangValid && (
               <p className="text-xs text-red-400">Tanggal "dari" harus sebelum atau sama dengan tanggal "sampai".</p>
             )}
-            {tipePeriode === "mingguan" && (
+            {tipePeriode === "mingguan" && (lanjutan || mulaiManual != null) && (
               <p className="text-xs text-md-on-surface-variant">
                 {mulaiManual != null
                   ? "Tanggal mulai diatur manual. "
@@ -641,32 +670,29 @@ export default function Penggajian({ session, master, showToast }) {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 mb-4">
-            <Field label="Rekening sumber (dipakai untuk semua baris yang disimpan)">
+            <Field label="Rekening sumber">
               <select value={rekening} onChange={(e) => setRekening(e.target.value)} className={inputClass} disabled={readOnly}>
                 <option value="">— pilih rekening —</option>
                 {rekeningList.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
               </select>
             </Field>
-            <Field label="Masa berlaku QR">
-              <select value={berlaku} onChange={(e) => setBerlaku(Number(e.target.value))} className={inputClass} disabled={readOnly}>
-                {BERLAKU.map((b) => <option key={b.v} value={b.v}>{b.l}</option>)}
-              </select>
-            </Field>
+            {lanjutan && (
+              <Field label="Masa berlaku QR">
+                <select value={berlaku} onChange={(e) => setBerlaku(Number(e.target.value))} className={inputClass} disabled={readOnly}>
+                  {BERLAKU.map((b) => <option key={b.v} value={b.v}>{b.l}</option>)}
+                </select>
+              </Field>
+            )}
           </div>
 
-          {!readOnly && karyawanAktif.length > 0 && periode && (
+          {!readOnly && daftarTampil.length > 0 && periode && (
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <p className="text-xs text-md-on-surface-variant">
-                Isi gaji pokok dan premi otomatis dari absensi {labelPeriode(periode)} dan tarif di tab Pengaturan Gaji. Lembur tidak ikut (dibayar langsung di hari itu).
-                {tipePeriode === "mingguan" && " Karyawan harian mendapat gaji pokok saja; premi dibayar bulanan."}
-                {(tipePeriode === "siklus" || tipePeriode === "bulan") && " Karyawan harian hanya mendapat premi (gaji pokok sudah dibayar mingguan)."}
+                {tipePeriode === "mingguan"
+                  ? "Isi gaji pokok karyawan harian dari absensi. Premi dibayar bulanan; lembur dibayar langsung."
+                  : "Isi gaji dan premi dari absensi. Karyawan harian hanya dapat premi (gaji pokok sudah dibayar mingguan)."}
               </p>
               <div className="flex items-center gap-2">
-                <select value={hitungUntuk} onChange={(e) => setHitungUntuk(e.target.value)} className={`${inputClass} w-auto`} aria-label="Hitung untuk">
-                  <option value="semua">Semua karyawan</option>
-                  <option value="bulanan">Hanya bulanan</option>
-                  <option value="harian">Hanya harian (mingguan)</option>
-                </select>
                 <button className={btnTonal} onClick={hitungOtomatis} disabled={sibuk === "hitung"}>
                   {sibuk === "hitung" ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}
                   Hitung otomatis
@@ -677,6 +703,8 @@ export default function Penggajian({ session, master, showToast }) {
 
           {karyawanAktif.length === 0 ? (
             <EmptyState label="Belum ada karyawan aktif." />
+          ) : daftarTampil.length === 0 ? (
+            <EmptyState label="Belum ada karyawan harian. Atur jenis karyawan di tab Pengaturan Gaji." />
           ) : !periode ? (
             <EmptyState label="Isi periode dengan benar untuk menyiapkan gaji." />
           ) : (
@@ -685,7 +713,7 @@ export default function Penggajian({ session, master, showToast }) {
                 <thead>
                   <tr className="text-left text-xs text-md-on-surface-variant">
                     <th className="px-4 py-3">Karyawan</th>
-                    {KOMPONEN.map((c) => <th key={c.k} className="px-2 py-3 min-w-[9rem]">{c.l}</th>)}
+                    {komponenTampil.map((c) => <th key={c.k} className="px-2 py-3 min-w-[9rem]">{c.l}</th>)}
                     <th className="px-2 py-3 min-w-[8rem]">Total</th>
                     <th className="px-2 py-3 min-w-[10rem]">Catatan</th>
                     <th className="px-2 py-3">Status</th>
@@ -693,7 +721,7 @@ export default function Penggajian({ session, master, showToast }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {karyawanAktif.map((k) => {
+                  {daftarTampil.map((k) => {
                     const g = gajiPeriode.get(k.id);
                     const terkunci = readOnly || (g && g.status !== "draft");
                     const v = nilaiBaris(k.id);
@@ -703,7 +731,7 @@ export default function Penggajian({ session, master, showToast }) {
                           <div className="text-md-on-surface">{k.nama}</div>
                           <div className="text-[11px] text-md-on-surface-variant">{k.id_karyawan}</div>
                         </td>
-                        {KOMPONEN.map((c) => (
+                        {komponenTampil.map((c) => (
                           <td key={c.k} className="px-2 py-2">
                             {terkunci ? (
                               <span>{g ? fmtRp(angka(komponenDariGaji(g)[c.k])) : "—"}</span>
