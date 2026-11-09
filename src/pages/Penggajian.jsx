@@ -49,8 +49,9 @@ function labelPeriode(p) {
 function hariIni() {
   return new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); // WIB
 }
-// Siklus gaji bergeser, mis. "gaji November" = 23 Okt s/d 22 Nov. Hasilnya tetap berupa periode
-// rentang ("2026-10-23_2026-11-22"), jadi server, QR, dan Keuangan tidak perlu tahu soal siklus.
+// Siklus gaji bergeser, mis. "gaji November" = 24 Okt s/d 23 Nov (gajian tanggal 23 ikut periode ini).
+// Hasilnya tetap berupa periode
+// rentang ("2026-10-24_2026-11-23"), jadi server, QR, dan Keuangan tidak perlu tahu soal siklus.
 // Tanggal mulai dibatasi 2-28 supaya selalu ada di setiap bulan.
 function periodeSiklus(bulanAkhir, hariMulai) {
   const h = Number(hariMulai);
@@ -68,6 +69,9 @@ const bacaLokal = (kunci, bawaan) => {
 const tulisLokal = (kunci, nilai) => {
   try { localStorage.setItem(kunci, String(nilai)); } catch { /* abaikan */ }
 };
+// Kunci baru (v2) supaya nilai lama "23" yang sempat tersimpan di browser tidak terbawa.
+const KUNCI_HARI_MULAI = "selma-gaji-hari-mulai-v2";
+const HARI_MULAI_BAWAAN = "24";
 const TIPE_PERIODE_VALID = ["bulan", "tanggal", "rentang", "siklus", "mingguan"];
 const bacaTipePeriode = () => {
   const t = bacaLokal("selma-gaji-tipe-periode", "bulan");
@@ -191,8 +195,8 @@ export default function Penggajian({ session, master, showToast }) {
   const [tglGajian, setTglGajian] = useState(hariIni()); // akhir periode mingguan (hari gajian)
   const [mulaiManual, setMulaiManual] = useState(null); // null = mulai otomatis
   const [bulanSiklus, setBulanSiklus] = useState(hariIni().slice(0, 7)); // bulan tempat siklus BERAKHIR
-  const [hariMulai, setHariMulaiState] = useState(() => bacaLokal("selma-gaji-hari-mulai", "23"));
-  const setHariMulai = (v) => { setHariMulaiState(v); tulisLokal("selma-gaji-hari-mulai", v); };
+  const [hariMulai, setHariMulaiState] = useState(() => bacaLokal(KUNCI_HARI_MULAI, HARI_MULAI_BAWAAN));
+  const setHariMulai = (v) => { setHariMulaiState(v); tulisLokal(KUNCI_HARI_MULAI, v); };
   const [bulan, setBulan] = useState(hariIni().slice(0, 7));
   const [tanggal, setTanggal] = useState(hariIni());
   const [dari, setDari] = useState(hariIni().slice(0, 8) + "01");
@@ -302,7 +306,7 @@ export default function Penggajian({ session, master, showToast }) {
   useEffect(() => { setEdit({}); }, [periode]);
 
   // Tombol "Siapkan gaji" / "Pakai periode ini" di pengingat gajian (PengingatGaji.jsx) memilihkan
-  // periodenya: Sabtu/Minggu -> mingguan berakhir hari ini; tanggal 23 -> siklus 23 s/d 22.
+  // periodenya: Sabtu/Minggu -> mingguan berakhir hari ini; tanggal 23 -> siklus 24 s/d 23.
   useEffect(() => {
     const dengar = (e) => {
       const p = e.detail || {};
@@ -312,7 +316,7 @@ export default function Penggajian({ session, master, showToast }) {
       } else if (p.tipe === "bulanan") {
         setTipePeriode("siklus");
         if (p.bulan) setBulanSiklus(p.bulan);
-        setHariMulai("23");
+        setHariMulai(HARI_MULAI_BAWAAN);
       } else {
         return;
       }

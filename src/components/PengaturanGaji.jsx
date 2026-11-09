@@ -121,7 +121,7 @@ export default function PengaturanGaji({ pw, ent, karyawan, readOnly, showToast,
         <p className="text-sm font-medium text-md-on-surface">Jadwal gajian</p>
         <p>• <b>Harian</b>: dibayar mingguan, tiap Sabtu atau Minggu (gaji pokok per hari masuk).</p>
         <p>• <b>Lembur</b> dibayar langsung di hari itu, tidak lewat penggajian.</p>
-        <p>• <b>Bulanan</b>: dibayar tiap tanggal 23 (periode 23 bulan lalu s/d 22 bulan ini).</p>
+        <p>• <b>Bulanan</b>: dibayar tiap tanggal 23 (periode 24 bulan lalu s/d 23 bulan ini).</p>
         <p>• <b>Premi kehadiran</b> dan <b>premi jabatan</b> dibayar sebulan sekali, ikut gajian tanggal 23, untuk karyawan harian maupun bulanan. Premi kehadiran hanya untuk yang masuk penuh sebulan.</p>
         <p>• Premi jabatan hanya untuk karyawan tertentu: biarkan kosong/0 untuk yang tidak mendapatkannya.</p>
       </div>
@@ -211,7 +211,7 @@ export default function PengaturanGaji({ pw, ent, karyawan, readOnly, showToast,
         <p>• Harian, gajian mingguan: gaji pokok = tarif × jumlah hari masuk. Premi tidak ikut.</p>
         <p>• Harian, gajian tanggal 23: hanya premi jabatan dan premi kehadiran. Gaji pokok sudah dibayar per minggu.</p>
         <p>• Bulanan: gaji pokok = tarif − (tarif ÷ pembagi hari × jumlah hari Tanpa Keterangan). Sakit dan izin tidak dipotong.</p>
-        <p>• Premi kehadiran hanya dibayar jika masuk penuh setiap hari selama periode 23 s/d 22 (sebulan), tidak pernah telat, dan tanpa Sakit, Izin, atau Tanpa Keterangan. Berlaku juga untuk karyawan harian yang gajiannya mingguan. Hari Libur yang dicatat admin tidak mengurangi.</p>
+        <p>• Premi kehadiran hanya dibayar jika masuk penuh setiap hari selama periode 24 s/d 23 (sebulan), tidak pernah telat, dan tanpa Sakit, Izin, atau Tanpa Keterangan. Berlaku juga untuk karyawan harian yang gajiannya mingguan. Hari Libur yang dicatat admin tidak mengurangi.</p>
         <p>• Premi jabatan dibayar penuh bagi karyawan yang nilainya diisi, tidak tergantung absensi.</p>
         <p>• Lembur dibayar langsung di hari itu, jadi tidak masuk hitungan otomatis. Kolom Bonus di Siapkan Gaji tetap bisa diisi manual untuk bonus lain.</p>
         <p>• Karyawan bulanan di periode yang bukan satu bulan penuh: tarif dan premi dihitung sebanding jumlah hari ÷ pembagi hari.</p>

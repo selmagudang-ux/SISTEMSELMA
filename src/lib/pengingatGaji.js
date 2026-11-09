@@ -9,6 +9,8 @@
 // =========================================================
 
 export const TANGGAL_GAJIAN_BULANAN = 23;
+// Siklus gaji mulai tanggal 24 bulan lalu, berakhir tanggal 23 (hari gajian ikut dihitung).
+export const HARI_MULAI_SIKLUS = 24;
 const NAMA_HARI = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
@@ -29,8 +31,8 @@ function tambahHari(iso, n) {
 export const hariDalamMinggu = (iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
 
 // Siklus gaji bulanan yang BERAKHIR di bulan `bulan` ("2026-11") dengan tanggal mulai `hariMulai`:
-// 23 Okt s/d 22 Nov => "2026-10-23_2026-11-22". Sama dengan periodeSiklus() di Penggajian.jsx.
-export function periodeSiklus(bulan, hariMulai = TANGGAL_GAJIAN_BULANAN) {
+// 24 Okt s/d 23 Nov => "2026-10-24_2026-11-23". Sama dengan periodeSiklus() di Penggajian.jsx.
+export function periodeSiklus(bulan, hariMulai = HARI_MULAI_SIKLUS) {
   const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(bulan || "");
   const h = Number(hariMulai);
   if (!m || !Number.isInteger(h) || h < 2 || h > 28) return "";
