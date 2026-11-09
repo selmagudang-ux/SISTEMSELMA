@@ -48,6 +48,8 @@ import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HAR
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
 import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, DetailKelompokModal, GrafikArusKas, LaporanLabaRugi } from "./Keuangan";
 import { isEntriTokoOffline } from "./TokoOffline";
+import { useRekapKasir, useTanggalMulaiKasir, hariIniWib, tambahHari, barangTerlaris } from "./kasir/kasirLaporan";
+import { getSession } from "../lib/auth";
 import { RingkasanGrup } from "./Holding";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
@@ -2566,10 +2568,54 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
   // (omset + jumlah entri Hari Ini / periode terpilih / Tahun terpilih),
   // dari keuangan_transaksi yang ditandai isEntriTokoOffline (lihat
   // pages/TokoOffline.jsx).
-  const laporanTokoOfflineHarian = ringkasanTokoOffline(keuanganTransaksi, hariIniStr, hariIniStr);
-  const laporanTokoOfflineBulanan = ringkasanTokoOffline(keuanganTransaksi, periodeDari, periodeSampai);
-  const laporanTokoOfflineTahunan = ringkasanTokoOffline(keuanganTransaksi, awalTahunTerpilih, akhirTahunTerpilih);
-  const riwayatHarianTO = riwayatHarianTokoOffline(keuanganTransaksi, 10);
+  //
+  // Sejak Fase 6 sumber utamanya KASIR (tabel kasir_transaksi/kasir_item/kasir_pembayaran), bukan lagi input
+  // harian manual. Input manual lama (baris keuangan "Toko Offline ·") hanya dihitung untuk tanggal SEBELUM
+  // transaksi kasir pertama, supaya tidak terhitung dobel dengan baris Keuangan yang ditulis kasir sendiri.
+  // Data kasir ditarik hanya saat tab "Laporan Toko Offline" dibuka (hemat egress):
+  //  - rekapTahun   : omzet per hari setahun (kolom ringan, tanpa barang/pembayaran) -> kartu Bulan & Tahun
+  //  - rekapRiwayat : 14 hari terakhir + pembayaran -> kartu Hari Ini & Riwayat Harian (Cash/Cashless)
+  //  - rekapBulan   : bulan terpilih + barang -> Barang Terlaris & Per Kasir
+  const hariWib = hariIniWib();
+  const aktifTO = tabStoreSelma === "toko-offline";
+  const sesiKasir = getSession();
+  const mulaiKasir = useTanggalMulaiKasir(aktifTO);
+  const tanggalMulai = mulaiKasir.tanggal; // null = kasir belum pernah dipakai
+  const aktifKasir = aktifTO && mulaiKasir.siap && !!tanggalMulai;
+  const rekapTahun = useRekapKasir({ session: sesiKasir, dari: awalTahunTerpilih, sampai: akhirTahunTerpilih, denganItem: false, denganBayar: false, ringan: true }, aktifKasir);
+  const rekapRiwayat = useRekapKasir({ session: sesiKasir, dari: tambahHari(hariWib, -13), sampai: hariWib, denganItem: false, denganBayar: true }, aktifKasir);
+  const rekapBulan = useRekapKasir({ session: sesiKasir, dari: periodeDari, sampai: periodeSampai, denganItem: true, denganBayar: false }, aktifKasir);
+  const memuatKasir = aktifKasir && (rekapTahun.memuat || rekapRiwayat.memuat || rekapBulan.memuat);
+  const errorKasir = rekapTahun.error || rekapRiwayat.error || rekapBulan.error;
+
+  // Omzet toko offline untuk rentang [dari, sampai] = input manual lama (sebelum kasir) + omzet bersih kasir.
+  const ringkasanTO = (rekap, dari, sampai) => {
+    const batasLama = tanggalMulai ? tambahHari(tanggalMulai, -1) : sampai;
+    const sampaiLama = sampai < batasLama ? sampai : batasLama;
+    const lama = dari <= sampaiLama ? ringkasanTokoOffline(keuanganTransaksi, dari, sampaiLama) : { omset: 0 };
+    const dariKasir = tanggalMulai && dari < tanggalMulai ? tanggalMulai : dari;
+    const hari = tanggalMulai && dariKasir <= sampai ? (rekap.data?.harian || []).filter((h) => h.tanggal >= dariKasir && h.tanggal <= sampai) : [];
+    return {
+      omset: lama.omset + hari.reduce((a, h) => a + h.bersih, 0),
+      jumlahEntri: hari.reduce((a, h) => a + h.jumlah, 0),
+    };
+  };
+  const laporanTokoOfflineHarian = ringkasanTO(rekapRiwayat, hariWib, hariWib);
+  const laporanTokoOfflineBulanan = ringkasanTO(rekapTahun, periodeDari, periodeSampai);
+  const laporanTokoOfflineTahunan = ringkasanTO(rekapTahun, awalTahunTerpilih, akhirTahunTerpilih);
+
+  // Riwayat harian: baris input manual lama (sebelum kasir) digabung dengan baris kasir (mulai hari pertama kasir).
+  const riwayatHarianTO = (() => {
+    const lama = riwayatHarianTokoOffline(keuanganTransaksi, 400)
+      .filter((r) => !tanggalMulai || r.tanggal < tanggalMulai)
+      .map((r) => ({ tanggal: r.tanggal, cash: r.cash, cashless: r.cashless, retur: 0, total: r.cash + r.cashless, jumlahTrx: null }));
+    const kasir = (rekapRiwayat.data?.harian || [])
+      .filter((h) => tanggalMulai && h.tanggal >= tanggalMulai)
+      .map((h) => ({ tanggal: h.tanggal, cash: h.cash, cashless: h.cashless, retur: h.retur, total: h.bersih, jumlahTrx: h.jumlah }));
+    return [...kasir, ...lama].sort((a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0)).slice(0, 10);
+  })();
+  const terlarisBulan = barangTerlaris(rekapBulan.data?.perProduk, { urut: "qty", batas: 5 });
+  const perKasirBulan = (rekapBulan.data?.perKasir || []).slice(0, 5);
 
   // Daftar semua toko marketplace (Shopee/TikTok/Lazada digabung) — dipakai
   // di kartu "Marketplace" pada Dashboard Penjualan supaya nama toko +
@@ -3307,12 +3353,13 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
           <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
             <div className="text-sm font-semibold flex items-center gap-2">
               <LayoutGrid size={14} className="text-amber-400" /> Laporan Toko Offline
+              {memuatKasir && <span className="text-[11px] font-normal text-slate-500">memuat data kasir…</span>}
             </div>
             <button
               onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
               className="text-[11px] font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
             >
-              Buka Toko Offline <ArrowRight size={11} />
+              Buka Rekap Kasir <ArrowRight size={11} />
             </button>
           </div>
           <div className="p-4">
@@ -3323,8 +3370,14 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
               harian={laporanTokoOfflineHarian}
               bulanan={laporanTokoOfflineBulanan}
               tahunan={laporanTokoOfflineTahunan}
-              satuanLabel=""
+              satuanLabel={tanggalMulai ? "transaksi kasir" : ""}
             />
+            {errorKasir && <div className="mt-3 text-[11px] text-red-300">Data kasir gagal dimuat: {errorKasir}</div>}
+            {tanggalMulai && (
+              <div className="mt-3 text-[11px] text-slate-500">
+                Omzet bersih (setelah retur, tanpa transaksi void) dari kasir mulai {formatTanggalID(tanggalMulai)}; sebelum itu dari input harian manual lama.
+              </div>
+            )}
           </div>
         </div>
 
@@ -3335,12 +3388,12 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
               onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
               className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
             >
-              Lihat Semua Riwayat →
+              Lihat Rekap Lengkap →
             </button>
           </div>
           {riwayatHarianTO.length === 0 ? (
             <div className="p-6">
-              <EmptyState label="Belum ada input harian toko offline." />
+              <EmptyState label="Belum ada penjualan toko offline." />
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -3349,22 +3402,92 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
                   <th className="px-4 py-2.5 font-medium">Tanggal</th>
                   <th className="px-4 py-2.5 font-medium text-right">Cash</th>
                   <th className="px-4 py-2.5 font-medium text-right">Cashless</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Retur</th>
                   <th className="px-4 py-2.5 font-medium text-right">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {riwayatHarianTO.map((r) => (
                   <tr key={r.tanggal} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2.5 whitespace-nowrap">{formatTanggalID(r.tanggal)}</td>
+                    <td className="px-4 py-2.5 whitespace-nowrap">
+                      {formatTanggalID(r.tanggal)}
+                      {r.jumlahTrx != null && <span className="ml-2 text-[11px] text-slate-500">{r.jumlahTrx} trx</span>}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.cash)}</td>
                     <td className="px-4 py-2.5 text-right text-slate-300">{fmtRp(r.cashless)}</td>
-                    <td className="px-4 py-2.5 text-right font-medium text-amber-400">{fmtRp(r.cash + r.cashless)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-500">{r.retur ? fmtRp(r.retur) : "—"}</td>
+                    <td className="px-4 py-2.5 text-right font-medium text-amber-400">{fmtRp(r.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </div>
+
+        {tanggalMulai && (
+          <div className="grid lg:grid-cols-2 gap-4 mb-8">
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Barang Terlaris — {periodeLabel}</div>
+                <button
+                  onClick={() => onNavigate && onNavigate("toko-offline", "input-harian")}
+                  className="text-[11px] font-medium text-sky-400 hover:text-sky-300"
+                >
+                  Selengkapnya →
+                </button>
+              </div>
+              {terlarisBulan.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState label={rekapBulan.memuat ? "Memuat…" : "Belum ada barang terjual di periode ini."} />
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {terlarisBulan.map((p, i) => (
+                      <tr key={`${p.sku}|${p.nama}`} className="border-b border-slate-800/60 last:border-0">
+                        <td className="pl-4 pr-2 py-2.5 text-xs text-slate-500 w-8">#{i + 1}</td>
+                        <td className="px-2 py-2.5">
+                          <div className="font-medium">{p.sku || p.nama}</div>
+                          {p.sku && <div className="text-[11px] text-slate-500 truncate max-w-[220px]">{p.nama}</div>}
+                        </td>
+                        <td className="px-2 py-2.5 text-right text-slate-300 whitespace-nowrap">{p.qty} pcs</td>
+                        <td className="pl-2 pr-4 py-2.5 text-right font-medium text-amber-400 whitespace-nowrap">{fmtRp(p.nilai)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-800 overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold">Per Kasir — {periodeLabel}</div>
+              {perKasirBulan.length === 0 ? (
+                <div className="p-6">
+                  <EmptyState label={rekapBulan.memuat ? "Memuat…" : "Belum ada transaksi kasir di periode ini."} />
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-slate-500 border-b border-slate-800">
+                      <th className="px-4 py-2.5 font-medium">Kasir</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Trx</th>
+                      <th className="px-4 py-2.5 font-medium text-right">Omzet Bersih</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {perKasirBulan.map((k) => (
+                      <tr key={k.kasirId} className="border-b border-slate-800/60 last:border-0">
+                        <td className="px-4 py-2.5">{k.nama}</td>
+                        <td className="px-4 py-2.5 text-right text-slate-300">{k.jumlah}</td>
+                        <td className="px-4 py-2.5 text-right font-medium text-amber-400">{fmtRp(k.bersih)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
         </>
       )}
 
