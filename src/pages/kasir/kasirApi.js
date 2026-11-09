@@ -85,8 +85,8 @@ export function buatKunci() {
 // Simpan transaksi lewat fungsi database kasir_simpan_transaksi (satu transaksi
 // atomik: stok, rak, riwayat stok, keuangan). Angka final dihitung ulang & diperiksa
 // di database; kalau tidak cocok, seluruh transaksi dibatalkan.
-export async function simpanTransaksiKasir({ session, items, diskonTransaksi, hitungBayar, keuangan, catatan, kunci }) {
-  const payload = {
+export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, keuangan, catatan, kunci }) {
+  return {
     entitas: entitasSesi(),
     kunci,
     kasir_id: String(session?.id ?? ""),
@@ -110,7 +110,16 @@ export async function simpanTransaksiKasir({ session, items, diskonTransaksi, hi
       kategori: keuangan[p.metode].kategori,
     })),
   };
-  return sb("rpc/kasir_simpan_transaksi", { method: "POST", body: JSON.stringify({ p: payload }) });
+}
+
+// Kirim payload yang sudah jadi. Dipakai jalur online (di bawah) DAN pengiriman ulang antrian
+// offline (kasirOffline.js) — keduanya membawa `kunci` yang sama, jadi tidak pernah tersimpan dobel.
+export function kirimPayload(payload, { timeoutMs } = {}) {
+  return sb("rpc/kasir_simpan_transaksi", { method: "POST", body: JSON.stringify({ p: payload }), ...(timeoutMs ? { timeoutMs } : {}) });
+}
+
+export async function simpanTransaksiKasir(args, opsi = {}) {
+  return kirimPayload(bangunPayload(args), opsi);
 }
 
 // Ubah pesan error teknis dari database jadi kalimat untuk kasir.
@@ -262,7 +271,8 @@ const rpc = (nama, payload) => sb(`rpc/${nama}`, { method: "POST", body: JSON.st
 
 // ---------- shift ----------
 export async function muatShiftAktif(session) {
-  const rows = await sb(`kasir_shift?select=*&kasir_id=eq.${encodeURIComponent(String(session.id))}&status=eq.buka&limit=1`);
+  // timeoutMs pendek: kalau internet putus, kasir tidak menunggu lama sebelum memakai shift yang tersimpan di perangkat.
+  const rows = await sb(`kasir_shift?select=*&kasir_id=eq.${encodeURIComponent(String(session.id))}&status=eq.buka&limit=1`, { timeoutMs: 10000 });
   return rows?.[0] || null;
 }
 

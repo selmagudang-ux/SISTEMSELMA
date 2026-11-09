@@ -6,6 +6,18 @@ import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitu
 import { muatPromoKasir, petaPromoAktif, hargaSetelahPromo, labelDiskon, tglPendek } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
+import {
+  useStatusKasir,
+  statusSekarang,
+  simpanCacheEnt,
+  bacaCacheEnt,
+  qtyDiAntrian,
+  adalahGalatJaringan,
+  tandaiOnline,
+  tandaiOffline,
+  padaTersinkron,
+  hangatkanCache,
+} from "./kasirOffline";
 
 // =========================================================
 // KASIR — LAYAR KASIR INTI (fase 2)
@@ -32,6 +44,7 @@ const dariToko = (r) => ({
   foto: r.foto_url,
 });
 const MAKS_HASIL = 40;
+const tglPendekJam = (ms) => new Date(ms).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 function kunciSimpan(session) {
   return `kasir_keranjang_${session?.id ?? "x"}`;
@@ -124,6 +137,9 @@ export default function LayarKasir({ session, versiData = 0 }) {
   const [promoMap, setPromoMap] = useState(() => new Map());
   const [loading, setLoading] = useState(true);
   const [errMuat, setErrMuat] = useState("");
+  // Data barang berasal dari salinan di perangkat (internet putus). waktu = kapan salinan itu dibuat.
+  const [dariCache, setDariCache] = useState(null);
+  const statusKoneksi = useStatusKasir();
   const [q, setQ] = useState("");
   const [items, setItems] = useState(() => bacaSimpan(session).items);
   const [diskonTrx, setDiskonTrx] = useState(() => bacaSimpan(session).diskonTrx);
@@ -149,19 +165,15 @@ export default function LayarKasir({ session, versiData = 0 }) {
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   const terakhirMuat = useRef(0);
-  // diam = true: muat ulang di latar belakang (tanpa spinner / pesan galat), dipakai sinkronisasi otomatis.
-  const muat = useCallback(async (diam = false) => {
-    if (!diam) {
-      setLoading(true);
-      setErrMuat("");
-    }
-    try {
-      const [rowsToko, rowsPromo] = await Promise.all([
-        sbAll(`master_toko?select=${KOLOM}&order=kode`),
-        muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
-      ]);
-      const rows = (rowsToko || []).map(dariToko);
-      terakhirMuat.current = Date.now();
+  // Terapkan daftar barang + promo (dari server ATAU dari salinan di perangkat) ke layar.
+  // Stok dikurangi penjualan yang masih antri (belum terkirim ke server) supaya barang yang sama
+  // tidak terjual melebihi stok saat offline.
+  const terapkan = useCallback(
+    async (rowsToko, rowsPromo) => {
+      const antri = await qtyDiAntrian();
+      const rows = (rowsToko || [])
+        .map(dariToko)
+        .map((r) => (antri.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - antri.get(r.sku)) } : r));
       setSkuList(rows.filter((s) => !s.nonaktif));
       // Kalau promo gagal dimuat, pakai promo terakhir yang berhasil dimuat (jangan hilang mendadak).
       const peta = rowsPromo ? petaPromoAktif(rowsPromo, new Map(rows.map((s) => [s.sku, { harga: Number(s.ecer) || 0, kategori: s.kategori }]))) : promoRef.current;
@@ -172,12 +184,55 @@ export default function LayarKasir({ session, versiData = 0 }) {
         setItems(baru);
         tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`);
       }
+    },
+    [tampilToast]
+  );
+
+  // diam = true: muat ulang di latar belakang (tanpa spinner / pesan galat), dipakai sinkronisasi otomatis.
+  // Saat status offline, muat diam-diam langsung memakai salinan di perangkat (tidak menunggu jaringan).
+  const muat = useCallback(async (diam = false) => {
+    if (!diam) {
+      setLoading(true);
+      setErrMuat("");
+    }
+    try {
+      if (diam && statusSekarang().offline) {
+        const c = await bacaCacheEnt("master_toko");
+        if (c) {
+          const p = await bacaCacheEnt("promo");
+          await terapkan(c.data, p?.data ?? null);
+          setDariCache({ waktu: c.waktu });
+          return;
+        }
+      }
+      const [rowsToko, rowsPromo] = await Promise.all([
+        sbAll(`master_toko?select=${KOLOM}&order=kode`),
+        muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
+      ]);
+      terakhirMuat.current = Date.now();
+      tandaiOnline();
+      setDariCache(null);
+      simpanCacheEnt("master_toko", rowsToko || []);
+      if (rowsPromo) simpanCacheEnt("promo", rowsPromo);
+      await terapkan(rowsToko, rowsPromo);
     } catch (e) {
+      if (adalahGalatJaringan(e)) {
+        tandaiOffline();
+        const c = await bacaCacheEnt("master_toko");
+        if (c) {
+          const p = await bacaCacheEnt("promo");
+          await terapkan(c.data, p?.data ?? null);
+          setDariCache({ waktu: c.waktu });
+          return;
+        }
+        if (!diam) setErrMuat("Tidak ada koneksi dan daftar barang belum tersimpan di perangkat ini. Sambungkan internet sekali untuk memuat barang.");
+        return;
+      }
       if (!diam) setErrMuat(e.message || "Gagal memuat daftar barang");
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [tampilToast]);
+  }, [terapkan]);
   useEffect(() => {
     muat();
   }, [muat, versiData]);
@@ -200,6 +255,29 @@ export default function LayarKasir({ session, versiData = 0 }) {
       window.removeEventListener("focus", saatKembali);
     };
   }, [muat]);
+
+  // Mode offline: (1) siapkan bahan penjualan offline ke perangkat saat online, (2) begitu transaksi antrian
+  // terkirim muat ulang stok dari server, (3) begitu koneksi kembali dari offline muat ulang juga.
+  useEffect(() => {
+    hangatkanCache();
+    const lepas = padaTersinkron(() => muat(true));
+    const tiapMenit = setInterval(() => {
+      if (!statusSekarang().offline) hangatkanCache();
+    }, 5 * 60 * 1000);
+    return () => {
+      lepas();
+      clearInterval(tiapMenit);
+    };
+  }, [muat]);
+  const pernahOffline = useRef(false);
+  useEffect(() => {
+    if (statusKoneksi.offline) pernahOffline.current = true;
+    else if (pernahOffline.current) {
+      pernahOffline.current = false;
+      muat(true);
+      hangatkanCache({ paksa: true });
+    }
+  }, [statusKoneksi.offline, muat]);
 
   // Keranjang bertahan kalau halaman di-refresh (hilang saat tab ditutup / logout).
   useEffect(() => {
@@ -343,7 +421,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
     setDiskonTrx({ tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
-    muat();
+    muat(true);
   };
 
   const ringkas = hitungKeranjang(items, diskonTrx);
@@ -386,6 +464,14 @@ export default function LayarKasir({ session, versiData = 0 }) {
           </button>
         </div>
 
+        {dariCache && (
+          <div className="mt-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs px-3 py-2 rounded-lg">
+            <AlertCircle size={14} className="flex-shrink-0" />
+            <span>
+              Memakai data barang yang tersimpan di perangkat (terakhir diperbarui {tglPendekJam(dariCache.waktu)}). Stok dihitung dari penjualan di perangkat ini.
+            </span>
+          </div>
+        )}
         {errMuat && (
           <div className="mt-3 flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
             <AlertCircle size={14} className="flex-shrink-0" /> {errMuat}

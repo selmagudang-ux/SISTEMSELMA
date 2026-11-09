@@ -3,7 +3,17 @@ import { X, Loader2, AlertCircle, CheckCircle2, Banknote, Landmark, QrCode, Spli
 import { fmtRp } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import { hitungPembayaran, saranUang, hitungItem } from "./kasirHitung";
-import { muatMaster, siapkanKeuangan, simpanTransaksiKasir, pesanErrorKasir } from "./kasirApi";
+import { bangunPayload, simpanTransaksiKasir, pesanErrorKasir } from "./kasirApi";
+import {
+  muatMasterAman,
+  siapkanKeuanganAman,
+  antrikanTransaksi,
+  adalahGalatJaringan,
+  statusSekarang,
+  tandaiOnline,
+  tandaiOffline,
+  TIMEOUT_TRANSAKSI_MS,
+} from "./kasirOffline";
 import { susunStruk, identitasStruk } from "./kasirStruk";
 import ModalStruk from "./StrukKasir";
 import { bukaLaciKalauDesktop } from "./kasirLaci";
@@ -44,8 +54,9 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
 
   useEffect(() => {
     let batal = false;
-    muatMaster()
-      .then((m) => !batal && setMaster(m))
+    // Jatuh ke data rekening yang tersimpan di perangkat kalau internet putus (mode offline).
+    muatMasterAman()
+      .then(({ master: m }) => !batal && setMaster(m))
       .catch((e) => !batal && setErrMaster(e.message || "Gagal memuat data rekening"));
     return () => {
       batal = true;
@@ -67,11 +78,36 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
     setSaving(true);
     setError("");
     try {
-      const keuangan = await siapkanKeuangan(
-        master,
-        hb.pembayaran.map((p) => p.metode)
-      );
-      const res = await simpanTransaksiKasir({ session, items, diskonTransaksi, hitungBayar: hb, keuangan, catatan, kunci });
+      const metodeList = hb.pembayaran.map((p) => p.metode);
+      const args = { session, items, diskonTransaksi, hitungBayar: hb, keuangan: null, catatan, kunci };
+      // Offline (atau koneksi gagal saat menyimpan): transaksi masuk antrian di perangkat dan dikirim
+      // otomatis nanti. Kunci yang sama dipakai jalur online & antrian, jadi tidak bisa tersimpan dobel.
+      const antri = (keuangan) =>
+        antrikanTransaksi({
+          payload: bangunPayload({ ...args, keuangan }),
+          ringkas: {
+            total,
+            bayar: hb.bayar,
+            kembalian: hb.kembalian,
+            jumlahItem: items.length,
+            metode: [...new Set(metodeList)],
+          },
+        });
+      const offlineSekarang = statusSekarang().offline;
+      const keuangan = await siapkanKeuanganAman(master, metodeList, { offline: offlineSekarang });
+      let res;
+      if (offlineSekarang) {
+        res = await antri(keuangan);
+      } else {
+        try {
+          res = await simpanTransaksiKasir({ ...args, keuangan }, { timeoutMs: TIMEOUT_TRANSAKSI_MS });
+          tandaiOnline();
+        } catch (e) {
+          if (!adalahGalatJaringan(e)) throw e;
+          tandaiOffline();
+          res = await antri(keuangan);
+        }
+      }
       // Snapshot struk SEBELUM onSukses: setelah itu LayarKasir mengosongkan keranjang,
       // sehingga prop `items` di sini ikut menjadi kosong.
       setStruk(
@@ -115,7 +151,12 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
           <div className="p-7 text-center">
             <CheckCircle2 size={52} className="mx-auto text-emerald-400 mb-2" />
             <div className="font-bold text-lg">{hasil.duplikat ? "Transaksi sudah tersimpan" : "Pembayaran berhasil"}</div>
-            <div className="text-xs text-slate-500 font-mono mt-0.5">{hasil.nomor}</div>
+            <div className="text-xs text-slate-500 font-mono mt-0.5">{hasil.antri ? `Nomor sementara ${hasil.nomor}` : hasil.nomor}</div>
+            {hasil.antri && (
+              <div className="mt-3 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 text-left">
+                Tersimpan di perangkat ini (offline). Belum masuk ke server — akan terkirim otomatis begitu internet kembali. Struk boleh dicetak seperti biasa.
+              </div>
+            )}
             <div className="mt-4 space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-slate-400">Total</span><span className="font-semibold">{fmtRp(hasil.total)}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Dibayar</span><span>{fmtRp(hasil.bayar)}</span></div>

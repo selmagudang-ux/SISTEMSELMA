@@ -312,7 +312,7 @@ export async function sb(path, opts = {}) {
       ...(method === "GET" ? {} : headerAktor()),
       ...(opts.headers || {}),
     },
-  }, method === "GET" ? TIMEOUT_BACA_MS : TIMEOUT_TULIS_MS, method);
+  }, opts.timeoutMs || (method === "GET" ? TIMEOUT_BACA_MS : TIMEOUT_TULIS_MS), method);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let parsed = null;

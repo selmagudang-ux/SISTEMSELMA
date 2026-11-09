@@ -63,5 +63,13 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
+// Mode offline kasir: service worker membuat halaman /kasir bisa dibuka tanpa internet
+// (lihat public/sw.js). Hanya didaftarkan dari halaman kasir & hanya di build produksi.
+if (adalahKasir && import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
 // Aplikasi berhasil tampil -> izinkan reload otomatis lagi untuk update berikutnya.
 setTimeout(bersihkanFlagReload, 10000);

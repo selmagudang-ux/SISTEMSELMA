@@ -13,6 +13,18 @@ import { LayarBukaShift, ModalTutupShift } from "./ShiftKasir";
 import { muatShiftAktif } from "./kasirApi";
 import { tglJamId } from "./kasirStruk";
 import { bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_KASIR } from "./kasirLaci";
+import {
+  mulaiPenjadwal,
+  adalahGalatJaringan,
+  tandaiOffline,
+  tandaiOnline,
+  simpanCacheEnt,
+  bacaCacheEnt,
+  hapusCacheEnt,
+  jumlahBelumTerkirim,
+  kirimAntrian,
+} from "./kasirOffline";
+import { ChipKoneksi, BannerOffline, PanelAntrian } from "./StatusOffline";
 
 // =========================================================
 // KASIR (POS) — pintu masuk aplikasi kasir di alamat /kasir.
@@ -43,6 +55,12 @@ export default function KasirApp() {
   const [shift, setShift] = useState(undefined);
   const [errShift, setErrShift] = useState("");
   const [tutupBuka, setTutupBuka] = useState(false);
+  const [antrianBuka, setAntrianBuka] = useState(false);
+
+  // Mode offline: pengirim ulang transaksi antrian berjalan selama halaman kasir terbuka.
+  useEffect(() => {
+    mulaiPenjadwal();
+  }, []);
 
   const idSesi = session?.id;
   // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
@@ -55,9 +73,20 @@ export default function KasirApp() {
     }
     let batal = false;
     setAksesSiap(false);
-    sb("master_data?tipe=eq.role_akses&select=kode,label")
-      .then((rows) => setAksesRole(Array.isArray(rows) ? rows : []))
-      .catch(() => setAksesRole([])) // gagal muat -> pakai aturan bawaan
+    sb("master_data?tipe=eq.role_akses&select=kode,label", { timeoutMs: 10000 })
+      .then((rows) => {
+        const daftar = Array.isArray(rows) ? rows : [];
+        simpanCacheEnt("role_akses", daftar);
+        setAksesRole(daftar);
+      })
+      .catch(async (e) => {
+        // Offline: pakai hak akses yang terakhir tersimpan; tidak ada -> aturan bawaan.
+        if (adalahGalatJaringan(e)) {
+          tandaiOffline();
+          const c = await bacaCacheEnt("role_akses");
+          setAksesRole(Array.isArray(c?.data) ? c.data : []);
+        } else setAksesRole([]); // gagal muat -> pakai aturan bawaan
+      })
       .finally(() => !batal && setAksesSiap(true));
     return () => {
       batal = true;
@@ -70,10 +99,30 @@ export default function KasirApp() {
     let batal = false;
     setShift(undefined);
     setErrShift("");
+    const kunciShift = `shift:${session.id}`;
     muatShiftAktif(session)
-      .then((s) => !batal && setShift(s))
-      .catch((e) => {
+      .then((s) => {
+        tandaiOnline();
+        // Shift yang sedang buka disalin ke perangkat, supaya setelah halaman dimuat ulang saat offline
+        // kasir tetap bisa berjualan di shift yang sama.
+        if (s) simpanCacheEnt(kunciShift, s);
+        else hapusCacheEnt(kunciShift);
+        if (!batal) setShift(s);
+      })
+      .catch(async (e) => {
         if (batal) return;
+        if (adalahGalatJaringan(e)) {
+          tandaiOffline();
+          const c = await bacaCacheEnt(kunciShift);
+          if (batal) return;
+          if (c?.data) {
+            setShift(c.data);
+            return;
+          }
+          setErrShift("Tidak ada koneksi dan belum ada shift yang tersimpan di perangkat ini. Buka kasir butuh internet.");
+          setShift(null);
+          return;
+        }
         setErrShift(e.message || "Gagal memeriksa shift");
         setShift(null);
       });
@@ -83,11 +132,34 @@ export default function KasirApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idSesi, bolehKasir]);
 
+  // Shift yang baru dibuka langsung disalin ke perangkat (dipakai kalau halaman dimuat ulang saat offline).
+  useEffect(() => {
+    if (shift && session?.id != null) simpanCacheEnt(`shift:${session.id}`, shift);
+  }, [shift, session?.id]);
+
   // Sesi yang dibawa ke layar kasir memuat shiftId (dipakai saat menyimpan transaksi & retur).
   // Dibuat stabil supaya LayarKasir tidak menyimpan ulang keranjang tiap render.
   const sesiKasir = useMemo(() => (session ? { ...session, shiftId: shift?.id ?? null } : session), [session, shift?.id]);
 
-  const keluar = () => {
+  // Tutup Kasir butuh semua transaksi sudah ada di server (kas dihitung dari data server).
+  const mintaTutup = async () => {
+    if ((await jumlahBelumTerkirim()) > 0) {
+      await kirimAntrian({ paksa: true });
+      const sisa = await jumlahBelumTerkirim();
+      if (sisa > 0) {
+        window.alert(
+          `Belum bisa Tutup Kasir: masih ada ${sisa} transaksi yang belum terkirim ke server.\n\nSambungkan internet lalu coba lagi, atau buka daftar antrian (tombol Online/Offline di atas) untuk melihat detailnya.`
+        );
+        setAntrianBuka(true);
+        return;
+      }
+    }
+    setTutupBuka(true);
+  };
+
+  const keluar = async () => {
+    const belum = await jumlahBelumTerkirim();
+    if (belum > 0 && !window.confirm(`Masih ada ${belum} transaksi yang belum terkirim ke server. Transaksi itu tetap tersimpan di perangkat ini dan terkirim saat internet kembali (selama halaman kasir dibuka). Tetap keluar?`)) return;
     if (shift && !window.confirm("Shift kasir masih buka. Keluar sekarang? (Shift tetap buka dan bisa dilanjutkan saat login lagi — gunakan Tutup Kasir untuk mengakhirinya.)")) return;
     logout();
     setSession(null);
@@ -155,6 +227,7 @@ export default function KasirApp() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <ChipKoneksi onBuka={() => setAntrianBuka(true)} />
           <ThemeToggle />
           {!adalahAppDesktop() && (
             <a
@@ -192,7 +265,7 @@ export default function KasirApp() {
           )}
           {shift && (
             <button
-              onClick={() => setTutupBuka(true)}
+              onClick={mintaTutup}
               className="flex items-center gap-1.5 text-xs text-slate-950 bg-amber-500 hover:bg-amber-400 font-bold px-3.5 py-2 rounded-xl transition-colors"
             >
               <Lock size={13} /> Tutup Kasir
@@ -213,6 +286,7 @@ export default function KasirApp() {
         </div>
       </header>
 
+      <BannerOffline onBuka={() => setAntrianBuka(true)} />
       {shift === undefined ? (
         <div className="flex-1 flex items-center justify-center text-slate-500">
           <Loader2 className="animate-spin" size={22} />
@@ -236,10 +310,12 @@ export default function KasirApp() {
           onClose={() => setTutupBuka(false)}
           onSelesai={() => {
             setTutupBuka(false);
+            hapusCacheEnt(`shift:${session.id}`);
             setShift(null);
           }}
         />
       )}
+      {antrianBuka && <PanelAntrian onClose={() => setAntrianBuka(false)} />}
       {promoBuka && bisa(session.role, "kasir.promo") && <PromoToko onClose={() => { setPromoBuka(false); setVersiData((v) => v + 1); }} />}
       {barangBuka && bisa(session.role, "kasir.barang_toko") && <BarangToko onClose={() => { setBarangBuka(false); setVersiData((v) => v + 1); }} />}
     </div>
