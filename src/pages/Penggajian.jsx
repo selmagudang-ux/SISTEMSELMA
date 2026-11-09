@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { bisa } from "../lib/constants";
 import QRCode from "qrcode";
-import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download } from "lucide-react";
+import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator } from "lucide-react";
 import {
   PageHeader, EmptyState, Badge, Field, ModalShell, InputRupiah,
   inputClass, btnFilled, btnTonal, btnOutlined, btnText,
@@ -11,6 +11,8 @@ import {
   batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, kodeHoldingPasti,
 } from "../lib/api";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
+import { hitungGajiOtomatis } from "../lib/gajiOtomatis";
+import PengaturanGaji from "../components/PengaturanGaji";
 
 const STATUS_WARNA = { draft: "slate", diserahkan: "amber", diterima: "emerald", batal: "red" };
 const STATUS_LABEL = { draft: "Draft", diserahkan: "Diserahkan", diterima: "Diterima", batal: "Batal" };
@@ -326,6 +328,53 @@ export default function Penggajian({ session, master, showToast }) {
     jalankan(g, () => tandaiGajiDiterimaAdmin(pw, g.id), "Gaji ditandai diterima dan dicatat di Keuangan.");
   };
 
+  // Isi komponen gaji semua karyawan untuk periode terpilih dari data Absensi + tarif di tab
+  // Pengaturan Gaji. Hasilnya masuk ke baris draft di layar (belum disimpan), jadi masih bisa
+  // diperiksa dan diubah dulu. Gaji yang sudah diserahkan/diterima tidak disentuh.
+  const hitungOtomatis = async () => {
+    if (!periode) {
+      showToast?.("Isi periode dengan benar dulu.", "err");
+      return;
+    }
+    setSibuk("hitung");
+    try {
+      const { data, dilewati } = await hitungGajiOtomatis(pw, periode, ent);
+      const bisa = data.filter((h) => {
+        const g = gajiPeriode.get(h.karyawan_id);
+        return !g || g.status === "draft";
+      });
+      const terkunci = data.length - bisa.length;
+      const adaIsian = bisa.some((h) => gajiPeriode.get(h.karyawan_id)?.status === "draft" || totalKomponen(edit[h.karyawan_id]) > 0);
+      if (adaIsian && !window.confirm("Hitung otomatis akan menimpa isian gaji yang sudah ada di layar (termasuk bonus dan catatan) untuk karyawan yang tarifnya sudah diatur. Lanjutkan?")) {
+        return;
+      }
+      setEdit((p) => {
+        const n = { ...p };
+        bisa.forEach((h) => {
+          n[h.karyawan_id] = {
+            gaji_pokok: h.gaji_pokok,
+            premi_jabatan: h.premi_jabatan,
+            premi_kehadiran: h.premi_kehadiran,
+            bonus: h.bonus,
+            catatan: h.catatan || "",
+          };
+        });
+        return n;
+      });
+      const pesan = [`${bisa.length} karyawan terisi otomatis dari absensi. Periksa lalu klik Simpan draft.`];
+      if (terkunci > 0) pesan.push(`${terkunci} dilewati karena gajinya sudah diserahkan/diterima.`);
+      if (dilewati.length > 0) {
+        const nama = dilewati.slice(0, 3).map((d) => peta.get(d.karyawan_id)?.nama || "—").join(", ");
+        pesan.push(`${dilewati.length} belum punya tarif (${nama}${dilewati.length > 3 ? ", ..." : ""}) — atur di tab Pengaturan Gaji.`);
+      }
+      showToast?.(pesan.join(" "));
+    } catch (e) {
+      tanganiError(e, "Gagal menghitung gaji otomatis.");
+    } finally {
+      setSibuk(null);
+    }
+  };
+
   const AksiGaji = ({ g }) => {
     if (readOnly) return null;
     const proses = sibuk === g.id;
@@ -419,6 +468,7 @@ export default function Penggajian({ session, master, showToast }) {
       <div className="flex gap-2 mb-4">
         <button className={tab === "siapkan" ? btnFilled : btnOutlined} onClick={() => setTab("siapkan")}>Siapkan Gaji</button>
         <button className={tab === "riwayat" ? btnFilled : btnOutlined} onClick={() => setTab("riwayat")}>Riwayat</button>
+        <button className={tab === "pengaturan" ? btnFilled : btnOutlined} onClick={() => setTab("pengaturan")}>Pengaturan Gaji</button>
       </div>
 
       {tab === "siapkan" && (
@@ -471,6 +521,18 @@ export default function Penggajian({ session, master, showToast }) {
               </select>
             </Field>
           </div>
+
+          {!readOnly && karyawanAktif.length > 0 && periode && (
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <p className="text-xs text-md-on-surface-variant">
+                Isi gaji pokok, premi, dan bonus otomatis dari absensi {labelPeriode(periode)} dan tarif di tab Pengaturan Gaji.
+              </p>
+              <button className={btnTonal} onClick={hitungOtomatis} disabled={sibuk === "hitung"}>
+                {sibuk === "hitung" ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}
+                Hitung otomatis
+              </button>
+            </div>
+          )}
 
           {karyawanAktif.length === 0 ? (
             <EmptyState label="Belum ada karyawan aktif." />
@@ -554,6 +616,18 @@ export default function Penggajian({ session, master, showToast }) {
             </p>
           )}
         </>
+      )}
+
+      {tab === "pengaturan" && (
+        <PengaturanGaji
+          key={ent}
+          pw={pw}
+          ent={ent}
+          karyawan={karyawanAktif}
+          readOnly={readOnly}
+          showToast={showToast}
+          onError={tanganiError}
+        />
       )}
 
       {tab === "riwayat" && (
