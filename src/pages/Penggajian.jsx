@@ -13,6 +13,7 @@ import {
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
 import { hitungGajiOtomatis } from "../lib/gajiOtomatis";
 import PengaturanGaji from "../components/PengaturanGaji";
+import { EVENT_PILIH_PERIODE_GAJI } from "../components/PengingatGaji";
 
 const STATUS_WARNA = { draft: "slate", diserahkan: "amber", diterima: "emerald", batal: "red" };
 const STATUS_LABEL = { draft: "Draft", diserahkan: "Diserahkan", diterima: "Diterima", batal: "Batal" };
@@ -72,9 +73,11 @@ const bacaTipePeriode = () => {
   const t = bacaLokal("selma-gaji-tipe-periode", "bulan");
   return TIPE_PERIODE_VALID.includes(t) ? t : "bulan";
 };
-// Karyawan bulanan dibayar per siklus bulan, harian dibayar per minggu: tombol Hitung otomatis
-// bawaannya hanya mengisi tipe yang cocok dengan periode, supaya keduanya tidak tercampur.
-const bawaanHitungUntuk = (tipe) => (tipe === "bulan" || tipe === "siklus" ? "bulanan" : tipe === "mingguan" ? "harian" : "semua");
+// Jadwal bayar: karyawan harian dibayar MINGGUAN (gaji pokok + lembur); karyawan bulanan dibayar tiap
+// tanggal 23. Premi jabatan & kehadiran dibayar sebulan sekali (tgl 23) untuk KEDUA tipe — jadi di
+// gajian bulanan karyawan harian ikut dihitung (server hanya mengisi premi mereka, bukan gaji pokok).
+// Gajian mingguan hanya mengisi karyawan harian.
+const bawaanHitungUntuk = (tipe) => (tipe === "mingguan" ? "harian" : "semua");
 const tambahHari = (iso, n) => {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
@@ -279,6 +282,28 @@ export default function Penggajian({ session, master, showToast }) {
 
   useEffect(() => { setEdit({}); }, [periode]);
 
+  // Tombol "Siapkan gaji" / "Pakai periode ini" di pengingat gajian (PengingatGaji.jsx) memilihkan
+  // periodenya: Sabtu/Minggu -> mingguan berakhir hari ini; tanggal 23 -> siklus 23 s/d 22.
+  useEffect(() => {
+    const dengar = (e) => {
+      const p = e.detail || {};
+      if (p.tipe === "mingguan") {
+        setTipePeriode("mingguan");
+        if (p.tglGajian) { setTglGajian(p.tglGajian); setMulaiManual(null); }
+      } else if (p.tipe === "bulanan") {
+        setTipePeriode("siklus");
+        if (p.bulan) setBulanSiklus(p.bulan);
+        setHariMulai("23");
+      } else {
+        return;
+      }
+      setTab("siapkan");
+    };
+    window.addEventListener(EVENT_PILIH_PERIODE_GAJI, dengar);
+    return () => window.removeEventListener(EVENT_PILIH_PERIODE_GAJI, dengar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Gaji aktif (bukan batal) per karyawan untuk periode terpilih.
   const gajiPeriode = useMemo(() => {
     const m = new Map();
@@ -426,7 +451,9 @@ export default function Penggajian({ session, master, showToast }) {
         });
         return n;
       });
-      const pesan = [`${bisa.length} karyawan terisi otomatis dari absensi. Periksa lalu klik Simpan draft.`];
+      const terisi = bisa.filter((h) => totalKomponen(h) > 0).length;
+      const pesan = [`${terisi} karyawan terisi otomatis dari absensi. Periksa lalu klik Simpan draft.`];
+      if (terisi < bisa.length) pesan.push(`${bisa.length - terisi} tanpa nominal di periode ini (tidak masuk, atau karyawan harian tanpa premi di gajian bulanan).`);
       if (terkunci > 0) pesan.push(`${terkunci} dilewati karena gajinya sudah diserahkan/diterima.`);
       if (lainTipe > 0) pesan.push(`${lainTipe} karyawan ${hitungUntuk === "bulanan" ? "harian" : "bulanan"} tidak ikut dihitung.`);
       if (dilewati.length > 0) {
@@ -542,7 +569,7 @@ export default function Penggajian({ session, master, showToast }) {
           <div className="mb-3">
             <div className="text-xs text-md-on-surface-variant mb-1">Periode gaji</div>
             <div className="flex flex-wrap gap-2 mb-2">
-              {[["bulan", "Per bulan"], ["siklus", "Siklus bulanan"], ["mingguan", "Mingguan (harian)"], ["tanggal", "Per tanggal"], ["rentang", "Per rentang tanggal"]].map(([k, l]) => (
+              {[["siklus", "Gajian bulanan (tgl 23)"], ["mingguan", "Gajian mingguan (Sabtu/Minggu)"], ["bulan", "Per bulan kalender"], ["tanggal", "Per tanggal"], ["rentang", "Per rentang tanggal"]].map(([k, l]) => (
                 <button key={k} className={tipePeriode === k ? btnFilled : btnOutlined} onClick={() => setTipePeriode(k)}>{l}</button>
               ))}
             </div>
@@ -630,13 +657,15 @@ export default function Penggajian({ session, master, showToast }) {
           {!readOnly && karyawanAktif.length > 0 && periode && (
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <p className="text-xs text-md-on-surface-variant">
-                Isi gaji pokok, premi, dan bonus otomatis dari absensi {labelPeriode(periode)} dan tarif di tab Pengaturan Gaji.
+                Isi gaji pokok dan premi otomatis dari absensi {labelPeriode(periode)} dan tarif di tab Pengaturan Gaji. Lembur tidak ikut (dibayar langsung di hari itu).
+                {tipePeriode === "mingguan" && " Karyawan harian mendapat gaji pokok saja; premi dibayar bulanan."}
+                {(tipePeriode === "siklus" || tipePeriode === "bulan") && " Karyawan harian hanya mendapat premi (gaji pokok sudah dibayar mingguan)."}
               </p>
               <div className="flex items-center gap-2">
                 <select value={hitungUntuk} onChange={(e) => setHitungUntuk(e.target.value)} className={`${inputClass} w-auto`} aria-label="Hitung untuk">
                   <option value="semua">Semua karyawan</option>
                   <option value="bulanan">Hanya bulanan</option>
-                  <option value="harian">Hanya harian</option>
+                  <option value="harian">Hanya harian (mingguan)</option>
                 </select>
                 <button className={btnTonal} onClick={hitungOtomatis} disabled={sibuk === "hitung"}>
                   {sibuk === "hitung" ? <Loader2 size={16} className="animate-spin" /> : <Calculator size={16} />}

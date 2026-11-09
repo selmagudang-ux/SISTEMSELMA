@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } fro
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, bisa, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import { rippleEffect, iconBtnClass } from "./components/ui";
 import ModalRouter from "./components/ModalRouter";
+import PengingatGaji from "./components/PengingatGaji";
 import Login from "./pages/Login";
 
 // Halaman-halaman di bawah ini di-load "malas" (lazy) — kode & library
@@ -1226,6 +1227,12 @@ function MainApp({ session, onLogout }) {
         loading={loading}
       >
         <main className="px-5 py-6 w-full print:p-0">
+          {/* Pengingat gajian: Sabtu/Minggu (mingguan) dan tanggal 23 (bulanan). Hanya untuk yang boleh mengelola gaji. */}
+          <PengingatGaji
+            bolehKelola={canSee("penggajian") && bisa(session.role, "penggajian.ubah")}
+            menuAktif={nav.menu}
+            onNavigate={navigate}
+          />
           {error && (
             <div className="mb-4 flex items-center gap-2 bg-md-error-container text-md-on-error-container text-sm px-4 py-3 rounded-md-md">
               <AlertCircle size={16} /> {error}
