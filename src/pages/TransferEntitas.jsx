@@ -5,6 +5,7 @@ import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas } from
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
+import { kodeTerima } from "../lib/kodeTransfer";
 
 // =========================================================
 // TRANSFER BARANG ANTAR ENTITAS (stok gudang / sku_master)
@@ -306,8 +307,11 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     }, "Transfer dibuat — menunggu konfirmasi penerima");
 
   // ---------- Penerima: terima ----------
-  const terima = (t, qtyMap, catatan) =>
+  const terima = (t, qtyMap, catatan, kodeInput) =>
     jalankan(async () => {
+      // Penerimaan DITOLAK kalau kode terima (dari surat jalan) tidak ada / salah — dicek di sini,
+      // bukan hanya di form, jadi tidak bisa dilewati.
+      if (!samaKode(kodeInput, kodeTerima(t))) throw new Error("Kode terima dari surat jalan belum dimasukkan atau salah. Barang tidak bisa diterima.");
       // Qty diterima WAJIB diisi untuk setiap SKU (hasil hitung fisik penerima, tidak terisi otomatis).
       if (t.items.some((it) => qtyMap[it.sku] === "" || qtyMap[it.sku] === undefined)) throw new Error("Isi qty diterima untuk semua SKU (isi 0 kalau tidak ada yang datang).");
       const items = t.items.map((it) => ({ ...it, qty_diterima: Math.min(Math.max(Number(qtyMap[it.sku]) || 0, 0), Number(it.qty)) }));
@@ -563,6 +567,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                     </div>
                   )}
                 </div>
+                {keluar && (
                 <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">
                   <button
                     disabled={!!cetakId}
@@ -579,6 +584,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                     <Tag size={13} /> {cetakId === `label-${t.id}` ? "Membuat…" : "Label Paket"}
                   </button>
                 </div>
+                )}
                 {bisaTransfer && (
                   <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">
                     {t.status === "dikirim" && !keluar && (
@@ -736,24 +742,26 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
   );
 }
 
-// Terima barang: (1) penerima wajib memindai/mengetik kode transfer yang tercetak di surat jalan —
-// bukti kertas dan barangnya sudah di tangan; (2) qty diterima TIDAK terisi otomatis, penerima
+// Terima barang: (1) penerima wajib memindai/mengetik KODE TERIMA yang hanya tercetak di surat jalan
+// (tidak tampil di aplikasi) — bukti kertas dan barangnya sudah di tangan; (2) qty diterima TIDAK terisi otomatis, penerima
 // mengisi hasil hitungannya sendiri per SKU; kalau ada selisih, catatan wajib diisi.
 const samaKode = (a, b) => String(a || "").trim().toUpperCase() === String(b || "").trim().toUpperCase();
 
 function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
   const [terverifikasi, setTerverifikasi] = useState(false);
+  const [kodeOk, setKodeOk] = useState("");
   const [kode, setKode] = useState("");
   const [salah, setSalah] = useState("");
   const [qty, setQty] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, ""])));
   const [catatan, setCatatan] = useState("");
 
   const cekKode = (v) => {
-    if (samaKode(v, t.kode)) {
+    if (samaKode(v, kodeTerima(t))) {
+      setKodeOk(String(v).trim());
       setTerverifikasi(true);
       setSalah("");
     } else {
-      setSalah(`Kode "${String(v).trim()}" tidak cocok dengan transfer ini. Pastikan surat jalannya benar.`);
+      setSalah("Kode terima tidak cocok. Pastikan surat jalan yang dipindai adalah milik transfer ini.");
     }
   };
 
@@ -766,7 +774,7 @@ function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
     return (
       <ModalShell title={`Terima ${t.kode}`} onClose={onClose} maxWidth="max-w-lg">
         <div className="text-xs text-slate-400 mb-3">
-          Dari {namaEnt(t.entitas_asal)}. Scan barcode kode transfer di surat jalan, atau ketik kodenya, untuk membuka form penerimaan.
+          Dari {namaEnt(t.entitas_asal)}. Scan barcode KODE TERIMA di surat jalan, atau ketik 6 karakter kodenya, untuk membuka form penerimaan. Kode ini hanya ada di surat jalan yang dibawa bersama barang.
         </div>
         <div className="flex items-center gap-2 mb-2">
           <input
@@ -776,7 +784,7 @@ function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
               setSalah("");
             }}
             onKeyDown={(e) => e.key === "Enter" && kode.trim() && cekKode(kode)}
-            placeholder="TRF-20261110-XXXX"
+            placeholder="KODE TERIMA (6 karakter)"
             className={`${inputClass} font-mono`}
             autoFocus
           />
@@ -828,7 +836,7 @@ function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
       {catatanKurang && <div className="text-[11px] text-amber-400 mb-2">Ada selisih qty — isi catatan alasannya.</div>}
       <button
         disabled={saving || !bisaKonfirmasi}
-        onClick={() => onSubmit(t, qty, catatan.trim())}
+        onClick={() => onSubmit(t, qty, catatan.trim(), kodeOk)}
         className="w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg bg-emerald-500 text-slate-900 hover:bg-emerald-400 disabled:opacity-40"
       >
         <PackageCheck size={15} /> {saving ? "Memproses…" : "Konfirmasi Terima"}

@@ -9,6 +9,7 @@
 // =========================================================
 import { jsPDF } from "jspdf";
 import { encodeCode128B } from "./code128";
+import { kodeTerima } from "./kodeTransfer";
 
 const tglWaktu = (v) =>
   (v ? new Date(v) : new Date()).toLocaleString("id-ID", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -78,10 +79,15 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   teks(`Tanggal kirim: ${tglWaktu(t.created_at)}`, M);
   y += 5;
 
-  // Barcode kode transfer
-  const lebar = gambarBarcode(doc, t.kode, M, y, W - M * 2, 10);
+  // Barcode KODE TERIMA — dipindai penerima di aplikasi untuk membuka form penerimaan.
+  const kt = kodeTerima(t);
+  const lebar = gambarBarcode(doc, kt, M, y, W - M * 2, 10);
   if (lebar) y += 12;
-  y += 5;
+  doc.setFont("helvetica", "bold").setFontSize(9);
+  teks(`KODE TERIMA: ${kt}`, M);
+  doc.setFont("helvetica", "normal").setFontSize(7.5);
+  teks("Scan / ketik kode ini di aplikasi saat menerima barang", W - M, { align: "right" });
+  y += 6;
 
   // Kepada
   doc.setFont("helvetica", "bold").setFontSize(8.5);
