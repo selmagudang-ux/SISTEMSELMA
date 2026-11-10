@@ -50,12 +50,16 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
 
   // Kop pengirim
   doc.setFont("helvetica", "bold").setFontSize(13);
-  teks(pengirim?.nama || "", M);
-  y += 5;
+  doc.splitTextToSize(String(pengirim?.nama || ""), W - M * 2).forEach((b) => {
+    teks(b, M);
+    y += 5;
+  });
   doc.setFont("helvetica", "normal").setFontSize(8);
   (pengirim?.alamat || []).forEach((a) => {
-    teks(a, M);
-    y += 3.6;
+    doc.splitTextToSize(String(a), W - M * 2).forEach((b) => {
+      teks(b, M);
+      y += 3.6;
+    });
   });
   if (pengirim?.telepon) {
     teks(`Telp: ${pengirim.telepon}`, M);
@@ -208,7 +212,7 @@ export function buatLabelPaket({ pengirim, penerima }) {
     y += 4.2;
     doc.setFont("helvetica", "normal").setFontSize(8);
     (pengirim?.alamat || []).slice(0, 3).forEach((a) => {
-      doc.splitTextToSize(String(a), W - M * 2 - 2).slice(0, 1).forEach((b) => {
+      doc.splitTextToSize(String(a), W - M * 2 - 2).forEach((b) => {
         teks(b, M + 1);
         y += 3.8;
       });
