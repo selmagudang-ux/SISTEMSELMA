@@ -695,6 +695,9 @@ export const GRUP_AKSI = [
       { key: "grosir.pindah_ke_reseller", label: "Pindahkan pesanan grosir ke Reseller", bawaan: tak },
       { key: "grosir.hapus_pesanan", label: "Hapus permanen pesanan grosir yang dibatalkan", bawaan: dari("superadmin") },
       { key: "grosir.hapus_deposit", label: "Hapus baris deposit pelanggan", bawaan: dari("superadmin") },
+      // Tombol "Simpan PDF" di preview Nota Grosir. Bawaan: semua role boleh (sama seperti sebelum ada izin ini);
+      // matikan per role di Pengaturan > Hak Akses kalau tidak ingin role itu mengunduh nota.
+      { key: "grosir.simpan_pdf_nota", label: "Simpan nota Grosir sebagai PDF (tombol di preview Nota)", bawaan: semuaKecuali() },
       { key: "reseller.hapus_entri", label: "Hapus entri di Reseller", bawaan: dari("superadmin") },
       { key: "marketplace.tindak_notif_massal", label: "Tandai notifikasi Cek Marketplace (massal)", bawaan: dari("superadmin") },
       { key: "scan.hapus_massal", label: "Hapus massal data Scan Resi", bawaan: tak },

@@ -2237,6 +2237,7 @@ export default function ModalRouter({
           sisaHutang={sisaHutang}
           pembayaran={pembayaran}
           identitas={identitasNotaEntitas(master)}
+          bolehSimpanPdf={bisa(session?.role, "grosir.simpan_pdf_nota")}
           onClose={close}
         />
       </Suspense>

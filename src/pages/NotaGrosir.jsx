@@ -64,7 +64,7 @@ function AreaCetak({ kelas, aktif, innerRef, children }) {
 //    tingginya oleh JS, baru "dipindah" ke posisi normal khusus saat print
 //    lewat CSS media print (bukan lewat re-render React).
 // =========================================================
-export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, identitas = IDENTITAS_SELMA, onClose }) {
+export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, identitas = IDENTITAS_SELMA, bolehSimpanPdf = true, onClose }) {
   const p = pesanan;
   const printRef = useRef(null);
   const [printing, setPrinting] = useState(false);
@@ -131,13 +131,15 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
             >
               <Printer size={15} /> {printing ? "Menyiapkan…" : "Cetak Nota"}
             </button>
-            <button
-              onClick={simpanPdf}
-              disabled={menyimpanPdf}
-              className="flex-1 flex items-center justify-center gap-1.5 border border-slate-300 hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-semibold text-sm py-2.5 rounded-lg"
-            >
-              <Download size={15} /> {menyimpanPdf ? "Membuat PDF…" : "Simpan PDF"}
-            </button>
+            {bolehSimpanPdf && (
+              <button
+                onClick={simpanPdf}
+                disabled={menyimpanPdf}
+                className="flex-1 flex items-center justify-center gap-1.5 border border-slate-300 hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-semibold text-sm py-2.5 rounded-lg"
+              >
+                <Download size={15} /> {menyimpanPdf ? "Membuat PDF…" : "Simpan PDF"}
+              </button>
+            )}
           </div>
         </div>
       </div>
