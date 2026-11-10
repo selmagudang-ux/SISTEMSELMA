@@ -53,7 +53,7 @@ function BuatSkuList({ items, setModal, session }) {
   const belumSku = items.filter((i) => i.stage === "sku");
   // Input banyak sekaligus khusus superadmin — role lain tetap pakai alur
   // Buat SKU satu-satu seperti biasa dari daftar barang di bawah.
-  const isSuperadmin = bisa(session?.role, "sku.buat_banyak");
+  const isSuperadmin = bisa(session?.role, "sku.buat_banyak") && bisa(session?.role, "sku.kelola_master");
   return (
     <div>
       <PageHeader
@@ -477,7 +477,9 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
 }
 
 function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast }) {
-  const bolehEditHarga = bisa(session?.role, "sku.edit_harga_langsung");
+  // Master Barang = katalog bersama: ubah harga / hapus SKU butuh izin "Kelola Master Barang".
+  const bolehKelola = bisa(session?.role, "sku.kelola_master");
+  const bolehEditHarga = bolehKelola && bisa(session?.role, "sku.edit_harga_langsung");
   const bolehAturMp = bisa(session?.role, "sku.aturan_marketplace");
 
   // ---- aturan layak jual di Marketplace (panel editornya ada di AturanMpPanel supaya mengetik tidak merender ulang ribuan kartu) ----
@@ -924,7 +926,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 Nonaktif
                               </span>
                             )}
-                            {adaHargaBaru && (
+                            {adaHargaBaru && bolehKelola && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -964,17 +966,19 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 <Store size={12} />
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setModal({ type: "hapus-sku", item: s });
-                              }}
-                              title="Hapus SKU ini"
-                              className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-red-400 hover:border-red-500/40"
-                            >
-                              <Trash2 size={12} />
-                            </button>
+                            {bolehKelola && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setModal({ type: "hapus-sku", item: s });
+                                }}
+                                title="Hapus SKU ini"
+                                className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-red-400 hover:border-red-500/40"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
                             <div className="flex items-center gap-3 mb-3 pr-4">
                               <label
                                 onClick={(e) => e.stopPropagation()}

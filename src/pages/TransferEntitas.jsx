@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, entitasSesi, kodeHoldingPasti } from "../lib/api";
+import { sb, entitasSesi } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 
@@ -318,7 +318,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     <div>
       <PageHeader
         title="Transfer Antar Entitas"
-        description="Kirim stok gudang ke perusahaan lain di grup. Stok pengirim berkurang saat dikirim; stok penerima bertambah setelah penerima mengonfirmasi."
+        description="Kirim stok gudang ke Holding atau perusahaan lain di grup. Kode SKU sama di semua perusahaan. Stok pengirim berkurang saat dikirim; stok penerima bertambah setelah penerima mengonfirmasi."
         action={
           <div className="flex items-center gap-2">
             <button onClick={muat} title="Muat ulang" className="p-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800">
@@ -447,9 +447,9 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
 }
 
 function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
-  const kodeHolding = kodeHoldingPasti(master?.entitas, master?.entitas_set);
+  // Holding memegang stok (Master Barang), jadi Holding juga bisa jadi tujuan/pengirim transfer.
   const pilihanTujuan = (master?.entitas || []).filter(
-    (e) => e.kode !== entSaya && e.kode !== kodeHolding && !fiturMatiEntitas(master, e.kode).includes("stok")
+    (e) => e.kode !== entSaya && !fiturMatiEntitas(master, e.kode).includes("stok")
   );
   const [tujuan, setTujuan] = useState("");
   const [catatan, setCatatan] = useState("");

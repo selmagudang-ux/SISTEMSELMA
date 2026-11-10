@@ -1,4 +1,4 @@
-import { roleHanyaLihat } from "./constants";
+import { roleHanyaLihat, bisa, setKodeHoldingMenu } from "./constants";
 // =========================================================
 // KONEKSI SUPABASE (REST / PostgREST — anon key)
 // =========================================================
@@ -499,6 +499,21 @@ export async function sb(path, opts = {}) {
 
   if (method === "POST" && d) {
     const daftar = Array.isArray(d) ? d : [d];
+    // Membuat SKU BARU di katalog bersama hanya untuk akun dengan izin "sku.kelola_master".
+    // Mengambil SKU yang sudah ada di katalog (menambah stok PT ini) tetap boleh untuk semua.
+    if (!bisa(roleSaatIni(), "sku.kelola_master")) {
+      const kode = daftar.map((o) => o.sku).filter(Boolean);
+      const ada = kode.length
+        ? await sbDasar(`sku_master?sku=in.(${kode.map((k) => `"${String(k).replace(/"/g, '\\"')}"`).join(",")})&select=sku`)
+        : [];
+      const adaSet = new Set((ada || []).map((r) => r.sku));
+      const baru = kode.filter((k) => !adaSet.has(k));
+      if (baru.length) {
+        throw new Error(
+          `Akun Anda tidak punya izin membuat SKU baru di Master Barang (${baru.slice(0, 3).join(", ")}${baru.length > 3 ? ", …" : ""}). Minta Super Appa memberi izin "Kelola Master Barang", atau pilih SKU yang sudah ada.`
+        );
+      }
+    }
     const stokRows = daftar.map((o) => ({ sku: o.sku, stok: o.stok ?? 0 }));
     const bersih = daftar.map(({ stok, ...r }) => (r.entitas === undefined ? { ...r, entitas: ent } : r));
     const bodyBaru = JSON.stringify(Array.isArray(d) ? bersih : bersih[0]);
@@ -538,6 +553,10 @@ export async function sb(path, opts = {}) {
         // PT lain masih memakai SKU ini: lepas dari PT ini saja, katalognya dibiarkan.
         await sbDasar(`sku_stok?sku=in.(${daftarSku})&entitas=eq.${encodeURIComponent(ent)}`, { method: "DELETE" });
         return target;
+      }
+      // Tidak ada PT lain yang memakai SKU ini: menghapusnya = menghapus dari katalog bersama.
+      if (!bisa(roleSaatIni(), "sku.kelola_master")) {
+        throw new Error('Akun Anda tidak punya izin menghapus SKU dari Master Barang. Minta Super Appa memberi izin "Kelola Master Barang".');
       }
     }
   }
@@ -2280,6 +2299,7 @@ let profilTerdaftar = { entitas: [], set: [] };
 // tahu entitas mana yang Holding.
 export function daftarkanProfilEntitas(master) {
   profilTerdaftar = { entitas: master?.entitas || [], set: master?.entitas_set || [] };
+  setKodeHoldingMenu(kodeHoldingPasti(profilTerdaftar.entitas, profilTerdaftar.set));
 }
 export function pengaturanEntitas(master, kode) {
   const hasil = {};

@@ -682,6 +682,10 @@ export const GRUP_AKSI = [
       { key: "sku.edit_harga_langsung", label: "Edit harga langsung (tombol \"Harga Baru\" / pensil di SKU & Harga)", bawaan: dari("superadmin") },
       { key: "sku.aturan_marketplace", label: "Ubah Aturan Harga Marketplace", bawaan: dari("superadmin") },
       { key: "sku.pindah_ke_toko", label: "Pindahkan SKU ke Barang Toko (kasir)", bawaan: tak },
+      // Master Barang = katalog bersama milik Holding (1 SKU = 1 baris untuk semua PT). Membuat SKU BARU,
+      // mengubah harga katalog, dan menonaktifkan/menghapus SKU hanya boleh akun yang diberi izin ini.
+      // Menambah stok SKU yang SUDAH ada di katalog tidak butuh izin ini.
+      { key: "sku.kelola_master", label: "Kelola Master Barang (buat SKU baru, ubah harga, nonaktifkan / hapus SKU di katalog bersama)", bawaan: tak },
     ],
   },
   {
@@ -893,6 +897,15 @@ export function bisaTransferAntarEntitas(role) {
 // Chat, Panduan. Dashboard, absensi, dll belum dipisah, jadi disembunyikan dulu.
 // Pemilik, Pemegang Saham, dan Super Appa lintas entitas (tidak dibatasi).
 const ROLE_LINTAS_ENTITAS = ["superappa", "owner", "pemegang_saham"];
+// Menu grup gudang yang otomatis dimiliki akun Holding (lihat allowedMenus). Pemegang Saham tidak ikut.
+const MENU_GUDANG_HOLDING = ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"];
+const MENU_GUDANG_HOLDING_ROLE = ["owner", "superadmin", "gudang"];
+// Kode entitas Holding untuk keperluan menu. Bawaan "HOLD"; diperbarui lib/api.js (daftarkanProfilEntitas)
+// begitu master dimuat, supaya Holding yang kodenya diganti lewat profil perusahaan tetap dikenali.
+let KODE_HOLDING_MENU = "HOLD";
+export function setKodeHoldingMenu(kode) {
+  if (kode) KODE_HOLDING_MENU = kode;
+}
 const MENU_PT_LAIN = [
   "keuangan", "chat", "panduan",
   "persetujuan-restock", "barang-datang", "data-barang", "sku-harga", "stok", "rak",
@@ -916,6 +929,11 @@ export function allowedMenus(role, entitas, fiturMati = []) {
     // Hanya key menu yang valid; "barang-masuk" (izin tombol cepat) ikut "barang-datang".
     menus = ov.menus.filter((k) => ALL_MENU_KEYS.includes(k) || k === "barang-masuk");
     if (menus.includes("barang-datang") && !menus.includes("barang-masuk")) menus = [...menus, "barang-masuk"];
+  } else if (entitas && entitas === KODE_HOLDING_MENU && MENU_GUDANG_HOLDING_ROLE.includes(role)) {
+    // Holding memegang Master Barang (katalog bersama) dan stok miliknya sendiri, jadi akun Holding
+    // mendapat grup menu gudang. Kalau Super Appa sudah mengatur menu role ini di Hak Akses,
+    // pengaturan itu yang dipakai (blok ini dilewati).
+    menus = [...menus, ...MENU_GUDANG_HOLDING.filter((k) => !menus.includes(k))];
   }
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
     // Dashboard PT sendiri (data dibatasi ke PT-nya di pages/Dashboard.jsx): hanya Super Admin.
