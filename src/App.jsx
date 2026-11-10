@@ -628,7 +628,7 @@ function MainApp({ session, onLogout }) {
   // TAPI perubahan yang kamu buat SENDIRI tetap langsung kelihatan (lihat
   // reloadCurrentMenu, selalu force=true, tidak kena cache ini). Kalau nanti
   // kerasa data dari staf lain terlalu lama update, turunkan lagi angka ini.
-  const CACHE_TTL_MS = 90_000;
+  const CACHE_TTL_MS = 15_000; // dipendekkan dari 90 dtk (Nov 2026): perubahan staf lain & transfer antar entitas terlalu lama terlihat
   const lastLoadedRef = useRef({});
   const masihSegar = (kunci) => Date.now() - (lastLoadedRef.current[kunci] || 0) < CACHE_TTL_MS;
   const tandaiSudahDimuat = (kunci) => {
