@@ -158,19 +158,15 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
 }
 
 // ---------------------------------------------------------
-// LABEL PAKET (10 x 15 cm), satu halaman per koli.
+// LABEL PAKET (10 x 15 cm), satu halaman: hanya penerima (KEPADA) dan pengirim.
 // ---------------------------------------------------------
-export function buatLabelPaket({ t, pengirim, penerima, jumlahKoli = 1 }) {
+export function buatLabelPaket({ pengirim, penerima }) {
   const W = 100;
   const H = 150;
   const M = 6;
   const doc = new jsPDF({ unit: "mm", format: [W, H] });
-  const items = t.items || [];
-  const totalQty = items.reduce((a, it) => a + (Number(it.qty) || 0), 0);
-  const koli = Math.max(1, Math.min(99, Math.floor(Number(jumlahKoli)) || 1));
 
-  for (let k = 1; k <= koli; k++) {
-    if (k > 1) doc.addPage([W, H]);
+  {
     let y = M + 4;
     const teks = (s, x, opt) => doc.text(String(s ?? ""), x, y, opt);
 
@@ -178,7 +174,6 @@ export function buatLabelPaket({ t, pengirim, penerima, jumlahKoli = 1 }) {
 
     doc.setFont("helvetica", "bold").setFontSize(9);
     teks("KEPADA", M + 1);
-    teks(`KOLI ${k}/${koli}`, W - M - 1, { align: "right" });
     y += 7;
 
     doc.setFontSize(17);
@@ -222,21 +217,7 @@ export function buatLabelPaket({ t, pengirim, penerima, jumlahKoli = 1 }) {
       teks(`Telp: ${pengirim.telepon}`, M + 1);
       y += 3.8;
     }
-
-    // Kode transfer + ringkasan isi
-    y = H - 44;
-    doc.setLineWidth(0.3).setDrawColor(120).line(M, y - 4, W - M, y - 4);
-    doc.setFont("helvetica", "normal").setFontSize(8.5);
-    teks(`${items.length} SKU · ${totalQty} pcs (seluruh transfer)`, M + 1);
-    y += 5;
-    const lebar = gambarBarcode(doc, t.kode, M + 1, y, W - M * 2 - 2, 14);
-    y += lebar ? 18 : 2;
-    doc.setFont("helvetica", "bold").setFontSize(10);
-    teks(t.kode, W / 2, { align: "center" });
-    y += 5;
-    doc.setFont("helvetica", "normal").setFontSize(7.5);
-    teks(`Dikirim ${tglWaktu(t.created_at)}`, W / 2, { align: "center" });
   }
 
-  return { blob: doc.output("blob"), nama: `Label-${rapikanNama(t.kode)}.pdf` };
+  return { blob: doc.output("blob"), nama: `Label-${rapikanNama(penerima?.nama)}.pdf` };
 }

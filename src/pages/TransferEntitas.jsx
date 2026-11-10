@@ -445,18 +445,12 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const [cetakId, setCetakId] = useState(null);
   const cetak = async (jenis, t) => {
     if (cetakId) return;
-    let jumlahKoli = 1;
-    if (jenis === "label") {
-      const j = window.prompt("Jumlah koli / paket untuk label?", "1");
-      if (j === null) return;
-      jumlahKoli = Math.max(1, Math.min(99, Math.floor(Number(j)) || 1));
-    }
     setCetakId(`${jenis}-${t.id}`);
     try {
       const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
       const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal) };
       const penerima = { nama: namaUsahaEntitas(master, t.entitas_tujuan), alamat: alamatEntitas(master, t.entitas_tujuan), telepon: teleponEntitas(master, t.entitas_tujuan) };
-      const { blob, nama } = jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima, jumlahKoli });
+      const { blob, nama } = jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima });
       const file = new File([blob], nama, { type: "application/pdf" });
       const sentuh = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
       if (sentuh && navigator.canShare?.({ files: [file] })) {
