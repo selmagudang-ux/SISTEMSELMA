@@ -1379,6 +1379,7 @@ function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
   const [namaUsaha, setNamaUsaha] = useState(awal.nama_usaha || "");
   const [alamat, setAlamat] = useState((awal.alamat || "").split("|").join("\n"));
   const [namaStore, setNamaStore] = useState(awal.nama_store || "");
+  const [telepon, setTelepon] = useState(awal.telepon || "");
   const [holding, setHolding] = useState(awal.jenis === "holding");
   const [saving, setSaving] = useState(false);
 
@@ -1401,6 +1402,7 @@ function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
       await tulis(e.kode, "nama_usaha", namaUsaha.trim());
       await tulis(e.kode, "alamat", alamat.split("\n").map((x) => x.trim()).filter(Boolean).join("|"));
       await tulis(e.kode, "nama_store", namaStore.trim());
+      await tulis(e.kode, "telepon", telepon.trim());
       await tulis(e.kode, "jenis", holding ? "holding" : "");
       // Hanya satu perusahaan yang boleh bertanda Holding.
       if (holding) {
@@ -1435,6 +1437,9 @@ function ProfilPerusahaan({ e, master, isDefault, reload, showToast }) {
       </div>
       <Field label="Alamat kop nota (satu baris per baris)">
         <textarea className={inputClass} rows={3} value={alamat} onChange={(x) => setAlamat(x.target.value)} placeholder={isDefault ? "Kosong = alamat bawaan Selma" : "Jl. ...\nKota ..."} />
+      </Field>
+      <Field label="Nomor telepon (dicetak di surat jalan & label transfer)">
+        <input className={inputClass} value={telepon} onChange={(x) => setTelepon(x.target.value)} placeholder="mis. 0812-3456-7890" inputMode="tel" />
       </Field>
       {!isDefault && (
         <label className="flex items-center gap-2 text-[11px] text-slate-300 mb-3">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw } from "lucide-react";
+import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw, FileText, Tag } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, entitasSesi } from "../lib/api";
+import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 
@@ -314,6 +314,45 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
 
   const kembalikanStok = (t) => jalankan(() => kembalikan(t), "Stok dikembalikan ke gudang");
 
+  // ---------- Cetak surat jalan / label paket (PDF, lib/PdfTransfer.js) ----------
+  const [cetakId, setCetakId] = useState(null);
+  const cetak = async (jenis, t) => {
+    if (cetakId) return;
+    let jumlahKoli = 1;
+    if (jenis === "label") {
+      const j = window.prompt("Jumlah koli / paket untuk label?", "1");
+      if (j === null) return;
+      jumlahKoli = Math.max(1, Math.min(99, Math.floor(Number(j)) || 1));
+    }
+    setCetakId(`${jenis}-${t.id}`);
+    try {
+      const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
+      const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal) };
+      const penerima = { nama: namaUsahaEntitas(master, t.entitas_tujuan), alamat: alamatEntitas(master, t.entitas_tujuan), telepon: teleponEntitas(master, t.entitas_tujuan) };
+      const { blob, nama } = jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima, jumlahKoli });
+      const file = new File([blob], nama, { type: "application/pdf" });
+      const sentuh = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+      if (sentuh && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (e) {
+          if (e?.name === "AbortError") return;
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nama;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+      showToast?.(e?.message || "Gagal membuat PDF", "err");
+    } finally {
+      setCetakId(null);
+    }
+  };
+
   return (
     <div>
       <PageHeader
@@ -398,6 +437,22 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                       {t.catatan_terima ? ` · ${t.catatan_terima}` : ""}
                     </div>
                   )}
+                </div>
+                <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">
+                  <button
+                    disabled={!!cetakId}
+                    onClick={() => cetak("surat", t)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                  >
+                    <FileText size={13} /> {cetakId === `surat-${t.id}` ? "Membuat…" : "Surat Jalan"}
+                  </button>
+                  <button
+                    disabled={!!cetakId}
+                    onClick={() => cetak("label", t)}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+                  >
+                    <Tag size={13} /> {cetakId === `label-${t.id}` ? "Membuat…" : "Label Paket"}
+                  </button>
                 </div>
                 {bisaTransfer && (
                   <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">

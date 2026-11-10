@@ -2290,6 +2290,7 @@ export function kodeEntitasHolding(entitasList, setList) {
 // Kunci yang dipakai:
 //   nama_usaha : nama di kop nota/label & laporan PDF   (kosong -> nama perusahaan; OPS -> kop Selma)
 //   alamat     : baris alamat kop nota, dipisah "|"
+//   telepon    : nomor telepon perusahaan (dicetak di surat jalan & label transfer)
 //   nama_store : judul grup/kartu toko                   (kosong -> "Store <nama tanpa PT/CV>")
 //   jenis      : "holding" menandai entitas Holding      (kosong -> kode "HOLD" seperti dulu)
 // Perusahaan baru cukup diisi di layar itu, tanpa ubah kode.
@@ -2332,6 +2333,10 @@ export function namaUsahaEntitas(master, kode) {
   if (dipilih) return dipilih;
   if (k === ENTITAS_DEFAULT) return NAMA_USAHA_OPS;
   return String((master?.entitas || []).find((e) => e.kode === k)?.label || k);
+}
+// Nomor telepon perusahaan (kunci "telepon" di profil entitas_set); kosong kalau belum diisi.
+export function teleponEntitas(master, kode) {
+  return String(pengaturanEntitas(master, kode || ENTITAS_DEFAULT).telepon || "").trim();
 }
 export function alamatEntitas(master, kode) {
   const a = pengaturanEntitas(master, kode || ENTITAS_DEFAULT).alamat;
