@@ -4,6 +4,7 @@ import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "..
 import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
+import { TombolScanKamera } from "../components/ScanKamera";
 
 // =========================================================
 // TRANSFER BARANG ANTAR ENTITAS (stok gudang / sku_master)
@@ -307,9 +308,12 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   // ---------- Penerima: terima ----------
   const terima = (t, qtyMap, catatan) =>
     jalankan(async () => {
+      // Qty diterima WAJIB diisi untuk setiap SKU (hasil hitung fisik penerima, tidak terisi otomatis).
+      if (t.items.some((it) => qtyMap[it.sku] === "" || qtyMap[it.sku] === undefined)) throw new Error("Isi qty diterima untuk semua SKU (isi 0 kalau tidak ada yang datang).");
       const items = t.items.map((it) => ({ ...it, qty_diterima: Math.min(Math.max(Number(qtyMap[it.sku]) || 0, 0), Number(it.qty)) }));
       if (items.every((it) => !it.qty_diterima)) throw new Error("Isi qty diterima minimal satu barang, atau pakai Tolak.");
       const selisih = items.some((it) => it.qty_diterima < Number(it.qty));
+      if (selisih && !String(catatan || "").trim()) throw new Error("Ada selisih qty — isi catatan alasan selisihnya.");
       // "Klaim" dulu supaya tidak bisa diterima dua kali (mis. klik ganda / dua perangkat).
       const klaim = await sb(`transfer_barang?id=eq.${t.id}&status=eq.dikirim`, {
         method: "PATCH",
@@ -732,34 +736,98 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
   );
 }
 
+// Terima barang: (1) penerima wajib memindai/mengetik kode transfer yang tercetak di surat jalan —
+// bukti kertas dan barangnya sudah di tangan; (2) qty diterima TIDAK terisi otomatis, penerima
+// mengisi hasil hitungannya sendiri per SKU; kalau ada selisih, catatan wajib diisi.
+const samaKode = (a, b) => String(a || "").trim().toUpperCase() === String(b || "").trim().toUpperCase();
+
 function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
-  const [qty, setQty] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, Number(it.qty)])));
+  const [terverifikasi, setTerverifikasi] = useState(false);
+  const [kode, setKode] = useState("");
+  const [salah, setSalah] = useState("");
+  const [qty, setQty] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, ""])));
   const [catatan, setCatatan] = useState("");
+
+  const cekKode = (v) => {
+    if (samaKode(v, t.kode)) {
+      setTerverifikasi(true);
+      setSalah("");
+    } else {
+      setSalah(`Kode "${String(v).trim()}" tidak cocok dengan transfer ini. Pastikan surat jalannya benar.`);
+    }
+  };
+
+  const semuaTerisi = (t.items || []).every((it) => qty[it.sku] !== "" && qty[it.sku] !== undefined);
+  const adaSelisih = (t.items || []).some((it) => qty[it.sku] !== "" && Number(qty[it.sku]) !== Number(it.qty));
+  const catatanKurang = adaSelisih && !catatan.trim();
+  const bisaKonfirmasi = terverifikasi && semuaTerisi && !catatanKurang;
+
+  if (!terverifikasi) {
+    return (
+      <ModalShell title={`Terima ${t.kode}`} onClose={onClose} maxWidth="max-w-lg">
+        <div className="text-xs text-slate-400 mb-3">
+          Dari {namaEnt(t.entitas_asal)}. Scan barcode kode transfer di surat jalan, atau ketik kodenya, untuk membuka form penerimaan.
+        </div>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            value={kode}
+            onChange={(e) => {
+              setKode(e.target.value);
+              setSalah("");
+            }}
+            onKeyDown={(e) => e.key === "Enter" && kode.trim() && cekKode(kode)}
+            placeholder="TRF-20261110-XXXX"
+            className={`${inputClass} font-mono`}
+            autoFocus
+          />
+          <TombolScanKamera label="Scan" judul="Scan Surat Jalan" onDetect={cekKode} />
+        </div>
+        {salah && <div className="text-[11px] text-red-400 mb-2">{salah}</div>}
+        <button
+          disabled={!kode.trim()}
+          onClick={() => cekKode(kode)}
+          className="w-full text-sm font-medium py-2.5 rounded-lg bg-emerald-500 text-slate-900 hover:bg-emerald-400 disabled:opacity-40"
+        >
+          Verifikasi Surat Jalan
+        </button>
+      </ModalShell>
+    );
+  }
+
   return (
     <ModalShell title={`Terima ${t.kode}`} onClose={onClose} maxWidth="max-w-lg">
+      <div className="text-[11px] text-emerald-400 mb-2">✓ Surat jalan terverifikasi</div>
       <div className="text-xs text-slate-400 mb-3">
-        Dari {namaEnt(t.entitas_asal)}. Isi qty yang benar-benar diterima; selisihnya dikembalikan ke stok pengirim.
+        Dari {namaEnt(t.entitas_asal)}. Hitung barangnya dan isi qty yang benar-benar diterima untuk setiap SKU; selisihnya dikembalikan ke stok pengirim.
       </div>
       <div className="rounded-lg border border-slate-700 mb-3">
-        {(t.items || []).map((it) => (
-          <div key={it.sku} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
-            <div className="min-w-0 flex-1">
-              <div className="font-mono text-xs text-slate-200 truncate">{it.sku}</div>
-              <div className="text-[11px] text-slate-500">dikirim {it.qty}</div>
+        {(t.items || []).map((it) => {
+          const sel = qty[it.sku] !== "" && Number(qty[it.sku]) !== Number(it.qty);
+          return (
+            <div key={it.sku} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-xs text-slate-200 truncate">{it.sku}</div>
+                <div className={`text-[11px] ${sel ? "text-amber-400" : "text-slate-500"}`}>
+                  dikirim {it.qty}
+                  {sel ? ` · selisih ${Number(qty[it.sku]) - Number(it.qty)}` : ""}
+                </div>
+              </div>
+              <input
+                type="number" min={0} max={it.qty} value={qty[it.sku] ?? ""} placeholder="qty"
+                onChange={(e) => setQty((m) => ({ ...m, [it.sku]: e.target.value === "" ? "" : Math.min(Math.max(Math.floor(Number(e.target.value)), 0), Number(it.qty)) }))}
+                className={`${inputClass} !w-20 text-center`}
+              />
             </div>
-            <input
-              type="number" min={0} max={it.qty} value={qty[it.sku] ?? ""}
-              onChange={(e) => setQty((m) => ({ ...m, [it.sku]: e.target.value === "" ? "" : Math.min(Math.max(Math.floor(Number(e.target.value)), 0), Number(it.qty)) }))}
-              className={`${inputClass} !w-20 text-center`}
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
-      <Field label="Catatan (opsional, mis. alasan selisih)">
-        <input value={catatan} onChange={(e) => setCatatan(e.target.value)} className={inputClass} />
+      <Field label={adaSelisih ? "Catatan selisih (wajib)" : "Catatan (opsional)"}>
+        <input value={catatan} onChange={(e) => setCatatan(e.target.value)} className={inputClass} placeholder={adaSelisih ? "mis. 2 pcs rusak di jalan" : ""} />
       </Field>
+      {!semuaTerisi && <div className="text-[11px] text-slate-500 mb-2">Isi qty semua SKU dulu (isi 0 kalau tidak ada yang datang).</div>}
+      {catatanKurang && <div className="text-[11px] text-amber-400 mb-2">Ada selisih qty — isi catatan alasannya.</div>}
       <button
-        disabled={saving}
+        disabled={saving || !bisaKonfirmasi}
         onClick={() => onSubmit(t, qty, catatan.trim())}
         className="w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg bg-emerald-500 text-slate-900 hover:bg-emerald-400 disabled:opacity-40"
       >
