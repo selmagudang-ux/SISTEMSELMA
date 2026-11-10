@@ -103,7 +103,9 @@ function roleSaatIni() {
 // keuangan, dan marketplace SENGAJA tidak masuk daftar ini (belum dipisah).
 // =========================================================
 export const TABEL_PER_PT = new Set([
-  "items", "sku_master", "penempatan", "rak", "stock_history", "rak_events",
+  // sku_master BUKAN per-PT lagi: katalog bersama milik Holding (1 SKU = 1 baris). Stok per PT ada
+  // di tabel sku_stok — lihat blok "MASTER BARANG BERSAMA" di bawah (sb/sbAll menggabungkannya otomatis).
+  "items", "penempatan", "rak", "stock_history", "rak_events",
   "barang_rusak", "pesanan_masuk", "pesanan_penerimaan", "suppliers",
   "pengajuan_restock", "belanja_habis_pakai", "belanja_habis_pakai_item",
   "perlengkapan", "perlengkapan_mutasi",
@@ -293,7 +295,7 @@ async function fetchBatas(url, opts = {}, ms = TIMEOUT_BACA_MS, method = "GET") 
   }
 }
 
-export async function sb(path, opts = {}) {
+async function sbDasar(path, opts = {}) {
   const method = (opts.method || "GET").toUpperCase();
   const tPT = terapkanEntitasPT(path, method, opts.body);
   path = tPT.path;
@@ -400,7 +402,7 @@ async function sbPage(path, opts, from, to, withCount) {
   return { rows, total: Number.isFinite(total) ? total : null };
 }
 
-export async function sbAll(path, opts = {}) {
+async function sbAllDasar(path, opts = {}) {
   path = terapkanEntitasPT(path, "GET").path;
   // Halaman pertama sekalian minta total jumlah baris (lewat
   // "Prefer: count=exact"), supaya begitu ketahuan ada berapa halaman lagi,
@@ -434,6 +436,117 @@ export async function sbAll(path, opts = {}) {
     })
   );
   return first.rows.concat(...rest);
+}
+
+// =========================================================
+// MASTER BARANG BERSAMA (milik Holding)
+// sku_master = katalog bersama: 1 SKU = 1 baris, kode sama di semua PT, satu harga untuk semua PT.
+// Stok per PT disimpan di sku_stok (sku, entitas, stok). Supaya halaman-halaman lama tidak perlu
+// diubah, sb()/sbAll() menyamarkannya:
+//   BACA  sku_master : hanya SKU yang punya baris stok di PT yang sedang dilihat, dan kolom `stok`
+//                      diisi dari sku_stok PT itu (bukan kolom stok lama di sku_master).
+//   TULIS sku_master : bagian `stok` dipindah ke sku_stok PT akun; kolom lain tetap ke sku_master.
+//   POST dengan kode SKU yang sudah ada di katalog = "mengambil" SKU itu (baris stok PT dibuat),
+//   data master & harga tidak ditimpa.
+//   DELETE : kalau PT lain masih punya stok SKU itu, hanya baris stok PT ini yang dilepas.
+// Kolom sku_master.stok lama dibekukan (cadangan), dijaga sinkron oleh trigger untuk fungsi database.
+// =========================================================
+const RE_SKU_MASTER = /^sku_master(\?|$)/;
+
+function pathBacaSkuMaster(path) {
+  const ent = encodeURIComponent(entitasBacaSaatIni());
+  const sisip = "sku_stok!inner(stok)";
+  let hasil;
+  if (/(^|[?&])select=/.test(path)) {
+    hasil = path.replace(/([?&]select=)([^&]*)/, (_, a, b) => `${a}${b},${sisip}`);
+  } else {
+    hasil = `${path}${path.includes("?") ? "&" : "?"}select=*,${sisip}`;
+  }
+  return `${hasil}&sku_stok.entitas=eq.${ent}`;
+}
+
+function ratakanStokSkuMaster(rows) {
+  if (!Array.isArray(rows)) return rows;
+  rows.forEach((r) => {
+    if (r && r.sku_stok !== undefined) {
+      const st = Array.isArray(r.sku_stok) ? r.sku_stok[0] : r.sku_stok;
+      r.stok = Number(st?.stok ?? 0);
+      delete r.sku_stok;
+    }
+  });
+  return rows;
+}
+
+async function simpanStokPT(daftar, { timpa = true } = {}) {
+  const ent = entitasSesi();
+  const sekarang = new Date().toISOString();
+  const body = JSON.stringify(daftar.map((d) => ({ sku: d.sku, entitas: ent, stok: Number(d.stok) || 0, updated_at: sekarang })));
+  return sbDasar(timpa ? "sku_stok?on_conflict=sku,entitas" : "sku_stok", {
+    method: "POST",
+    body,
+    prefer: timpa ? "resolution=merge-duplicates,return=representation" : "return=representation",
+  });
+}
+
+export async function sb(path, opts = {}) {
+  const method = (opts.method || "GET").toUpperCase();
+  if (!RE_SKU_MASTER.test(path)) return sbDasar(path, opts);
+
+  if (method === "GET") return ratakanStokSkuMaster(await sbDasar(pathBacaSkuMaster(path), opts));
+
+  const ent = entitasSesi();
+  const d = typeof opts.body === "string" ? JSON.parse(opts.body) : null;
+
+  if (method === "POST" && d) {
+    const daftar = Array.isArray(d) ? d : [d];
+    const stokRows = daftar.map((o) => ({ sku: o.sku, stok: o.stok ?? 0 }));
+    const bersih = daftar.map(({ stok, ...r }) => (r.entitas === undefined ? { ...r, entitas: ent } : r));
+    const bodyBaru = JSON.stringify(Array.isArray(d) ? bersih : bersih[0]);
+    try {
+      const hasil = await sbDasar(path, { ...opts, body: bodyBaru });
+      await simpanStokPT(stokRows);
+      return ratakanStokSkuMaster(hasil.map((r, i) => ({ ...r, stok: Number(stokRows[i]?.stok) || 0 })));
+    } catch (e) {
+      // Kode sudah ada di katalog bersama -> PT ini "mengambil" SKU yang sama (data master tidak ditimpa).
+      if (e.pgCode === "23505" && !Array.isArray(d)) {
+        const ada = await sbDasar(`sku_stok?sku=eq.${encodeURIComponent(d.sku)}&entitas=eq.${encodeURIComponent(ent)}&select=sku`);
+        if (ada?.length) throw e; // PT ini sendiri sudah punya SKU itu
+        await simpanStokPT(stokRows, { timpa: false });
+        const master = await sbDasar(`sku_master?sku=eq.${encodeURIComponent(d.sku)}`);
+        return (master || []).map((r) => ({ ...r, stok: Number(d.stok) || 0 }));
+      }
+      throw e;
+    }
+  }
+
+  if (method === "PATCH" && d && !Array.isArray(d) && "stok" in d) {
+    const { stok, ...sisa } = d;
+    const target = await sbDasar(`${path}${path.includes("?") ? "&" : "?"}select=sku`);
+    if (!target?.length) return [];
+    let hasil = target;
+    if (Object.keys(sisa).length) hasil = await sbDasar(path, { ...opts, body: JSON.stringify(sisa) });
+    await simpanStokPT(target.map((t) => ({ sku: t.sku, stok })));
+    return (hasil || []).map((r) => ({ ...r, stok: Number(stok) || 0 }));
+  }
+
+  if (method === "DELETE") {
+    const target = await sbDasar(`${path}${path.includes("?") ? "&" : "?"}select=sku`);
+    if (target?.length) {
+      const daftarSku = target.map((t) => `"${String(t.sku).replace(/"/g, '\\"')}"`).join(",");
+      const lain = await sbDasar(`sku_stok?sku=in.(${daftarSku})&entitas=neq.${encodeURIComponent(ent)}&select=sku`);
+      if (lain?.length) {
+        // PT lain masih memakai SKU ini: lepas dari PT ini saja, katalognya dibiarkan.
+        await sbDasar(`sku_stok?sku=in.(${daftarSku})&entitas=eq.${encodeURIComponent(ent)}`, { method: "DELETE" });
+        return target;
+      }
+    }
+  }
+  return sbDasar(path, opts);
+}
+
+export async function sbAll(path, opts = {}) {
+  if (!RE_SKU_MASTER.test(path)) return sbAllDasar(path, opts);
+  return ratakanStokSkuMaster(await sbAllDasar(pathBacaSkuMaster(path), opts));
 }
 
 // Nama bucket Storage di Supabase untuk menyimpan foto verifikasi.

@@ -22,12 +22,7 @@ const STATUS = {
   dibatalkan: { label: "Dibatalkan", color: "slate" },
 };
 
-// Kolom sku_master yang disalin ke PT penerima kalau SKU-nya belum ada di sana.
-const KOLOM_SALIN = [
-  "bahan", "peruntukan", "kategori", "subkategori", "model", "warna", "ukuran",
-  "harga_asli", "harga_dasar", "hpp", "grosir", "tengah", "ecer",
-  "barcode_supplier", "nama", "pelengkap",
-];
+// Atribut kode SKU yang disimpan di transfer (untuk membuat kode Master Data di PT penerima).
 const TIPE_KODE_SKU = ["bahan", "peruntukan", "kategori", "subkategori", "warna", "ukuran"];
 
 const fmtWaktu = (v) => (v ? new Date(v).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "");
@@ -46,17 +41,20 @@ function qtyKembali(t) {
     .filter((it) => it.kembali > 0);
 }
 
-// Tambah stok (SKU lama: +stok, SKU baru: salin dari snapshot) ke PT akun sendiri.
-// Mengembalikan { riwayat, undo } — undo() membatalkan semua perubahan stok kalau
-// langkah berikutnya gagal.
+// Tambah stok SKU ke PT akun sendiri lewat sku_stok (katalog sku_master bersama, kode SKU sama di
+// semua PT). Baris stok PT dibuat kalau belum ada. Mengembalikan { riwayat, undo } — undo()
+// membatalkan semua perubahan stok kalau langkah berikutnya gagal.
 async function tambahStokBanyak(daftar, master) {
+  const ent = entitasSesi();
+  const e = encodeURIComponent(ent);
   const undoList = [];
   const riwayat = [];
   const undo = async () => {
     for (const u of undoList.reverse()) {
       try {
-        if (u.baru) await sb(`sku_master?id=eq.${u.id}`, { method: "DELETE" });
-        else await sb(`sku_master?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ stok: u.stokSebelum }) });
+        const f = `sku_stok?sku=eq.${encodeURIComponent(u.sku)}&entitas=eq.${e}`;
+        if (u.baru) await sb(f, { method: "DELETE" });
+        else await sb(f, { method: "PATCH", body: JSON.stringify({ stok: u.stokSebelum }) });
       } catch {
         /* best effort */
       }
@@ -64,7 +62,7 @@ async function tambahStokBanyak(daftar, master) {
   };
   try {
     // Kode Master Data (bahan, kategori, dst) yang belum ada di PT ini dibuat otomatis,
-    // sama seperti saat Buat SKU.
+    // supaya labelnya tampil di Master Data PT ini.
     const sudahDibuat = new Set();
     for (const it of daftar) {
       for (const tipe of TIPE_KODE_SKU) {
@@ -79,41 +77,27 @@ async function tambahStokBanyak(daftar, master) {
         }
       }
     }
-    const ada = await sb(`sku_master?sku=in.(${daftar.map((d) => `"${String(d.sku_tujuan || d.sku).replace(/"/g, '\\"')}"`).join(",")})&select=id,sku,stok`);
-    const petaAda = new Map((ada || []).map((r) => [r.sku, r]));
+    const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
+    const ada = await sb(`sku_stok?entitas=eq.${e}&sku=in.(${daftar.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
+    const petaAda = new Map((ada || []).map((r) => [r.sku, Number(r.stok) || 0]));
     for (const it of daftar) {
       const q = Number(it.jumlah);
-      const skuIni = it.sku_tujuan || it.sku;
-      const lama = petaAda.get(skuIni);
-      if (lama) {
-        const stokSebelum = Number(lama.stok) || 0;
-        const hasil = await sb(`sku_master?id=eq.${lama.id}&stok=eq.${stokSebelum}`, {
-          method: "PATCH",
-          body: JSON.stringify({ stok: stokSebelum + q }),
-        });
-        if (!hasil?.length) throw new Error(`Stok ${skuIni} berubah saat diproses. Muat ulang lalu coba lagi.`);
-        undoList.push({ id: lama.id, stokSebelum });
-        riwayat.push({ sku: skuIni, type: "masuk", qty_before: stokSebelum, qty_change: q, qty_after: stokSebelum + q, note: it.catatan });
+      const f = `sku_stok?sku=eq.${encodeURIComponent(it.sku)}&entitas=eq.${e}`;
+      if (petaAda.has(it.sku)) {
+        const stokSebelum = petaAda.get(it.sku);
+        const hasil = await sb(`${f}&stok=eq.${stokSebelum}`, { method: "PATCH", body: JSON.stringify({ stok: stokSebelum + q, updated_at: new Date().toISOString() }) });
+        if (!hasil?.length) throw new Error(`Stok ${it.sku} berubah saat diproses. Muat ulang lalu coba lagi.`);
+        undoList.push({ sku: it.sku, stokSebelum });
+        riwayat.push({ sku: it.sku, type: "masuk", qty_before: stokSebelum, qty_change: q, qty_after: stokSebelum + q, note: it.catatan });
       } else {
-        const badan = { sku: skuIni, stok: q };
-        KOLOM_SALIN.forEach((k) => {
-          if (it[k] !== undefined) badan[k] = it[k];
-        });
-        let baru;
-        try {
-          baru = await sb("sku_master", { method: "POST", body: JSON.stringify(badan) });
-        } catch (e) {
-          // Kode SKU unik di seluruh database (bukan per PT): kode ini sudah dipakai PT lain.
-          if (e.pgCode === "23505") throw new Error(`Kode SKU ${skuIni} sudah dipakai perusahaan lain. Isi kolom "Masuk ke SKU" dengan SKU milik Anda (pilih yang sudah ada, atau ketik kode baru).`);
-          throw e;
-        }
-        undoList.push({ id: baru?.[0]?.id, baru: true });
-        riwayat.push({ sku: skuIni, type: "masuk", qty_before: 0, qty_change: q, qty_after: q, note: `${it.catatan} (SKU baru dibuat)` });
+        await sb("sku_stok", { method: "POST", body: JSON.stringify({ sku: it.sku, entitas: ent, stok: q }) });
+        undoList.push({ sku: it.sku, baru: true });
+        riwayat.push({ sku: it.sku, type: "masuk", qty_before: 0, qty_change: q, qty_after: q, note: `${it.catatan} (SKU baru di gudang ini)` });
       }
     }
-  } catch (e) {
+  } catch (err) {
     await undo();
-    throw e;
+    throw err;
   }
   return { riwayat, undo };
 }
@@ -185,16 +169,17 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   // ---------- Pengirim: buat transfer ----------
   const buat = (tujuan, daftar, catatan) =>
     jalankan(async () => {
-      const ids = daftar.map((d) => d.id).join(",");
-      const segar = await sb(`sku_master?id=in.(${ids})&select=id,sku,stok`);
-      const petaStok = new Map((segar || []).map((r) => [r.id, Number(r.stok) || 0]));
+      const e = encodeURIComponent(entSaya);
+      const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
+      const segar = await sb(`sku_stok?entitas=eq.${e}&sku=in.(${daftar.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
+      const petaStok = new Map((segar || []).map((r) => [r.sku, Number(r.stok) || 0]));
       daftar.forEach((d) => {
-        if ((petaStok.get(d.id) ?? 0) < d.jumlah) throw new Error(`Stok ${d.sku} tidak cukup (tersisa ${petaStok.get(d.id) ?? 0}).`);
+        if ((petaStok.get(d.sku) ?? 0) < d.jumlah) throw new Error(`Stok ${d.sku} tidak cukup (tersisa ${petaStok.get(d.sku) ?? 0}).`);
       });
       const items = daftar.map((d) => {
         const o = { sku: d.sku, qty: d.jumlah, qty_diterima: 0 };
-        KOLOM_SALIN.forEach((k) => {
-          if (d.src[k] !== undefined && d.src[k] !== null) o[k] = d.src[k];
+        TIPE_KODE_SKU.forEach((k) => {
+          if (d.src[k]) o[k] = d.src[k];
         });
         return o;
       });
@@ -216,28 +201,28 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       const riwayat = [];
       try {
         for (const d of daftar) {
-          const sebelum = petaStok.get(d.id);
-          const hasil = await sb(`sku_master?id=eq.${d.id}&stok=eq.${sebelum}`, {
+          const sebelum = petaStok.get(d.sku);
+          const hasil = await sb(`sku_stok?sku=eq.${encodeURIComponent(d.sku)}&entitas=eq.${e}&stok=eq.${sebelum}`, {
             method: "PATCH",
-            body: JSON.stringify({ stok: sebelum - d.jumlah }),
+            body: JSON.stringify({ stok: sebelum - d.jumlah, updated_at: new Date().toISOString() }),
           });
           if (!hasil?.length) throw new Error(`Stok ${d.sku} berubah saat diproses. Muat ulang lalu coba lagi.`);
-          dikurangi.push({ id: d.id, sebelum });
+          dikurangi.push({ sku: d.sku, sebelum });
           riwayat.push({
             sku: d.sku, type: "keluar", qty_before: sebelum, qty_change: -d.jumlah, qty_after: sebelum - d.jumlah,
             note: `Transfer ke ${namaEnt(tujuan)} (${t.kode})`,
           });
         }
-      } catch (e) {
+      } catch (err) {
         for (const u of dikurangi) {
           try {
-            await sb(`sku_master?id=eq.${u.id}`, { method: "PATCH", body: JSON.stringify({ stok: u.sebelum }) });
+            await sb(`sku_stok?sku=eq.${encodeURIComponent(u.sku)}&entitas=eq.${e}`, { method: "PATCH", body: JSON.stringify({ stok: u.sebelum }) });
           } catch {
             /* best effort */
           }
         }
         await sb(`transfer_barang?id=eq.${t.id}`, { method: "PATCH", body: JSON.stringify({ status: "dibatalkan", stok_dikembalikan: true }) }).catch(() => {});
-        throw e;
+        throw err;
       }
       await catatRiwayat(riwayat);
       // Samakan qty rak (FIFO) seperti Barang Keluar, supaya Peta Rak tidak menyimpang.
@@ -257,9 +242,9 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     }, "Transfer dibuat — menunggu konfirmasi penerima");
 
   // ---------- Penerima: terima ----------
-  const terima = (t, qtyMap, catatan, padanan = {}) =>
+  const terima = (t, qtyMap, catatan) =>
     jalankan(async () => {
-      const items = t.items.map((it) => ({ ...it, sku_tujuan: String(padanan[it.sku] || it.sku).trim(), qty_diterima: Math.min(Math.max(Number(qtyMap[it.sku]) || 0, 0), Number(it.qty)) }));
+      const items = t.items.map((it) => ({ ...it, qty_diterima: Math.min(Math.max(Number(qtyMap[it.sku]) || 0, 0), Number(it.qty)) }));
       if (items.every((it) => !it.qty_diterima)) throw new Error("Isi qty diterima minimal satu barang, atau pakai Tolak.");
       const selisih = items.some((it) => it.qty_diterima < Number(it.qty));
       // "Klaim" dulu supaya tidak bisa diterima dua kali (mis. klik ganda / dua perangkat).
@@ -310,7 +295,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     if (!klaim?.length) throw new Error("Stok transfer ini sudah dikembalikan.");
     try {
       const { riwayat } = await tambahStokBanyak(
-        daftar.map((it) => ({ ...it, sku_tujuan: undefined, jumlah: it.kembali, catatan: `Pengembalian transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} (${STATUS[t.status]?.label})` })),
+        daftar.map((it) => ({ ...it, jumlah: it.kembali, catatan: `Pengembalian transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} (${STATUS[t.status]?.label})` })),
         master
       );
       await catatRiwayat(riwayat);
@@ -396,7 +381,6 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                     <div key={it.sku} className="flex items-center justify-between py-1 text-xs">
                       <span className="font-mono text-slate-300 truncate">
                         {it.sku}
-                        {t.status === "diterima" && it.sku_tujuan && it.sku_tujuan !== it.sku ? ` → ${it.sku_tujuan}` : ""}
                       </span>
                       <span className="text-slate-400 shrink-0 ml-3">
                         {t.status === "diterima" ? `${it.qty_diterima} dari ${it.qty}` : `${it.qty} pcs`}
@@ -456,7 +440,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       {modal?.jenis === "buat" && (
         <FormBuat skuMaster={skuMaster} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)} onSubmit={buat} />
       )}
-      {modal?.jenis === "terima" && <FormTerima t={modal.t} namaEnt={namaEnt} skuMaster={skuMaster} saving={proses} onClose={() => setModal(null)} onSubmit={terima} />}
+      {modal?.jenis === "terima" && <FormTerima t={modal.t} namaEnt={namaEnt} saving={proses} onClose={() => setModal(null)} onSubmit={terima} />}
       {modal?.jenis === "tolak" && <FormTolak t={modal.t} saving={proses} onClose={() => setModal(null)} onSubmit={tolak} />}
     </div>
   );
@@ -550,7 +534,7 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
       </Field>
 
       <div className="text-[11px] text-slate-500 mb-3">
-        Stok gudang Anda langsung berkurang. Kalau SKU belum ada di perusahaan tujuan, SKU dan harganya dibuat otomatis saat barang diterima.
+        Stok gudang Anda langsung berkurang. Kode SKU sama di semua perusahaan; stok di perusahaan tujuan bertambah setelah barang diterima.
       </div>
       <button
         disabled={!valid || saving}
@@ -563,8 +547,7 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
   );
 }
 
-function FormTerima({ t, namaEnt, skuMaster, saving, onClose, onSubmit }) {
-  const [padanan, setPadanan] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, it.sku])));
+function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
   const [qty, setQty] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, Number(it.qty)])));
   const [catatan, setCatatan] = useState("");
   return (
@@ -578,12 +561,6 @@ function FormTerima({ t, namaEnt, skuMaster, saving, onClose, onSubmit }) {
             <div className="min-w-0 flex-1">
               <div className="font-mono text-xs text-slate-200 truncate">{it.sku}</div>
               <div className="text-[11px] text-slate-500">dikirim {it.qty}</div>
-              <input
-                list="sku-penerima" value={padanan[it.sku] ?? ""}
-                onChange={(e) => setPadanan((m) => ({ ...m, [it.sku]: e.target.value }))}
-                title="Masuk ke SKU" placeholder="Masuk ke SKU"
-                className={`${inputClass} !py-1 !text-xs font-mono mt-1`}
-              />
             </div>
             <input
               type="number" min={0} max={it.qty} value={qty[it.sku] ?? ""}
@@ -593,20 +570,12 @@ function FormTerima({ t, namaEnt, skuMaster, saving, onClose, onSubmit }) {
           </div>
         ))}
       </div>
-      <datalist id="sku-penerima">
-        {skuMaster.map((s) => (
-          <option key={s.id} value={s.sku} />
-        ))}
-      </datalist>
-      <div className="text-[11px] text-slate-500 mb-3">
-        Kolom kode di bawah tiap barang = SKU tujuan di gudang Anda. Kode SKU unik di seluruh sistem, jadi kalau kode yang sama sudah dipakai perusahaan lain, pilih SKU milik Anda atau ketik kode baru.
-      </div>
       <Field label="Catatan (opsional, mis. alasan selisih)">
         <input value={catatan} onChange={(e) => setCatatan(e.target.value)} className={inputClass} />
       </Field>
       <button
         disabled={saving}
-        onClick={() => onSubmit(t, qty, catatan.trim(), padanan)}
+        onClick={() => onSubmit(t, qty, catatan.trim())}
         className="w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg bg-emerald-500 text-slate-900 hover:bg-emerald-400 disabled:opacity-40"
       >
         <PackageCheck size={15} /> {saving ? "Memproses…" : "Konfirmasi Terima"}
