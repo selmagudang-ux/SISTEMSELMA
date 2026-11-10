@@ -102,6 +102,69 @@ async function tambahStokBanyak(daftar, master) {
   return { riwayat, undo };
 }
 
+// Ubah stok SKU di entitas MANA PUN (ent diisi eksplisit, bukan dari sesi). delta > 0 = tambah,
+// delta < 0 = kurangi. Dipakai khusus untuk menghapus transfer (membalikkan ke kondisi semula).
+// Pakai kunci optimis (stok=eq.<sebelum>) seperti fungsi lain; kalau ada langkah gagal, semua
+// perubahan yang sudah masuk dibatalkan sendiri. Mengembalikan { riwayat, undo }.
+async function terapkanDeltaStok(ent, daftar) {
+  const e = encodeURIComponent(ent);
+  const undoList = [];
+  const riwayat = [];
+  const undo = async () => {
+    for (const u of [...undoList].reverse()) {
+      try {
+        const f = `sku_stok?sku=eq.${encodeURIComponent(u.sku)}&entitas=eq.${e}`;
+        if (u.baru) await sb(f, { method: "DELETE" });
+        else await sb(f, { method: "PATCH", body: JSON.stringify({ stok: u.stokSebelum }) });
+      } catch {
+        /* best effort */
+      }
+    }
+  };
+  try {
+    const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
+    const ada = await sb(`sku_stok?entitas=eq.${e}&sku=in.(${daftar.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
+    const petaAda = new Map((ada || []).map((r) => [r.sku, Number(r.stok) || 0]));
+    for (const it of daftar) {
+      const delta = Number(it.delta);
+      const f = `sku_stok?sku=eq.${encodeURIComponent(it.sku)}&entitas=eq.${e}`;
+      if (petaAda.has(it.sku)) {
+        const sebelum = petaAda.get(it.sku);
+        if (sebelum + delta < 0) throw new Error(`Stok ${it.sku} tidak cukup untuk ditarik kembali (tersisa ${sebelum}, perlu ${-delta}).`);
+        const hasil = await sb(`${f}&stok=eq.${sebelum}`, { method: "PATCH", body: JSON.stringify({ stok: sebelum + delta, updated_at: new Date().toISOString() }) });
+        if (!hasil?.length) throw new Error(`Stok ${it.sku} berubah saat diproses. Muat ulang lalu coba lagi.`);
+        undoList.push({ sku: it.sku, stokSebelum: sebelum });
+        riwayat.push({ sku: it.sku, entitas: ent, type: delta > 0 ? "masuk" : "keluar", qty_before: sebelum, qty_change: delta, qty_after: sebelum + delta, note: it.catatan });
+      } else {
+        if (delta < 0) throw new Error(`Stok ${it.sku} tidak ditemukan di gudang tujuan.`);
+        await sb("sku_stok", { method: "POST", body: JSON.stringify({ sku: it.sku, entitas: ent, stok: delta }) });
+        undoList.push({ sku: it.sku, baru: true });
+        riwayat.push({ sku: it.sku, entitas: ent, type: "masuk", qty_before: 0, qty_change: delta, qty_after: delta, note: it.catatan });
+      }
+    }
+  } catch (err) {
+    await undo();
+    throw err;
+  }
+  return { riwayat, undo };
+}
+
+// Rencana membalikkan satu transfer ke kondisi semula (untuk tombol Hapus):
+//   ambil   = stok yang harus DITARIK dari penerima (hanya kalau sudah diterima)
+//   kembali = stok yang harus DIKEMBALIKAN ke pengirim (yang belum pernah dikembalikan)
+function rencanaHapus(t) {
+  const ambil = [];
+  const kembali = [];
+  for (const it of t.items || []) {
+    const qty = Number(it.qty) || 0;
+    const diterima = t.status === "diterima" ? Math.min(Number(it.qty_diterima) || 0, qty) : 0;
+    const balik = t.stok_dikembalikan ? diterima : qty;
+    if (diterima > 0) ambil.push({ sku: it.sku, jumlah: diterima });
+    if (balik > 0) kembali.push({ sku: it.sku, jumlah: balik });
+  }
+  return { ambil, kembali };
+}
+
 export default function TransferEntitas({ skuMaster = [], penempatan = [], master = {}, session, reload, showToast }) {
   const entSaya = entitasSesi();
   const bisaTransfer = bisa(session?.role, "stok.transfer_entitas");
@@ -314,6 +377,70 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
 
   const kembalikanStok = (t) => jalankan(() => kembalikan(t), "Stok dikembalikan ke gudang");
 
+  // ---------- Pengirim: HAPUS transfer (stok dibalikkan ke kondisi semula) ----------
+  // dikirim            -> stok pengirim dikembalikan penuh
+  // ditolak/dibatalkan -> sisa stok yang belum dikembalikan dikembalikan
+  // diterima           -> stok penerima ditarik lagi (qty_diterima) + stok pengirim dikembalikan
+  // Baris transfer dihapus DULU (hanya satu perangkat yang bisa mendapat baris itu = kunci anti ganda);
+  // kalau pembalikan stok gagal, stok dibatalkan dan baris transfer dimasukkan lagi.
+  const hapus = (t) =>
+    jalankan(async () => {
+      if (t.entitas_asal !== entSaya) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
+      const { ambil, kembali } = rencanaHapus(t);
+      if (ambil.length) {
+        const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
+        const ada = await sb(`sku_stok?entitas=eq.${encodeURIComponent(t.entitas_tujuan)}&sku=in.(${ambil.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
+        const peta = new Map((ada || []).map((r) => [r.sku, Number(r.stok) || 0]));
+        const kurang = ambil.filter((d) => (peta.get(d.sku) ?? 0) < d.jumlah);
+        if (kurang.length) {
+          throw new Error(
+            `Tidak bisa dihapus: stok di ${namaEnt(t.entitas_tujuan)} sudah tidak cukup untuk ditarik kembali (${kurang
+              .map((d) => `${d.sku}: perlu ${d.jumlah}, tersisa ${peta.get(d.sku) ?? 0}`)
+              .join("; ")}). Minta penerima mengembalikan barangnya dulu.`
+          );
+        }
+      }
+      const dihapus = await sb(`transfer_barang?id=eq.${t.id}`, { method: "DELETE" });
+      if (!dihapus?.length) throw new Error("Transfer sudah terhapus di perangkat lain, atau database menolak DELETE pada tabel transfer_barang (cek kebijakan RLS). Muat ulang.");
+      const baris = dihapus[0];
+      let penerima = null;
+      let pengirim = null;
+      try {
+        if (ambil.length) {
+          penerima = await terapkanDeltaStok(
+            t.entitas_tujuan,
+            ambil.map((d) => ({ sku: d.sku, delta: -d.jumlah, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` }))
+          );
+        }
+        if (kembali.length) {
+          pengirim = await terapkanDeltaStok(
+            entSaya,
+            kembali.map((d) => ({ sku: d.sku, delta: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
+          );
+        }
+      } catch (e) {
+        await penerima?.undo();
+        try {
+          await sb("transfer_barang", { method: "POST", body: JSON.stringify(baris) });
+        } catch {
+          showToast?.(`Pembalikan stok gagal dan transfer ${t.kode} tidak bisa dipulihkan otomatis. Hubungi admin sebelum mencoba lagi.`, "err", 8000);
+        }
+        throw e;
+      }
+      await catatRiwayat([...(penerima?.riwayat || []), ...(pengirim?.riwayat || [])]);
+    }, "Transfer dihapus, stok dikembalikan ke semula");
+
+  const konfirmasiHapus = (t) => {
+    const { ambil, kembali } = rencanaHapus(t);
+    const tot = (l) => l.reduce((a, d) => a + d.jumlah, 0);
+    const baris = [`Hapus transfer ${t.kode}?`];
+    if (ambil.length) baris.push(`• Stok di ${namaEnt(t.entitas_tujuan)} DITARIK kembali ${tot(ambil)} pcs.`);
+    if (kembali.length) baris.push(`• Stok gudang Anda dikembalikan ${tot(kembali)} pcs.`);
+    if (!ambil.length && !kembali.length) baris.push("• Tidak ada stok yang perlu diubah (sudah dikembalikan sebelumnya).");
+    baris.push("Qty di Peta Rak tidak diubah otomatis. Riwayat transfer ini hilang dari daftar.");
+    if (window.confirm(baris.join("\n"))) hapus(t);
+  };
+
   // ---------- Cetak surat jalan / label paket (PDF, lib/PdfTransfer.js) ----------
   const [cetakId, setCetakId] = useState(null);
   const cetak = async (jenis, t) => {
@@ -482,6 +609,15 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                         className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 disabled:opacity-40"
                       >
                         <Undo2 size={13} /> Kembalikan {kembali.reduce((a, it) => a + it.kembali, 0)} pcs ke stok
+                      </button>
+                    )}
+                    {keluar && (
+                      <button
+                        disabled={proses}
+                        onClick={() => konfirmasiHapus(t)}
+                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-40 ml-auto"
+                      >
+                        <Trash2 size={13} /> Hapus dan kembalikan
                       </button>
                     )}
                   </div>
