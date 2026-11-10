@@ -1,5 +1,6 @@
 import { Fragment, useRef, useState } from "react";
-import { X, Printer } from "lucide-react";
+import { createPortal } from "react-dom";
+import { X, Printer, Download } from "lucide-react";
 import { fmtRp } from "../lib/api";
 
 // Samakan dengan identitas toko di versi lama (Google Apps Script / Code.gs)
@@ -13,6 +14,35 @@ const ALAMAT_TOKO = [
 // Kop nota/label bawaan = Selma. PT lain (mis. Alivia) mengirim `identitas`
 // ({ nama, alamat: [] }) dari ModalRouter supaya tidak ikut mencetak nama & alamat Selma.
 const IDENTITAS_SELMA = { nama: NAMA_TOKO, alamat: ALAMAT_TOKO };
+
+// Area cetak sesungguhnya (nota / label). Dirender lewat portal LANGSUNG di <body>, di luar
+// #root, lalu saat print semua elemen lain di <body> di-display:none. Dulu pakai
+// `body * { visibility: hidden }` — visibility:hidden TIDAK melepas ruang layout, jadi isi halaman
+// Grosir di belakang modal ikut dihitung sebagai halaman cetak tak kasat mata, dan area nota
+// (position: fixed) diulang di SETIAP halaman itu -> struk tercetak beberapa lembar.
+// Saat di layar, area ini tetap di luar layar (left:-99999px) supaya tingginya bisa diukur;
+// `aktif` baru bernilai true setelah tombol Cetak ditekan.
+function AreaCetak({ kelas, aktif, innerRef, children }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div className="ss-print-root" data-aktif={aktif ? "1" : "0"} style={{ position: "absolute", top: 0, left: "-99999px" }}>
+      <style>{`
+        @media print {
+          body > *:not(.ss-print-root[data-aktif="1"]) { display: none !important; }
+          .ss-print-root { position: static !important; left: auto !important; top: auto !important; }
+          .${kelas} table, .${kelas} tr, .${kelas} p, .${kelas} .ss-nota-line, .${kelas} .ss-label-line {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+        }
+      `}</style>
+      <div ref={innerRef} className={kelas}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 // =========================================================
 // CETAK NOTA PESANAN GROSIR
@@ -38,6 +68,22 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
   const p = pesanan;
   const printRef = useRef(null);
   const [printing, setPrinting] = useState(false);
+  const [menyimpanPdf, setMenyimpanPdf] = useState(false);
+
+  // Simpan nota sebagai file PDF (struk 80mm, satu halaman) — dibuat langsung dengan jsPDF,
+  // modulnya baru dimuat saat tombol ditekan supaya tidak menambah ukuran bundle awal.
+  const simpanPdf = async () => {
+    if (menyimpanPdf) return;
+    setMenyimpanPdf(true);
+    try {
+      const { simpanPdfNotaGrosir } = await import("../lib/PdfNotaGrosir");
+      simpanPdfNotaGrosir({ pesanan: p, pelanggan, detailItems, totalDibayar, sisaHutang, pembayaran, identitas });
+    } catch (err) {
+      window.alert(`Gagal membuat PDF nota: ${err?.message || err}`);
+    } finally {
+      setMenyimpanPdf(false);
+    }
+  };
 
   const cetak = () => {
     setPrinting(true);
@@ -77,37 +123,30 @@ export function NotaPesananModal({ pesanan, pelanggan, detailItems, totalDibayar
           <div className="p-5 flex justify-center bg-slate-100">
             <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} identitas={identitas} />
           </div>
-          <div className="px-5 pb-5 pt-3">
+          <div className="px-5 pb-5 pt-3 flex gap-2">
             <button
               onClick={cetak}
               disabled={printing}
-              className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
+              className="flex-1 flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
             >
               <Printer size={15} /> {printing ? "Menyiapkan…" : "Cetak Nota"}
+            </button>
+            <button
+              onClick={simpanPdf}
+              disabled={menyimpanPdf}
+              className="flex-1 flex items-center justify-center gap-1.5 border border-slate-300 hover:bg-slate-100 disabled:opacity-60 text-slate-900 font-semibold text-sm py-2.5 rounded-lg"
+            >
+              <Download size={15} /> {menyimpanPdf ? "Membuat PDF…" : "Simpan PDF"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* ====== Area cetak sesungguhnya (bukan child dari overlay di atas,
-          supaya tidak ikut ke-print:hidden). Selalu ada di DOM (posisi di
-          luar layar) supaya tingginya bisa diukur JS kapan saja. ====== */}
-      <div style={{ position: "absolute", top: 0, left: "-99999px" }}>
-        <style>{`
-          @media print {
-            body * { visibility: hidden; }
-            .ss-nota-print, .ss-nota-print * { visibility: visible; }
-            .ss-nota-print { position: fixed; top: 0; left: 0; }
-            .ss-nota-print table, .ss-nota-print tr, .ss-nota-print .ss-nota-line, .ss-nota-print p {
-              page-break-inside: avoid;
-              break-inside: avoid;
-            }
-          }
-        `}</style>
-        <div ref={printRef} className="ss-nota-print">
-          <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} identitas={identitas} />
-        </div>
-      </div>
+      {/* ====== Area cetak sesungguhnya — portal ke <body> (lihat AreaCetak). Selalu ada
+          (di luar layar) supaya tingginya bisa diukur JS kapan saja. ====== */}
+      <AreaCetak kelas="ss-nota-print" aktif={printing} innerRef={printRef}>
+        <NotaIsi pesanan={p} pelanggan={pelanggan} detailItems={detailItems} totalDibayar={totalDibayar} sisaHutang={sisaHutang} pembayaran={pembayaran} identitas={identitas} />
+      </AreaCetak>
     </Fragment>
   );
 }
@@ -305,22 +344,9 @@ export function LabelPengirimanModal({ pesanan, pelanggan, toko, tokoOptions, on
         </div>
       </div>
 
-      <div style={{ position: "absolute", top: 0, left: "-99999px" }}>
-        <style>{`
-          @media print {
-            body * { visibility: hidden; }
-            .ss-label-print, .ss-label-print * { visibility: visible; }
-            .ss-label-print { position: fixed; top: 0; left: 0; }
-            .ss-label-print table, .ss-label-print tr, .ss-label-print .ss-label-line, .ss-label-print p {
-              page-break-inside: avoid;
-              break-inside: avoid;
-            }
-          }
-        `}</style>
-        <div ref={printRef} className="ss-label-print">
-          <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} identitas={identitas} />
-        </div>
-      </div>
+      <AreaCetak kelas="ss-label-print" aktif={printing} innerRef={printRef}>
+        <LabelIsi pesanan={p} pelanggan={pelanggan} toko={tokoAktif} detailItems={detailItems} identitas={identitas} />
+      </AreaCetak>
     </Fragment>
   );
 }
