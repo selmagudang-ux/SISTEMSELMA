@@ -79,28 +79,36 @@ async function tambahStokBanyak(daftar, master) {
         }
       }
     }
-    const ada = await sb(`sku_master?sku=in.(${daftar.map((d) => `"${String(d.sku).replace(/"/g, '\\"')}"`).join(",")})&select=id,sku,stok`);
+    const ada = await sb(`sku_master?sku=in.(${daftar.map((d) => `"${String(d.sku_tujuan || d.sku).replace(/"/g, '\\"')}"`).join(",")})&select=id,sku,stok`);
     const petaAda = new Map((ada || []).map((r) => [r.sku, r]));
     for (const it of daftar) {
       const q = Number(it.jumlah);
-      const lama = petaAda.get(it.sku);
+      const skuIni = it.sku_tujuan || it.sku;
+      const lama = petaAda.get(skuIni);
       if (lama) {
         const stokSebelum = Number(lama.stok) || 0;
         const hasil = await sb(`sku_master?id=eq.${lama.id}&stok=eq.${stokSebelum}`, {
           method: "PATCH",
           body: JSON.stringify({ stok: stokSebelum + q }),
         });
-        if (!hasil?.length) throw new Error(`Stok ${it.sku} berubah saat diproses. Muat ulang lalu coba lagi.`);
+        if (!hasil?.length) throw new Error(`Stok ${skuIni} berubah saat diproses. Muat ulang lalu coba lagi.`);
         undoList.push({ id: lama.id, stokSebelum });
-        riwayat.push({ sku: it.sku, type: "masuk", qty_before: stokSebelum, qty_change: q, qty_after: stokSebelum + q, note: it.catatan });
+        riwayat.push({ sku: skuIni, type: "masuk", qty_before: stokSebelum, qty_change: q, qty_after: stokSebelum + q, note: it.catatan });
       } else {
-        const badan = { sku: it.sku, stok: q };
+        const badan = { sku: skuIni, stok: q };
         KOLOM_SALIN.forEach((k) => {
           if (it[k] !== undefined) badan[k] = it[k];
         });
-        const baru = await sb("sku_master", { method: "POST", body: JSON.stringify(badan) });
+        let baru;
+        try {
+          baru = await sb("sku_master", { method: "POST", body: JSON.stringify(badan) });
+        } catch (e) {
+          // Kode SKU unik di seluruh database (bukan per PT): kode ini sudah dipakai PT lain.
+          if (e.pgCode === "23505") throw new Error(`Kode SKU ${skuIni} sudah dipakai perusahaan lain. Isi kolom "Masuk ke SKU" dengan SKU milik Anda (pilih yang sudah ada, atau ketik kode baru).`);
+          throw e;
+        }
         undoList.push({ id: baru?.[0]?.id, baru: true });
-        riwayat.push({ sku: it.sku, type: "masuk", qty_before: 0, qty_change: q, qty_after: q, note: `${it.catatan} (SKU baru dibuat)` });
+        riwayat.push({ sku: skuIni, type: "masuk", qty_before: 0, qty_change: q, qty_after: q, note: `${it.catatan} (SKU baru dibuat)` });
       }
     }
   } catch (e) {
@@ -249,9 +257,9 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     }, "Transfer dibuat — menunggu konfirmasi penerima");
 
   // ---------- Penerima: terima ----------
-  const terima = (t, qtyMap, catatan) =>
+  const terima = (t, qtyMap, catatan, padanan = {}) =>
     jalankan(async () => {
-      const items = t.items.map((it) => ({ ...it, qty_diterima: Math.min(Math.max(Number(qtyMap[it.sku]) || 0, 0), Number(it.qty)) }));
+      const items = t.items.map((it) => ({ ...it, sku_tujuan: String(padanan[it.sku] || it.sku).trim(), qty_diterima: Math.min(Math.max(Number(qtyMap[it.sku]) || 0, 0), Number(it.qty)) }));
       if (items.every((it) => !it.qty_diterima)) throw new Error("Isi qty diterima minimal satu barang, atau pakai Tolak.");
       const selisih = items.some((it) => it.qty_diterima < Number(it.qty));
       // "Klaim" dulu supaya tidak bisa diterima dua kali (mis. klik ganda / dua perangkat).
@@ -302,7 +310,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     if (!klaim?.length) throw new Error("Stok transfer ini sudah dikembalikan.");
     try {
       const { riwayat } = await tambahStokBanyak(
-        daftar.map((it) => ({ ...it, jumlah: it.kembali, catatan: `Pengembalian transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} (${STATUS[t.status]?.label})` })),
+        daftar.map((it) => ({ ...it, sku_tujuan: undefined, jumlah: it.kembali, catatan: `Pengembalian transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} (${STATUS[t.status]?.label})` })),
         master
       );
       await catatRiwayat(riwayat);
@@ -386,7 +394,10 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                 <div className="px-4 py-2">
                   {(t.items || []).map((it) => (
                     <div key={it.sku} className="flex items-center justify-between py-1 text-xs">
-                      <span className="font-mono text-slate-300 truncate">{it.sku}</span>
+                      <span className="font-mono text-slate-300 truncate">
+                        {it.sku}
+                        {t.status === "diterima" && it.sku_tujuan && it.sku_tujuan !== it.sku ? ` → ${it.sku_tujuan}` : ""}
+                      </span>
                       <span className="text-slate-400 shrink-0 ml-3">
                         {t.status === "diterima" ? `${it.qty_diterima} dari ${it.qty}` : `${it.qty} pcs`}
                       </span>
@@ -445,7 +456,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       {modal?.jenis === "buat" && (
         <FormBuat skuMaster={skuMaster} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)} onSubmit={buat} />
       )}
-      {modal?.jenis === "terima" && <FormTerima t={modal.t} namaEnt={namaEnt} saving={proses} onClose={() => setModal(null)} onSubmit={terima} />}
+      {modal?.jenis === "terima" && <FormTerima t={modal.t} namaEnt={namaEnt} skuMaster={skuMaster} saving={proses} onClose={() => setModal(null)} onSubmit={terima} />}
       {modal?.jenis === "tolak" && <FormTolak t={modal.t} saving={proses} onClose={() => setModal(null)} onSubmit={tolak} />}
     </div>
   );
@@ -552,7 +563,8 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
   );
 }
 
-function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
+function FormTerima({ t, namaEnt, skuMaster, saving, onClose, onSubmit }) {
+  const [padanan, setPadanan] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, it.sku])));
   const [qty, setQty] = useState(() => Object.fromEntries((t.items || []).map((it) => [it.sku, Number(it.qty)])));
   const [catatan, setCatatan] = useState("");
   return (
@@ -566,6 +578,12 @@ function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
             <div className="min-w-0 flex-1">
               <div className="font-mono text-xs text-slate-200 truncate">{it.sku}</div>
               <div className="text-[11px] text-slate-500">dikirim {it.qty}</div>
+              <input
+                list="sku-penerima" value={padanan[it.sku] ?? ""}
+                onChange={(e) => setPadanan((m) => ({ ...m, [it.sku]: e.target.value }))}
+                title="Masuk ke SKU" placeholder="Masuk ke SKU"
+                className={`${inputClass} !py-1 !text-xs font-mono mt-1`}
+              />
             </div>
             <input
               type="number" min={0} max={it.qty} value={qty[it.sku] ?? ""}
@@ -575,12 +593,20 @@ function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
           </div>
         ))}
       </div>
+      <datalist id="sku-penerima">
+        {skuMaster.map((s) => (
+          <option key={s.id} value={s.sku} />
+        ))}
+      </datalist>
+      <div className="text-[11px] text-slate-500 mb-3">
+        Kolom kode di bawah tiap barang = SKU tujuan di gudang Anda. Kode SKU unik di seluruh sistem, jadi kalau kode yang sama sudah dipakai perusahaan lain, pilih SKU milik Anda atau ketik kode baru.
+      </div>
       <Field label="Catatan (opsional, mis. alasan selisih)">
         <input value={catatan} onChange={(e) => setCatatan(e.target.value)} className={inputClass} />
       </Field>
       <button
         disabled={saving}
-        onClick={() => onSubmit(t, qty, catatan.trim())}
+        onClick={() => onSubmit(t, qty, catatan.trim(), padanan)}
         className="w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg bg-emerald-500 text-slate-900 hover:bg-emerald-400 disabled:opacity-40"
       >
         <PackageCheck size={15} /> {saving ? "Memproses…" : "Konfirmasi Terima"}
