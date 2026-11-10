@@ -706,6 +706,7 @@ export const GRUP_AKSI = [
     aksi: [
       { key: "stok.ajukan_restock", label: "Mengajukan restock (Stok & Rak)", bawaan: dari("gudang", "owner", "superadmin") },
       { key: "stok.transfer_entitas", label: "Transfer barang antar entitas (kirim / terima)", bawaan: dari("gudang", "superadmin") },
+      { key: "stok.hapus_transfer_entitas", label: "Hapus transfer antar entitas (stok dibalikkan ke semula)", bawaan: dari("superadmin") },
       { key: "restock.setujui", label: "Menyetujui / menolak pengajuan restock", bawaan: dari("owner", "superadmin") },
     ],
   },

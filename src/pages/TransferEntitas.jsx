@@ -136,6 +136,8 @@ async function terapkanDeltaStok(ent, daftar) {
         const hasil = await sb(`${f}&stok=eq.${sebelum}`, { method: "PATCH", body: JSON.stringify({ stok: sebelum + delta, updated_at: new Date().toISOString() }) });
         if (!hasil?.length) throw new Error(`Stok ${it.sku} berubah saat diproses. Muat ulang lalu coba lagi.`);
         undoList.push({ sku: it.sku, stokSebelum: sebelum });
+        // Pastikan database benar-benar menyimpan angka baru (bukan sekadar membalas sukses).
+        if (Number(hasil[0]?.stok) !== sebelum + delta) throw new Error(`Stok ${it.sku} di ${ent} tidak berubah seperti seharusnya (database tidak menyimpannya). Dibatalkan.`);
         riwayat.push({ sku: it.sku, entitas: ent, type: delta > 0 ? "masuk" : "keluar", qty_before: sebelum, qty_change: delta, qty_after: sebelum + delta, note: it.catatan });
       } else {
         if (delta < 0) throw new Error(`Stok ${it.sku} tidak ditemukan di gudang tujuan.`);
@@ -170,6 +172,7 @@ function rencanaHapus(t) {
 export default function TransferEntitas({ skuMaster = [], penempatan = [], master = {}, session, reload, showToast }) {
   const entSaya = entitasSesi();
   const bisaTransfer = bisa(session?.role, "stok.transfer_entitas");
+  const bisaHapus = bisa(session?.role, "stok.hapus_transfer_entitas");
   const [rows, setRows] = useState([]);
   const [memuat, setMemuat] = useState(true);
   const [filter, setFilter] = useState("perlu");
@@ -393,6 +396,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   // kalau pembalikan stok gagal, stok dibatalkan dan baris transfer dimasukkan lagi.
   const hapus = (t) =>
     jalankan(async () => {
+      if (!bisaHapus) throw new Error("Role Anda tidak punya akses menghapus transfer antar entitas.");
       if (t.entitas_asal !== entSaya) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
       const { ambil, kembali } = rencanaHapus(t);
       if (ambil.length) {
@@ -567,7 +571,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                     </div>
                   )}
                 </div>
-                {keluar && (
+                {keluar && bisaTransfer && (
                 <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">
                   <button
                     disabled={!!cetakId}
@@ -615,7 +619,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                         <Undo2 size={13} /> Kembalikan {kembali.reduce((a, it) => a + it.kembali, 0)} pcs ke stok
                       </button>
                     )}
-                    {keluar && (
+                    {keluar && bisaHapus && (
                       <button
                         disabled={proses}
                         onClick={() => konfirmasiHapus(t)}
