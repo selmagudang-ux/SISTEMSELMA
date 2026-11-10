@@ -260,6 +260,8 @@ export const NAV = [
               { key: "barang", label: "Stok Barang" },
               { key: "menipis", label: "Stok Menipis" },
               { key: "keluar", label: "Barang Keluar" },
+              // Kirim/terima stok gudang antar perusahaan di grup (pages/TransferEntitas.jsx).
+              { key: "transfer", label: "Transfer Antar Entitas" },
               // Dulu "Hitung Qty" — diganti nama jadi "Stok Opname" (istilah yang
               // lebih umum dipakai gudang untuk hitung fisik vs stok sistem).
               { key: "hitung", label: "Stok Opname" },
@@ -699,6 +701,7 @@ export const GRUP_AKSI = [
     grup: "Stok & Restock",
     aksi: [
       { key: "stok.ajukan_restock", label: "Mengajukan restock (Stok & Rak)", bawaan: dari("gudang", "owner", "superadmin") },
+      { key: "stok.transfer_entitas", label: "Transfer barang antar entitas (kirim / terima)", bawaan: dari("gudang", "superadmin") },
       { key: "restock.setujui", label: "Menyetujui / menolak pengajuan restock", bawaan: dari("owner", "superadmin") },
     ],
   },

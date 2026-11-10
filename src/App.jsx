@@ -1346,6 +1346,9 @@ function MainApp({ session, onLogout }) {
                   pengajuanRestock={pengajuanRestock}
                   session={session}
                   setModal={setModal}
+                  master={master}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
                 />
               )}
               {nav.menu === "rak" && (
