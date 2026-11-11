@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { FileDown, FileUp, Loader2, Check, AlertCircle, ImagePlus } from "lucide-react";
 import { ModalShell } from "./ui";
-import { sb, fmtRp, calcHarga, sbUploadFoto, kompresFotoProduk } from "../lib/api";
+import { sb, fmtRp, calcHarga, sbUploadFoto, kompresFotoProduk, namaEntitasSesi } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
 
 // =========================================================
@@ -27,6 +27,8 @@ import { downloadXlsx } from "../lib/exportData";
 // =========================================================
 
 const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+// Judul kolom: teks dalam kurung diabaikan, jadi "HPP (isi bila Harga Asli tidak diketahui)" = "HPP", "Harga Grosir (opsional)" = "Harga Grosir".
+const normHeader = (c) => norm(String(c ?? "").replace(/\(.*?\)/g, ""));
 
 const ALIAS = {
   sku: ["sku", "kodesku", "skubarang"],
@@ -61,11 +63,11 @@ async function bacaFile(file) {
   const XLSX = await import("xlsx");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
-  const iHeader = aoa.findIndex((r) => r.some((c) => ALIAS.sku.includes(norm(c)) || ALIAS.bahan.includes(norm(c))));
+  const iHeader = aoa.findIndex((r) => r.some((c) => ALIAS.sku.includes(normHeader(c)) || ALIAS.bahan.includes(normHeader(c))));
   if (iHeader < 0) throw new Error('Kolom "SKU" (atau "Bahan") tidak ditemukan. Pakai template yang bisa diunduh di layar ini.');
   const kolom = {};
   aoa[iHeader].forEach((c, i) => {
-    const n = norm(c);
+    const n = normHeader(c);
     for (const [k, alias] of Object.entries(ALIAS)) {
       if (kolom[k] === undefined && alias.includes(n)) kolom[k] = i;
     }
@@ -359,7 +361,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
       {hasil ? (
         <div>
           <div className="flex items-center gap-2 text-emerald-400 text-sm mb-2">
-            <Check size={16} /> {hasil.berhasil} SKU berhasil dibuat{hasil.fotoOk ? `, ${hasil.fotoOk} foto tersimpan` : ""}.
+            <Check size={16} /> {hasil.berhasil} SKU berhasil dibuat di {namaEntitasSesi(master)}{hasil.fotoOk ? `, ${hasil.fotoOk} foto tersimpan` : ""}.
           </div>
           {hasil.gagal.length > 0 && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 text-xs p-3 mb-3 max-h-48 overflow-auto">
@@ -382,6 +384,9 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
             Untuk membuat banyak SKU baru sekaligus. Dua cara: (1) file berkolom <b>SKU</b> — SKU dipakai apa adanya, tanpa Bahan/Peruntukan dll;
             (2) file berkolom Bahan, Peruntukan, Kategori, Subkategori, Model, Warna, Ukuran — SKU dibentuk otomatis (kode harus ada di Master Data).
             Isi Harga Asli, atau HPP kalau Harga Asli tidak diketahui; Grosir, Tengah, dan Ecer opsional (kosong = dihitung otomatis). Jenis file dikenali otomatis.
+          </div>
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs p-3 mb-3">
+            SKU & stok akan masuk ke: <b>{namaEntitasSesi(master)}</b> (PT akun yang sedang login). Mau mengisi PT lain? Login memakai akun PT tersebut.
           </div>
           <div className="flex flex-wrap gap-2 mb-3">
             <button onClick={unduhTemplate} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800">
