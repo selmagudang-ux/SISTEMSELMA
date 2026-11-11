@@ -262,8 +262,6 @@ export const NAV = [
               { key: "keluar", label: "Barang Keluar" },
               // Kirim/terima stok gudang antar perusahaan di grup (pages/TransferEntitas.jsx).
               { key: "transfer", label: "Transfer Antar Entitas" },
-              // Minta barang ke PT lain; disetujui -> jadi transfer (tab di TransferEntitas.jsx).
-              { key: "permintaan", label: "Permintaan Stok" },
               // Dulu "Hitung Qty" — diganti nama jadi "Stok Opname" (istilah yang
               // lebih umum dipakai gudang untuk hitung fisik vs stok sistem).
               { key: "hitung", label: "Stok Opname" },
