@@ -83,7 +83,8 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   // Barcode KODE TERIMA — dipindai penerima di aplikasi untuk membuka form penerimaan.
   const kt = kodeTerima(t);
   const lebar = gambarBarcode(doc, kt, M, y, W - M * 2, 10);
-  if (lebar) y += 12;
+  // Barcode setinggi 10 mm; teks KODE TERIMA diberi jarak ~3 mm di bawahnya supaya tidak menempel.
+  if (lebar) y += 15;
   doc.setFont("helvetica", "bold").setFontSize(9);
   teks(`KODE TERIMA: ${kt}`, M);
   doc.setFont("helvetica", "normal").setFontSize(7.5);
