@@ -38,7 +38,8 @@ const rapikanNama = (s) => String(s || "transfer").replace(/[^\w-]+/g, "_");
 
 // ---------------------------------------------------------
 // SURAT JALAN (A5 portrait, otomatis lanjut halaman kalau SKU banyak)
-// t: baris transfer_barang { kode, created_at, catatan, items:[{sku, qty}] }
+// t: baris transfer_barang { kode, created_at, catatan, items:[{sku, qty, hpp?}] }
+// Kalau ada barang yang punya hpp (dicatat saat transfer dibuat), tabel menampilkan kolom HPP & Nilai + total nilai.
 // ---------------------------------------------------------
 export function buatSuratJalan({ t, pengirim, penerima }) {
   const W = 148;
@@ -110,21 +111,28 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   y += 3;
 
   // Tabel barang
-  const kol = { no: M, sku: M + 8, qty: W - M - 22, cek: W - M };
+  const items = t.items || [];
+  const adaHpp = items.some((it) => it.hpp != null);
+  const rp = (n) => Math.round(Number(n) || 0).toLocaleString("id-ID");
+  const kol = adaHpp
+    ? { no: M, sku: M + 8, hpp: 84, qty: 99, nilai: 124, cek: W - M, kotak: 12 }
+    : { no: M, sku: M + 8, qty: W - M - 22, cek: W - M, kotak: 14 };
   const kepalaTabel = () => {
     doc.setFillColor(238, 241, 245).rect(M, y - 4, W - M * 2, 6, "F");
     doc.setFont("helvetica", "bold").setFontSize(8.5);
     teks("No", kol.no + 1);
     teks("SKU", kol.sku);
+    if (adaHpp) teks("HPP", kol.hpp, { align: "right" });
     teks("Qty", kol.qty, { align: "right" });
-    teks("Diterima", kol.cek - 1, { align: "right" });
+    if (adaHpp) teks("Nilai", kol.nilai, { align: "right" });
+    teks(adaHpp ? "Terima" : "Diterima", kol.cek - 1, { align: "right" });
     y += 6;
     doc.setFont("helvetica", "normal").setFontSize(8.5);
   };
   kepalaTabel();
 
-  const items = t.items || [];
   let totalQty = 0;
+  let totalNilai = 0;
   items.forEach((it, i) => {
     if (y + 6 > BOTTOM) {
       doc.addPage();
@@ -134,9 +142,17 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
     totalQty += Number(it.qty) || 0;
     teks(i + 1, kol.no + 1);
     teks(it.sku, kol.sku);
-    teks(`${it.qty} pcs`, kol.qty, { align: "right" });
+    if (adaHpp) {
+      const nilai = it.hpp != null ? (Number(it.hpp) || 0) * (Number(it.qty) || 0) : null;
+      if (nilai != null) totalNilai += nilai;
+      teks(it.hpp != null ? rp(it.hpp) : "-", kol.hpp, { align: "right" });
+      teks(`${it.qty} pcs`, kol.qty, { align: "right" });
+      teks(nilai != null ? rp(nilai) : "-", kol.nilai, { align: "right" });
+    } else {
+      teks(`${it.qty} pcs`, kol.qty, { align: "right" });
+    }
     // kotak kosong untuk dicentang / diisi penerima saat mengecek barang
-    doc.setDrawColor(120).rect(kol.cek - 14, y - 3.3, 14, 4.6);
+    doc.setDrawColor(120).rect(kol.cek - kol.kotak, y - 3.3, kol.kotak, 4.6);
     doc.setDrawColor(225).line(M, y + 2, W - M, y + 2);
     y += 6;
   });
@@ -144,6 +160,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   y += 1;
   doc.setFont("helvetica", "bold").setFontSize(9);
   teks(`Total: ${items.length} SKU · ${totalQty} pcs`, M);
+  if (adaHpp) teks(`Nilai HPP: Rp ${rp(totalNilai)}`, W - M, { align: "right" });
   y += 5;
   if (t.catatan) {
     doc.setFont("helvetica", "normal").setFontSize(8.5);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw, FileText, Tag } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas } from "../lib/api";
+import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
@@ -34,6 +34,17 @@ function kodeTransfer() {
   const d = new Date();
   const tgl = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
   return `TRF-${tgl}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+}
+
+// Nilai HPP satu transfer = HPP per barang (dicatat saat transfer dibuat) x qty. Transfer yang sudah
+// diterima memakai qty diterima. null = transfer lama tanpa data HPP.
+function nilaiHppTransfer(t) {
+  const items = t.items || [];
+  if (!items.some((it) => it.hpp != null)) return null;
+  return items.reduce((a, it) => {
+    const q = t.status === "diterima" ? Number(it.qty_diterima) || 0 : Number(it.qty) || 0;
+    return a + (Number(it.hpp) || 0) * q;
+  }, 0);
 }
 
 // Selisih yang belum kembali ke stok pengirim.
@@ -264,7 +275,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         if ((petaStok.get(d.sku) ?? 0) < d.jumlah) throw new Error(`Stok ${d.sku} tidak cukup (tersisa ${petaStok.get(d.sku) ?? 0}).`);
       });
       const items = daftar.map((d) => {
-        const o = { sku: d.sku, qty: d.jumlah, qty_diterima: 0 };
+        // hpp = HPP per pcs saat transfer dibuat (dicatat supaya tidak ikut berubah kalau harga katalog berubah).
+        const o = { sku: d.sku, qty: d.jumlah, qty_diterima: 0, hpp: Math.round(Number(d.src?.hpp) || 0) };
         TIPE_KODE_SKU.forEach((k) => {
           if (d.src[k]) o[k] = d.src[k];
         });
@@ -634,6 +646,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
             const keluar = t.entitas_asal === entSaya;
             const kembali = keluar ? qtyKembali(t) : [];
             const totalQty = (t.items || []).reduce((a, it) => a + (Number(it.qty) || 0), 0);
+            const nilaiHpp = nilaiHppTransfer(t);
             return (
               <div key={t.id} className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
                 <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-800">
@@ -655,11 +668,13 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                       </span>
                       <span className="text-slate-400 shrink-0 ml-3">
                         {t.status === "diterima" ? `${it.qty_diterima} dari ${it.qty}` : `${it.qty} pcs`}
+                        {it.hpp != null ? ` · HPP ${fmtRp(it.hpp)}` : ""}
                       </span>
                     </div>
                   ))}
                   <div className="text-[11px] text-slate-500 mt-1">
                     {(t.items || []).length} SKU · {totalQty} pcs
+                    {nilaiHpp != null ? ` · Nilai HPP ${fmtRp(nilaiHpp)}` : ""}
                     {t.catatan ? ` · Catatan: ${t.catatan}` : ""}
                   </div>
                   {t.diterima_at && (
