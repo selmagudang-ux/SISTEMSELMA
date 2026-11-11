@@ -50,23 +50,36 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   let y = M;
   const teks = (s, x, opt) => doc.text(String(s ?? ""), x, y, opt);
 
-  // Kop pengirim
+  // Kop pengirim: teks rata TENGAH; logo (kalau ada, mis. PT Selma) di sisi kiri.
+  const LOGO = 20; // mm
+  const adaLogo = !!pengirim?.logo;
+  const yKop = y;
+  const lebarKop = adaLogo ? W - 2 * (M + LOGO + 3) : W - M * 2; // simetris supaya tidak menabrak logo
+  const tengah = W / 2;
+  if (adaLogo) {
+    try {
+      doc.addImage(pengirim.logo, "PNG", M, yKop - 3, LOGO, LOGO);
+    } catch {
+      /* logo gagal dimuat: lanjut tanpa logo */
+    }
+  }
   doc.setFont("helvetica", "bold").setFontSize(13);
-  doc.splitTextToSize(String(pengirim?.nama || ""), W - M * 2).forEach((b) => {
-    teks(b, M);
+  doc.splitTextToSize(String(pengirim?.nama || ""), lebarKop).forEach((b) => {
+    teks(b, tengah, { align: "center" });
     y += 5;
   });
   doc.setFont("helvetica", "normal").setFontSize(8);
   (pengirim?.alamat || []).forEach((a) => {
-    doc.splitTextToSize(String(a), W - M * 2).forEach((b) => {
-      teks(b, M);
+    doc.splitTextToSize(String(a), lebarKop).forEach((b) => {
+      teks(b, tengah, { align: "center" });
       y += 3.6;
     });
   });
   if (pengirim?.telepon) {
-    teks(`Telp: ${pengirim.telepon}`, M);
+    teks(`Telp: ${pengirim.telepon}`, tengah, { align: "center" });
     y += 3.6;
   }
+  if (adaLogo) y = Math.max(y, yKop - 3 + LOGO + 1);
   y += 1;
   doc.setDrawColor(150).line(M, y, W - M, y);
   y += 6;

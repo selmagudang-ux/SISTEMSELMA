@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw, FileText, Tag } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp } from "../lib/api";
+import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, ENTITAS_DEFAULT } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
@@ -537,7 +537,9 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     const tab = window.open("", "_blank");
     try {
       const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
-      const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal) };
+      // Logo hanya untuk surat jalan yang dikirim PT Selma (ENTITAS_DEFAULT); PT lain belum punya logo.
+      const logo = jenis === "surat" && t.entitas_asal === ENTITAS_DEFAULT ? (await import("../lib/logoSelma")).LOGO_SELMA : undefined;
+      const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal), logo };
       const penerima = { nama: namaUsahaEntitas(master, t.entitas_tujuan), alamat: alamatEntitas(master, t.entitas_tujuan), telepon: teleponEntitas(master, t.entitas_tujuan) };
       const { blob, nama } = jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima });
       const url = URL.createObjectURL(blob);
