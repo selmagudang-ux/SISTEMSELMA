@@ -15,6 +15,8 @@ import { downloadXlsx } from "../lib/exportData";
 //  - Kolom kode boleh berisi KODE atau LABEL dari Master Data; kode yang tidak dikenal = baris ditolak
 //    (tambahkan dulu di Master Data supaya salah ketik tidak mengotori Master Data).
 //  - Harga (HPP, Grosir, Tengah, Ecer) dihitung otomatis dari Harga Asli lewat rumus yang sama dengan Buat SKU.
+//    Kolom harga: isi Harga Asli ATAU HPP (salah satu wajib). Kalau hanya HPP, Harga Asli dihitung mundur dari HPP.
+//    Grosir, Tengah, Ecer opsional: kalau diisi dipakai apa adanya, kalau kosong dihitung otomatis.
 //  - SKU yang sudah ada di PT ini / dobel di file DILEWATI. Data lama tidak pernah ditimpa.
 //  - Membuat SKU + stok awal (+ riwayat stok). Penempatan rak dilakukan setelahnya (stok muncul di "Sisa di Gudang").
 //  - FOTO (opsional), dua cara: (1) pilih banyak file foto, nama file (tanpa ekstensi) = kode SKU lengkap
@@ -37,6 +39,10 @@ const ALIAS = {
   ukuran: ["ukuran"],
   stok: ["stokawal", "stok", "jumlah", "qty"],
   harga: ["hargaasli", "hargabeli", "harga", "modal"],
+  hpp: ["hpp", "hargahpp"],
+  grosir: ["hargagrosir", "grosir"],
+  tengah: ["hargatengah", "tengah"],
+  ecer: ["hargaecer", "ecer"],
   barcode: ["barcodesupplier", "barcode", "barcodesupplieropsional", "barcodeopsional"],
   foto: ["fotolink", "linkfoto", "fotourl", "urlfoto", "linkgambar", "gambar", "foto"],
 };
@@ -65,7 +71,8 @@ async function bacaFile(file) {
     }
   });
   const modeSku = kolom.sku !== undefined;
-  const hilang = (modeSku ? ["stok", "harga"] : [...KODE_FIELDS, "model", "stok", "harga"]).filter((k) => kolom[k] === undefined);
+  const hilang = (modeSku ? ["stok"] : [...KODE_FIELDS, "model", "stok"]).filter((k) => kolom[k] === undefined);
+  if (kolom.harga === undefined && kolom.hpp === undefined) hilang.push("Harga Asli atau HPP");
   if (hilang.length) throw new Error(`Kolom belum lengkap: ${hilang.join(", ")}. Pakai template yang bisa diunduh di layar ini.`);
   const rows = aoa
     .slice(iHeader + 1)
@@ -76,7 +83,11 @@ async function bacaFile(file) {
       ...Object.fromEntries([...KODE_FIELDS, "model"].map((k) => [k, kolom[k] === undefined ? "" : teks(r[kolom[k]])])),
       skuLangsung: modeSku ? teks(r[kolom.sku]) : "",
       stok: angka(r[kolom.stok]),
-      harga: angka(r[kolom.harga]),
+      harga: kolom.harga === undefined ? null : angka(r[kolom.harga]),
+      hpp: kolom.hpp === undefined ? null : angka(r[kolom.hpp]),
+      grosir: kolom.grosir === undefined ? null : angka(r[kolom.grosir]),
+      tengah: kolom.tengah === undefined ? null : angka(r[kolom.tengah]),
+      ecer: kolom.ecer === undefined ? null : angka(r[kolom.ecer]),
       barcode: kolom.barcode === undefined ? "" : teks(r[kolom.barcode]),
       fotoMentah: kolom.foto === undefined ? "" : teks(r[kolom.foto]),
     }));
@@ -107,6 +118,37 @@ function cariKode(master, tipe, nilai) {
   return (daftar.find((m) => String(m.kode).toLowerCase() === v) || daftar.find((m) => String(m.label || "").toLowerCase() === v))?.kode || null;
 }
 
+function cekHarga(d) {
+  const salah = [];
+  const buruk = (v) => v !== null && (Number.isNaN(v) || v < 0);
+  if (d.harga === null && d.hpp === null) salah.push("Isi Harga Asli atau HPP");
+  for (const [k, n] of [["harga", "Harga Asli"], ["hpp", "HPP"], ["grosir", "Grosir"], ["tengah", "Tengah"], ["ecer", "Ecer"]]) {
+    if (buruk(d[k])) salah.push(`${n} tidak valid`);
+  }
+  return salah;
+}
+
+// Harga Asli diisi -> semua dihitung dari situ. Hanya HPP -> Harga Asli dihitung mundur dari HPP.
+// Grosir/Tengah/Ecer yang diisi menggantikan hasil hitungan.
+function hitungHarga(b, settings) {
+  const dariHpp = b.harga === null;
+  let asli = b.harga;
+  if (dariHpp) {
+    const rasio = calcHarga(1e6, settings).hpp / 1e6;
+    asli = rasio > 0 ? b.hpp / rasio : b.hpp;
+  }
+  const h = calcHarga(asli, settings);
+  return {
+    hargaAsli: dariHpp ? Math.round(asli) : asli,
+    hargaDasar: h.hargaDasar,
+    hpp: dariHpp ? b.hpp : h.hpp,
+    grosir: b.grosir ?? h.grosir,
+    tengah: b.tengah ?? h.tengah,
+    ecer: b.ecer ?? h.ecer,
+    dariHpp,
+  };
+}
+
 const LABEL = { bahan: "Bahan", peruntukan: "Peruntukan", kategori: "Kategori", subkategori: "Subkategori", warna: "Warna", ukuran: "Ukuran" };
 
 export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai, onClose }) {
@@ -133,12 +175,16 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           { key: "ukuran", label: "Ukuran" },
           { key: "stok", label: "Stok Awal" },
           { key: "harga", label: "Harga Asli" },
+          { key: "hpp", label: "HPP (isi bila Harga Asli tidak diketahui)" },
+          { key: "grosir", label: "Harga Grosir (opsional)" },
+          { key: "tengah", label: "Harga Tengah (opsional)" },
+          { key: "ecer", label: "Harga Ecer (opsional)" },
           { key: "barcode", label: "Barcode Supplier (opsional)" },
           { key: "foto", label: "Foto (link, opsional)" },
         ],
         rows: [
-          { bahan: c("bahan"), peruntukan: c("peruntukan"), kategori: c("kategori"), subkategori: c("subkategori"), model: "1", warna: c("warna"), ukuran: c("ukuran"), stok: 10, harga: 25000, barcode: "", foto: "https://contoh.com/foto1.jpg" },
-          { bahan: c("bahan"), peruntukan: c("peruntukan"), kategori: c("kategori"), subkategori: c("subkategori"), model: "1", warna: c("warna", 1) || c("warna"), ukuran: c("ukuran", 1) || c("ukuran"), stok: 5, harga: 25000, barcode: "", foto: "" },
+          { bahan: c("bahan"), peruntukan: c("peruntukan"), kategori: c("kategori"), subkategori: c("subkategori"), model: "1", warna: c("warna"), ukuran: c("ukuran"), stok: 10, harga: 25000, hpp: "", grosir: "", tengah: "", ecer: "", barcode: "", foto: "https://contoh.com/foto1.jpg" },
+          { bahan: c("bahan"), peruntukan: c("peruntukan"), kategori: c("kategori"), subkategori: c("subkategori"), model: "1", warna: c("warna", 1) || c("warna"), ukuran: c("ukuran", 1) || c("ukuran"), stok: 5, harga: "", hpp: 27500, grosir: "", tengah: "", ecer: "", barcode: "", foto: "" },
         ],
       },
     ]);
@@ -152,12 +198,16 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           { key: "sku", label: "SKU" },
           { key: "stok", label: "Stok Awal" },
           { key: "harga", label: "Harga Asli" },
+          { key: "hpp", label: "HPP (isi bila Harga Asli tidak diketahui)" },
+          { key: "grosir", label: "Harga Grosir (opsional)" },
+          { key: "tengah", label: "Harga Tengah (opsional)" },
+          { key: "ecer", label: "Harga Ecer (opsional)" },
           { key: "barcode", label: "Barcode Supplier (opsional)" },
           { key: "foto", label: "Foto (link, opsional)" },
         ],
         rows: [
-          { sku: "CONTOH-SKU-001", stok: 10, harga: 25000, barcode: "", foto: "https://contoh.com/foto1.jpg" },
-          { sku: "CONTOH-SKU-002", stok: 5, harga: 30000, barcode: "", foto: "" },
+          { sku: "CONTOH-SKU-001", stok: 10, harga: 25000, hpp: "", grosir: "", tengah: "", ecer: "", barcode: "", foto: "https://contoh.com/foto1.jpg" },
+          { sku: "CONTOH-SKU-002", stok: 5, harga: "", hpp: 33000, grosir: "", tengah: "", ecer: "", barcode: "", foto: "" },
         ],
       },
     ]);
@@ -184,7 +234,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
             const sku = d.skuLangsung.trim();
             if (!sku) salah.push("SKU kosong");
             if (d.stok === null || Number.isNaN(d.stok) || d.stok < 0) salah.push("Stok Awal tidak valid");
-            if (d.harga === null || Number.isNaN(d.harga) || d.harga < 0) salah.push("Harga Asli tidak valid");
+            salah.push(...cekHarga(d));
             if (salah.length) return { ...d, sku, status: "error", pesan: salah.join("; ") };
             const kunci = sku.toLowerCase();
             if (ada.has(kunci)) return { ...d, sku, status: "lewati", pesan: "SKU sudah ada, dilewati" };
@@ -204,7 +254,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           }
           if (!d.model) salah.push("Model kosong");
           if (d.stok === null || Number.isNaN(d.stok) || d.stok < 0) salah.push("Stok Awal tidak valid");
-          if (d.harga === null || Number.isNaN(d.harga) || d.harga < 0) salah.push("Harga Asli tidak valid");
+          salah.push(...cekHarga(d));
           if (salah.length) return { ...d, status: "error", pesan: salah.join("; ") };
           const sku = `${kode.bahan}${kode.peruntukan}${kode.kategori}-${kode.subkategori}-${d.model}-${kode.warna}-${kode.ukuran}`;
           if (ada.has(sku.toLowerCase())) return { ...d, ...kode, sku, status: "lewati", pesan: "SKU sudah ada, dilewati" };
@@ -249,14 +299,14 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
       const b = siap[i];
       setProses(`Menyimpan ${i + 1} / ${siap.length}…`);
       try {
-        const harga = calcHarga(b.harga, settings);
+        const harga = hitungHarga(b, settings);
         await sb("sku_master", {
           method: "POST",
           body: JSON.stringify({
             sku: b.sku,
             bahan: b.bahan || undefined, peruntukan: b.peruntukan || undefined, kategori: b.kategori || undefined, subkategori: b.subkategori || undefined,
             model: b.model || undefined, warna: b.warna || undefined, ukuran: b.ukuran || undefined,
-            harga_asli: b.harga,
+            harga_asli: harga.hargaAsli,
             harga_dasar: harga.hargaDasar, hpp: harga.hpp, grosir: harga.grosir, tengah: harga.tengah, ecer: harga.ecer,
             stok: b.stok,
             barcode_supplier: b.barcode || null,
@@ -305,7 +355,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
   };
 
   return (
-    <ModalShell title="Import SKU Baru dari Excel" onClose={onClose} maxWidth="max-w-3xl">
+    <ModalShell title="Import SKU Baru dari Excel" onClose={onClose} maxWidth="max-w-5xl">
       {hasil ? (
         <div>
           <div className="flex items-center gap-2 text-emerald-400 text-sm mb-2">
@@ -331,7 +381,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           <div className="text-xs text-slate-400 mb-3">
             Untuk membuat banyak SKU baru sekaligus. Dua cara: (1) file berkolom <b>SKU</b> — SKU dipakai apa adanya, tanpa Bahan/Peruntukan dll;
             (2) file berkolom Bahan, Peruntukan, Kategori, Subkategori, Model, Warna, Ukuran — SKU dibentuk otomatis (kode harus ada di Master Data).
-            Harga jual dihitung dari Harga Asli. Jenis file dikenali otomatis.
+            Isi Harga Asli, atau HPP kalau Harga Asli tidak diketahui; Grosir, Tengah, dan Ecer opsional (kosong = dihitung otomatis). Jenis file dikenali otomatis.
           </div>
           <div className="flex flex-wrap gap-2 mb-3">
             <button onClick={unduhTemplate} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800">
@@ -378,21 +428,33 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
                       <th className="text-left px-2 py-1.5">SKU</th>
                       <th className="text-right px-2 py-1.5">Stok</th>
                       <th className="text-right px-2 py-1.5">Harga Asli</th>
+                      <th className="text-right px-2 py-1.5">HPP</th>
+                      <th className="text-right px-2 py-1.5">Grosir</th>
+                      <th className="text-right px-2 py-1.5">Tengah</th>
+                      <th className="text-right px-2 py-1.5">Ecer</th>
                       <th className="text-left px-2 py-1.5">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {baris.map((b) => (
+                    {baris.map((b) => {
+                      const hh = b.status === "ok" && settings ? hitungHarga(b, settings) : null;
+                      const sel = (v) => (b.status === "error" || v === null || v === undefined ? "" : fmtRp(v));
+                      return (
                       <tr key={b.baris} className="border-t border-slate-800">
                         <td className="px-2 py-1 text-slate-500">{b.baris}</td>
                         <td className="px-2 py-1 font-mono text-slate-200">{b.sku || "—"}</td>
                         <td className="px-2 py-1 text-right text-slate-300">{b.status === "error" ? "" : b.stok}</td>
-                        <td className="px-2 py-1 text-right text-slate-300">{b.status === "error" ? "" : fmtRp(b.harga)}</td>
+                        <td className="px-2 py-1 text-right text-slate-300">{hh ? fmtRp(hh.hargaAsli) : sel(b.harga)}</td>
+                        <td className="px-2 py-1 text-right text-slate-300">{hh ? fmtRp(hh.hpp) : sel(b.hpp)}</td>
+                        <td className="px-2 py-1 text-right text-slate-300">{hh ? fmtRp(hh.grosir) : sel(b.grosir)}</td>
+                        <td className="px-2 py-1 text-right text-slate-300">{hh ? fmtRp(hh.tengah) : sel(b.tengah)}</td>
+                        <td className="px-2 py-1 text-right text-slate-300">{hh ? fmtRp(hh.ecer) : sel(b.ecer)}</td>
                         <td className={`px-2 py-1 ${b.status === "ok" ? "text-emerald-400" : b.status === "error" ? "text-red-400" : "text-slate-500"}`}>
-                          {b.status === "ok" ? `Siap${fotoPerBaris.has(b.baris) ? " · foto file" : adaLink(b) ? " · foto link" : ""}` : b.pesan}
+                          {b.status === "ok" ? `Siap${hh?.dariHpp ? " · dari HPP" : ""}${fotoPerBaris.has(b.baris) ? " · foto file" : adaLink(b) ? " · foto link" : ""}` : b.pesan}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
