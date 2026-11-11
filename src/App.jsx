@@ -3,7 +3,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, bisa, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
-import { getSession, logout } from "./lib/auth";
+import { getSession, logout, gantiPtSesi, ptAsliSesi } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
@@ -291,6 +291,10 @@ function AppShell({
   navigate,
   loadAll,
   loading,
+  ptOpsi,
+  ptAktif,
+  ptAsli,
+  onGantiPt,
   children,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -352,6 +356,24 @@ function AppShell({
                     </span>
                   )}
                 </button>
+              )}
+              {ptOpsi && ptOpsi.length > 1 && (
+                <select
+                  value={ptAktif}
+                  onChange={(e) => onGantiPt(e.target.value)}
+                  title="PT yang sedang dikelola (semua menu mengikuti PT ini)"
+                  className={`text-xs font-medium rounded-md-md px-2 py-1.5 mr-1 max-w-[9rem] sm:max-w-[14rem] border focus:outline-none ${
+                    ptAktif === ptAsli
+                      ? "bg-md-surface text-md-on-surface border-md-outline-variant"
+                      : "bg-amber-500/20 text-amber-600 border-amber-500/60"
+                  }`}
+                >
+                  {ptOpsi.map((e) => (
+                    <option key={e.kode} value={e.kode}>
+                      {e.label || e.kode}
+                    </option>
+                  ))}
+                </select>
               )}
               <button onClick={loadAll} onMouseDown={rippleEffect} className={iconBtnClass} title="Muat ulang">
                 <RefreshCw size={17} className={loading ? "animate-spin" : ""} />
@@ -1225,6 +1247,12 @@ function MainApp({ session, onLogout }) {
         navigate={navigate}
         loadAll={loadAll}
         loading={loading}
+        ptOpsi={session.role === "superappa" ? master?.entitas || [] : null}
+        ptAktif={session.entitas || ENTITAS_DEFAULT}
+        ptAsli={ptAsliSesi()}
+        onGantiPt={(kode) => {
+          if (gantiPtSesi(kode)) window.location.reload();
+        }}
       >
         <main className="px-5 py-6 w-full print:p-0">
           {/* Pengingat gajian: Sabtu/Minggu (mingguan) dan tanggal 23 (bulanan). Hanya untuk yang boleh mengelola gaji. */}

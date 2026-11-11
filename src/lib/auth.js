@@ -64,6 +64,28 @@ export function logout() {
   sessionStorage.removeItem(SESSION_KEY);
 }
 
+// ---- Pilihan PT untuk Super Appa ----
+// Super Appa boleh berpindah PT dari header. Pindah PT = mengganti `entitas` di sesi (PT asli akun disimpan di
+// `entitasAsli`), jadi semua menu, baca, dan tulis otomatis mengikuti PT yang dipilih. Halaman dimuat ulang
+// setelahnya supaya data & cache PT sebelumnya tidak ikut terbawa.
+export function ptAsliSesi() {
+  const s = getSession();
+  return s ? s.entitasAsli || s.entitas || "OPS" : "OPS";
+}
+
+export function gantiPtSesi(kode) {
+  const s = getSession();
+  if (!s || s.role !== "superappa" || !kode || kode === s.entitas) return false;
+  const baru = { ...s, entitasAsli: s.entitasAsli || s.entitas || "OPS", entitas: kode };
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(baru));
+  try {
+    sessionStorage.removeItem("selma-entitas");
+  } catch {
+    /* abaikan */
+  }
+  return true;
+}
+
 // ---- Kelola user (dipakai di halaman Pengaturan, khusus superadmin) ----
 
 // Tabel app_users dikunci total dari anon key, jadi ambil daftar user lewat
