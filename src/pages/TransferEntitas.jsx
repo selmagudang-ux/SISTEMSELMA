@@ -6,6 +6,7 @@ import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
 import { kodeTerima } from "../lib/kodeTransfer";
+import PermintaanStok from "./PermintaanStok";
 
 // =========================================================
 // TRANSFER BARANG ANTAR ENTITAS (stok gudang / sku_master)
@@ -169,10 +170,14 @@ function rencanaHapus(t) {
   return { ambil, kembali };
 }
 
-export default function TransferEntitas({ skuMaster = [], penempatan = [], master = {}, session, reload, showToast }) {
+export default function TransferEntitas({ skuMaster = [], penempatan = [], master = {}, session, reload, showToast, halamanAwal = "transfer" }) {
   const entSaya = entitasSesi();
   const bisaTransfer = bisa(session?.role, "stok.transfer_entitas");
   const bisaHapus = bisa(session?.role, "stok.hapus_transfer_entitas");
+  const bisaMinta = bisa(session?.role, "stok.minta_entitas");
+  const [halaman, setHalaman] = useState(halamanAwal); // "transfer" | "permintaan"
+  const [permintaan, setPermintaan] = useState([]);
+  const [tabelPermintaanAda, setTabelPermintaanAda] = useState(true);
   const [rows, setRows] = useState([]);
   const [memuat, setMemuat] = useState(true);
   const [filter, setFilter] = useState("perlu");
@@ -191,6 +196,15 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       setRows((await sb(`transfer_barang?or=(entitas_asal.eq.${e},entitas_tujuan.eq.${e})&order=created_at.desc&limit=300`)) || []);
     } catch (err) {
       showToast?.(err.message?.includes("transfer_barang") ? "Tabel transfer_barang belum dibuat — jalankan SQL migrasi dulu." : err.message, "err");
+    }
+    // Permintaan stok dimuat terpisah: kalau tabelnya belum dibuat, halaman Transfer tetap jalan.
+    try {
+      const e = encodeURIComponent(entSaya);
+      setPermintaan((await sb(`permintaan_stok?or=(entitas_peminta.eq.${e},entitas_pemberi.eq.${e})&order=created_at.desc&limit=300`)) || []);
+      setTabelPermintaanAda(true);
+    } catch (err) {
+      setTabelPermintaanAda(false);
+      if (!/permintaan_stok/.test(err.message || "")) showToast?.(err.message, "err");
     } finally {
       setMemuat(false);
     }
@@ -210,20 +224,25 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const jumlahPerlu = rows.filter(perluTindakan).length;
 
   // Jalankan aksi dengan kunci "proses" + toast + muat ulang data stok & daftar.
+  // Mengembalikan true kalau berhasil (dipakai PermintaanStok untuk menutup form-nya sendiri).
   const jalankan = async (fn, pesanSukses) => {
-    if (proses) return;
+    if (proses) return false;
     setProses(true);
     try {
       await fn();
       showToast?.(pesanSukses);
       setModal(null);
       await Promise.all([muat(), reload?.()]);
+      return true;
     } catch (e) {
       showToast?.(e.message || "Gagal memproses transfer", "err", 6000);
+      return false;
     } finally {
       setProses(false);
     }
   };
+
+  const jumlahPermintaanPerlu = permintaan.filter((p) => p.status === "menunggu" && p.entitas_pemberi === entSaya).length;
 
   const catatRiwayat = async (riwayat) => {
     if (!riwayat.length) return;
@@ -235,8 +254,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   };
 
   // ---------- Pengirim: buat transfer ----------
-  const buat = (tujuan, daftar, catatan) =>
-    jalankan(async () => {
+  // Inti pembuatan transfer (kurangi stok pengirim + catat transfer). Mengembalikan baris transfer.
+  const buatInti = async (tujuan, daftar, catatan) => {
       const e = encodeURIComponent(entSaya);
       const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
       const segar = await sb(`sku_stok?entitas=eq.${e}&sku=in.(${daftar.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
@@ -307,7 +326,51 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       } catch {
         showToast?.("Stok sudah berkurang, tapi qty rak gagal disamakan. Cek Peta Rak.", "warn", 6000);
       }
-    }, "Transfer dibuat — menunggu konfirmasi penerima");
+      return t;
+  };
+
+  // Buat transfer. Kalau berasal dari PERMINTAAN stok (perm), permintaan "diklaim" dulu supaya
+  // tidak bisa dipenuhi dua kali (klik ganda / dua perangkat), lalu ditautkan ke transfer yang jadi.
+  // Kalau pembuatan transfer gagal, status permintaan dikembalikan ke "menunggu".
+  const buat = (tujuan, daftar, catatan, perm) =>
+    jalankan(async () => {
+      if (!perm) {
+        await buatInti(tujuan, daftar, catatan);
+        return;
+      }
+      const klaim = await sb(`permintaan_stok?id=eq.${perm.id}&status=eq.menunggu`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "diproses",
+          diproses_oleh_nama: session?.nama || session?.username || null,
+          diproses_at: new Date().toISOString(),
+        }),
+      });
+      if (!klaim?.length) throw new Error("Permintaan ini sudah dibatalkan peminta atau diproses. Muat ulang.");
+      let t;
+      try {
+        t = await buatInti(tujuan, daftar, catatan);
+      } catch (err) {
+        await sb(`permintaan_stok?id=eq.${perm.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "menunggu", diproses_oleh_nama: null, diproses_at: null }),
+        }).catch(() => {});
+        throw err;
+      }
+      try {
+        const dikirim = new Map(daftar.map((d) => [d.sku, d.jumlah]));
+        await sb(`permintaan_stok?id=eq.${perm.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            transfer_id: String(t.id),
+            transfer_kode: t.kode,
+            items: (perm.items || []).map((it) => ({ ...it, qty_dikirim: dikirim.get(it.sku) || 0 })),
+          }),
+        });
+      } catch {
+        showToast?.(`Transfer ${t.kode} sudah dibuat, tapi tautan ke permintaan ${perm.kode} gagal disimpan. Barang tetap terkirim normal.`, "warn", 7000);
+      }
+    }, perm ? "Permintaan disetujui — barang dikirim, menunggu konfirmasi penerima" : "Transfer dibuat — menunggu konfirmasi penerima");
 
   // ---------- Penerima: terima ----------
   const terima = (t, qtyMap, catatan, kodeInput) =>
@@ -488,6 +551,44 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
 
   return (
     <div>
+      <div className="flex gap-2 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 max-w-sm">
+        {[
+          ["transfer", "Transfer Barang", jumlahPerlu],
+          ["permintaan", "Permintaan Stok", jumlahPermintaanPerlu],
+        ].map(([k, l, n]) => (
+          <button
+            key={k}
+            onClick={() => setHalaman(k)}
+            className={`flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-md transition ${
+              halaman === k ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            {l}
+            {n > 0 && <span className={`text-[10px] px-1.5 rounded-full ${halaman === k ? "bg-slate-950/25" : "bg-amber-500/20 text-amber-300"}`}>{n}</span>}
+          </button>
+        ))}
+      </div>
+
+      {halaman === "permintaan" ? (
+        <PermintaanStok
+          rows={permintaan}
+          transfers={rows}
+          entSaya={entSaya}
+          namaEnt={namaEnt}
+          skuMaster={skuMaster}
+          master={master}
+          session={session}
+          bisaMinta={bisaMinta}
+          bisaKirim={bisaTransfer}
+          proses={proses}
+          jalankan={jalankan}
+          muat={muat}
+          memuat={memuat}
+          tabelAda={tabelPermintaanAda}
+          onSetujui={(p) => setModal({ jenis: "buat", permintaan: p })}
+        />
+      ) : (
+      <>
       <PageHeader
         title="Transfer Antar Entitas"
         description="Kirim stok gudang ke Holding atau perusahaan lain di grup. Kode SKU sama di semua perusahaan. Stok pengirim berkurang saat dikirim; stok penerima bertambah setelah penerima mengonfirmasi."
@@ -636,8 +737,15 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         </div>
       )}
 
+      </>
+      )}
+
       {modal?.jenis === "buat" && (
-        <FormBuat skuMaster={skuMaster} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)} onSubmit={buat} />
+        <FormBuat
+          skuMaster={skuMaster} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)}
+          awal={modal.permintaan ? awalDariPermintaan(modal.permintaan, skuMaster, namaEnt) : null}
+          onSubmit={(tujuan, daftar, catatan) => buat(tujuan, daftar, catatan, modal.permintaan)}
+        />
       )}
       {modal?.jenis === "terima" && <FormTerima t={modal.t} namaEnt={namaEnt} saving={proses} onClose={() => setModal(null)} onSubmit={terima} />}
       {modal?.jenis === "tolak" && <FormTolak t={modal.t} saving={proses} onClose={() => setModal(null)} onSubmit={tolak} />}
@@ -645,15 +753,30 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   );
 }
 
-function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
+// Isi awal form transfer saat menyetujui PERMINTAAN stok: tujuan terkunci ke peminta, qty = yang
+// diminta (dibatasi stok yang ada, boleh dikurangi lagi). SKU yang stoknya kosong tidak ikut dan
+// ditampilkan sebagai peringatan.
+function awalDariPermintaan(p, skuMaster, namaEnt) {
+  const pilih = [];
+  const kosong = [];
+  for (const it of p.items || []) {
+    const src = skuMaster.find((s) => s.sku === it.sku);
+    const stok = Number(src?.stok) || 0;
+    if (!src || stok <= 0) kosong.push(it.sku);
+    else pilih.push({ src, jumlah: Math.min(Number(it.qty) || 0, stok), minta: Number(it.qty) || 0 });
+  }
+  return { tujuan: p.entitas_peminta, pilih, kosong, catatan: `Permintaan ${p.kode} dari ${namaEnt(p.entitas_peminta)}${p.catatan ? ` — ${p.catatan}` : ""}`, kode: p.kode };
+}
+
+function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit, awal }) {
   // Holding memegang stok (Master Barang), jadi Holding juga bisa jadi tujuan/pengirim transfer.
   const pilihanTujuan = (master?.entitas || []).filter(
     (e) => e.kode !== entSaya && !fiturMatiEntitas(master, e.kode).includes("stok")
   );
-  const [tujuan, setTujuan] = useState("");
-  const [catatan, setCatatan] = useState("");
+  const [tujuan, setTujuan] = useState(awal?.tujuan || "");
+  const [catatan, setCatatan] = useState(awal?.catatan || "");
   const [q, setQ] = useState("");
-  const [pilih, setPilih] = useState([]); // [{src, jumlah}]
+  const [pilih, setPilih] = useState(awal?.pilih || []); // [{src, jumlah, minta?}]
 
   const hasil = useMemo(() => {
     const k = q.trim().toLowerCase();
@@ -670,9 +793,17 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
   const valid = tujuan && pilih.length > 0 && pilih.every((p) => p.jumlah > 0);
 
   return (
-    <ModalShell title="Buat Transfer Antar Entitas" onClose={onClose} maxWidth="max-w-xl">
+    <ModalShell title={awal ? `Setujui & Kirim — ${awal.kode}` : "Buat Transfer Antar Entitas"} onClose={onClose} maxWidth="max-w-xl">
+      {awal && (
+        <div className="text-xs text-slate-400 mb-3">
+          Qty sudah terisi sesuai permintaan. Kurangi kalau stok tidak cukup; barang dikirim lewat transfer biasa (surat jalan + kode terima).
+          {awal.kosong.length > 0 && (
+            <div className="text-amber-400 mt-1">Stok kosong, tidak ikut dikirim: {awal.kosong.join(", ")}</div>
+          )}
+        </div>
+      )}
       <Field label="Kirim ke">
-        <select value={tujuan} onChange={(e) => setTujuan(e.target.value)} className={inputClass}>
+        <select value={tujuan} onChange={(e) => setTujuan(e.target.value)} disabled={!!awal} className={inputClass}>
           <option value="">Pilih perusahaan tujuan…</option>
           {pilihanTujuan.map((e) => (
             <option key={e.kode} value={e.kode}>
@@ -713,7 +844,10 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
             <div key={p.src.id} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
               <div className="min-w-0 flex-1">
                 <div className="font-mono text-xs text-slate-200 truncate">{p.src.sku}</div>
-                <div className="text-[11px] text-slate-500">stok tersedia {p.src.stok}</div>
+                <div className="text-[11px] text-slate-500">
+                  stok tersedia {p.src.stok}
+                  {p.minta ? ` · diminta ${p.minta}` : ""}
+                </div>
               </div>
               <input
                 type="number" min={1} max={p.src.stok} value={p.jumlah || ""}

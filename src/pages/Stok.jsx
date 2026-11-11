@@ -34,7 +34,8 @@ const compareModel = (a, b, arah = 1) => {
 };
 
 export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengajuanRestock, session, setModal, master, reload, showToast }) {
-  if (sub === "transfer") return <TransferEntitas skuMaster={skuMaster} penempatan={penempatan} master={master} session={session} reload={reload} showToast={showToast} />;
+  if (sub === "transfer" || sub === "permintaan")
+    return <TransferEntitas key={sub} halamanAwal={sub === "permintaan" ? "permintaan" : "transfer"} skuMaster={skuMaster} penempatan={penempatan} master={master} session={session} reload={reload} showToast={showToast} />;
   if (sub === "menipis") return <StokMenipis skuMaster={skuMaster} pengajuanRestock={pengajuanRestock} session={session} setModal={setModal} />;
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "hitung") return <StokOpname skuMaster={skuMaster} setModal={setModal} />;
