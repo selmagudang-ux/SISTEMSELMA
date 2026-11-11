@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
-import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi } from "../lib/api";
+import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
 import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
@@ -499,6 +499,37 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   const [subkategori, setSubkategori] = useState("");
   const [cetak, setCetak] = useState(null); // { done, total } selagi PDF dibuat
   const [unduhFoto, setUnduhFoto] = useState(null); // { done, total } selagi foto diunduh
+  const [fotoProses, setFotoProses] = useState(null); // SKU yang fotonya sedang diganti
+
+  // Ganti / tambah foto satu SKU. Foto disimpan per-barang (items.foto_url) dan Master Barang menampilkan
+  // foto barang TERBARU per SKU, jadi yang diubah adalah foto di barang terbaru itu. Kalau SKU belum punya
+  // barang berfoto sama sekali, dibuat satu baris barang (jumlah 0) sebagai penyimpan foto.
+  // Nama file diberi penanda waktu supaya alamat fotonya baru dan tidak tertahan cache foto lama.
+  const gantiFoto = async (s, file) => {
+    setFotoProses(s.sku);
+    try {
+      const kecil = await kompresFotoProduk(file);
+      const ext = (kecil.name.split(".").pop() || "jpg").toLowerCase();
+      const aman = String(s.sku).replace(/[^a-zA-Z0-9-_]/g, "-");
+      const url = await sbUploadFoto(kecil, `${aman}-${Date.now()}.${ext}`);
+      const waktu = (i) => new Date(i.created_at || i.tanggal || 0).getTime() || 0;
+      const terbaru = (items || []).filter((i) => i.sku === s.sku && i.foto_url).sort((a, b) => waktu(b) - waktu(a))[0];
+      if (terbaru) {
+        await sb(`items?id=eq.${terbaru.id}`, { method: "PATCH", body: JSON.stringify({ foto_url: url }) });
+      } else {
+        await sb("items", {
+          method: "POST",
+          body: JSON.stringify({ tanggal: new Date().toISOString().slice(0, 10), gudang: "Pembelian", jumlah: 0, sku: s.sku, foto_url: url, stage: "selesai" }),
+        });
+      }
+      showToast?.(`Foto ${s.sku} diganti`);
+      await reload?.();
+    } catch (e) {
+      showToast?.(e?.message || "Gagal mengganti foto", "err");
+    } finally {
+      setFotoProses(null);
+    }
+  };
   const [selected, setSelected] = useState(() => new Set()); // sku yang dipilih untuk download foto
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
   const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
@@ -1016,17 +1047,41 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 />
                                 {dipilih && <Check size={13} className="text-amber-400" />}
                               </label>
-                              {foto ? (
-                                <img
-                                  src={foto}
-                                  alt={s.sku}
-                                  loading="lazy"
-                                  decoding="async"
-                                  className="w-12 h-12 rounded-lg object-cover border border-slate-800 flex-shrink-0"
-                                />
-                              ) : (
-                                <div className="w-12 h-12 rounded-lg border border-dashed border-slate-800 flex-shrink-0" />
-                              )}
+                              <label
+                                onClick={(e) => e.stopPropagation()}
+                                className={`relative flex-shrink-0 ${bolehKelola ? "cursor-pointer" : ""}`}
+                                title={bolehKelola ? (foto ? "Ganti foto" : "Tambah foto") : undefined}
+                              >
+                                {foto ? (
+                                  <img
+                                    src={foto}
+                                    alt={s.sku}
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-12 h-12 rounded-lg object-cover border border-slate-800 flex-shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg border border-dashed border-slate-800 flex-shrink-0" />
+                                )}
+                                {bolehKelola && (
+                                  <>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="sr-only"
+                                      disabled={!!fotoProses}
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        e.target.value = "";
+                                        if (f) gantiFoto(s, f);
+                                      }}
+                                    />
+                                    <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-slate-950 border border-slate-700 text-slate-400">
+                                      {fotoProses === s.sku ? <Loader2 size={10} className="animate-spin" /> : <Camera size={10} />}
+                                    </span>
+                                  </>
+                                )}
+                              </label>
                               <div className="min-w-0">
                                 <div className="font-mono text-xs text-slate-300 truncate">{s.sku}</div>
                                 {s.pelengkap && (
