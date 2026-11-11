@@ -1324,6 +1324,7 @@ function MainApp({ session, onLogout }) {
               )}
               {nav.menu === "sku-harga" && (
                 <SkuHarga
+                  settings={settings}
                   sub={nav.sub || "buat"}
                   items={items}
                   skuMaster={skuMaster}

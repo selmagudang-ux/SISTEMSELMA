@@ -9,10 +9,11 @@ import MasterData from "./MasterData";
 import Rusak from "./Rusak";
 import BarangToko from "./kasir/BarangToko";
 import PindahKeToko from "./kasir/PindahKeToko";
+import ImporSkuMaster from "../components/ImporSkuMaster";
 
 export default function SkuHarga({
   sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
-  barangRusak, pesananMasuk,
+  barangRusak, pesananMasuk, settings,
 }) {
   if (sub === "buat") return <BuatSkuList items={items} setModal={setModal} session={session} />;
   if (sub === "kategori") return <MasterData master={master} skuMaster={skuMaster} reload={reload} showToast={showToast} />;
@@ -45,6 +46,7 @@ export default function SkuHarga({
       session={session}
       reload={reload}
       showToast={showToast}
+      settings={settings}
     />
   );
 }
@@ -476,7 +478,8 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
   );
 }
 
-function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast }) {
+function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast, settings }) {
+  const [imporSku, setImporSku] = useState(false);
   // Master Barang = katalog bersama: ubah harga / hapus SKU butuh izin "Kelola Master Barang".
   const bolehKelola = bisa(session?.role, "sku.kelola_master");
   const bolehEditHarga = bolehKelola && bisa(session?.role, "sku.edit_harga_langsung");
@@ -706,6 +709,14 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
         description="Data lengkap tiap SKU — foto, harga asli, HPP, dan harga jual (Grosir / Tengah / Ecer). Untuk ubah persentase markup, buka menu Pengaturan."
         action={
           <div className="flex items-center gap-2">
+            {bolehKelola && (
+              <button
+                onClick={() => setImporSku(true)}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+              >
+                <Plus size={14} /> Import SKU (Excel)
+              </button>
+            )}
             <button
               onClick={handleDownloadCsv}
               disabled={filtered.length === 0}
@@ -765,6 +776,18 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
           </div>
         }
       />
+      {imporSku && bolehKelola && (
+        <ImporSkuMaster
+          skuMaster={skuMaster}
+          master={master}
+          settings={settings}
+          onClose={() => setImporSku(false)}
+          onSelesai={(n) => {
+            showToast?.(`${n} SKU baru dibuat dari Excel`);
+            reload?.();
+          }}
+        />
+      )}
       {pindah && bolehKeToko && (
         <PindahKeToko
           daftar={pindah}
