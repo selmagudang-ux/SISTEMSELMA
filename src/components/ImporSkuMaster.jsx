@@ -6,7 +6,10 @@ import { downloadXlsx } from "../lib/exportData";
 
 // =========================================================
 // IMPORT SKU BARU MASSAL DARI EXCEL (Master Barang).
-// Kolom: Bahan, Peruntukan, Kategori, Subkategori, Model, Warna, Ukuran, Stok Awal, Harga Asli,
+// MODE 2 (SKU langsung): kalau Excel punya kolom "SKU", kolom Bahan/Peruntukan/Kategori/Subkategori/Model/Warna/Ukuran
+//  TIDAK diperlukan. Kolom wajib: SKU, Stok Awal, Harga Asli (+ Barcode Supplier & Foto opsional). SKU dipakai apa adanya;
+//  kalau polanya cocok dengan Master Data, kolom bahan/peruntukan/dst diisi otomatis dari SKU, kalau tidak dibiarkan kosong.
+// Kolom (mode 1): Bahan, Peruntukan, Kategori, Subkategori, Model, Warna, Ukuran, Stok Awal, Harga Asli,
 //        Barcode Supplier (opsional).
 //  - Kode SKU dibentuk SAMA seperti Buat SKU manual: {bahan}{peruntukan}{kategori}-{subkategori}-{model}-{warna}-{ukuran}.
 //  - Kolom kode boleh berisi KODE atau LABEL dari Master Data; kode yang tidak dikenal = baris ditolak
@@ -24,6 +27,7 @@ import { downloadXlsx } from "../lib/exportData";
 const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const ALIAS = {
+  sku: ["sku", "kodesku", "skubarang"],
   bahan: ["bahan"],
   peruntukan: ["peruntukan"],
   kategori: ["kategori"],
@@ -51,8 +55,8 @@ async function bacaFile(file) {
   const XLSX = await import("xlsx");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
-  const iHeader = aoa.findIndex((r) => r.some((c) => ALIAS.bahan.includes(norm(c))));
-  if (iHeader < 0) throw new Error('Kolom "Bahan" tidak ditemukan. Pakai template yang bisa diunduh di layar ini.');
+  const iHeader = aoa.findIndex((r) => r.some((c) => ALIAS.sku.includes(norm(c)) || ALIAS.bahan.includes(norm(c))));
+  if (iHeader < 0) throw new Error('Kolom "SKU" (atau "Bahan") tidak ditemukan. Pakai template yang bisa diunduh di layar ini.');
   const kolom = {};
   aoa[iHeader].forEach((c, i) => {
     const n = norm(c);
@@ -60,20 +64,39 @@ async function bacaFile(file) {
       if (kolom[k] === undefined && alias.includes(n)) kolom[k] = i;
     }
   });
-  const hilang = [...KODE_FIELDS, "model", "stok", "harga"].filter((k) => kolom[k] === undefined);
+  const modeSku = kolom.sku !== undefined;
+  const hilang = (modeSku ? ["stok", "harga"] : [...KODE_FIELDS, "model", "stok", "harga"]).filter((k) => kolom[k] === undefined);
   if (hilang.length) throw new Error(`Kolom belum lengkap: ${hilang.join(", ")}. Pakai template yang bisa diunduh di layar ini.`);
-  return aoa
+  const rows = aoa
     .slice(iHeader + 1)
     .map((r, i) => ({ baris: iHeader + i + 2, r }))
     .filter(({ r }) => r.some((c) => String(c).trim() !== ""))
     .map(({ baris, r }) => ({
       baris,
-      ...Object.fromEntries([...KODE_FIELDS, "model"].map((k) => [k, teks(r[kolom[k]])])),
+      ...Object.fromEntries([...KODE_FIELDS, "model"].map((k) => [k, kolom[k] === undefined ? "" : teks(r[kolom[k]])])),
+      skuLangsung: modeSku ? teks(r[kolom.sku]) : "",
       stok: angka(r[kolom.stok]),
       harga: angka(r[kolom.harga]),
       barcode: kolom.barcode === undefined ? "" : teks(r[kolom.barcode]),
       fotoMentah: kolom.foto === undefined ? "" : teks(r[kolom.foto]),
     }));
+  return { rows, modeSku };
+}
+
+// Pecah SKU berpola {bahan}{peruntukan}{kategori}-{sub}-{model}-{warna}-{ukuran} memakai Master Data.
+// Gagal/ambigu = null (SKU tetap boleh diimport, kolom rinciannya dikosongkan).
+function uraikanSku(master, sku) {
+  const p = sku.split("-");
+  if (p.length !== 5) return null;
+  const [depan, subkategori, model, warna, ukuran] = p;
+  const ada = (tipe, k) => (master?.[tipe] || []).some((m) => String(m.kode) === k);
+  if (!ada("subkategori", subkategori) || !ada("warna", warna) || !ada("ukuran", ukuran)) return null;
+  const cocok = [];
+  for (const b of master?.bahan || []) for (const pe of master?.peruntukan || []) for (const k of master?.kategori || []) {
+    if (`${b.kode}${pe.kode}${k.kode}` === depan) cocok.push({ bahan: b.kode, peruntukan: pe.kode, kategori: k.kode });
+  }
+  if (cocok.length !== 1) return null;
+  return { ...cocok[0], subkategori, model, warna, ukuran };
 }
 
 // Cocokkan teks ke kode Master Data (boleh kode atau label, tidak peka huruf besar/kecil).
@@ -93,6 +116,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
   const [proses, setProses] = useState(null);
   const [hasil, setHasil] = useState(null);
   const [fotoFiles, setFotoFiles] = useState([]);
+  const [modeSku, setModeSku] = useState(false);
 
   const unduhTemplate = () => {
     const c = (tipe, i = 0) => master?.[tipe]?.[i]?.kode || "";
@@ -120,6 +144,25 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
     ]);
   };
 
+  const unduhTemplateSku = () => {
+    downloadXlsx("template-import-sku-langsung.xlsx", [
+      {
+        name: "SKU Langsung",
+        columns: [
+          { key: "sku", label: "SKU" },
+          { key: "stok", label: "Stok Awal" },
+          { key: "harga", label: "Harga Asli" },
+          { key: "barcode", label: "Barcode Supplier (opsional)" },
+          { key: "foto", label: "Foto (link, opsional)" },
+        ],
+        rows: [
+          { sku: "CONTOH-SKU-001", stok: 10, harga: 25000, barcode: "", foto: "https://contoh.com/foto1.jpg" },
+          { sku: "CONTOH-SKU-002", stok: 5, harga: 30000, barcode: "", foto: "" },
+        ],
+      },
+    ]);
+  };
+
   const pilihFile = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -129,12 +172,26 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
     setHasil(null);
     setNamaFile(file.name);
     try {
-      const data = await bacaFile(file);
+      const { rows: data, modeSku: mSku } = await bacaFile(file);
+      setModeSku(mSku);
       if (!data.length) throw new Error("File kosong, tidak ada baris SKU.");
-      const ada = new Set((skuMaster || []).map((s) => s.sku));
+      const ada = new Set((skuMaster || []).map((s) => String(s.sku).trim().toLowerCase()));
       const dalamFile = new Set();
       setBaris(
         data.map((d) => {
+          if (mSku) {
+            const salah = [];
+            const sku = d.skuLangsung.trim();
+            if (!sku) salah.push("SKU kosong");
+            if (d.stok === null || Number.isNaN(d.stok) || d.stok < 0) salah.push("Stok Awal tidak valid");
+            if (d.harga === null || Number.isNaN(d.harga) || d.harga < 0) salah.push("Harga Asli tidak valid");
+            if (salah.length) return { ...d, sku, status: "error", pesan: salah.join("; ") };
+            const kunci = sku.toLowerCase();
+            if (ada.has(kunci)) return { ...d, sku, status: "lewati", pesan: "SKU sudah ada, dilewati" };
+            if (dalamFile.has(kunci)) return { ...d, sku, status: "lewati", pesan: "Dobel di file, dilewati" };
+            dalamFile.add(kunci);
+            return { ...d, ...(uraikanSku(master, sku) || {}), sku, stok: Math.floor(d.stok), status: "ok", pesan: "" };
+          }
           const kode = {};
           const salah = [];
           for (const f of KODE_FIELDS) {
@@ -150,9 +207,9 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           if (d.harga === null || Number.isNaN(d.harga) || d.harga < 0) salah.push("Harga Asli tidak valid");
           if (salah.length) return { ...d, status: "error", pesan: salah.join("; ") };
           const sku = `${kode.bahan}${kode.peruntukan}${kode.kategori}-${kode.subkategori}-${d.model}-${kode.warna}-${kode.ukuran}`;
-          if (ada.has(sku)) return { ...d, ...kode, sku, status: "lewati", pesan: "SKU sudah ada, dilewati" };
-          if (dalamFile.has(sku)) return { ...d, ...kode, sku, status: "lewati", pesan: "Dobel di file, dilewati" };
-          dalamFile.add(sku);
+          if (ada.has(sku.toLowerCase())) return { ...d, ...kode, sku, status: "lewati", pesan: "SKU sudah ada, dilewati" };
+          if (dalamFile.has(sku.toLowerCase())) return { ...d, ...kode, sku, status: "lewati", pesan: "Dobel di file, dilewati" };
+          dalamFile.add(sku.toLowerCase());
           return { ...d, ...kode, sku, stok: Math.floor(d.stok), status: "ok", pesan: "" };
         })
       );
@@ -197,8 +254,8 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           method: "POST",
           body: JSON.stringify({
             sku: b.sku,
-            bahan: b.bahan, peruntukan: b.peruntukan, kategori: b.kategori, subkategori: b.subkategori,
-            model: b.model, warna: b.warna, ukuran: b.ukuran,
+            bahan: b.bahan || undefined, peruntukan: b.peruntukan || undefined, kategori: b.kategori || undefined, subkategori: b.subkategori || undefined,
+            model: b.model || undefined, warna: b.warna || undefined, ukuran: b.ukuran || undefined,
             harga_asli: b.harga,
             harga_dasar: harga.hargaDasar, hpp: harga.hpp, grosir: harga.grosir, tengah: harga.tengah, ecer: harga.ecer,
             stok: b.stok,
@@ -210,7 +267,7 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
             method: "POST",
             body: JSON.stringify({
               sku: b.sku, type: "masuk", qty_before: 0, qty_change: b.stok, qty_after: b.stok,
-              note: "SKU baru dibuat (import Excel)",
+              note: modeSku ? "SKU baru dibuat (import Excel, SKU langsung)" : "SKU baru dibuat (import Excel)",
             }),
           });
         } catch {
@@ -272,12 +329,16 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
       ) : (
         <div>
           <div className="text-xs text-slate-400 mb-3">
-            Untuk membuat banyak SKU baru sekaligus. Kode SKU dibentuk otomatis dari Bahan, Peruntukan, Kategori, Subkategori, Model, Warna, dan Ukuran;
-            harga jual dihitung dari Harga Asli. Kode yang belum ada di Master Data harus ditambahkan dulu.
+            Untuk membuat banyak SKU baru sekaligus. Dua cara: (1) file berkolom <b>SKU</b> — SKU dipakai apa adanya, tanpa Bahan/Peruntukan dll;
+            (2) file berkolom Bahan, Peruntukan, Kategori, Subkategori, Model, Warna, Ukuran — SKU dibentuk otomatis (kode harus ada di Master Data).
+            Harga jual dihitung dari Harga Asli. Jenis file dikenali otomatis.
           </div>
           <div className="flex flex-wrap gap-2 mb-3">
             <button onClick={unduhTemplate} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800">
-              <FileDown size={14} /> Unduh Template
+              <FileDown size={14} /> Template (kode bahan dll)
+            </button>
+            <button onClick={unduhTemplateSku} className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800">
+              <FileDown size={14} /> Template (SKU langsung)
             </button>
             <label className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-amber-500 text-slate-900 hover:bg-amber-400 cursor-pointer">
               <FileUp size={14} /> Pilih File Excel
