@@ -521,28 +521,26 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const cetak = async (jenis, t) => {
     if (cetakId) return;
     setCetakId(`${jenis}-${t.id}`);
+    // Tab dibuka SEKARANG (saat klik) supaya tidak diblokir popup-blocker; PDF diisi setelah jadi.
+    const tab = window.open("", "_blank");
     try {
       const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
       const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal) };
       const penerima = { nama: namaUsahaEntitas(master, t.entitas_tujuan), alamat: alamatEntitas(master, t.entitas_tujuan), telepon: teleponEntitas(master, t.entitas_tujuan) };
       const { blob, nama } = jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima });
-      const file = new File([blob], nama, { type: "application/pdf" });
-      const sentuh = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
-      if (sentuh && navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file] });
-          return;
-        } catch (e) {
-          if (e?.name === "AbortError") return;
-        }
-      }
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = nama;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      if (tab) {
+        tab.location.href = url; // langsung terbuka di tab baru (bisa dicetak / disimpan dari sana)
+      } else {
+        // Popup diblokir browser: jatuh ke unduh biasa.
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = nama;
+        a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
+      tab?.close();
       showToast?.(e?.message || "Gagal membuat PDF", "err");
     } finally {
       setCetakId(null);
