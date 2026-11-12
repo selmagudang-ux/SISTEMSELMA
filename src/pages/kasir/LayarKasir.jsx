@@ -734,7 +734,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
                   )}
                   {it.promo && (
                     <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
-                      <span className={`inline-flex items-center gap-1 font-semibold ${it.promoLepas ? "text-slate-500 line-through" : "text-emerald-400"}`}>
+                      <span className={`inline-flex items-center gap-1 font-semibold ${it.promoLepas || h.grosir ? "text-slate-500 line-through" : "text-emerald-400"}`}>
                         <BadgePercent size={13} /> Promo {labelDiskon(it.promo)}{it.promo.kategori ? ` · ${it.promo.kategori}` : ""}
                         {!it.promoLepas && !h.grosir && h.diskonPromo > 0 && <span className="tabular-nums">· − {fmtRp(h.diskonPromo)}</span>}
                       </span>
@@ -747,6 +747,9 @@ export default function LayarKasir({ session, versiData = 0 }) {
                         {it.promoLepas ? "Pakai promo" : "Lepas promo"}
                       </button>
                     </div>
+                  )}
+                  {h.grosir && it.promo && !it.promoLepas && (
+                    <div className="mt-1 text-[11px] text-slate-500">Promo diskon tidak dipakai: harga grosir lebih murah.</div>
                   )}
 
                   {terbuka ? (
