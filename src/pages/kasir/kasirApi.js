@@ -431,6 +431,35 @@ export async function hapusTransaksi({ row }) {
   });
 }
 
+// ---------- hapus shift (khusus superappa) ----------
+// Shift yang masih buka TIDAK boleh dihapus (tutup dulu). Kalau shift punya transaksi, tiap transaksi
+// dihapus lewat kasir_hapus_transaksi (stok kembali + Keuangan disesuaikan), baru baris shift dihapus.
+// Dijalankan berurutan dari klien; kalau ada yang gagal, proses BERHENTI di situ dan error membawa
+// jumlah transaksi yang sudah terhapus (err.sudahDihapus) supaya bisa dilanjutkan lagi.
+export async function muatTransaksiShift(shiftId) {
+  const T = SKEMA.trx;
+  return (await sbAll(`kasir_transaksi?select=${T.id},${T.nomor},${T.total},${T.status}&${T.shiftId}=eq.${encodeURIComponent(shiftId)}&order=${T.waktu}.asc`)) || [];
+}
+
+export async function hapusShift({ shift, onProgres }) {
+  if (shift?.status !== "tutup") throw new Error("SHIFT_MASIH_BUKA");
+  const T = SKEMA.trx;
+  const daftar = await muatTransaksiShift(shift.id);
+  let sudah = 0;
+  try {
+    for (const r of daftar) {
+      await rpc("kasir_hapus_transaksi", { p: { entitas: entitasSesi(), transaksi_id: r[T.id] } });
+      sudah += 1;
+      if (onProgres) onProgres(sudah, daftar.length);
+    }
+    await sb(`kasir_shift?id=eq.${encodeURIComponent(shift.id)}`, { method: "DELETE" });
+  } catch (e) {
+    e.sudahDihapus = sudah;
+    throw e;
+  }
+  return { transaksiDihapus: sudah };
+}
+
 // Perkiraan nilai retur per barang di layar (angka FINAL dihitung database).
 export function perkiraanNilaiRetur(row, item, qty) {
   const T = SKEMA.trx;

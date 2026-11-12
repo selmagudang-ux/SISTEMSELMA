@@ -6,7 +6,7 @@ import { muatMaster, muatRiwayat, muatStrukDariDb, muatDaftarShift, muatIdShiftB
 import { identitasStruk, tglJamId } from "./kasirStruk";
 import ModalStruk from "./StrukKasir";
 import { cetakRincianShift } from "./ShiftRincian";
-import { ModalVoid, ModalRetur, ModalHapus } from "./KoreksiTransaksi";
+import { ModalVoid, ModalRetur, ModalHapus, ModalHapusShift } from "./KoreksiTransaksi";
 
 // =========================================================
 // KASIR — RIWAYAT TRANSAKSI, SHIFT, VOID & RETUR
@@ -49,6 +49,7 @@ const warnaSelisih = (n) => (n === 0 ? "text-emerald-400" : n > 0 ? "text-amber-
 export default function RiwayatStruk({ session, shift, onClose }) {
   const semuaKasir = bisa(session?.role, "kasir.lihat_semua");
   const bolehVoidRole = bisa(session?.role, "kasir.void");
+  const bolehHapusShift = session?.role === "superappa"; // hapus shift: khusus superappa (bukan lewat pengaturan izin)
 
   const [tab, setTab] = useState("transaksi");
   const [dari, setDari] = useState(() => tglInput(new Date()));
@@ -63,7 +64,7 @@ export default function RiwayatStruk({ session, shift, onClose }) {
   const [membuka, setMembuka] = useState(null);
   const [mencetakShift, setMencetakShift] = useState(null); // id shift yang sedang dicetak
   const [struk, setStruk] = useState(null);
-  const [aksi, setAksi] = useState(null); // { tipe: "void" | "retur", row }
+  const [aksi, setAksi] = useState(null); // { tipe: "void" | "retur" | "hapus", row } atau { tipe: "hapusShift", shift }
 
   const muat = async () => {
     setError("");
@@ -438,6 +439,17 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                           >
                             {mencetakShift === s.id ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />} Cetak
                           </button>
+                          {bolehHapusShift && (
+                            <button
+                              type="button"
+                              onClick={() => setAksi({ tipe: "hapusShift", shift: s })}
+                              disabled={!!mencetakShift}
+                              title="Hapus shift ini (khusus superappa)"
+                              className="flex items-center gap-1.5 border border-slate-700 hover:border-red-500/50 hover:text-red-300 disabled:opacity-40 text-slate-400 text-xs font-medium px-2.5 py-1.5 rounded-lg"
+                            >
+                              <Trash2 size={13} /> Hapus
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="text-slate-500 mt-0.5">
@@ -476,6 +488,7 @@ export default function RiwayatStruk({ session, shift, onClose }) {
       {aksi?.tipe === "hapus" && (
         <ModalHapus row={aksi.row} shiftSudahTutup={aksi.row[T.shiftId] != null && !shiftBuka.has(aksi.row[T.shiftId])} onSelesai={selesaiAksi} onClose={() => setAksi(null)} />
       )}
+      {aksi?.tipe === "hapusShift" && bolehHapusShift && <ModalHapusShift shift={aksi.shift} onSelesai={selesaiAksi} onClose={() => setAksi(null)} />}
       {aksi?.tipe === "retur" && <ModalRetur row={aksi.row} session={session} onSelesai={selesaiAksi} onMuatUlang={muat} onClose={() => setAksi(null)} />}
     </>
   );

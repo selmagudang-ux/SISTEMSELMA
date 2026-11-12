@@ -9,6 +9,8 @@ import {
   siapkanKeuanganKeluar,
   voidTransaksi,
   hapusTransaksi,
+  hapusShift,
+  muatTransaksiShift,
   returTransaksi,
   perkiraanNilaiRetur,
   pesanErrorKasir,
@@ -320,6 +322,108 @@ export function ModalRetur({ row, session, onSelesai, onMuatUlang, onClose }) {
               </button>
             </>
           )}
+        </>
+      )}
+    </Kerangka>
+  );
+}
+
+// ---------------------------------------------------------
+// Hapus SHIFT permanen (khusus superappa). Transaksi di dalam shift ikut dihapus (stok kembali, Keuangan disesuaikan).
+export function ModalHapusShift({ shift, onSelesai, onClose }) {
+  const [konfirmasi, setKonfirmasi] = useState("");
+  const [daftar, setDaftar] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [progres, setProgres] = useState(null);
+  const [error, setError] = useState("");
+  const [hasil, setHasil] = useState(null);
+  const siap = konfirmasi.trim().toUpperCase() === "HAPUS";
+  const tutup = shift?.status === "tutup";
+
+  useEffect(() => {
+    let batal = false;
+    muatTransaksiShift(shift.id)
+      .then((r) => !batal && setDaftar(r))
+      .catch((e) => !batal && setError(e?.message || "Gagal memuat transaksi shift"));
+    return () => {
+      batal = true;
+    };
+  }, [shift.id]);
+
+  const hapus = async () => {
+    if (!siap || saving || !tutup || !daftar) return;
+    setSaving(true);
+    setError("");
+    try {
+      setHasil(await hapusShift({ shift, onProgres: (a, b) => setProgres([a, b]) }));
+    } catch (e) {
+      const sudah = e?.sudahDihapus || 0;
+      const pesan = pesanErrorKasir(e, "koreksi").pesan;
+      setError(`${pesan}${sudah ? ` (${sudah} transaksi sudah terhapus sebelum berhenti — tekan Hapus lagi untuk melanjutkan)` : ""}`);
+      muatTransaksiShift(shift.id).then(setDaftar).catch(() => {});
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const jumlah = daftar?.length ?? 0;
+  const total = (daftar || []).filter((r) => (r[SKEMA.trx.status] || "selesai") !== "void").reduce((a, r) => a + (Number(r[SKEMA.trx.total]) || 0), 0);
+
+  return (
+    <Kerangka judul={hasil ? "Shift dihapus" : "Hapus Shift"} subjudul={shift.kasir_nama} onClose={hasil ? onSelesai : onClose} bebasTutup={!saving}>
+      {hasil ? (
+        <>
+          <div className="text-center">
+            <CheckCircle2 size={40} className="mx-auto text-emerald-400 mb-2" />
+            <div className="font-semibold">Shift sudah dihapus</div>
+            <p className="text-xs text-slate-400 mt-1">
+              {hasil.transaksiDihapus > 0 ? `${hasil.transaksiDihapus} transaksi di dalamnya ikut dihapus, stok dikembalikan.` : "Shift ini tidak punya transaksi."}
+            </p>
+          </div>
+          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3.5 rounded-2xl">
+            Selesai
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="rounded-2xl bg-slate-950/50 border border-slate-800 p-4 text-sm space-y-1.5">
+            <div className="flex justify-between"><span className="text-slate-400">Kasir</span><span className="font-semibold">{shift.kasir_nama || "-"}</span></div>
+            <div className="flex justify-between"><span className="text-slate-400">Kas awal</span><span>{fmtRp(Number(shift.kas_awal) || 0)}</span></div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Transaksi</span>
+              <span>{daftar ? `${jumlah} (${fmtRp(total)})` : "memuat…"}</span>
+            </div>
+          </div>
+
+          {!tutup ? (
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>Shift ini masih buka. Tutup kasir dulu, baru bisa dihapus.</span>
+            </div>
+          ) : (
+            <>
+              <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4">
+                <li>Shift dihapus permanen dari Riwayat dan tidak bisa dikembalikan.</li>
+                <li>{jumlah > 0 ? `${jumlah} transaksi di shift ini ikut dihapus: stok dikembalikan dan catatan uangnya di Keuangan dihapus atau dikurangi.` : "Shift ini tidak punya transaksi."}</li>
+                <li>Tidak ada catatan yang tersisa tentang penghapusan ini.</li>
+              </ul>
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-1.5 block">Ketik HAPUS untuk melanjutkan</label>
+                <input value={konfirmasi} onChange={(e) => setKonfirmasi(e.target.value)} placeholder="HAPUS" className={inputCls} />
+              </div>
+            </>
+          )}
+
+          <KotakError pesan={error} />
+
+          <button
+            onClick={hapus}
+            disabled={!siap || saving || !tutup || !daftar}
+            className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl"
+          >
+            {saving && <Loader2 size={16} className="animate-spin" />}
+            {saving && progres ? `Menghapus ${progres[0]}/${progres[1]}…` : "Hapus Shift Permanen"}
+          </button>
         </>
       )}
     </Kerangka>
