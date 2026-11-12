@@ -260,7 +260,7 @@ function susunBarisRincian({ rincian, info }) {
   return b;
 }
 
-// HTML mandiri bergaya struk (font mono 12px, lebar 72mm, garis putus-putus hitam, kop nama 15px tebal).
+// HTML mandiri bergaya struk (font mono 11px, lebar 72mm, garis putus-putus hitam, kop nama 14px tebal).
 function htmlRincian(baris, adaNama, mm) {
   const isi = baris
     .map((x, i) => {
@@ -273,8 +273,8 @@ function htmlRincian(baris, adaNama, mm) {
     .join("");
   const css = `${mm ? `@page{size:80mm ${mm}mm;margin:0}` : "@page{margin:0}"}
     html,body{margin:0;padding:0;background:#fff;color:#000}
-    .w{width:72mm;font:12px/1.375 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;white-space:pre-wrap}
-    .c{text-align:center;margin:2px 0}.c.t{font-weight:bold}.c.h{font-size:15px;margin:4px 0;letter-spacing:.025em}
+    .w{width:72mm;font:11px/1.375 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;white-space:pre-wrap}
+    .c{text-align:center;margin:2px 0}.c.t{font-weight:bold}.c.h{font-size:14px;margin:4px 0;letter-spacing:.025em}
     .l{margin:2px 0}.k{display:flex;justify-content:space-between;gap:1ch}.k span:first-child{min-width:0;overflow-wrap:anywhere}.k span:last-child{white-space:nowrap}.k.t{font-weight:bold}
     .g{border-top:1px dashed #000;margin:6px 0}
     .w div{break-inside:avoid;page-break-inside:avoid}`;
