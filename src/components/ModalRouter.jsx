@@ -1761,8 +1761,11 @@ export default function ModalRouter({
               className={`flex items-center justify-between px-3 py-2 text-sm ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
             >
               <div className="min-w-0">
-                <div className="text-slate-200 truncate">{d.nama_produk}</div>
-                <div className="text-[11px] text-slate-500">
+                <div className="text-slate-200 truncate">
+                  <span className="inline-block min-w-[1.5rem] text-slate-500 tabular-nums">{i + 1}.</span>
+                  {d.nama_produk}
+                </div>
+                <div className="text-[11px] text-slate-500 pl-6">
                   {d.qty} x {fmtRp(d.harga)} {d.sumber_produk === "manual" ? "· manual" : ""}
                 </div>
               </div>
