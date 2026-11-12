@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
@@ -46,8 +46,20 @@ export function pesanError(e) {
 }
 
 export function Kerangka({ judul, onClose, children, lebar = "sm:max-w-md" }) {
+  // Tutup lewat klik latar HANYA kalau tombol mouse ditekan DAN dilepas di latar. Kalau tidak, menggeser kursor
+  // (mis. memilih teks di kolom isian lalu melepas mouse di luar kotak) dianggap klik latar dan form langsung tertutup.
+  const mulaiDiLatar = useRef(false);
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+      onMouseDown={(e) => {
+        mulaiDiLatar.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && mulaiDiLatar.current) onClose();
+        mulaiDiLatar.current = false;
+      }}
+    >
       <div
         className={`w-full ${lebar} bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto`}
         onClick={(e) => e.stopPropagation()}
