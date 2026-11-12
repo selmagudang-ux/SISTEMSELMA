@@ -2359,6 +2359,7 @@ export default function ModalRouter({
         tokoGrosir={tokoGrosir}
         skuMaster={skuMaster}
         produkManualGrosir={produkManualGrosir}
+        pelangganGrosir={pelangganGrosir}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>

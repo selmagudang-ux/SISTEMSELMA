@@ -66,6 +66,37 @@ function kategoriPelanggan(p) {
   return p?.kategori || "grosir";
 }
 
+// ---- Harga mengikuti kategori pelanggan (Buat Pesanan & Edit Pesanan Grosir) ----
+// Pelanggan "grosir" -> harga Grosir, "tengah" -> harga Tengah, "ecer" -> harga Ecer
+// (kolom grosir/tengah/ecer di sku_master). Kategori kosong/tak dikenal dianggap grosir.
+// Harga 0/kosong = barang itu BELUM bisa dimasukkan ke pesanan untuk kategori tsb.
+// Reseller TIDAK memakai ini (ItemRow tanpa prop kategoriHarga = perilaku lama).
+const OPSI_KATEGORI_HARGA = [
+  { value: "grosir", label: "Grosir" },
+  { value: "tengah", label: "Tengah" },
+  { value: "ecer", label: "Ecer" },
+];
+const kunciKategoriHarga = (k) => (k === "tengah" || k === "ecer" ? k : "grosir");
+export const hargaSkuUntuk = (s, kategori) => Number(s?.[kunciKategoriHarga(kategori)]) || 0;
+const labelKategoriHarga = (k) => OPSI_KATEGORI_HARGA.find((o) => o.value === kunciKategoriHarga(k))?.label || "Grosir";
+
+// Hitung ulang harga baris SKU saat kategori harga berganti. Baris yang harganya pernah
+// diubah manual (hargaManual) tidak ditimpa diam-diam: user ditanya dulu.
+function terapkanKategoriHarga(rows, skuMaster, kategoriBaru) {
+  const adaManual = rows.some((r) => r.sumber_produk === "sku" && r.sku && r.hargaManual);
+  const timpaManual = adaManual
+    ? window.confirm(
+        `Ada baris yang harganya diubah manual. Ganti juga ke harga ${labelKategoriHarga(kategoriBaru)} dari Data Barang?\n\nOK = ganti semua, Batal = harga manual dipertahankan.`
+      )
+    : false;
+  return rows.map((r) => {
+    if (r.sumber_produk !== "sku" || !r.sku) return r;
+    if (r.hargaManual && !timpaManual) return r;
+    const s = skuMaster.find((x) => x.sku === r.sku);
+    return { ...r, harga: hargaSkuUntuk(s, kategoriBaru), hargaManual: false };
+  });
+}
+
 export function PelangganList({ pelangganGrosir, pesananGrosir, pembayaranGrosir, depositGrosir, setModal }) {
   const [kategoriTab, setKategoriTab] = useState("grosir");
   const [q, setQ] = useState("");
@@ -1050,6 +1081,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   const [pelangganWaBaru, setPelangganWaBaru] = useState("");
   const [pelangganAlamatBaru, setPelangganAlamatBaru] = useState("");
   const [pelangganKotaBaru, setPelangganKotaBaru] = useState("");
+  const [pelangganKategoriBaru, setPelangganKategoriBaru] = useState("grosir"); // kategori utk pelanggan yang diketik baru
   // Toko Pengirim dihilangkan dari form ini (2024) — pesanan baru selalu
   // dibuat tanpa toko_id. Field & kolomnya masih ada di database dan di
   // TokoList (menu Toko Pengirim) untuk pesanan lama yang sudah pakai ini.
@@ -1064,6 +1096,18 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   const [saving, setSaving] = useState(false);
 
   const pelangganOptions = pelangganGrosir.map((p) => ({ value: p.id, label: `${p.nama} (${p.kode})` }));
+
+  // Kategori harga mengikuti pelanggan: dipilih dari daftar -> kategori pelanggan itu;
+  // ketik nama baru -> kategori yang dipilih di bawah kolom nama; belum ada -> grosir.
+  const kategoriHarga = pelangganId
+    ? kunciKategoriHarga(kategoriPelanggan(pelangganGrosir.find((p) => p.id === pelangganId)))
+    : pelangganNamaBaru.trim()
+    ? kunciKategoriHarga(pelangganKategoriBaru)
+    : "grosir";
+  const gantiKategoriHarga = (kBaru) => {
+    if (kBaru === kategoriHarga) return;
+    setRows(terapkanKategoriHarga(rows, skuMaster, kBaru)); // bukan lewat updater: ada window.confirm di dalamnya
+  };
 
   const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
@@ -1101,18 +1145,19 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
       const s = skuMaster.find((x) => x.sku === sku);
       return [
         ...prev,
-        { ...newItemRow("sku"), sku, nama_produk: sku, harga: s?.grosir || 0, stokTersedia: s?.stok || 0, qty: 1 },
+        { ...newItemRow("sku"), sku, nama_produk: sku, harga: hargaSkuUntuk(s, kategoriHarga), stokTersedia: s?.stok || 0, qty: 1 },
       ];
     });
   };
   // Hanya SKU yang alur barangnya sudah tahap "Selesai" (= sudah diupload ke
-  // marketplace) yang boleh dipilih untuk pesanan grosir baru.
+  // marketplace) DAN harga kategori pelanggan ini sudah terisi (>0) yang boleh
+  // dipilih untuk pesanan grosir baru.
   const quickAddSkuOptions = useMemo(
     () =>
       skuMaster
-        .filter((s) => !s.nonaktif && s.siapGrosir)
-        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` })),
-    [skuMaster]
+        .filter((s) => !s.nonaktif && s.siapGrosir && hargaSkuUntuk(s, kategoriHarga) > 0)
+        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(hargaSkuUntuk(s, kategoriHarga))}` })),
+    [skuMaster, kategoriHarga]
   );
 
   // Total qty per SKU yang sudah dipakai di baris lain — supaya validasi stok
@@ -1127,6 +1172,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   const rowError = (r) => {
     if (r.sumber_produk === "sku") {
       if (!r.sku) return "Pilih SKU dulu";
+      if (!(Number(r.harga) > 0)) return `Harga ${labelKategoriHarga(kategoriHarga)} belum diisi`;
       if (!r.qty || r.qty <= 0) return "Qty harus > 0";
       const stokSaatIni = skuMaster.find((s) => s.sku === r.sku)?.stok || 0;
       const sudahDipakai = qtyTerpakaiPerSku(r.sku, r._key);
@@ -1155,6 +1201,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
     setPelangganWaBaru("");
     setPelangganAlamatBaru("");
     setPelangganKotaBaru("");
+    setPelangganKategoriBaru("grosir");
     setCaraSimpan("bayar");
     setMetodeBayar("Cash");
     setRekening("");
@@ -1192,6 +1239,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
             wa: pelangganWaBaru.trim() || null,
             alamat: pelangganAlamatBaru.trim() || null,
             kota: pelangganKotaBaru.trim() || null,
+            kategori: kunciKategoriHarga(pelangganKategoriBaru),
           }),
         });
         pelangganIdFinal = pelangganBaru.id;
@@ -1301,8 +1349,11 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
           <SearchableSelect
             value={pelangganId}
             onChange={(id) => {
+              // Kategori harga ikut pelanggan yang dipilih -> harga baris SKU dihitung ulang.
+              const kBaru = id ? kunciKategoriHarga(kategoriPelanggan(pelangganGrosir.find((p) => p.id === id))) : "grosir";
               setPelangganId(id);
               setPelangganNamaBaru("");
+              gantiKategoriHarga(kBaru);
             }}
             options={pelangganOptions}
             placeholder="Cari pelanggan…"
@@ -1311,13 +1362,38 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
             className={`${inputClass} mt-1.5`}
             value={pelangganNamaBaru}
             onChange={(e) => {
-              setPelangganNamaBaru(e.target.value);
+              const v = e.target.value;
+              const kBaru = v.trim() ? kunciKategoriHarga(pelangganKategoriBaru) : "grosir";
+              setPelangganNamaBaru(v);
               setPelangganId("");
+              gantiKategoriHarga(kBaru);
             }}
             placeholder="Atau ketik nama pelanggan baru"
           />
           {pelangganNamaBaru.trim() && (
             <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+              <div className="col-span-2">
+                <span className="block text-[11px] text-slate-500 mb-1">Kategori pelanggan baru (menentukan harga)</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {OPSI_KATEGORI_HARGA.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => {
+                        setPelangganKategoriBaru(o.value);
+                        gantiKategoriHarga(o.value);
+                      }}
+                      className={`text-xs font-medium py-2 rounded-lg border ${
+                        pelangganKategoriBaru === o.value
+                          ? "bg-amber-500/15 border-amber-500 text-amber-400"
+                          : "border-slate-800 text-slate-400 hover:border-slate-700"
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <input
                 className={`${inputClass} ${pelangganBaruBentrok ? "border-red-500/60 focus:border-red-500" : ""}`}
                 value={pelangganWaBaru}
@@ -1356,6 +1432,10 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
             placeholder="Ketik SKU, langsung masuk ke daftar…"
           />
         </Field>
+        <div className="text-[11px] text-slate-500 -mt-2">
+          Harga mengikuti kategori pelanggan: <span className="text-amber-400 font-medium">{labelKategoriHarga(kategoriHarga)}</span>.
+          Barang yang harga {labelKategoriHarga(kategoriHarga)}-nya belum diisi tidak muncul di daftar.
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -1368,6 +1448,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
               row={r}
               nomor={i + 1}
               error={errors[i]}
+              kategoriHarga={kategoriHarga}
               skuMaster={skuMaster}
               produkManualGrosir={produkManualGrosir}
               onChange={(patch) => updateRow(r._key, patch)}
@@ -1511,23 +1592,33 @@ export const ItemRow = memo(
     a.nomor === b.nomor &&
     a.error === b.error &&
     a.skuMaster === b.skuMaster &&
+    a.kategoriHarga === b.kategoriHarga &&
     a.produkManualGrosir === b.produkManualGrosir
 );
 
 // nomor: nomor urut baris di daftar item (opsional; kalau kosong tidak ditampilkan).
-function ItemRowImpl({ row, nomor, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
+// kategoriHarga: "grosir" | "tengah" | "ecer" — dipakai Buat/Edit Pesanan Grosir supaya harga SKU
+// mengikuti kategori pelanggan. Kalau TIDAK diisi (Reseller) perilaku lama: selalu harga grosir.
+function ItemRowImpl({ row, nomor, error, skuMaster, produkManualGrosir, kategoriHarga, onChange, onRemove }) {
+  const pakaiKategori = !!kategoriHarga;
+  const hargaDariMaster = (s) => (pakaiKategori ? hargaSkuUntuk(s, kategoriHarga) : s?.grosir || 0);
   // SKU nonaktif (bekas "dihapus") atau yang alur barangnya belum "Selesai"
   // (belum diupload ke marketplace) tidak boleh dipilih buat pesanan baru,
   // tapi baris pesanan lama yang sudah pakai SKU itu tetap tampil apa adanya.
   const skuOptions = useMemo(
     () =>
       skuMaster
-        .filter((s) => s.sku === row.sku || (!s.nonaktif && s.siapGrosir))
+        .filter(
+          (s) =>
+            s.sku === row.sku ||
+            (!s.nonaktif && s.siapGrosir && (!pakaiKategori || hargaSkuUntuk(s, kategoriHarga) > 0))
+        )
         .map((s) => ({
           value: s.sku,
-          label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}${s.nonaktif ? " · (nonaktif)" : ""}`,
+          label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(hargaDariMaster(s))}${s.nonaktif ? " · (nonaktif)" : ""}`,
         })),
-    [skuMaster, row.sku]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skuMaster, row.sku, kategoriHarga]
   );
   const manualOptions = useMemo(
     () =>
@@ -1543,7 +1634,8 @@ function ItemRowImpl({ row, nomor, error, skuMaster, produkManualGrosir, onChang
     onChange({
       sku,
       nama_produk: sku,
-      harga: s?.grosir || 0,
+      harga: hargaDariMaster(s),
+      hargaManual: false,
       stokTersedia: s?.stok || 0,
     });
   };
@@ -1621,7 +1713,7 @@ function ItemRowImpl({ row, nomor, error, skuMaster, produkManualGrosir, onChang
               <span className="block text-[11px] text-slate-500 mb-1">Harga satuan</span>
               <InputRupiah
                 value={row.harga}
-                onChange={(v) => onChange({ harga: v })}
+                onChange={(v) => onChange({ harga: v, hargaManual: true })}
                 className="w-full h-11 bg-slate-950 border border-slate-800 rounded-lg px-3 text-base font-semibold text-right outline-none focus:border-amber-500"
                 placeholder="0"
               />
@@ -1654,8 +1746,13 @@ function ItemRowImpl({ row, nomor, error, skuMaster, produkManualGrosir, onChang
 // pola form lain (mis. BayarHutangForm di forms.jsx).
 // =========================================================
 export function EditPesananForm({
-  pesanan, detailItems, tokoGrosir, skuMaster, produkManualGrosir, onClose, saving, onSubmit,
+  pesanan, detailItems, tokoGrosir, skuMaster, produkManualGrosir, pelangganGrosir, onClose, saving, onSubmit,
 }) {
+  // Kategori harga = kategori pelanggan pesanan ini. Harga item LAMA tidak diubah (itu harga saat
+  // transaksi); hanya item yang baru ditambahkan/diganti SKU-nya yang memakai harga kategori ini.
+  const kategoriHarga = kunciKategoriHarga(
+    kategoriPelanggan((pelangganGrosir || []).find((p) => p.id === pesanan.pelanggan_id))
+  );
   // Toko Pengirim dihilangkan dari form ini juga — field-nya tidak dirender
   // lagi, tapi nilai toko_id pesanan lama (kalau ada) tetap dipertahankan
   // apa adanya lewat state ini (bukan ikut kehapus/ke-null-kan tiap edit).
@@ -1719,16 +1816,16 @@ export function EditPesananForm({
       const s = editableSkuMaster.find((x) => x.sku === sku);
       return [
         ...prev,
-        { ...newItemRow("sku"), sku, nama_produk: sku, harga: s?.grosir || 0, stokTersedia: s?.stok || 0, qty: 1 },
+        { ...newItemRow("sku"), sku, nama_produk: sku, harga: hargaSkuUntuk(s, kategoriHarga), stokTersedia: s?.stok || 0, qty: 1 },
       ];
     });
   };
   const quickAddSkuOptions = useMemo(
     () =>
       editableSkuMaster
-        .filter((s) => !s.nonaktif && s.siapGrosir)
-        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(s.grosir || 0)}` })),
-    [editableSkuMaster]
+        .filter((s) => !s.nonaktif && s.siapGrosir && hargaSkuUntuk(s, kategoriHarga) > 0)
+        .map((s) => ({ value: s.sku, label: `${s.sku} · stok ${s.stok || 0} · ${fmtRp(hargaSkuUntuk(s, kategoriHarga))}` })),
+    [editableSkuMaster, kategoriHarga]
   );
 
   const addRow = (sumberProduk) => setRows((prev) => [...prev, newItemRow(sumberProduk)]);
@@ -1746,6 +1843,7 @@ export function EditPesananForm({
   const rowError = (r) => {
     if (r.sumber_produk === "sku") {
       if (!r.sku) return "Pilih SKU dulu";
+      if (!(Number(r.harga) > 0)) return `Harga ${labelKategoriHarga(kategoriHarga)} belum diisi`;
       if (!r.qty || r.qty <= 0) return "Qty harus > 0";
       const stokSaatIni = editableSkuMaster.find((s) => s.sku === r.sku)?.stok || 0;
       const sudahDipakai = qtyTerpakaiPerSku(r.sku, r._key);
@@ -1794,6 +1892,10 @@ export function EditPesananForm({
             placeholder="Ketik SKU, langsung masuk ke daftar…"
           />
         </Field>
+        <div className="text-[11px] text-slate-500 -mt-2">
+          Pelanggan kategori <span className="text-amber-400 font-medium">{labelKategoriHarga(kategoriHarga)}</span>: barang baru memakai harga {labelKategoriHarga(kategoriHarga)}.
+          Harga item yang sudah ada di pesanan ini tidak diubah otomatis.
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -1806,6 +1908,7 @@ export function EditPesananForm({
               row={r}
               nomor={i + 1}
               error={errors[i]}
+              kategoriHarga={kategoriHarga}
               skuMaster={editableSkuMaster}
               produkManualGrosir={produkManualGrosir}
               onChange={(patch) => updateRow(r._key, patch)}
