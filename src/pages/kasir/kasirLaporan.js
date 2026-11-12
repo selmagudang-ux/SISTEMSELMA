@@ -17,6 +17,10 @@ import { SKEMA, HARI_WIB, tanggalWib } from "./kasirApi";
 //  - retur dicatat di tanggal transaksi ASLINYA (bukan tanggal returnya)
 //  - barang: qty bersih = qty - qty_retur, nilai bersih = subtotal - nilai_retur
 //    (nilai barang SEBELUM diskon level transaksi, jadi jumlahnya bisa sedikit di atas omzet bersih)
+//  - PROFIT (laba kotor) = omzet bersih - HPP barang terjual. HPP = master_toko.hpp SAAT LAPORAN DIBUKA
+//    (kasir_item tidak menyimpan HPP per transaksi), dikali qty bersih (qty - qty_retur).
+//    Per produk: laba = nilai - HPP (sebelum diskon level transaksi).
+//    Barang yang HPP-nya 0/belum diisi dihitung HPP 0 (laba terlalu besar) dan dihitung di `tanpaHpp`.
 // =========================================================
 
 // Kalau terisi (format "YYYY-MM-DD"), dipakai sebagai batas awal data kasir menggantikan tanggal
@@ -79,17 +83,18 @@ async function dalamPotongan(ids, ukuran, kerja, serentak = 4) {
 
 // Item kasir menyimpan KODE TOKO (mis. OPS-0007). Di laporan yang ditampilkan SKU Master Barang (mis. TDCC-…)
 // untuk barang yang tertaut ke Master Barang (sku_gudang). Barang import tanpa SKU gudang tetap tampil kode tokonya.
-// Hanya tampilan laporan: data transaksi di database tidak diubah. Peta kode -> SKU gudang disimpan 5 menit.
-let cacheSkuGudang = { waktu: 0, janji: null };
-function petaSkuGudang() {
-  if (cacheSkuGudang.janji && Date.now() - cacheSkuGudang.waktu < 5 * 60 * 1000) return cacheSkuGudang.janji;
-  const janji = sbAll("master_toko?select=kode,sku_gudang&sku_gudang=not.is.null")
-    .then((rows) => new Map((rows || []).map((r) => [r.kode, r.sku_gudang])))
+// Hanya tampilan laporan: data transaksi di database tidak diubah. Peta kode -> { sku_gudang, hpp } disimpan 5 menit.
+// HPP ikut diambil dari sini untuk menghitung profit.
+let cacheBarangToko = { waktu: 0, janji: null };
+function petaBarangToko() {
+  if (cacheBarangToko.janji && Date.now() - cacheBarangToko.waktu < 5 * 60 * 1000) return cacheBarangToko.janji;
+  const janji = sbAll("master_toko?select=kode,sku_gudang,hpp")
+    .then((rows) => new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, hpp: num(r.hpp) }])))
     .catch(() => {
-      cacheSkuGudang = { waktu: 0, janji: null }; // jangan simpan kegagalan; laporan tetap tampil dengan kode toko
+      cacheBarangToko = { waktu: 0, janji: null }; // jangan simpan kegagalan; laporan tetap tampil dengan kode toko
       return new Map();
     });
-  cacheSkuGudang = { waktu: Date.now(), janji };
+  cacheBarangToko = { waktu: Date.now(), janji };
   return janji;
 }
 
@@ -128,12 +133,13 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
       : [],
   ]);
   if (items.length) {
-    const peta = await petaSkuGudang();
+    const peta = await petaBarangToko();
     for (const it of items) {
-      const g = peta.get(it[I.sku]);
-      if (g) {
+      const b = peta.get(it[I.sku]);
+      it.hpp_satuan = b ? b.hpp : 0; // HPP per pcs saat ini (0 = belum diisi / barang tidak ditemukan)
+      if (b?.sku_gudang) {
         it.kode_toko = it[I.sku];
-        it[I.sku] = g;
+        it[I.sku] = b.sku_gudang;
       }
     }
   }
@@ -141,7 +147,7 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
 }
 
 // ---------- hitungan murni ----------
-const barisKosong = () => ({ jumlah: 0, kotor: 0, retur: 0, bersih: 0, voidCount: 0, returCount: 0, qty: 0, cash: 0, cashless: 0 });
+const barisKosong = () => ({ jumlah: 0, kotor: 0, retur: 0, bersih: 0, voidCount: 0, returCount: 0, qty: 0, cash: 0, cashless: 0, hpp: 0 });
 
 function tambahTrx(a, d) {
   if (d.status === "void") {
@@ -206,11 +212,13 @@ export function olahRekap({ transaksi = [], items = [], pembayaran = [], shift =
   const produk = new Map();
   const produkHarian = new Map();
   const trxProduk = new Set();
-  const tambahProduk = (mp, kunci, awal, qty, nilai, diskon, trxId) => {
-    const v = ambil(mp, kunci, { ...awal, qty: 0, nilai: 0, diskon: 0, jumlahTrx: 0 });
+  const tambahProduk = (mp, kunci, awal, qty, nilai, diskon, trxId, hppNilai, tanpaHpp) => {
+    const v = ambil(mp, kunci, { ...awal, qty: 0, nilai: 0, diskon: 0, jumlahTrx: 0, tanpaHpp: false });
     v.qty += qty;
     v.nilai += nilai;
     v.diskon += diskon;
+    v.hpp += hppNilai;
+    if (tanpaHpp) v.tanpaHpp = true;
     const k = `${kunci}|${trxId}`;
     if (!trxProduk.has(`${mp === produk ? "t" : "h"}${k}`)) {
       trxProduk.add(`${mp === produk ? "t" : "h"}${k}`);
@@ -227,12 +235,22 @@ export function olahRekap({ transaksi = [], items = [], pembayaran = [], shift =
     const diskon = num(it[I.qty]) > 0 ? Math.round((num(it[I.diskon]) * qty) / num(it[I.qty])) : 0;
     const kunci = it[I.sku] || it[I.nama] || "-";
     const awal = { sku: it[I.sku] || "", kode: it.kode_toko || "", nama: it[I.nama] || it[I.sku] || "-" };
-    tambahProduk(produk, kunci, awal, qty, nilai, diskon, it[I.trxId]);
-    tambahProduk(produkHarian, `${d.tanggal}|${kunci}`, { ...awal, tanggal: d.tanggal }, qty, nilai, diskon, it[I.trxId]);
+    const hppSatuan = num(it.hpp_satuan);
+    const hppNilai = Math.round(hppSatuan * qty);
+    const tanpaHpp = hppSatuan <= 0;
+    tambahProduk(produk, kunci, awal, qty, nilai, diskon, it[I.trxId], hppNilai, tanpaHpp);
+    tambahProduk(produkHarian, `${d.tanggal}|${kunci}`, { ...awal, tanggal: d.tanggal }, qty, nilai, diskon, it[I.trxId], hppNilai, tanpaHpp);
     ringkas.qty += qty;
-    ambil(harian, d.tanggal, { tanggal: d.tanggal }).qty += qty;
-    ambil(perKasir, d.kasirId, { kasirId: d.kasirId, nama: d.kasirNama, jumlahShift: 0, selisihKas: 0 }).qty += qty;
-    ambil(perKasirHarian, `${d.tanggal}|${d.kasirId}`, { tanggal: d.tanggal, kasirId: d.kasirId, nama: d.kasirNama }).qty += qty;
+    ringkas.hpp += hppNilai;
+    const hr = ambil(harian, d.tanggal, { tanggal: d.tanggal });
+    hr.qty += qty;
+    hr.hpp += hppNilai;
+    const pk = ambil(perKasir, d.kasirId, { kasirId: d.kasirId, nama: d.kasirNama, jumlahShift: 0, selisihKas: 0 });
+    pk.qty += qty;
+    pk.hpp += hppNilai;
+    const pkh = ambil(perKasirHarian, `${d.tanggal}|${d.kasirId}`, { tanggal: d.tanggal, kasirId: d.kasirId, nama: d.kasirNama });
+    pkh.qty += qty;
+    pkh.hpp += hppNilai;
   }
 
   // shift -> selisih kas per kasir
@@ -245,22 +263,36 @@ export function olahRekap({ transaksi = [], items = [], pembayaran = [], shift =
   }
 
   const urutTanggalTurun = (a, b) => (a.tanggal < b.tanggal ? 1 : a.tanggal > b.tanggal ? -1 : 0);
-  const withRata = (r) => ({ ...r, rata2: r.jumlah > 0 ? Math.round(r.bersih / r.jumlah) : 0 });
+  // laba hanya bermakna kalau data barang ikut ditarik (items.length > 0); kalau tidak, null supaya UI menyembunyikannya.
+  const punyaItem = items.length > 0;
+  const withRata = (r) => ({
+    ...r,
+    rata2: r.jumlah > 0 ? Math.round(r.bersih / r.jumlah) : 0,
+    laba: punyaItem ? r.bersih - r.hpp : null,
+    margin: punyaItem && r.bersih > 0 ? ((r.bersih - r.hpp) / r.bersih) * 100 : null,
+  });
+  // profit per produk = nilai barang (sebelum diskon level transaksi) - HPP
+  const withLabaProduk = (r) => ({ ...r, laba: r.nilai - r.hpp, margin: r.nilai > 0 ? ((r.nilai - r.hpp) / r.nilai) * 100 : null });
+  const daftarProduk = [...produk.values()].map(withLabaProduk);
+  const ringkasan = withRata(ringkas);
+  ringkasan.tanpaHpp = daftarProduk.filter((p) => p.tanpaHpp).length; // jumlah SKU terjual yang HPP-nya kosong
   return {
-    ringkas: withRata(ringkas),
+    ringkas: ringkasan,
     perMetode,
     harian: [...harian.values()].map(withRata).sort(urutTanggalTurun),
     perKasir: [...perKasir.values()].map(withRata).sort((a, b) => b.bersih - a.bersih),
     perKasirHarian: [...perKasirHarian.values()].map(withRata).sort((a, b) => urutTanggalTurun(a, b) || b.bersih - a.bersih),
-    perProduk: [...produk.values()].sort((a, b) => b.nilai - a.nilai),
-    perProdukHarian: [...produkHarian.values()].sort((a, b) => urutTanggalTurun(a, b) || b.nilai - a.nilai),
+    perProduk: daftarProduk.sort((a, b) => b.nilai - a.nilai),
+    perProdukHarian: [...produkHarian.values()].map(withLabaProduk).sort((a, b) => urutTanggalTurun(a, b) || b.nilai - a.nilai),
   };
 }
 
-// Barang terlaris: urut berdasarkan jumlah terjual (atau nilai), ambil N teratas.
+// Barang terlaris: urut berdasarkan jumlah terjual (atau nilai / laba), ambil N teratas.
 export function barangTerlaris(perProduk, { urut = "qty", batas = 10 } = {}) {
   return [...(perProduk || [])]
-    .sort((a, b) => (urut === "nilai" ? b.nilai - a.nilai || b.qty - a.qty : b.qty - a.qty || b.nilai - a.nilai))
+    .sort((a, b) =>
+      urut === "laba" ? b.laba - a.laba || b.qty - a.qty : urut === "nilai" ? b.nilai - a.nilai || b.qty - a.qty : b.qty - a.qty || b.nilai - a.nilai
+    )
     .slice(0, batas);
 }
 

@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { Wallet, Landmark, TrendingUp, Receipt, Package, Undo2, Ban, Download, RefreshCw, CheckCircle2, AlertTriangle, Loader2, Search } from "lucide-react";
+import { Wallet, Landmark, TrendingUp, Receipt, Package, Undo2, Ban, Download, RefreshCw, CheckCircle2, AlertTriangle, Loader2, Search, PiggyBank, Percent, Boxes } from "lucide-react";
 import { StatCard, EmptyState, Badge, InputTanggal, formatTanggalID } from "../../components/ui";
 import { fmtRp } from "../../lib/api";
 import { getSession } from "../../lib/auth";
+import { bisa } from "../../lib/constants";
 import { useKeuanganRentang } from "../../lib/useKeuanganRentang";
 import { downloadXlsx } from "../../lib/exportData";
 import { useRekapKasir, useTanggalMulaiKasir, hariIniWib, tambahHari, awalBulanWib, akhirBulanWib, barangTerlaris, hitungSinkronKeuangan } from "./kasirLaporan";
@@ -16,6 +17,9 @@ import { useRekapKasir, useTanggalMulaiKasir, hariIniWib, tambahHari, awalBulanW
 
 const BATAS_HARI_BARANG = 62;
 const BATAS_BARIS = 300;
+
+const fmtPersen = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v.toFixed(1).replace(".", ",")}%`);
+const warnaLaba = (v) => (v < 0 ? "text-red-400" : "text-emerald-400");
 
 const selisihHari = (a, b) => Math.round((new Date(`${b}T12:00:00+07:00`) - new Date(`${a}T12:00:00+07:00`)) / 86400000) + 1;
 
@@ -108,6 +112,8 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
   const rentangValid = dari && sampai && dari <= sampai;
   const jumlahHari = rentangValid ? selisihHari(dari, sampai) : 0;
   const barangBoleh = jumlahHari <= BATAS_HARI_BARANG;
+  // Profit & HPP hanya untuk role yang boleh melihat semua kasir (kasir biasa tidak melihat modal), dan hanya kalau barang ikut ditarik.
+  const bolehLaba = bisa(session?.role, "kasir.lihat_semua") && barangBoleh;
 
   const { memuat, error, data } = useRekapKasir({ session, dari: rentangValid ? dari : "", sampai, denganItem: barangBoleh, denganShift: true, versi });
   const mulai = useTanggalMulaiKasir(true);
@@ -136,8 +142,10 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
     const hasil = kata.length ? sumber.filter((p) => kata.every((k) => `${p.sku} ${p.kode || ""} ${p.nama}`.toLowerCase().includes(k))) : sumber;
     return hasil.map((p, i) => ({ ...p, _kunci: `${p.tanggal || ""}|${p.sku || p.nama}|${i}` }));
   }, [data, cari, kelompokProduk]);
-  const terlaris = useMemo(() => barangTerlaris(data?.perProduk, { urut: urutTerlaris, batas: 10 }), [data, urutTerlaris]);
-  const maksTerlaris = terlaris.length ? Math.max(...terlaris.map((p) => (urutTerlaris === "nilai" ? p.nilai : p.qty)), 1) : 1;
+  const urutAman = urutTerlaris === "laba" && !bolehLaba ? "qty" : urutTerlaris;
+  const terlaris = useMemo(() => barangTerlaris(data?.perProduk, { urut: urutAman, batas: 10 }), [data, urutAman]);
+  const nilaiUrut = (p) => (urutAman === "laba" ? Math.max(p.laba, 0) : urutAman === "nilai" ? p.nilai : p.qty);
+  const maksTerlaris = terlaris.length ? Math.max(...terlaris.map(nilaiUrut), 1) : 1;
 
   const unduh = () => {
     if (!data) return;
@@ -159,14 +167,19 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
       { key: "diskon", label: "Diskon Item" },
       { key: "jumlahTrx", label: "Jumlah Transaksi" },
     ];
+    if (bolehLaba) {
+      kolomUmum.push({ key: "hpp", label: "HPP Terjual" }, { key: "laba", label: "Profit" }, { key: "margin", label: "Margin %" });
+      kolomProduk.push({ key: "hpp", label: "HPP" }, { key: "laba", label: "Profit" }, { key: "margin", label: "Margin %" });
+    }
+    const bulatkan = (rows) => rows.map((x) => ({ ...x, margin: typeof x.margin === "number" ? Math.round(x.margin * 10) / 10 : "" }));
     const sheets = [
-      { name: "Harian", columns: [{ key: "tanggal", label: "Tanggal" }, ...kolomUmum], rows: data.harian },
-      { name: "Per Kasir", columns: [{ key: "nama", label: "Kasir" }, ...kolomUmum, { key: "jumlahShift", label: "Shift" }, { key: "selisihKas", label: "Selisih Kas" }], rows: data.perKasir },
-      { name: "Per Kasir Harian", columns: [{ key: "tanggal", label: "Tanggal" }, { key: "nama", label: "Kasir" }, ...kolomUmum], rows: data.perKasirHarian },
+      { name: "Harian", columns: [{ key: "tanggal", label: "Tanggal" }, ...kolomUmum], rows: bulatkan(data.harian) },
+      { name: "Per Kasir", columns: [{ key: "nama", label: "Kasir" }, ...kolomUmum, { key: "jumlahShift", label: "Shift" }, { key: "selisihKas", label: "Selisih Kas" }], rows: bulatkan(data.perKasir) },
+      { name: "Per Kasir Harian", columns: [{ key: "tanggal", label: "Tanggal" }, { key: "nama", label: "Kasir" }, ...kolomUmum], rows: bulatkan(data.perKasirHarian) },
     ];
     if (barangBoleh) {
-      sheets.push({ name: "Per Produk", columns: kolomProduk, rows: data.perProduk });
-      sheets.push({ name: "Per Produk Harian", columns: [{ key: "tanggal", label: "Tanggal" }, ...kolomProduk], rows: data.perProdukHarian });
+      sheets.push({ name: "Per Produk", columns: kolomProduk, rows: bulatkan(data.perProduk) });
+      sheets.push({ name: "Per Produk Harian", columns: [{ key: "tanggal", label: "Tanggal" }, ...kolomProduk], rows: bulatkan(data.perProdukHarian) });
     }
     downloadXlsx(`rekap-kasir_${dari}_${sampai}.xlsx`, sheets);
   };
@@ -179,6 +192,12 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
     { label: "Cashless", sel: (x) => fmtRp(x.cashless), kanan: true, redup: true },
     { label: "Retur", sel: (x) => (x.retur ? fmtRp(x.retur) : "—"), kanan: true, redup: true },
     { label: "Omzet Bersih", sel: (x) => fmtRp(x.bersih), kanan: true, tebal: true },
+    ...(bolehLaba
+      ? [
+          { label: "Profit", sel: (x) => <span className={warnaLaba(x.laba)}>{fmtRp(x.laba)}</span>, kanan: true, tebal: true },
+          { label: "Margin", sel: (x) => fmtPersen(x.margin), kanan: true, redup: true },
+        ]
+      : []),
   ];
 
   return (
@@ -244,6 +263,25 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
             <StatCard label={`Retur (${r.returCount} transaksi)`} value={fmtRp(r.retur)} icon={Undo2} iconColor="text-amber-400" />
             <StatCard label="Void" value={r.voidCount} icon={Ban} iconColor="text-red-400" />
           </div>
+          {bolehLaba && r.laba !== null && (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                <StatCard label="Profit (Laba Kotor)" value={fmtRp(r.laba)} icon={PiggyBank} accent={warnaLaba(r.laba)} />
+                <StatCard label="Margin" value={fmtPersen(r.margin)} icon={Percent} iconColor="text-emerald-400" />
+                <StatCard label="HPP Barang Terjual" value={fmtRp(r.hpp)} icon={Boxes} iconColor="text-sky-400" />
+                <StatCard label="Barang Tanpa HPP" value={r.tanpaHpp} icon={AlertTriangle} iconColor={r.tanpaHpp ? "text-amber-400" : "text-md-on-surface-variant"} />
+              </div>
+              {r.tanpaHpp > 0 && (
+                <div className="rounded-md-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-5 text-xs text-md-on-surface-variant flex items-start gap-2">
+                  <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    {r.tanpaHpp} barang terjual belum punya HPP (kosong / 0) di Barang Toko, jadi profitnya dihitung terlalu besar. Isi HPP-nya dulu supaya angka profit akurat — cek di tab Per Produk (baris bertanda "HPP kosong").
+                  </span>
+                </div>
+              )}
+              {r.tanpaHpp === 0 && <div className="mb-2" />}
+            </>
+          )}
 
           {sinkron && (
             <div
@@ -358,6 +396,13 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
                   { label: "Qty", sel: (x) => x.qty, kanan: true },
                   { label: "Diskon Item", sel: (x) => (x.diskon ? fmtRp(x.diskon) : "—"), kanan: true, redup: true },
                   { label: "Nilai", sel: (x) => fmtRp(x.nilai), kanan: true, tebal: true },
+                  ...(bolehLaba
+                    ? [
+                        { label: "HPP", sel: (x) => (x.tanpaHpp ? <Badge color="amber">HPP kosong</Badge> : fmtRp(x.hpp)), kanan: true, redup: true },
+                        { label: "Profit", sel: (x) => <span className={warnaLaba(x.laba)}>{fmtRp(x.laba)}</span>, kanan: true, tebal: true },
+                        { label: "Margin", sel: (x) => fmtPersen(x.margin), kanan: true, redup: true },
+                      ]
+                    : []),
                 ]}
               />
             </>
@@ -372,13 +417,18 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
                 <Pil aktif={urutTerlaris === "nilai"} onClick={() => setUrutTerlaris("nilai")}>
                   Nilai penjualan tertinggi
                 </Pil>
+                {bolehLaba && (
+                  <Pil aktif={urutTerlaris === "laba"} onClick={() => setUrutTerlaris("laba")}>
+                    Profit tertinggi
+                  </Pil>
+                )}
               </div>
               {terlaris.length === 0 ? (
                 <EmptyState label="Belum ada barang terjual di rentang ini." />
               ) : (
                 <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 divide-y divide-md-outline-variant">
                   {terlaris.map((p, i) => {
-                    const nilaiBar = urutTerlaris === "nilai" ? p.nilai : p.qty;
+                    const nilaiBar = nilaiUrut(p);
                     return (
                       <div key={`${p.sku}|${p.nama}`} className="px-4 py-3">
                         <div className="flex items-baseline justify-between gap-3">
@@ -390,6 +440,7 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
                           <div className="text-sm text-right shrink-0">
                             <span className="font-medium">{p.qty} pcs</span>
                             <span className="text-md-on-surface-variant"> · {fmtRp(p.nilai)}</span>
+                            {bolehLaba && <span className={`ml-1 ${warnaLaba(p.laba)}`}> · profit {fmtRp(p.laba)}</span>}
                           </div>
                         </div>
                         <div className="mt-2 h-1.5 rounded-full bg-md-container-highest overflow-hidden">
@@ -406,6 +457,8 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
           <div className="text-[11px] text-md-on-surface-variant mt-4 leading-relaxed">
             Transaksi void tidak dihitung. Retur dikurangkan di tanggal transaksi aslinya, dan tidak dipecah per metode bayar (kolom Cash/Cashless = uang masuk sebelum retur). Nilai barang dihitung sebelum diskon level transaksi, jadi total
             kolom Nilai bisa sedikit di atas Omzet Bersih. Tanggal mengikuti hari kalender WIB.
+            {bolehLaba &&
+              " Profit = omzet bersih − HPP barang terjual (setelah retur). HPP diambil dari Barang Toko saat laporan dibuka, jadi kalau HPP diubah, profit transaksi lama ikut berubah. Profit per produk dihitung dari Nilai − HPP (sebelum diskon level transaksi)."}
           </div>
         </>
       )}
