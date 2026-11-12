@@ -1366,6 +1366,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
             <ItemRow
               key={r._key}
               row={r}
+              nomor={i + 1}
               error={errors[i]}
               skuMaster={skuMaster}
               produkManualGrosir={produkManualGrosir}
@@ -1507,12 +1508,14 @@ export const ItemRow = memo(
   ItemRowImpl,
   (a, b) =>
     a.row === b.row &&
+    a.nomor === b.nomor &&
     a.error === b.error &&
     a.skuMaster === b.skuMaster &&
     a.produkManualGrosir === b.produkManualGrosir
 );
 
-function ItemRowImpl({ row, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
+// nomor: nomor urut baris di daftar item (opsional; kalau kosong tidak ditampilkan).
+function ItemRowImpl({ row, nomor, error, skuMaster, produkManualGrosir, onChange, onRemove }) {
   // SKU nonaktif (bekas "dihapus") atau yang alur barangnya belum "Selesai"
   // (belum diupload ke marketplace) tidak boleh dipilih buat pesanan baru,
   // tapi baris pesanan lama yang sudah pakai SKU itu tetap tampil apa adanya.
@@ -1558,6 +1561,11 @@ function ItemRowImpl({ row, error, skuMaster, produkManualGrosir, onChange, onRe
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
       <div className="flex items-start gap-2">
+        {nomor ? (
+          <div className="w-6 h-6 mt-2 flex-shrink-0 rounded-full bg-slate-800 text-slate-300 text-[11px] font-semibold flex items-center justify-center tabular-nums">
+            {nomor}
+          </div>
+        ) : null}
         <div className="flex-1">
           {row.sumber_produk === "sku" ? (
             <SearchableSelect value={row.sku} onChange={pickSku} options={skuOptions} placeholder="Cari SKU…" compact />
@@ -1796,6 +1804,7 @@ export function EditPesananForm({
             <ItemRow
               key={r._key}
               row={r}
+              nomor={i + 1}
               error={errors[i]}
               skuMaster={editableSkuMaster}
               produkManualGrosir={produkManualGrosir}
