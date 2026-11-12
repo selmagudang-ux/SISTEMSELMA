@@ -90,6 +90,7 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
               barcode: s.sku, // barang dari Master Barang: barcode = SKU gudang (bukan kode toko)
               harga_jual: Math.round(Number(s.ecer) || 0),
               hpp: Math.round(Number(s.hpp) || 0),
+              harga_grosir: Number(s.grosir) > 0 ? Math.round(Number(s.grosir)) : null,
               sku_gudang: s.sku,
               foto_url: fotoPerSku?.get(s.sku) || null,
               nonaktif: false,

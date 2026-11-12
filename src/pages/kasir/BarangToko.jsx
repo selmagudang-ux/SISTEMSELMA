@@ -80,6 +80,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
     barcode: barang.barcode || "",
     harga_jual: barang.harga_jual ?? "",
     hpp: barang.hpp ?? "",
+    harga_grosir: barang.harga_grosir ?? "",
     sku_gudang: barang.sku_gudang || "",
     nonaktif: !!barang.nonaktif,
   });
@@ -101,6 +102,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
     const kode = f.kode.trim();
     if (!kode || !f.nama.trim()) return setError("Kode dan nama wajib diisi.");
     if (!(Number(f.harga_jual) > 0)) return setError("Harga jual harus lebih dari 0.");
+    if (Number(f.harga_grosir) > 0 && Number(f.harga_grosir) >= Number(f.harga_jual)) return setError("Harga grosir harus lebih kecil dari harga jual.");
     setSaving(true);
     setError("");
     const data = {
@@ -111,6 +113,7 @@ function FormBarang({ barang, onSimpan, onClose }) {
       barcode: f.sku_gudang.trim() || f.barcode.trim() || (baru ? kode : barang.kode),
       harga_jual: Math.round(Number(f.harga_jual) || 0),
       hpp: Math.round(Number(f.hpp) || 0),
+      harga_grosir: Number(f.harga_grosir) > 0 ? Math.round(Number(f.harga_grosir)) : null,
       sku_gudang: f.sku_gudang.trim() || null,
       nonaktif: f.nonaktif,
     };
@@ -153,6 +156,11 @@ function FormBarang({ barang, onSimpan, onClose }) {
           <InputRupiah value={f.hpp} onChange={set("hpp")} className={inp} placeholder="0" />
         </label>
       </div>
+      <label className="block">
+        <div className="text-xs text-slate-400 mb-1">Harga grosir (opsional)</div>
+        <InputRupiah value={f.harga_grosir} onChange={set("harga_grosir")} className={inp} placeholder="Kosong = tanpa harga grosir" />
+        <div className="text-[11px] text-slate-500 mt-1">Dipakai promo grosir di kasir (beli min. N pcs). Kosong = barang ini tetap harga jual biasa.</div>
+      </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <div className="text-xs text-slate-400 mb-1">Kategori</div>
@@ -676,7 +684,10 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
                         {r.kategori || "–"}
                       </div>
                       <div className="text-right text-xs text-slate-400 tabular-nums">{r.hpp ? fmtRp(r.hpp) : "–"}</div>
-                      <div className="text-right text-sm font-semibold text-amber-400 tabular-nums">{fmtRp(r.harga_jual)}</div>
+                      <div className="text-right">
+                        <div className="text-sm font-semibold text-amber-400 tabular-nums">{fmtRp(r.harga_jual)}</div>
+                        <div className="text-[11px] text-slate-500 tabular-nums">{Number(r.harga_grosir) > 0 ? `grosir ${fmtRp(r.harga_grosir)}` : "tanpa grosir"}</div>
+                      </div>
                       <div className={`text-right text-sm tabular-nums ${habis ? "text-red-400 font-semibold" : "text-slate-200"}`}>{stokAngka(r)}</div>
                       <div className="flex justify-end">
                         <AksiBarang r={r} {...aksi} />
@@ -697,7 +708,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
                         </div>
                       </div>
                       <div className="mt-1.5 flex items-center justify-between border-t border-slate-800/70 pt-1">
-                        <span className="text-[11px] text-slate-500">{r.hpp ? `HPP ${fmtRp(r.hpp)}` : "HPP belum diisi"}</span>
+                        <span className="text-[11px] text-slate-500">{r.hpp ? `HPP ${fmtRp(r.hpp)}` : "HPP belum diisi"}{Number(r.harga_grosir) > 0 ? ` · grosir ${fmtRp(r.harga_grosir)}` : ""}</span>
                         <AksiBarang r={r} {...aksi} />
                       </div>
                     </div>

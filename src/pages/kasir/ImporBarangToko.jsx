@@ -32,6 +32,7 @@ const ALIAS = {
   kategori: ["kategori"],
   hpp: ["hpp", "hargabeli", "modal"],
   harga: ["hargajual", "harga", "hargaecer"],
+  grosir: ["hargagrosir", "grosir"],
   stok: ["stokawal", "stok", "jumlah"],
   sku: ["sku", "skuopsional", "skugudang", "kodesku"],
   barcode: ["barcode", "kodebarcode", "barcodeopsional"],
@@ -73,6 +74,7 @@ async function bacaFile(file) {
       kategori: kolom.kategori === undefined ? "" : String(r[kolom.kategori] ?? "").trim(),
       hpp: kolom.hpp === undefined ? 0 : angka(r[kolom.hpp]),
       harga: angka(r[kolom.harga]),
+      grosir: kolom.grosir === undefined ? null : angka(r[kolom.grosir]),
       stok: kolom.stok === undefined ? 0 : angka(r[kolom.stok]),
       sku: kolom.sku === undefined ? "" : String(r[kolom.sku] ?? "").trim(),
       barcode: kolom.barcode === undefined ? "" : String(r[kolom.barcode] ?? "").trim(),
@@ -98,14 +100,15 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           { key: "kategori", label: "Kategori" },
           { key: "hpp", label: "HPP" },
           { key: "harga", label: "Harga Jual" },
+          { key: "grosir", label: "Harga Grosir (opsional)" },
           { key: "stok", label: "Stok Awal" },
           { key: "sku", label: "SKU (opsional)" },
           { key: "barcode", label: "Barcode (opsional)" },
           { key: "foto", label: "Foto (link)" },
         ],
         rows: [
-          { nama: "Cincin", variasi: "S6", kategori: "cincin", hpp: 35000, harga: 59000, stok: 10, sku: "SKU-CONTOH-001", barcode: "SKU-CONTOH-001", foto: "https://contoh.com/cincin1.jpg" },
-          { nama: "kalung", variasi: "", kategori: "kalung", hpp: 55000, harga: 109000, stok: 6, sku: "SKU-CONTOH-002", barcode: "SKU-CONTOH-002", foto: "" },
+          { nama: "Cincin", variasi: "S6", kategori: "cincin", hpp: 35000, harga: 59000, grosir: 49000, stok: 10, sku: "SKU-CONTOH-001", barcode: "SKU-CONTOH-001", foto: "https://contoh.com/cincin1.jpg" },
+          { nama: "kalung", variasi: "", kategori: "kalung", hpp: 55000, harga: 109000, grosir: "", stok: 6, sku: "SKU-CONTOH-002", barcode: "SKU-CONTOH-002", foto: "" },
           ],
       },
     ]);
@@ -141,6 +144,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           if (!d.nama) { status = "salah"; pesan = "Nama kosong"; }
           else if (!(d.harga > 0)) { status = "salah"; pesan = "Harga jual harus lebih dari 0"; }
           else if (Number.isNaN(d.hpp) || (d.hpp ?? 0) < 0) { status = "salah"; pesan = "HPP tidak valid"; }
+          else if (Number.isNaN(d.grosir) || (d.grosir > 0 && d.grosir >= d.harga)) { status = "salah"; pesan = "Harga grosir harus lebih kecil dari harga jual"; }
           else if (Number.isNaN(d.stok) || (d.stok ?? 0) < 0 || !Number.isInteger(d.stok ?? 0)) { status = "salah"; pesan = "Stok awal harus bilangan bulat 0 atau lebih"; }
           else if (bc && barcodeAda.has(bc.toLowerCase())) { status = "salah"; pesan = "Barcode sudah dipakai barang lain"; }
           else if (bc && barcodeFile.has(bc.toLowerCase())) { status = "salah"; pesan = "Barcode dobel di file"; }
@@ -148,7 +152,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
           else if (dalamFile.has(namaKey(d.nama))) { status = "lewati"; pesan = d.variasi ? "Nama + variasi dobel di file" : "Nama dobel di file (beda variasi? isi kolom Variasi)"; }
           if (status === "ok") { dalamFile.add(namaKey(d.nama)); if (bc) barcodeFile.add(bc.toLowerCase()); }
           const adaLink = /^https?:\/\/\S+$/i.test(d.fotoMentah);
-          return { ...d, barcode: bc, sku: skuAsli || "", fotoUrl: adaLink ? d.fotoMentah : "", fotoSalah: !!d.fotoMentah && !adaLink, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), stok: d.stok || 0, status, pesan };
+          return { ...d, barcode: bc, sku: skuAsli || "", fotoUrl: adaLink ? d.fotoMentah : "", fotoSalah: !!d.fotoMentah && !adaLink, hpp: Math.round(d.hpp || 0), harga: Math.round(d.harga || 0), grosir: d.grosir > 0 ? Math.round(d.grosir) : null, stok: d.stok || 0, status, pesan };
         })
       );
     } catch (err) {
@@ -198,6 +202,7 @@ export default function ImporBarangToko({ barangAda, onSelesai, onClose }) {
                 barcode: b.barcode || b.kode,
                 sku_gudang: b.sku || null,
                 harga_jual: b.harga,
+                harga_grosir: b.grosir || null,
                 hpp: b.hpp,
                 foto_url: b.fotoUrl || null,
                 nonaktif: false,
