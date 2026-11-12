@@ -314,7 +314,33 @@ export async function muatRincianShift(shiftId) {
     items.push(...(it || []));
     pembayaran.push(...(by || []));
   }
+  await tampilkanSkuGudang(items);
   return { transaksi, items, pembayaran };
+}
+
+// Item kasir menyimpan KODE TOKO (mis. OPS-0007). Untuk rincian shift yang ditampilkan SKU Master Barang
+// (sku_gudang) kalau barangnya tertaut; barang tanpa SKU gudang tetap memakai kode toko.
+// Hanya tampilan: data di database tidak diubah. Kode toko asli disimpan di it.kode_toko.
+async function tampilkanSkuGudang(items) {
+  const kode = [...new Set(items.map((it) => it[SKEMA.item.sku]).filter(Boolean))];
+  if (!kode.length) return;
+  const peta = new Map();
+  try {
+    for (let i = 0; i < kode.length; i += 60) {
+      const potong = kode.slice(i, i + 60).map((k) => encodeURIComponent(`"${String(k).replace(/"/g, '\\"')}"`)).join(",");
+      const rows = (await sb(`master_toko?select=kode,sku_gudang&kode=in.(${potong})`)) || [];
+      rows.forEach((r) => r.sku_gudang && peta.set(r.kode, r.sku_gudang));
+    }
+  } catch {
+    return; // gagal ambil peta: rincian tetap tampil dengan kode toko
+  }
+  for (const it of items) {
+    const sku = peta.get(it[SKEMA.item.sku]);
+    if (sku) {
+      it.kode_toko = it[SKEMA.item.sku];
+      it[SKEMA.item.sku] = sku;
+    }
+  }
 }
 
 // Nomor urut shift DALAM HARI (reset tiap hari, hari kalender WIB): shift pertama yang dibuka
