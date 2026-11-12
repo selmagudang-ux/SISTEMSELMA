@@ -77,6 +77,22 @@ async function dalamPotongan(ids, ukuran, kerja, serentak = 4) {
   return hasil;
 }
 
+// Item kasir menyimpan KODE TOKO (mis. OPS-0007). Di laporan yang ditampilkan SKU Master Barang (mis. TDCC-…)
+// untuk barang yang tertaut ke Master Barang (sku_gudang). Barang import tanpa SKU gudang tetap tampil kode tokonya.
+// Hanya tampilan laporan: data transaksi di database tidak diubah. Peta kode -> SKU gudang disimpan 5 menit.
+let cacheSkuGudang = { waktu: 0, janji: null };
+function petaSkuGudang() {
+  if (cacheSkuGudang.janji && Date.now() - cacheSkuGudang.waktu < 5 * 60 * 1000) return cacheSkuGudang.janji;
+  const janji = sbAll("master_toko?select=kode,sku_gudang&sku_gudang=not.is.null")
+    .then((rows) => new Map((rows || []).map((r) => [r.kode, r.sku_gudang])))
+    .catch(() => {
+      cacheSkuGudang = { waktu: 0, janji: null }; // jangan simpan kegagalan; laporan tetap tampil dengan kode toko
+      return new Map();
+    });
+  cacheSkuGudang = { waktu: Date.now(), janji };
+  return janji;
+}
+
 // dari/sampai = "YYYY-MM-DD" (hari WIB, inklusif). Role tanpa kasir.lihat_semua hanya melihat miliknya.
 // ringan = true: hanya kolom yang dibutuhkan untuk menjumlah omzet per hari (tanpa nama kasir/nomor) — hemat egress
 // untuk rentang panjang (mis. setahun di Dashboard).
@@ -111,6 +127,16 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
         )
       : [],
   ]);
+  if (items.length) {
+    const peta = await petaSkuGudang();
+    for (const it of items) {
+      const g = peta.get(it[I.sku]);
+      if (g) {
+        it.kode_toko = it[I.sku];
+        it[I.sku] = g;
+      }
+    }
+  }
   return { transaksi, items, pembayaran, shift: shift || [] };
 }
 
@@ -200,7 +226,7 @@ export function olahRekap({ transaksi = [], items = [], pembayaran = [], shift =
     // diskon item dikurangi sebanding qty yang diretur
     const diskon = num(it[I.qty]) > 0 ? Math.round((num(it[I.diskon]) * qty) / num(it[I.qty])) : 0;
     const kunci = it[I.sku] || it[I.nama] || "-";
-    const awal = { sku: it[I.sku] || "", nama: it[I.nama] || it[I.sku] || "-" };
+    const awal = { sku: it[I.sku] || "", kode: it.kode_toko || "", nama: it[I.nama] || it[I.sku] || "-" };
     tambahProduk(produk, kunci, awal, qty, nilai, diskon, it[I.trxId]);
     tambahProduk(produkHarian, `${d.tanggal}|${kunci}`, { ...awal, tanggal: d.tanggal }, qty, nilai, diskon, it[I.trxId]);
     ringkas.qty += qty;

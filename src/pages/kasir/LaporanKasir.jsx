@@ -133,7 +133,7 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
     if (!data) return [];
     const kata = cari.toLowerCase().split(/\s+/).filter(Boolean);
     const sumber = kelompokProduk === "harian" ? data.perProdukHarian : data.perProduk;
-    const hasil = kata.length ? sumber.filter((p) => kata.every((k) => `${p.sku} ${p.nama}`.toLowerCase().includes(k))) : sumber;
+    const hasil = kata.length ? sumber.filter((p) => kata.every((k) => `${p.sku} ${p.kode || ""} ${p.nama}`.toLowerCase().includes(k))) : sumber;
     return hasil.map((p, i) => ({ ...p, _kunci: `${p.tanggal || ""}|${p.sku || p.nama}|${i}` }));
   }, [data, cari, kelompokProduk]);
   const terlaris = useMemo(() => barangTerlaris(data?.perProduk, { urut: urutTerlaris, batas: 10 }), [data, urutTerlaris]);
