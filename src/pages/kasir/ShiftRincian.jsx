@@ -218,7 +218,7 @@ function susunBarisRincian({ rincian, info }) {
   for (const d of r.daftar) {
     const tag = d.status === "void" ? " VOID" : d.retur > 0 ? " (retur)" : "";
     kolom(`${jam(d.waktu)} ${d.nomor}${tag}`, d.status === "void" ? "-" : rp(d.total));
-    if (d.metode || d.retur > 0) kiri(`   ${d.metode || ""}${d.retur > 0 ? `${d.metode ? " · " : ""}retur ${rp(d.retur)}` : ""}`);
+    if (d.metode || d.retur > 0) kiri(`   ${d.metode || ""}${d.retur > 0 ? `${d.metode ? " - " : ""}retur ${rp(d.retur)}` : ""}`);
   }
   garis();
 
@@ -228,7 +228,7 @@ function susunBarisRincian({ rincian, info }) {
   const indent = digit + 2;
   r.barang.forEach((x, i) => {
     kiri(`${String(i + 1).padStart(digit, " ")}. ${x.nama}`, indent);
-    kolom(`${" ".repeat(indent)}${x.sku ? `${x.sku} × ` : ""}${x.qty}`, rp(x.nilai));
+    kolom(`${" ".repeat(indent)}${x.sku ? `${x.sku} x ` : ""}${x.qty}`, rp(x.nilai));
   });
   kolom("Total barang", `${r.totalQty} pcs`);
   garis();
@@ -256,7 +256,7 @@ function susunBarisRincian({ rincian, info }) {
     }
     garis();
   }
-  tengah("— selesai —");
+  tengah("- selesai -");
   return b;
 }
 
