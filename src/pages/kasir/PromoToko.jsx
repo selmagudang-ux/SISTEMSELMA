@@ -13,6 +13,9 @@ import {
   tglPendek,
   hargaSetelahPromo,
   normKat,
+  muatCfgGrosirRow,
+  simpanCfgGrosir,
+  CFG_GROSIR_BAWAAN,
 } from "./kasirPromo";
 import { inp } from "./BarangToko";
 
@@ -322,6 +325,88 @@ function KonfirmasiHapus({ promo, onClose, onSelesai }) {
   );
 }
 
+// Promo grosir: beli minimal N pcs (gabungan semua barang di keranjang) -> harga berubah jadi harga Grosir dari Master Barang.
+function KartuGrosir() {
+  const [id, setId] = useState(null);
+  const [f, setF] = useState(CFG_GROSIR_BAWAAN);
+  const [muat, setMuat] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [pesan, setPesan] = useState(null);
+
+  useEffect(() => {
+    muatCfgGrosirRow()
+      .then((r) => {
+        setId(r.id);
+        setF({ ...r.cfg, min_qty: String(r.cfg.min_qty) });
+      })
+      .catch((e) => setPesan({ err: true, teks: String(e?.message || e) }))
+      .finally(() => setMuat(false));
+  }, []);
+
+  const set = (k) => (v) => {
+    setPesan(null);
+    setF((x) => ({ ...x, [k]: v }));
+  };
+  const simpan = async () => {
+    const n = Math.floor(Number(f.min_qty) || 0);
+    if (n < 2) return setPesan({ err: true, teks: "Minimal pembelian harus 2 pcs atau lebih." });
+    if (f.mulai && f.selesai && f.selesai < f.mulai) return setPesan({ err: true, teks: "Tanggal selesai tidak boleh sebelum tanggal mulai." });
+    setSaving(true);
+    setPesan(null);
+    try {
+      await simpanCfgGrosir(id, { ...f, min_qty: n });
+      const r = await muatCfgGrosirRow();
+      setId(r.id);
+      setF({ ...r.cfg, min_qty: String(r.cfg.min_qty) });
+      setPesan({ err: false, teks: "Tersimpan. Layar kasir ikut berubah dalam ±1 menit (atau saat dimuat ulang)." });
+    } catch (e) {
+      setPesan({ err: true, teks: String(e?.message || e) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mx-3 mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-100">Promo Grosir</div>
+          <div className="text-[11px] text-slate-500">Beli minimal {f.min_qty || "…"} pcs (campur barang boleh) → harga otomatis jadi harga Grosir di Master Barang.</div>
+        </div>
+        <button
+          type="button"
+          disabled={muat}
+          onClick={() => set("aktif")(!f.aktif)}
+          className={`text-xs font-semibold px-3 py-1.5 rounded-full border flex-shrink-0 ${f.aktif ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40" : "border-slate-700 text-slate-400"}`}
+        >
+          {f.aktif ? "Aktif" : "Nonaktif"}
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        <label className="text-[11px] text-slate-400">
+          Minimal (pcs)
+          <input type="number" inputMode="numeric" min="2" value={f.min_qty} onChange={(e) => set("min_qty")(e.target.value)} className={`${inp} mt-1 tabular-nums`} />
+        </label>
+        <label className="text-[11px] text-slate-400">
+          Mulai (opsional)
+          <input type="date" value={f.mulai} onChange={(e) => set("mulai")(e.target.value)} className={`${inp} mt-1`} />
+        </label>
+        <label className="text-[11px] text-slate-400">
+          Selesai (opsional)
+          <input type="date" value={f.selesai} onChange={(e) => set("selesai")(e.target.value)} className={`${inp} mt-1`} />
+        </label>
+      </div>
+      {pesan && <div className={`mt-2 text-xs ${pesan.err ? "text-red-300" : "text-emerald-400"}`}>{pesan.teks}</div>}
+      <div className="flex items-center justify-between gap-2 mt-3">
+        <div className="text-[11px] text-slate-500">Barang tanpa SKU gudang / tanpa harga Grosir tetap harga biasa. Tidak ditumpuk dengan promo diskon barang: dipakai yang lebih murah untuk pembeli.</div>
+        <button onClick={simpan} disabled={saving || muat} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-sm px-4 py-2 rounded-lg flex-shrink-0">
+          {saving && <Loader2 size={14} className="animate-spin" />} Simpan
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // inline = tampil sebagai isi halaman (menu Toko Offline > POS > Promo), bukan layar penuh dengan tombol tutup.
 export default function PromoToko({ onClose, inline = false }) {
   const [rows, setRows] = useState(null);
@@ -406,6 +491,8 @@ export default function PromoToko({ onClose, inline = false }) {
           </button>
         )}
       </header>
+
+      <KartuGrosir />
 
       <div className="p-3 space-y-2.5 border-b border-slate-800">
         <div className="flex flex-wrap items-center gap-2">

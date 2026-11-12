@@ -27,15 +27,29 @@ export function hitungDiskonPromo(kotor, qty, promo) {
   return Math.min(d, k);
 }
 
-// Satu baris keranjang: { qty, harga, promo, promoLepas, diskonTipe, diskonNilai }
+// Satu baris keranjang: { qty, harga, promo, promoLepas, hargaGrosirAktif, diskonTipe, diskonNilai }
 // Promo (otomatis) dihitung dulu dari harga normal; diskon manual kasir dihitung dari sisanya.
-// "diskon" = promo + manual, itulah yang dikirim ke database & dicetak di struk.
+// Promo GROSIR (beli min. N pcs di keranjang -> harga grosir): layar kasir mengisi `hargaGrosirAktif`
+// (harga grosir per pcs) HANYA kalau syaratnya terpenuhi. Potongannya = (harga - grosir) x qty dan
+// tidak ditumpuk dengan promo diskon barang: dipakai yang potongannya lebih besar (lebih menguntungkan pembeli).
+// "diskon" = promo/grosir + manual, itulah yang dikirim ke database & dicetak di struk
+// (jadi fungsi database tidak perlu diubah).
 export function hitungItem(it) {
   const kotor = Math.round((Number(it.qty) || 0) * (Number(it.harga) || 0));
-  const diskonPromo = it.promo && !it.promoLepas ? hitungDiskonPromo(kotor, it.qty, it.promo) : 0;
+  let diskonPromo = it.promo && !it.promoLepas ? hitungDiskonPromo(kotor, it.qty, it.promo) : 0;
+  let grosir = false;
+  const hg = Number(it.hargaGrosirAktif) || 0;
+  const h = Number(it.harga) || 0;
+  if (hg > 0 && hg < h) {
+    const potongGrosir = Math.min(Math.round((h - hg) * (Number(it.qty) || 0)), kotor);
+    if (potongGrosir > diskonPromo) {
+      diskonPromo = potongGrosir;
+      grosir = true;
+    }
+  }
   const diskonManual = hitungDiskon(kotor - diskonPromo, it.diskonTipe, it.diskonNilai);
   const diskon = diskonPromo + diskonManual;
-  return { kotor, diskonPromo, diskonManual, diskon, subtotal: kotor - diskon };
+  return { kotor, diskonPromo, diskonManual, diskon, subtotal: kotor - diskon, grosir };
 }
 
 // Seluruh keranjang + diskon level transaksi: { tipe, nilai }

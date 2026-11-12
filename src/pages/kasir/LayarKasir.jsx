@@ -3,7 +3,7 @@ import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2
 import { sbAll, fmtRp } from "../../lib/api";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
-import { muatPromoKasir, petaPromoAktif, hargaSetelahPromo, labelDiskon, tglPendek } from "./kasirPromo";
+import { muatPromoKasir, petaPromoAktif, hargaSetelahPromo, labelDiskon, tglPendek, muatDataGrosir, grosirBerjalan } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
 import {
@@ -28,7 +28,7 @@ import {
 // Scanner USB/Bluetooth bekerja seperti keyboard: ketik kode + Enter di kolom cari.
 // =========================================================
 
-const KOLOM = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif,foto_url";
+const KOLOM = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif,foto_url,sku_gudang";
 // Bentuk master_toko disamakan dengan bentuk lama (sku/model/ecer/...) supaya seluruh
 // layar kasir, pencarian, scan dan keranjang di bawah tidak perlu diubah.
 const dariToko = (r) => ({
@@ -42,6 +42,7 @@ const dariToko = (r) => ({
   stok: r.stok,
   nonaktif: r.nonaktif,
   foto: r.foto_url,
+  skuGudang: r.sku_gudang,
 });
 const MAKS_HASIL = 40;
 const tglPendekJam = (ms) => new Date(ms).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -156,6 +157,10 @@ export default function LayarKasir({ session, versiData = 0 }) {
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const promoRef = useRef(new Map());
+  // Promo grosir: pengaturan (min pcs, tanggal) + peta harga grosir per SKU toko. Gagal dimuat = tanpa promo grosir.
+  const [cfgGrosir, setCfgGrosir] = useState(null);
+  const [grosirMap, setGrosirMap] = useState(() => new Map());
+  const grosirRef = useRef({ cfg: null, master: new Map() });
 
   const tampilToast = useCallback((pesan, tipe = "err") => {
     clearTimeout(toastTimer.current);
@@ -169,7 +174,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
   // Stok dikurangi penjualan yang masih antri (belum terkirim ke server) supaya barang yang sama
   // tidak terjual melebihi stok saat offline.
   const terapkan = useCallback(
-    async (rowsToko, rowsPromo) => {
+    async (rowsToko, rowsPromo, dataGrosir) => {
       const antri = await qtyDiAntrian();
       const rows = (rowsToko || [])
         .map(dariToko)
@@ -179,6 +184,16 @@ export default function LayarKasir({ session, versiData = 0 }) {
       const peta = rowsPromo ? petaPromoAktif(rowsPromo, new Map(rows.map((s) => [s.sku, { harga: Number(s.ecer) || 0, kategori: s.kategori }]))) : promoRef.current;
       promoRef.current = peta;
       setPromoMap(peta);
+      // Harga grosir: dataGrosir null/undefined = pakai yang terakhir berhasil dimuat.
+      if (dataGrosir) grosirRef.current = { cfg: dataGrosir.cfg, master: new Map(dataGrosir.master || []) };
+      const gm = grosirRef.current.master;
+      const pg = new Map();
+      rows.forEach((r) => {
+        const g = r.skuGudang ? gm.get(r.skuGudang) : 0;
+        if (g > 0) pg.set(r.sku, g);
+      });
+      setGrosirMap(pg);
+      setCfgGrosir(grosirRef.current.cfg);
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows, peta);
       if (catatan.length) {
         setItems(baru);
@@ -200,28 +215,32 @@ export default function LayarKasir({ session, versiData = 0 }) {
         const c = await bacaCacheEnt("master_toko");
         if (c) {
           const p = await bacaCacheEnt("promo");
-          await terapkan(c.data, p?.data ?? null);
+          const g = await bacaCacheEnt("grosir");
+          await terapkan(c.data, p?.data ?? null, g?.data ?? null);
           setDariCache({ waktu: c.waktu });
           return;
         }
       }
-      const [rowsToko, rowsPromo] = await Promise.all([
+      const [rowsToko, rowsPromo, dataGrosir] = await Promise.all([
         sbAll(`master_toko?select=${KOLOM}&order=kode`),
         muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
+        muatDataGrosir().catch(() => null), // null = promo grosir gagal dimuat, jangan ganggu penjualan
       ]);
       terakhirMuat.current = Date.now();
       tandaiOnline();
       setDariCache(null);
       simpanCacheEnt("master_toko", rowsToko || []);
       if (rowsPromo) simpanCacheEnt("promo", rowsPromo);
-      await terapkan(rowsToko, rowsPromo);
+      if (dataGrosir) simpanCacheEnt("grosir", dataGrosir);
+      await terapkan(rowsToko, rowsPromo, dataGrosir);
     } catch (e) {
       if (adalahGalatJaringan(e)) {
         tandaiOffline();
         const c = await bacaCacheEnt("master_toko");
         if (c) {
           const p = await bacaCacheEnt("promo");
-          await terapkan(c.data, p?.data ?? null);
+          const g = await bacaCacheEnt("grosir");
+          await terapkan(c.data, p?.data ?? null, g?.data ?? null);
           setDariCache({ waktu: c.waktu });
           return;
         }
@@ -424,8 +443,16 @@ export default function LayarKasir({ session, versiData = 0 }) {
     muat(true);
   };
 
-  const ringkas = hitungKeranjang(items, diskonTrx);
-  const totalDiskonItem = items.reduce((a, it) => a + hitungItem(it).diskon, 0);
+  // Promo grosir: total pcs gabungan seluruh keranjang >= minimal -> barang yang punya harga grosir dihitung harga grosir.
+  const totalQty = items.reduce((a, it) => a + (Number(it.qty) || 0), 0);
+  const grosirNyala = grosirBerjalan(cfgGrosir);
+  const grosirTercapai = grosirNyala && totalQty >= cfgGrosir.min_qty;
+  const itemsH = useMemo(
+    () => (grosirTercapai ? items.map((it) => (grosirMap.get(it.sku) > 0 ? { ...it, hargaGrosirAktif: grosirMap.get(it.sku) } : it)) : items),
+    [items, grosirMap, grosirTercapai]
+  );
+  const ringkas = hitungKeranjang(itemsH, diskonTrx);
+  const totalDiskonItem = itemsH.reduce((a, it) => a + hitungItem(it).diskon, 0);
   const qtyDiKeranjang = useMemo(() => new Map(items.map((it) => [it.sku, it.qty])), [items]);
 
   return (
@@ -602,6 +629,14 @@ export default function LayarKasir({ session, versiData = 0 }) {
           </button>
         </div>
 
+        {grosirNyala && items.length > 0 && (
+          <div className={`mx-3 mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${grosirTercapai ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
+            <BadgePercent size={14} className="flex-shrink-0" />
+            {grosirTercapai
+              ? `Harga grosir aktif (${totalQty} pcs, min. ${cfgGrosir.min_qty})`
+              : `Beli ${cfgGrosir.min_qty} pcs (campur barang boleh) → harga grosir. Kurang ${cfgGrosir.min_qty - totalQty} pcs`}
+          </div>
+        )}
         <div className="flex-1 lg:overflow-y-auto px-3 py-3 space-y-2 min-h-[120px]">
           {items.length === 0 ? (
             <div className="text-center py-12">
@@ -610,7 +645,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
               <div className="text-xs text-slate-500 mt-1">Scan barcode atau pilih barang di sebelah kiri.</div>
             </div>
           ) : (
-            items.map((it) => {
+            itemsH.map((it) => {
               const h = hitungItem(it);
               const terbuka = bukaDiskon.has(it.sku) || h.diskonManual > 0;
               return (
@@ -661,11 +696,17 @@ export default function LayarKasir({ session, versiData = 0 }) {
                     </div>
                   </div>
 
+                  {h.grosir && (
+                    <div className="mt-2.5 flex items-center gap-1 text-xs font-semibold text-emerald-400">
+                      <BadgePercent size={13} /> Harga grosir <span className="tabular-nums">{fmtRp(it.hargaGrosirAktif)}</span>
+                      <span className="tabular-nums">· − {fmtRp(h.diskonPromo)}</span>
+                    </div>
+                  )}
                   {it.promo && (
                     <div className="mt-2.5 flex items-center justify-between gap-2 text-xs">
                       <span className={`inline-flex items-center gap-1 font-semibold ${it.promoLepas ? "text-slate-500 line-through" : "text-emerald-400"}`}>
                         <BadgePercent size={13} /> Promo {labelDiskon(it.promo)}{it.promo.kategori ? ` · ${it.promo.kategori}` : ""}
-                        {!it.promoLepas && h.diskonPromo > 0 && <span className="tabular-nums">· − {fmtRp(h.diskonPromo)}</span>}
+                        {!it.promoLepas && !h.grosir && h.diskonPromo > 0 && <span className="tabular-nums">· − {fmtRp(h.diskonPromo)}</span>}
                       </span>
                       <button
                         type="button"
@@ -753,7 +794,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
       {bayarBuka && (
         <ModalBayar
           total={ringkas.total}
-          items={items}
+          items={itemsH}
           diskonTransaksi={ringkas.diskonTransaksi}
           session={session}
           kunci={kunci}

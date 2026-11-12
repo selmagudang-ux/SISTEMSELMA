@@ -1,4 +1,4 @@
-import { sb, entitasSesi, fmtRp } from "../../lib/api";
+import { sb, sbAll, entitasSesi, fmtRp } from "../../lib/api";
 import { hitungDiskonPromo } from "./kasirHitung";
 
 // =========================================================
@@ -114,4 +114,61 @@ export async function hapusPromo(id) {
   const hasil = await sb(`kasir_promo?id=eq.${id}&entitas=eq.${encodeURIComponent(entitasSesi())}`, { method: "DELETE" });
   if (Array.isArray(hasil) && hasil.length === 0) throw new Error("Promo tidak terhapus: promo sudah tidak ada atau Anda tidak punya izin.");
   return hasil;
+}
+
+// =========================================================
+// PROMO GROSIR — beli minimal N pcs (gabungan semua barang di keranjang) -> harga berubah jadi harga Grosir.
+// Pengaturannya disimpan di master_data tipe "entitas_set" (kode "<PT>:kasir_grosir", label = JSON kecil),
+// pola yang sama dengan pengaturan per perusahaan lainnya — tidak perlu tabel/SQL baru.
+// Harga grosir per barang diambil dari Master Barang (sku_master.grosir) lewat SKU gudang barang toko.
+// Barang toko tanpa SKU gudang (barang import) atau tanpa harga grosir tetap memakai harga biasa.
+// =========================================================
+export const CFG_GROSIR_BAWAAN = { aktif: false, min_qty: 24, mulai: "", selesai: "" };
+const kodeCfgGrosir = () => `${entitasSesi()}:kasir_grosir`;
+
+export function bacaCfgGrosir(label) {
+  try {
+    const d = JSON.parse(label || "{}");
+    return {
+      aktif: !!d.aktif,
+      min_qty: Math.max(2, Math.floor(Number(d.min_qty) || CFG_GROSIR_BAWAAN.min_qty)),
+      mulai: d.mulai || "",
+      selesai: d.selesai || "",
+    };
+  } catch {
+    return { ...CFG_GROSIR_BAWAAN };
+  }
+}
+
+// Promo grosir sedang berlaku hari ini? (tanggal kosong = tanpa batas)
+export function grosirBerjalan(cfg, hari = tanggalHariIni()) {
+  if (!cfg || !cfg.aktif) return false;
+  if (cfg.mulai && cfg.mulai > hari) return false;
+  if (cfg.selesai && cfg.selesai < hari) return false;
+  return true;
+}
+
+export async function muatCfgGrosirRow() {
+  const r = await sb(`master_data?tipe=eq.entitas_set&kode=eq.${encodeURIComponent(kodeCfgGrosir())}&select=id,label`);
+  const row = (r && r[0]) || null;
+  return { id: row?.id || null, cfg: bacaCfgGrosir(row?.label) };
+}
+
+export async function simpanCfgGrosir(id, cfg) {
+  const label = JSON.stringify({ aktif: !!cfg.aktif, min_qty: Math.max(2, Math.floor(Number(cfg.min_qty) || 24)), mulai: cfg.mulai || "", selesai: cfg.selesai || "" });
+  if (id) {
+    const hasil = await sb(`master_data?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ label }) });
+    if (Array.isArray(hasil) && hasil.length === 0) throw new Error("Pengaturan tidak tersimpan: Anda tidak punya izin atau data sudah tidak ada.");
+    return hasil;
+  }
+  return sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_set", kode: kodeCfgGrosir(), label }) });
+}
+
+// Untuk layar kasir: { cfg, master: [[skuGudang, hargaGrosir], ...] }.
+// Daftar harga hanya dimuat kalau promo grosir aktif (hemat data).
+export async function muatDataGrosir() {
+  const { cfg } = await muatCfgGrosirRow();
+  if (!cfg.aktif) return { cfg, master: [] };
+  const rows = await sbAll("sku_master?select=sku,grosir&grosir=gt.0");
+  return { cfg, master: (rows || []).map((r) => [r.sku, Number(r.grosir) || 0]) };
 }
