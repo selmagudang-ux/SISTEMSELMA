@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2, AlertCircle, Tag, BadgePercent } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload } from "lucide-react";
 import { sbAll, fmtRp } from "../../lib/api";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
 import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
+import { simpanKeranjangTersimpan } from "./kasirKeranjang";
+import KeranjangTersimpan from "./KeranjangTersimpan";
 import {
   useStatusKasir,
   statusSekarang,
@@ -159,6 +161,8 @@ export default function LayarKasir({ session, versiData = 0 }) {
   // tersimpan dua kali kalau tombol Bayar ditekan ulang (mis. koneksi putus).
   const [kunci, setKunci] = useState(() => bacaSimpan(session).kunci);
   const [bayarBuka, setBayarBuka] = useState(false);
+  const [daftarTersimpanBuka, setDaftarTersimpanBuka] = useState(false);
+  const [menyimpan, setMenyimpan] = useState(false);
   const [bukaDiskon, setBukaDiskon] = useState(() => new Set());
   const [toast, setToast] = useState(null);
   const [scanBuka, setScanBuka] = useState(false);
@@ -445,6 +449,46 @@ export default function LayarKasir({ session, versiData = 0 }) {
     setKunci(null);
   };
 
+  // Simpan keranjang ke database (lanjutkan di perangkat lain lewat tombol "Ambil"), lalu kosongkan keranjang ini.
+  const simpanKeCloud = async () => {
+    if (!items.length || menyimpan) return;
+    if (statusKoneksi.offline) return tampilToast("Tidak ada internet — keranjang hanya bisa disimpan saat online.");
+    const nama = window.prompt("Nama keranjang (boleh dikosongkan), mis. nama pelanggan:", "");
+    if (nama === null) return; // dibatalkan
+    setMenyimpan(true);
+    try {
+      await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total });
+      setItems([]);
+      setDiskonTrx({ tipe: "rp", nilai: "" });
+      setBukaDiskon(new Set());
+      setKunci(null);
+      tampilToast("Keranjang disimpan. Ambil lewat tombol Ambil di perangkat mana pun.", "ok");
+    } catch (e) {
+      tampilToast(`Gagal menyimpan keranjang: ${e?.message || "coba lagi"}`);
+    } finally {
+      setMenyimpan(false);
+    }
+  };
+  // Dipanggil dari daftar keranjang tersimpan. Mengembalikan true kalau keranjang berhasil dimuat ke layar ini.
+  const ambilDariCloud = async (r) => {
+    if (!skuList.length) {
+      tampilToast("Daftar barang belum selesai dimuat. Coba lagi sebentar.");
+      return false;
+    }
+    if (items.length && !window.confirm("Keranjang yang sedang berisi akan diganti dengan keranjang tersimpan ini. Lanjutkan?")) return false;
+    const { items: baru, catatan } = sinkronItems(Array.isArray(r.items) ? r.items : [], skuList, promoRef.current);
+    if (!baru.length) {
+      tampilToast("Semua barang di keranjang ini sudah tidak bisa dijual (habis / dinonaktifkan).");
+      return false;
+    }
+    setItems(baru);
+    setDiskonTrx(r.diskon_trx || { tipe: "rp", nilai: "" });
+    setBukaDiskon(new Set());
+    setKunci(null);
+    tampilToast(catatan.length ? `Keranjang dimuat, disesuaikan: ${catatan.join("; ")}` : "Keranjang dimuat.", catatan.length ? "err" : "ok");
+    return true;
+  };
+
   const bukaBayar = () => {
     if (!kunci) setKunci(buatKunci());
     setBayarBuka(true);
@@ -643,13 +687,30 @@ export default function LayarKasir({ session, versiData = 0 }) {
               <span className="text-xs font-semibold bg-slate-800 text-slate-300 rounded-full px-2 py-0.5 tabular-nums">{ringkas.jumlahQty} pcs</span>
             )}
           </div>
-          <button
-            onClick={kosongkan}
-            disabled={!items.length}
-            className="text-xs font-medium text-slate-500 hover:text-red-400 disabled:opacity-40 disabled:hover:text-slate-500 transition-colors"
-          >
-            Kosongkan
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={simpanKeCloud}
+              disabled={!items.length || menyimpan}
+              title="Simpan keranjang ini untuk dilanjutkan di perangkat lain"
+              className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-amber-400 disabled:opacity-40 disabled:hover:text-slate-400 transition-colors"
+            >
+              {menyimpan ? <Loader2 size={13} className="animate-spin" /> : <CloudUpload size={13} />} Simpan
+            </button>
+            <button
+              onClick={() => setDaftarTersimpanBuka(true)}
+              title="Ambil keranjang yang disimpan dari perangkat lain"
+              className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-amber-400 transition-colors"
+            >
+              <CloudDownload size={13} /> Ambil
+            </button>
+            <button
+              onClick={kosongkan}
+              disabled={!items.length}
+              className="text-xs font-medium text-slate-500 hover:text-red-400 disabled:opacity-40 disabled:hover:text-slate-500 transition-colors"
+            >
+              Kosongkan
+            </button>
+          </div>
         </div>
 
         {grosirJalan.length > 0 && items.length > 0 && (
@@ -823,6 +884,8 @@ export default function LayarKasir({ session, versiData = 0 }) {
           {toast.pesan}
         </div>
       )}
+
+      {daftarTersimpanBuka && <KeranjangTersimpan session={session} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
 
       {bayarBuka && (
         <ModalBayar
