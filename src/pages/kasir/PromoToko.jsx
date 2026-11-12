@@ -13,9 +13,11 @@ import {
   tglPendek,
   hargaSetelahPromo,
   normKat,
-  muatCfgGrosirRow,
-  simpanCfgGrosir,
-  CFG_GROSIR_BAWAAN,
+  muatPaketRow,
+  ubahDaftarPaket,
+  statusPaket,
+  labelPaket,
+  JENIS_PAKET,
 } from "./kasirPromo";
 import { inp } from "./BarangToko";
 
@@ -325,84 +327,299 @@ function KonfirmasiHapus({ promo, onClose, onSelesai }) {
   );
 }
 
-// Promo grosir: beli minimal N pcs (gabungan semua barang di keranjang) -> harga berubah jadi harga Grosir dari Master Barang.
-function KartuGrosir() {
-  const [id, setId] = useState(null);
-  const [f, setF] = useState(CFG_GROSIR_BAWAAN);
-  const [muat, setMuat] = useState(true);
+// =========================================================
+// PROMO PAKET — "Promo A": satu promo (diskon % / diskon Rp per pcs / harga grosir min. N pcs) yang berlaku untuk
+// banyak kategori sekaligus. Kategori bisa ditambah atau dikurangi kapan saja lewat tombol Ubah.
+// =========================================================
+function FormPaket({ paket, kategori, onClose, onSelesai }) {
+  const baru = !paket?.id;
+  const [nama, setNama] = useState(paket?.nama || "");
+  const [jenis, setJenis] = useState(paket?.jenis || "persen");
+  const [nilai, setNilai] = useState(paket?.nilai ? String(paket.nilai) : "");
+  const [minQty, setMinQty] = useState(String(paket?.min_qty || 24));
+  const [mulai, setMulai] = useState(paket?.mulai || "");
+  const [selesai, setSelesai] = useState(paket?.selesai || "");
+  const [semua, setSemua] = useState(!!paket?.semua);
+  const [pilih, setPilih] = useState(() => paket?.kategori || []);
+  const [cari, setCari] = useState("");
+  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [pesan, setPesan] = useState(null);
 
-  useEffect(() => {
-    muatCfgGrosirRow()
-      .then((r) => {
-        setId(r.id);
-        setF({ ...r.cfg, min_qty: String(r.cfg.min_qty) });
-      })
-      .catch((e) => setPesan({ err: true, teks: String(e?.message || e) }))
-      .finally(() => setMuat(false));
-  }, []);
+  // Kategori yang ada di Barang Toko + kategori yang sudah terpilih tapi sudah tidak ada barangnya (supaya tetap bisa dilepas).
+  const daftar = useMemo(() => {
+    const m = new Map(kategori.map((k) => [normKat(k.nama), { nama: k.nama, jumlah: k.jumlah }]));
+    pilih.forEach((k) => {
+      if (!m.has(normKat(k))) m.set(normKat(k), { nama: k, jumlah: 0 });
+    });
+    return [...m.values()].sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [kategori, pilih]);
+  const tampil = useMemo(() => {
+    const k = cari.trim().toLowerCase();
+    return k ? daftar.filter((d) => d.nama.toLowerCase().includes(k)) : daftar;
+  }, [daftar, cari]);
+  const terpilih = (nama) => pilih.some((k) => normKat(k) === normKat(nama));
+  const toggle = (nama) => setPilih((p) => (terpilih(nama) ? p.filter((k) => normKat(k) !== normKat(nama)) : [...p, nama]));
 
-  const set = (k) => (v) => {
-    setPesan(null);
-    setF((x) => ({ ...x, [k]: v }));
-  };
   const simpan = async () => {
-    const n = Math.floor(Number(f.min_qty) || 0);
-    if (n < 2) return setPesan({ err: true, teks: "Minimal pembelian harus 2 pcs atau lebih." });
-    if (f.mulai && f.selesai && f.selesai < f.mulai) return setPesan({ err: true, teks: "Tanggal selesai tidak boleh sebelum tanggal mulai." });
+    const n = Number(nilai) || 0;
+    const mq = Math.floor(Number(minQty) || 0);
+    if (!nama.trim()) return setError("Beri nama promo, mis. \"Promo A\".");
+    if (jenis !== "grosir") {
+      if (!(n > 0)) return setError("Isi nilai diskon (lebih dari 0).");
+      if (jenis === "persen" && n > 100) return setError("Diskon persen maksimal 100.");
+    } else if (mq < 2) return setError("Minimal pembelian harus 2 pcs atau lebih.");
+    if (!semua && pilih.length === 0) return setError("Pilih minimal satu kategori, atau aktifkan \"Semua kategori\".");
+    if (mulai && selesai && selesai < mulai) return setError("Tanggal selesai tidak boleh sebelum tanggal mulai.");
     setSaving(true);
-    setPesan(null);
+    setError("");
     try {
-      await simpanCfgGrosir(id, { ...f, min_qty: n });
-      const r = await muatCfgGrosirRow();
-      setId(r.id);
-      setF({ ...r.cfg, min_qty: String(r.cfg.min_qty) });
-      setPesan({ err: false, teks: "Tersimpan. Layar kasir ikut berubah dalam ±1 menit (atau saat dimuat ulang)." });
+      const data = { nama: nama.trim(), jenis, nilai: jenis === "grosir" ? 0 : n, min_qty: mq || 24, mulai, selesai, semua, kategori: semua ? [] : pilih };
+      await ubahDaftarPaket((list) => (baru ? [...list, { ...data, aktif: true }] : list.map((x) => (x.id === paket.id ? { ...x, ...data } : x))));
+      onSelesai();
     } catch (e) {
-      setPesan({ err: true, teks: String(e?.message || e) });
+      setError(String(e?.message || e));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="mx-3 mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3.5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-100">Promo Grosir</div>
-          <div className="text-[11px] text-slate-500">Beli minimal {f.min_qty || "…"} pcs (campur barang boleh) → harga otomatis jadi harga Grosir di Master Barang.</div>
+    <Kerangka judul={baru ? "Tambah promo paket" : `Ubah ${paket.nama || "promo paket"}`} onClose={onClose}>
+      <label className="block text-xs text-slate-400">
+        Nama promo
+        <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Promo A" className={`${inp} mt-1`} />
+      </label>
+
+      <div>
+        <div className="text-xs text-slate-400 mb-1">Jenis promo</div>
+        <div className="flex flex-wrap gap-2">
+          {JENIS_PAKET.map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setJenis(k)}
+              className={`text-xs px-3 py-1.5 rounded-full border ${jenis === k ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300 hover:border-amber-500/60"}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <button
-          type="button"
-          disabled={muat}
-          onClick={() => set("aktif")(!f.aktif)}
-          className={`text-xs font-semibold px-3 py-1.5 rounded-full border flex-shrink-0 ${f.aktif ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40" : "border-slate-700 text-slate-400"}`}
-        >
-          {f.aktif ? "Aktif" : "Nonaktif"}
+      </div>
+
+      {jenis === "grosir" ? (
+        <label className="block text-xs text-slate-400">
+          Minimal pembelian (pcs, gabungan semua barang di keranjang) → harga jadi harga grosir barang (diisi di Barang Toko)
+          <input type="number" inputMode="numeric" min="2" value={minQty} onChange={(e) => setMinQty(e.target.value)} className={`${inp} mt-1 tabular-nums`} />
+        </label>
+      ) : (
+        <label className="block text-xs text-slate-400">
+          {jenis === "persen" ? "Diskon (%)" : "Potongan per pcs (Rp)"}
+          <input type="number" inputMode="decimal" min="0" value={nilai} onChange={(e) => setNilai(e.target.value)} placeholder="0" className={`${inp} mt-1 tabular-nums`} />
+        </label>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs text-slate-400">
+          Mulai (kosong = langsung)
+          <input type="date" value={mulai} onChange={(e) => setMulai(e.target.value)} className={`${inp} mt-1`} />
+        </label>
+        <label className="text-xs text-slate-400">
+          Selesai (kosong = tanpa batas)
+          <input type="date" value={selesai} onChange={(e) => setSelesai(e.target.value)} className={`${inp} mt-1`} />
+        </label>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <div className="text-xs text-slate-400">Kategori yang ikut promo {semua ? "" : `(${pilih.length} dipilih)`}</div>
+          <button
+            type="button"
+            onClick={() => setSemua((v) => !v)}
+            className={`text-[11px] px-2.5 py-1 rounded-full border ${semua ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40 font-semibold" : "border-slate-700 text-slate-400 hover:border-amber-500/60"}`}
+          >
+            Semua kategori
+          </button>
+        </div>
+        {!semua && (
+          <>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari kategori…" className={`${inp} pl-9`} />
+              </div>
+              <button type="button" onClick={() => setPilih(daftar.map((d) => d.nama))} className="text-[11px] text-slate-400 hover:text-amber-400 whitespace-nowrap">
+                Pilih semua
+              </button>
+              <button type="button" onClick={() => setPilih([])} className="text-[11px] text-slate-400 hover:text-red-400 whitespace-nowrap">
+                Kosongkan
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
+              {tampil.length === 0 && <div className="text-xs text-slate-500">Tidak ada kategori yang cocok.</div>}
+              {tampil.map((d) => {
+                const on = terpilih(d.nama);
+                return (
+                  <button
+                    key={normKat(d.nama)}
+                    type="button"
+                    onClick={() => toggle(d.nama)}
+                    className={`text-xs px-2.5 py-1 rounded-full border ${on ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300 hover:border-amber-500/60"}`}
+                  >
+                    {on ? "✓ " : "+ "}
+                    {d.nama} <span className={on ? "opacity-70" : "text-slate-500"}>({d.jumlah})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {error && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> <span>{error}</span>
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <button onClick={onClose} className="text-sm text-slate-400 hover:text-slate-200 px-3 py-2">
+          Batal
         </button>
-      </div>
-      <div className="grid grid-cols-3 gap-2 mt-3">
-        <label className="text-[11px] text-slate-400">
-          Minimal (pcs)
-          <input type="number" inputMode="numeric" min="2" value={f.min_qty} onChange={(e) => set("min_qty")(e.target.value)} className={`${inp} mt-1 tabular-nums`} />
-        </label>
-        <label className="text-[11px] text-slate-400">
-          Mulai (opsional)
-          <input type="date" value={f.mulai} onChange={(e) => set("mulai")(e.target.value)} className={`${inp} mt-1`} />
-        </label>
-        <label className="text-[11px] text-slate-400">
-          Selesai (opsional)
-          <input type="date" value={f.selesai} onChange={(e) => set("selesai")(e.target.value)} className={`${inp} mt-1`} />
-        </label>
-      </div>
-      {pesan && <div className={`mt-2 text-xs ${pesan.err ? "text-red-300" : "text-emerald-400"}`}>{pesan.teks}</div>}
-      <div className="flex items-center justify-between gap-2 mt-3">
-        <div className="text-[11px] text-slate-500">Barang tanpa SKU gudang / tanpa harga Grosir tetap harga biasa. Tidak ditumpuk dengan promo diskon barang: dipakai yang lebih murah untuk pembeli.</div>
-        <button onClick={simpan} disabled={saving || muat} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold text-sm px-4 py-2 rounded-lg flex-shrink-0">
+        <button onClick={simpan} disabled={saving} className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-bold text-sm px-4 py-2 rounded-lg">
           {saving && <Loader2 size={14} className="animate-spin" />} Simpan
         </button>
       </div>
+    </Kerangka>
+  );
+}
+
+function PromoPaket({ barang }) {
+  const [daftar, setDaftar] = useState(null);
+  const [form, setForm] = useState(null);
+  const [err, setErr] = useState("");
+  const [sibuk, setSibuk] = useState(null);
+
+  const muat = async () => {
+    try {
+      const r = await muatPaketRow();
+      setDaftar(r.paket);
+    } catch (e) {
+      setDaftar((d) => d || []);
+      setErr(String(e?.message || e));
+    }
+  };
+  useEffect(() => {
+    muat();
+  }, []);
+
+  const kategori = useMemo(() => {
+    const m = new Map();
+    barang.forEach((b) => {
+      const k = String(b.kategori || "").trim();
+      if (k && !b.nonaktif) m.set(normKat(k), { nama: k, jumlah: (m.get(normKat(k))?.jumlah || 0) + 1 });
+    });
+    return [...m.values()].sort((a, b) => a.nama.localeCompare(b.nama));
+  }, [barang]);
+
+  const ubah = async (id, fn, pesanId = id) => {
+    setSibuk(pesanId);
+    setErr("");
+    try {
+      setDaftar(await ubahDaftarPaket((list) => fn(list)));
+    } catch (e) {
+      setErr(String(e?.message || e));
+    } finally {
+      setSibuk(null);
+    }
+  };
+
+  const hari = tanggalHariIni();
+  const urut = { berjalan: 0, akan: 1, berakhir: 2, nonaktif: 3 };
+  const tampil = (daftar || []).map((p) => ({ ...p, status: statusPaket(p, hari) })).sort((a, b) => urut[a.status] - urut[b.status]);
+
+  return (
+    <div className="mx-3 mt-3 rounded-2xl border border-slate-800 bg-slate-900/50 p-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-100">Promo Paket</div>
+          <div className="text-[11px] text-slate-500">Satu promo untuk banyak kategori — diskon %, diskon Rp, atau harga grosir (min. pcs). Kategori bisa ditambah/dikurangi lewat Ubah.</div>
+        </div>
+        <button onClick={() => setForm({ paket: {} })} className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg flex-shrink-0">
+          <Plus size={15} /> Promo paket
+        </button>
+      </div>
+      {err && (
+        <div className="mt-2 flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> <span>{err}</span>
+        </div>
+      )}
+      {daftar === null ? (
+        <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+          <Loader2 size={14} className="animate-spin" /> Memuat…
+        </div>
+      ) : tampil.length === 0 ? (
+        <div className="mt-3 text-xs text-slate-500">Belum ada promo paket. Tekan “Promo paket” untuk membuat “Promo A”.</div>
+      ) : (
+        <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+          {tampil.map((p) => {
+            const st = STATUS[p.status];
+            return (
+              <div key={p.id} className={`rounded-2xl p-3.5 border bg-slate-900/70 ${p.status === "berjalan" ? "border-emerald-500/40" : "border-slate-800"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-100 leading-snug">{p.nama || "Promo paket"}</div>
+                    <div className="text-base font-bold text-emerald-400 mt-0.5">{labelPaket(p)}</div>
+                  </div>
+                  <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 flex-shrink-0 ${st.cls}`}>{st.label}</span>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2.5">
+                  {p.semua ? (
+                    <span className="text-[11px] bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5">Semua kategori</span>
+                  ) : (
+                    p.kategori.map((k) => (
+                      <span key={k} className="text-[11px] bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5">
+                        {k}
+                      </span>
+                    ))
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-2 tabular-nums">
+                  {p.mulai ? tglPendek(p.mulai) : "Langsung"} s/d {p.selesai ? tglPendek(p.selesai) : "tanpa batas"}
+                </div>
+                <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-dashed border-slate-800">
+                  <button
+                    onClick={() => ubah(p.id, (l) => l.map((x) => (x.id === p.id ? { ...x, aktif: !x.aktif } : x)))}
+                    disabled={sibuk === p.id}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border disabled:opacity-50 ${p.aktif ? "border-slate-700 text-slate-300 hover:border-red-500/60 hover:text-red-300" : "border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"}`}
+                  >
+                    {sibuk === p.id ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />} {p.aktif ? "Nonaktifkan" : "Aktifkan"}
+                  </button>
+                  <button onClick={() => setForm({ paket: p })} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-amber-500/60">
+                    <Pencil size={13} /> Ubah
+                  </button>
+                  <button
+                    onClick={() => window.confirm(`Hapus ${p.nama || "promo ini"}? Transaksi yang sudah tersimpan tidak berubah.`) && ubah(p.id, (l) => l.filter((x) => x.id !== p.id))}
+                    className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10"
+                    title="Hapus promo"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {form && (
+        <FormPaket
+          paket={form.paket}
+          kategori={kategori}
+          onClose={() => setForm(null)}
+          onSelesai={() => {
+            setForm(null);
+            muat();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -483,7 +700,7 @@ export default function PromoToko({ onClose, inline = false }) {
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
         <div>
           <div className="font-bold text-sm">Promo Kasir</div>
-          <div className="text-[11px] text-slate-500">{rows ? `${hitung.berjalan} berjalan · ${hitung.semua} promo` : "Memuat…"} · diskon per barang dengan tanggal mulai & selesai</div>
+          <div className="text-[11px] text-slate-500">{rows ? `${hitung.berjalan} berjalan · ${hitung.semua} promo lama (per barang / kategori)` : "Memuat…"} · promo paket ada di bagian atas</div>
         </div>
         {!inline && (
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
@@ -492,7 +709,7 @@ export default function PromoToko({ onClose, inline = false }) {
         )}
       </header>
 
-      <KartuGrosir />
+      <PromoPaket barang={barang} />
 
       <div className="p-3 space-y-2.5 border-b border-slate-800">
         <div className="flex flex-wrap items-center gap-2">

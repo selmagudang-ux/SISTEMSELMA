@@ -117,58 +117,104 @@ export async function hapusPromo(id) {
 }
 
 // =========================================================
-// PROMO GROSIR — beli minimal N pcs (gabungan semua barang di keranjang) -> harga berubah jadi harga Grosir.
-// Pengaturannya disimpan di master_data tipe "entitas_set" (kode "<PT>:kasir_grosir", label = JSON kecil),
-// pola yang sama dengan pengaturan per perusahaan lainnya — tidak perlu tabel/SQL baru.
-// Harga grosir per barang diambil dari Master Barang (sku_master.grosir) lewat SKU gudang barang toko.
-// Barang toko tanpa SKU gudang (barang import) atau tanpa harga grosir tetap memakai harga biasa.
+// PROMO PAKET — "Promo A" = satu promo yang isinya daftar kategori barang (bisa ditambah/dikurangi kapan saja).
+// Jenis: diskon % / diskon Rp per pcs / harga GROSIR (beli minimal N pcs, gabungan semua barang di keranjang ->
+// barang di kategori promo itu dihitung harga Grosir dari Master Barang).
+// Disimpan sebagai daftar JSON di master_data tipe "entitas_set" (kode "<PT>:kasir_promo_paket") — pola yang sama
+// dengan pengaturan per perusahaan lainnya, jadi tidak perlu tabel/SQL baru. Promo lama (kasir_promo, per SKU
+// atau per kategori) tetap berjalan seperti biasa berdampingan dengan promo paket.
+// Harga grosir per barang = kolom harga_grosir di Barang Toko (master_toko); kalau kosong dan barang tertaut ke
+// Master Barang (sku_gudang), dipakai sku_master.grosir. Barang tanpa harga grosir tetap harga biasa.
 // =========================================================
-export const CFG_GROSIR_BAWAAN = { aktif: false, min_qty: 24, mulai: "", selesai: "" };
-const kodeCfgGrosir = () => `${entitasSesi()}:kasir_grosir`;
+export const JENIS_PAKET = [
+  ["persen", "Diskon %"],
+  ["rp", "Diskon Rp / pcs"],
+  ["grosir", "Harga grosir"],
+];
+const kodePaket = () => `${entitasSesi()}:kasir_promo_paket`;
+const buatIdPaket = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-export function bacaCfgGrosir(label) {
+export function normPaket(d) {
+  const jenis = ["persen", "rp", "grosir"].includes(d?.jenis) ? d.jenis : null;
+  if (!jenis) return null;
+  return {
+    id: String(d.id || buatIdPaket()),
+    nama: String(d.nama || "").trim(),
+    jenis,
+    nilai: Number(d.nilai) || 0,
+    min_qty: Math.max(2, Math.floor(Number(d.min_qty) || 24)),
+    mulai: d.mulai || "",
+    selesai: d.selesai || "",
+    aktif: d.aktif !== false,
+    semua: !!d.semua, // true = semua kategori
+    kategori: Array.isArray(d.kategori) ? [...new Set(d.kategori.map((k) => String(k).trim()).filter(Boolean))] : [],
+  };
+}
+
+export function bacaPaket(label) {
   try {
-    const d = JSON.parse(label || "{}");
-    return {
-      aktif: !!d.aktif,
-      min_qty: Math.max(2, Math.floor(Number(d.min_qty) || CFG_GROSIR_BAWAAN.min_qty)),
-      mulai: d.mulai || "",
-      selesai: d.selesai || "",
-    };
+    const a = JSON.parse(label || "[]");
+    return Array.isArray(a) ? a.map(normPaket).filter(Boolean) : [];
   } catch {
-    return { ...CFG_GROSIR_BAWAAN };
+    return [];
   }
 }
 
-// Promo grosir sedang berlaku hari ini? (tanggal kosong = tanpa batas)
-export function grosirBerjalan(cfg, hari = tanggalHariIni()) {
-  if (!cfg || !cfg.aktif) return false;
-  if (cfg.mulai && cfg.mulai > hari) return false;
-  if (cfg.selesai && cfg.selesai < hari) return false;
-  return true;
+// "berjalan" | "akan" | "berakhir" | "nonaktif" (tanggal kosong = tanpa batas)
+export function statusPaket(p, hari = tanggalHariIni()) {
+  if (!p.aktif) return "nonaktif";
+  if (p.selesai && p.selesai < hari) return "berakhir";
+  if (p.mulai && p.mulai > hari) return "akan";
+  return "berjalan";
 }
 
-export async function muatCfgGrosirRow() {
-  const r = await sb(`master_data?tipe=eq.entitas_set&kode=eq.${encodeURIComponent(kodeCfgGrosir())}&select=id,label`);
+export function labelPaket(p) {
+  if (p.jenis === "grosir") return `Grosir min. ${p.min_qty} pcs`;
+  const n = Number(p.nilai) || 0;
+  return p.jenis === "persen" ? `Diskon ${n % 1 === 0 ? n : n.toFixed(1)}%` : `Diskon ${fmtRp(n)}/pcs`;
+}
+
+export async function muatPaketRow() {
+  const r = await sb(`master_data?tipe=eq.entitas_set&kode=eq.${encodeURIComponent(kodePaket())}&select=id,label`);
   const row = (r && r[0]) || null;
-  return { id: row?.id || null, cfg: bacaCfgGrosir(row?.label) };
+  return { id: row?.id || null, paket: bacaPaket(row?.label) };
 }
 
-export async function simpanCfgGrosir(id, cfg) {
-  const label = JSON.stringify({ aktif: !!cfg.aktif, min_qty: Math.max(2, Math.floor(Number(cfg.min_qty) || 24)), mulai: cfg.mulai || "", selesai: cfg.selesai || "" });
+// Baca daftar terbaru dari server, ubah dengan fn(daftar) -> daftar baru, simpan. Mengembalikan daftar baru.
+// (Selalu baca ulang dulu supaya perubahan dari perangkat lain tidak tertimpa.)
+export async function ubahDaftarPaket(fn) {
+  const { id, paket } = await muatPaketRow();
+  const baru = (fn(paket) || []).map(normPaket).filter(Boolean);
+  const label = JSON.stringify(baru);
   if (id) {
     const hasil = await sb(`master_data?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ label }) });
-    if (Array.isArray(hasil) && hasil.length === 0) throw new Error("Pengaturan tidak tersimpan: Anda tidak punya izin atau data sudah tidak ada.");
-    return hasil;
+    if (Array.isArray(hasil) && hasil.length === 0) throw new Error("Promo tidak tersimpan: Anda tidak punya izin atau data sudah tidak ada.");
+  } else {
+    await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_set", kode: kodePaket(), label }) });
   }
-  return sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "entitas_set", kode: kodeCfgGrosir(), label }) });
+  return baru;
 }
 
-// Untuk layar kasir: { cfg, master: [[skuGudang, hargaGrosir], ...] }.
-// Daftar harga hanya dimuat kalau promo grosir aktif (hemat data).
-export async function muatDataGrosir() {
-  const { cfg } = await muatCfgGrosirRow();
-  if (!cfg.aktif) return { cfg, master: [] };
+// Promo paket diskon (% / Rp) yang sedang berjalan -> baris bentuk kasir_promo (satu baris per kategori),
+// supaya petaPromoAktif & hitungan keranjang yang sudah ada langsung memakainya.
+// semuaKategori: daftar kategori barang toko (untuk promo "semua kategori").
+export function paketKeBarisPromo(paket, semuaKategori, hari = tanggalHariIni()) {
+  const out = [];
+  for (const p of paket || []) {
+    if (p.jenis === "grosir" || statusPaket(p, hari) !== "berjalan" || !(Number(p.nilai) > 0)) continue;
+    const daftar = p.semua ? semuaKategori || [] : p.kategori;
+    for (const k of daftar) {
+      out.push({ id: `paket:${p.id}:${normKat(k)}`, sku: null, kategori: k, nama: p.nama, tipe: p.jenis, nilai: p.nilai, mulai: p.mulai || "1900-01-01", selesai: p.selesai || "9999-12-31", aktif: true });
+    }
+  }
+  return out;
+}
+
+// Untuk layar kasir: { paket, master: [[skuGudang, hargaGrosir], ...] }.
+// Daftar harga grosir hanya dimuat kalau ada promo grosir yang aktif (hemat data).
+export async function muatDataPaket() {
+  const { paket } = await muatPaketRow();
+  if (!paket.some((p) => p.jenis === "grosir" && p.aktif)) return { paket, master: [] };
   const rows = await sbAll("sku_master?select=sku,grosir&grosir=gt.0");
-  return { cfg, master: (rows || []).map((r) => [r.sku, Number(r.grosir) || 0]) };
+  return { paket, master: (rows || []).map((r) => [r.sku, Number(r.grosir) || 0]) };
 }

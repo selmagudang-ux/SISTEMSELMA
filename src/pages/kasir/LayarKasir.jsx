@@ -3,7 +3,7 @@ import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2
 import { sbAll, fmtRp } from "../../lib/api";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
-import { muatPromoKasir, petaPromoAktif, hargaSetelahPromo, labelDiskon, tglPendek, muatDataGrosir, grosirBerjalan } from "./kasirPromo";
+import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
 import {
@@ -28,7 +28,17 @@ import {
 // Scanner USB/Bluetooth bekerja seperti keyboard: ketik kode + Enter di kolom cari.
 // =========================================================
 
-const KOLOM = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif,foto_url,sku_gudang";
+const KOLOM_LAMA = "id,kode,nama,kategori,barcode,hpp,harga_jual,stok,nonaktif,foto_url,sku_gudang";
+const KOLOM = `${KOLOM_LAMA},harga_grosir`;
+// Kalau kolom harga_grosir belum dibuat di database (SQL belum dijalankan), kasir tetap jalan tanpa kolom itu.
+async function muatBarangToko() {
+  try {
+    return await sbAll(`master_toko?select=${KOLOM}&order=kode`);
+  } catch (e) {
+    if (/harga_grosir/i.test(String(e?.message || e))) return sbAll(`master_toko?select=${KOLOM_LAMA}&order=kode`);
+    throw e;
+  }
+}
 // Bentuk master_toko disamakan dengan bentuk lama (sku/model/ecer/...) supaya seluruh
 // layar kasir, pencarian, scan dan keranjang di bawah tidak perlu diubah.
 const dariToko = (r) => ({
@@ -43,6 +53,7 @@ const dariToko = (r) => ({
   nonaktif: r.nonaktif,
   foto: r.foto_url,
   skuGudang: r.sku_gudang,
+  grosir: r.harga_grosir,
 });
 const MAKS_HASIL = 40;
 const tglPendekJam = (ms) => new Date(ms).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -157,10 +168,11 @@ export default function LayarKasir({ session, versiData = 0 }) {
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const promoRef = useRef(new Map());
-  // Promo grosir: pengaturan (min pcs, tanggal) + peta harga grosir per SKU toko. Gagal dimuat = tanpa promo grosir.
-  const [cfgGrosir, setCfgGrosir] = useState(null);
+  // Promo paket ("Promo A": diskon/grosir untuk banyak kategori) + peta harga grosir per SKU toko.
+  // Gagal dimuat = pakai yang terakhir berhasil dimuat (kasir tetap jalan).
+  const [daftarPaket, setDaftarPaket] = useState([]);
   const [grosirMap, setGrosirMap] = useState(() => new Map());
-  const grosirRef = useRef({ cfg: null, master: new Map() });
+  const paketRef = useRef({ paket: [], master: new Map() });
 
   const tampilToast = useCallback((pesan, tipe = "err") => {
     clearTimeout(toastTimer.current);
@@ -174,26 +186,30 @@ export default function LayarKasir({ session, versiData = 0 }) {
   // Stok dikurangi penjualan yang masih antri (belum terkirim ke server) supaya barang yang sama
   // tidak terjual melebihi stok saat offline.
   const terapkan = useCallback(
-    async (rowsToko, rowsPromo, dataGrosir) => {
+    async (rowsToko, rowsPromo, dataPaket) => {
       const antri = await qtyDiAntrian();
       const rows = (rowsToko || [])
         .map(dariToko)
         .map((r) => (antri.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - antri.get(r.sku)) } : r));
       setSkuList(rows.filter((s) => !s.nonaktif));
+      // Promo paket (diskon) dijadikan baris promo per kategori dan digabung dengan promo lama.
+      if (dataPaket) paketRef.current = { paket: dataPaket.paket || [], master: new Map(dataPaket.master || []) };
+      const kategoriSemua = [...new Map(rows.filter((r) => r.kategori && !r.nonaktif).map((r) => [normKat(r.kategori), String(r.kategori).trim()])).values()];
+      const rowsGab = rowsPromo ? [...rowsPromo, ...paketKeBarisPromo(paketRef.current.paket, kategoriSemua)] : null;
       // Kalau promo gagal dimuat, pakai promo terakhir yang berhasil dimuat (jangan hilang mendadak).
-      const peta = rowsPromo ? petaPromoAktif(rowsPromo, new Map(rows.map((s) => [s.sku, { harga: Number(s.ecer) || 0, kategori: s.kategori }]))) : promoRef.current;
+      const peta = rowsGab ? petaPromoAktif(rowsGab, new Map(rows.map((s) => [s.sku, { harga: Number(s.ecer) || 0, kategori: s.kategori }]))) : promoRef.current;
       promoRef.current = peta;
       setPromoMap(peta);
-      // Harga grosir: dataGrosir null/undefined = pakai yang terakhir berhasil dimuat.
-      if (dataGrosir) grosirRef.current = { cfg: dataGrosir.cfg, master: new Map(dataGrosir.master || []) };
-      const gm = grosirRef.current.master;
+      // Harga grosir per SKU toko (lewat SKU gudang -> Master Barang).
+      const gm = paketRef.current.master;
       const pg = new Map();
       rows.forEach((r) => {
-        const g = r.skuGudang ? gm.get(r.skuGudang) : 0;
+        // Harga grosir Barang Toko dipakai dulu; kalau kosong dan barang tertaut ke Master Barang, ikut Master Barang.
+        const g = Number(r.grosir) > 0 ? Number(r.grosir) : r.skuGudang ? gm.get(r.skuGudang) : 0;
         if (g > 0) pg.set(r.sku, g);
       });
       setGrosirMap(pg);
-      setCfgGrosir(grosirRef.current.cfg);
+      setDaftarPaket(paketRef.current.paket);
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows, peta);
       if (catatan.length) {
         setItems(baru);
@@ -215,31 +231,31 @@ export default function LayarKasir({ session, versiData = 0 }) {
         const c = await bacaCacheEnt("master_toko");
         if (c) {
           const p = await bacaCacheEnt("promo");
-          const g = await bacaCacheEnt("grosir");
+          const g = await bacaCacheEnt("paket");
           await terapkan(c.data, p?.data ?? null, g?.data ?? null);
           setDariCache({ waktu: c.waktu });
           return;
         }
       }
-      const [rowsToko, rowsPromo, dataGrosir] = await Promise.all([
-        sbAll(`master_toko?select=${KOLOM}&order=kode`),
+      const [rowsToko, rowsPromo, dataPaket] = await Promise.all([
+        muatBarangToko(),
         muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
-        muatDataGrosir().catch(() => null), // null = promo grosir gagal dimuat, jangan ganggu penjualan
+        muatDataPaket().catch(() => null), // null = promo paket gagal dimuat, jangan ganggu penjualan
       ]);
       terakhirMuat.current = Date.now();
       tandaiOnline();
       setDariCache(null);
       simpanCacheEnt("master_toko", rowsToko || []);
       if (rowsPromo) simpanCacheEnt("promo", rowsPromo);
-      if (dataGrosir) simpanCacheEnt("grosir", dataGrosir);
-      await terapkan(rowsToko, rowsPromo, dataGrosir);
+      if (dataPaket) simpanCacheEnt("paket", dataPaket);
+      await terapkan(rowsToko, rowsPromo, dataPaket);
     } catch (e) {
       if (adalahGalatJaringan(e)) {
         tandaiOffline();
         const c = await bacaCacheEnt("master_toko");
         if (c) {
           const p = await bacaCacheEnt("promo");
-          const g = await bacaCacheEnt("grosir");
+          const g = await bacaCacheEnt("paket");
           await terapkan(c.data, p?.data ?? null, g?.data ?? null);
           setDariCache({ waktu: c.waktu });
           return;
@@ -443,14 +459,21 @@ export default function LayarKasir({ session, versiData = 0 }) {
     muat(true);
   };
 
-  // Promo grosir: total pcs gabungan seluruh keranjang >= minimal -> barang yang punya harga grosir dihitung harga grosir.
+  // Promo grosir (bagian dari promo paket): total pcs gabungan SELURUH keranjang >= minimal promo -> barang di kategori
+  // promo itu yang punya harga grosir dihitung harga grosir. Satu barang cukup masuk ke salah satu promo yang tercapai.
   const totalQty = items.reduce((a, it) => a + (Number(it.qty) || 0), 0);
-  const grosirNyala = grosirBerjalan(cfgGrosir);
-  const grosirTercapai = grosirNyala && totalQty >= cfgGrosir.min_qty;
-  const itemsH = useMemo(
-    () => (grosirTercapai ? items.map((it) => (grosirMap.get(it.sku) > 0 ? { ...it, hargaGrosirAktif: grosirMap.get(it.sku) } : it)) : items),
-    [items, grosirMap, grosirTercapai]
-  );
+  const hariIni = tanggalHariIniKasir();
+  const grosirJalan = daftarPaket.filter((p) => p.jenis === "grosir" && statusPaket(p, hariIni) === "berjalan");
+  const grosirTercapai = grosirJalan.filter((p) => totalQty >= p.min_qty);
+  const katSku = new Map(skuList.map((s) => [s.sku, normKat(s.kategori)]));
+  const itemsH = grosirTercapai.length
+    ? items.map((it) => {
+        const hg = grosirMap.get(it.sku);
+        if (!(hg > 0)) return it;
+        const kat = katSku.get(it.sku);
+        return grosirTercapai.some((p) => p.semua || p.kategori.some((k) => normKat(k) === kat)) ? { ...it, hargaGrosirAktif: hg } : it;
+      })
+    : items;
   const ringkas = hitungKeranjang(itemsH, diskonTrx);
   const totalDiskonItem = itemsH.reduce((a, it) => a + hitungItem(it).diskon, 0);
   const qtyDiKeranjang = useMemo(() => new Map(items.map((it) => [it.sku, it.qty])), [items]);
@@ -629,12 +652,19 @@ export default function LayarKasir({ session, versiData = 0 }) {
           </button>
         </div>
 
-        {grosirNyala && items.length > 0 && (
-          <div className={`mx-3 mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${grosirTercapai ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
-            <BadgePercent size={14} className="flex-shrink-0" />
-            {grosirTercapai
-              ? `Harga grosir aktif (${totalQty} pcs, min. ${cfgGrosir.min_qty})`
-              : `Beli ${cfgGrosir.min_qty} pcs (campur barang boleh) → harga grosir. Kurang ${cfgGrosir.min_qty - totalQty} pcs`}
+        {grosirJalan.length > 0 && items.length > 0 && (
+          <div className="mx-3 mt-3 space-y-1.5">
+            {grosirJalan.map((p) => {
+              const ok = totalQty >= p.min_qty;
+              return (
+                <div key={p.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${ok ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>
+                  <BadgePercent size={14} className="flex-shrink-0" />
+                  {ok
+                    ? `${p.nama || "Promo grosir"}: harga grosir aktif (${totalQty} pcs, min. ${p.min_qty})`
+                    : `${p.nama || "Promo grosir"}: beli ${p.min_qty} pcs (campur barang boleh) → harga grosir. Kurang ${p.min_qty - totalQty} pcs`}
+                </div>
+              );
+            })}
           </div>
         )}
         <div className="flex-1 lg:overflow-y-auto px-3 py-3 space-y-2 min-h-[120px]">
