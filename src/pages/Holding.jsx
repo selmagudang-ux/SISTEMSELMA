@@ -955,9 +955,9 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
   const [foto, setFoto] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // Rincian sumber setoran: pemasukan cabang (mis. Grosir Transfer / Grosir Cash) yang ikut disetor.
-  // Uang Petty Cash sudah dipindah ke BCA lebih dulu, jadi setoran keluar dari satu rekening (BCA)
-  // bersama daftar pemasukannya. Pemasukan yang sudah pernah disetor tidak muncul lagi.
+  // Rincian sumber setoran: pemasukan cabang yang ikut disetor. Daftar HANYA memuat pemasukan yang
+  // tercatat di rekening yang dipilih pada "Dari rekening" (cocok per kode rekening, bukan per entitas).
+  // Pemasukan yang sudah pernah disetor tidak muncul lagi.
   const [pilih, setPilih] = useState(() => new Set());
   const [dariT, setDariT] = useState(awalBulanIni());
   const [sampaiT, setSampaiT] = useState(hariIniLokal());
@@ -975,18 +975,18 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
         : (semua || [])
             .filter(
               (t) =>
-                t.tipe === "masuk" && !bukanLabaRugi(t) && k.entDari(t.rekening) === entAsalForm && !sudahDisetor.has(String(t.id)) &&
+                t.tipe === "masuk" && !bukanLabaRugi(t) && t.rekening === sumber && !sudahDisetor.has(String(t.id)) &&
                 (!dariT || t.tanggal >= dariT) && (!sampaiT || t.tanggal <= sampaiT)
             )
             .sort((a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""))),
-    [modeRincian, semua, entAsalForm, sudahDisetor, dariT, sampaiT] // eslint-disable-line react-hooks/exhaustive-deps
+    [modeRincian, semua, sumber, sudahDisetor, dariT, sampaiT] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const terpilihList = (semua || []).filter((t) => pilih.has(String(t.id)));
   const totalTerpilih = terpilihList.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   const labelKat = (kode) => (master.kategori_masuk || []).find((c) => c.kode === kode)?.label || kode || "Tanpa kategori";
   useEffect(() => {
     setPilih(new Set());
-  }, [entAsalForm, penanda]);
+  }, [sumber, penanda]);
   const togglePilih = (id) =>
     setPilih((a) => {
       const n = new Set(a);
@@ -1177,7 +1177,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 mb-3">
           <div className="text-xs font-semibold text-slate-200 mb-0.5">Rincian pemasukan yang disetor (opsional)</div>
           <div className="text-[11px] text-slate-500 mb-2">
-            Centang pemasukan cabang yang ikut disetor. Jumlah setoran otomatis = total yang dicentang. Pemasukan yang sudah pernah disetor tidak muncul lagi.
+            Hanya pemasukan yang tercatat di rekening yang dipilih di atas. Centang yang ikut disetor; jumlah setoran otomatis = total yang dicentang. Pemasukan yang sudah pernah disetor tidak muncul lagi.
           </div>
           <div className="flex flex-wrap items-center gap-2 mb-2">
             <InputTanggal className={`${inputClass} w-auto`} value={dariT} onChange={setDariT} />
@@ -1187,7 +1187,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
             <button type="button" onClick={() => setPilih(new Set())} className="text-[11px] text-slate-400 hover:text-slate-200">Kosongkan</button>
           </div>
           {kandidat.length === 0 ? (
-            <div className="text-[11px] text-slate-500 py-3 text-center">Tidak ada pemasukan yang belum disetor di rentang ini.</div>
+            <div className="text-[11px] text-slate-500 py-3 text-center">Tidak ada pemasukan yang belum disetor di rekening ini pada rentang tanggal ini.</div>
           ) : (
             <div className="max-h-64 overflow-y-auto rounded-md border border-slate-800 divide-y divide-slate-800/70">
               {kandidat.map((t) => (
