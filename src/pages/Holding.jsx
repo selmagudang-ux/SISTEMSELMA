@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
-import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb } from "lucide-react";
+import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb, X } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
 import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
@@ -953,7 +953,19 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
   const [jumlah, setJumlah] = useState("");
   const [keterangan, setKeterangan] = useState("");
   const [foto, setFoto] = useState(null);
+  const [fotoUrl, setFotoUrl] = useState(null); // pratinjau foto bukti
   const [saving, setSaving] = useState(false);
+
+  // Buat URL pratinjau dari file yang dipilih, dan bebaskan lagi saat file diganti / form ditutup.
+  useEffect(() => {
+    if (!foto) {
+      setFotoUrl(null);
+      return undefined;
+    }
+    const url = URL.createObjectURL(foto);
+    setFotoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [foto]);
 
   // Rincian sumber setoran: pemasukan cabang yang ikut disetor. Daftar HANYA memuat pemasukan yang
   // tercatat di rekening yang dipilih pada "Dari rekening" (cocok per kode rekening, bukan per entitas).
@@ -1241,6 +1253,22 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
       </Field>
       <Field label="Bukti Transfer (opsional)">
         <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
+        {fotoUrl && (
+          <div className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+            <a href={fotoUrl} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
+              <img src={fotoUrl} alt="Pratinjau bukti transfer" className="mx-auto max-h-56 w-auto max-w-full rounded-md object-contain" />
+            </a>
+            <button
+              type="button"
+              onClick={() => setFoto(null)}
+              aria-label="Hapus foto"
+              className="absolute right-3 top-3 rounded-full bg-slate-900/80 p-1 text-slate-200 hover:bg-red-500/80"
+            >
+              <X size={14} />
+            </button>
+            <div className="mt-1 truncate text-center text-[11px] text-slate-500">{foto?.name}</div>
+          </div>
+        )}
       </Field>
       <button
         disabled={!valid || saving}
