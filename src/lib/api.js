@@ -2437,17 +2437,23 @@ export function setoranSebagaiPemasukan(transaksi, master, kodeEntitas) {
     const entAsal = entDari(t.rekening);
     if (entDari(t.rekening_tujuan) !== kodeEntitas || entAsal === kodeEntitas) return;
     const nama = entitasList.find((e) => e.kode === entAsal)?.label || entAsal;
-    tambahan.push({
-      ...t,
-      id: `setoran-${t.id}`,
-      tipe: "masuk",
-      rekening: t.rekening_tujuan,
-      rekening_tujuan: null,
-      penanda: null,
-      kategori: `Setoran dari ${nama}`,
-      keterangan: t.keterangan || "Setoran pemasukan dari cabang",
-      _setoran: true,
+    const dasar = { ...t, tipe: "masuk", rekening: t.rekening_tujuan, rekening_tujuan: null, penanda: null, rincian_setoran: null, _setoran: true };
+    const rincian = Array.isArray(t.rincian_setoran) ? t.rincian_setoran : [];
+    if (!rincian.length) {
+      tambahan.push({ ...dasar, id: `setoran-${t.id}`, kategori: `Setoran dari ${nama}`, keterangan: t.keterangan || "Setoran pemasukan dari cabang" });
+      return;
+    }
+    // Ada rincian sumber: satu baris pemasukan per sumber (kategori pemasukan cabang), sisanya "Lainnya".
+    const perSumber = {};
+    rincian.forEach((r) => {
+      const n = r.kategori || "Tanpa kategori";
+      perSumber[n] = (perSumber[n] || 0) + (Number(r.jumlah) || 0);
     });
+    Object.entries(perSumber).forEach(([sumberNama, jml]) =>
+      tambahan.push({ ...dasar, id: `setoran-${t.id}-${sumberNama}`, jumlah: jml, kategori: `Setoran dari ${nama} — ${sumberNama}`, keterangan: `Setoran ${nama}: ${sumberNama}` })
+    );
+    const sisa = (Number(t.jumlah) || 0) - Object.values(perSumber).reduce((a, b) => a + b, 0);
+    if (sisa > 0) tambahan.push({ ...dasar, id: `setoran-${t.id}-lain`, jumlah: sisa, kategori: `Setoran dari ${nama} — Lainnya`, keterangan: `Setoran ${nama}: lainnya` });
   });
   return tambahan.length ? [...transaksi, ...tambahan] : transaksi;
 }

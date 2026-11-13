@@ -652,6 +652,13 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   const [filterPenanda, setFilterPenanda] = useState("semua");
   const [formBuka, setFormBuka] = useState(false);
   const [menyimpanId, setMenyimpanId] = useState(null);
+  const [bukaRincian, setBukaRincian] = useState(() => new Set());
+  const toggleRincian = (id) =>
+    setBukaRincian((a) => {
+      const n = new Set(a);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
   // Seluruh riwayat dimuat (posisi pinjaman = akumulasi dari awal).
   const { data: semua, status: statusLama } = useKeuanganRentang(keuanganTransaksi, "");
@@ -789,6 +796,31 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                     {formatTanggalID(t.tanggal)}
                     {t.keterangan ? ` · ${t.keterangan}` : ""}
                   </div>
+                  {Array.isArray(t.rincian_setoran) && t.rincian_setoran.length > 0 && (
+                    <div className="mt-1">
+                      <button type="button" onClick={() => toggleRincian(t.id)} className="text-[11px] text-amber-400 hover:text-amber-300">
+                        Rincian sumber ({t.rincian_setoran.length} pemasukan) {bukaRincian.has(t.id) ? "▴" : "▾"}
+                      </button>
+                      {bukaRincian.has(t.id) && (
+                        <div className="mt-1 space-y-0.5">
+                          {Object.entries(
+                            t.rincian_setoran.reduce((a, r) => {
+                              const n = r.kategori || "Tanpa kategori";
+                              a[n] = a[n] || { jumlah: 0, banyak: 0 };
+                              a[n].jumlah += Number(r.jumlah) || 0;
+                              a[n].banyak += 1;
+                              return a;
+                            }, {})
+                          ).map(([nama, v]) => (
+                            <div key={nama} className="flex items-center justify-between gap-3 text-[11px] text-slate-400 pr-2">
+                              <span>{nama} · {v.banyak} transaksi</span>
+                              <span className="text-slate-300">{fmtRp(v.jumlah)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <div className="text-sm font-semibold text-sky-400">{fmtRp(t.jumlah)}</div>
@@ -822,6 +854,8 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
       {formBuka && (
         <FormAntarEntitas
           k={k}
+          semua={semua}
+          master={master}
           role={role}
           entitasAkun={entitasAkun}
           kodeHolding={kodeHolding}
@@ -837,7 +871,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   );
 }
 
-function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved, showToast }) {
+function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeHolding, onClose, onSaved, showToast }) {
   const [tanggal, setTanggal] = useState(hariIniLokal());
   const [penanda, setPenanda] = useState("");
   const [sumber, setSumber] = useState("");
@@ -847,7 +881,47 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
   const [foto, setFoto] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const jumlahNum = Number(jumlah) || 0;
+  // Rincian sumber setoran: pemasukan cabang (mis. Grosir Transfer / Grosir Cash) yang ikut disetor.
+  // Uang Petty Cash sudah dipindah ke BCA lebih dulu, jadi setoran keluar dari satu rekening (BCA)
+  // bersama daftar pemasukannya. Pemasukan yang sudah pernah disetor tidak muncul lagi.
+  const [pilih, setPilih] = useState(() => new Set());
+  const [dariT, setDariT] = useState(awalBulanIni());
+  const [sampaiT, setSampaiT] = useState(hariIniLokal());
+  const entAsalForm = sumber ? k.entDari(sumber) : "";
+  const modeRincian = penanda === "setoran_penghasilan" && !!entAsalForm;
+  const sudahDisetor = useMemo(() => {
+    const a = new Set();
+    (semua || []).forEach((t) => Array.isArray(t.rincian_setoran) && t.rincian_setoran.forEach((r) => a.add(String(r.id))));
+    return a;
+  }, [semua]);
+  const kandidat = useMemo(
+    () =>
+      !modeRincian
+        ? []
+        : (semua || [])
+            .filter(
+              (t) =>
+                t.tipe === "masuk" && !bukanLabaRugi(t) && k.entDari(t.rekening) === entAsalForm && !sudahDisetor.has(String(t.id)) &&
+                (!dariT || t.tanggal >= dariT) && (!sampaiT || t.tanggal <= sampaiT)
+            )
+            .sort((a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""))),
+    [modeRincian, semua, entAsalForm, sudahDisetor, dariT, sampaiT] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const terpilihList = (semua || []).filter((t) => pilih.has(String(t.id)));
+  const totalTerpilih = terpilihList.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+  const labelKat = (kode) => (master.kategori_masuk || []).find((c) => c.kode === kode)?.label || kode || "Tanpa kategori";
+  useEffect(() => {
+    setPilih(new Set());
+  }, [entAsalForm, penanda]);
+  const togglePilih = (id) =>
+    setPilih((a) => {
+      const n = new Set(a);
+      const key = String(id);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+
+  const jumlahNum = pilih.size ? totalTerpilih : Number(jumlah) || 0;
   const saldoSumber = sumber ? k.saldoMap.get(sumber) ?? 0 : null;
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
   const sama = sumber && tujuan && k.entDari(sumber) === k.entDari(tujuan);
@@ -901,6 +975,17 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
           penanda,
           keterangan: keterangan.trim() || PENANDA_ANTAR_ENTITAS[penanda],
           ...(buktiUrl ? { bukti_url: buktiUrl } : {}),
+          ...(modeRincian && terpilihList.length
+            ? {
+                rincian_setoran: terpilihList.map((t) => ({
+                  id: t.id,
+                  tanggal: t.tanggal,
+                  kategori: labelKat(t.kategori),
+                  jumlah: Number(t.jumlah) || 0,
+                  keterangan: t.keterangan || "",
+                })),
+              }
+            : {}),
         }),
       });
       showToast?.(`${PENANDA_ANTAR_ENTITAS[penanda]} tercatat`);
@@ -942,6 +1027,38 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
           {penanda === "pelunasan_pinjaman" && "Pembayaran pinjaman: dari pihak yang berutang ke pihak yang meminjamkan, mengurangi utang."}
         </div>
       </Field>
+      {modeRincian && (
+        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 mb-3">
+          <div className="text-xs font-semibold text-slate-200 mb-0.5">Rincian pemasukan yang disetor (opsional)</div>
+          <div className="text-[11px] text-slate-500 mb-2">
+            Centang pemasukan cabang yang ikut disetor. Jumlah setoran otomatis = total yang dicentang. Pemasukan yang sudah pernah disetor tidak muncul lagi.
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <InputTanggal className={`${inputClass} w-auto`} value={dariT} onChange={setDariT} />
+            <span className="text-slate-500 text-xs">s/d</span>
+            <InputTanggal className={`${inputClass} w-auto`} value={sampaiT} onChange={setSampaiT} />
+            <button type="button" onClick={() => setPilih((a) => new Set([...a, ...kandidat.map((t) => String(t.id))]))} className="text-[11px] text-amber-400 hover:text-amber-300">Pilih semua</button>
+            <button type="button" onClick={() => setPilih(new Set())} className="text-[11px] text-slate-400 hover:text-slate-200">Kosongkan</button>
+          </div>
+          {kandidat.length === 0 ? (
+            <div className="text-[11px] text-slate-500 py-3 text-center">Tidak ada pemasukan yang belum disetor di rentang ini.</div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto rounded-md border border-slate-800 divide-y divide-slate-800/70">
+              {kandidat.map((t) => (
+                <label key={t.id} className="flex items-center gap-2.5 px-2.5 py-2 text-xs cursor-pointer hover:bg-slate-900">
+                  <input type="checkbox" checked={pilih.has(String(t.id))} onChange={() => togglePilih(t.id)} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-slate-200 truncate">{labelKat(t.kategori)} · {k.labelRek(t.rekening)}</div>
+                    <div className="text-[11px] text-slate-500 truncate">{formatTanggalID(t.tanggal)}{t.keterangan ? ` · ${t.keterangan}` : ""}</div>
+                  </div>
+                  <div className="text-emerald-400 font-medium whitespace-nowrap">{fmtRp(Number(t.jumlah) || 0)}</div>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="text-[11px] text-slate-400 mt-2">{pilih.size} dipilih · total {fmtRp(totalTerpilih)}</div>
+        </div>
+      )}
       {sama && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
@@ -961,7 +1078,11 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
         </div>
       )}
       <Field label="Jumlah (Rp)">
-        <InputRupiah value={jumlah} onChange={setJumlah} />
+        {pilih.size ? (
+          <div className={`${inputClass} text-slate-100`}>{fmtRp(totalTerpilih)} <span className="text-[11px] text-slate-500">(total dari {pilih.size} pemasukan yang dicentang)</span></div>
+        ) : (
+          <InputRupiah value={jumlah} onChange={setJumlah} />
+        )}
       </Field>
       {saldoKurang && (
         <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg mb-3">
