@@ -4,7 +4,8 @@ import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, form
 import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
-import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls, BUKTI_ACCEPT, fileAdalahPdf } from "./AlurKas";
+import { useDataKas, hariIniLokal, awalBulanIni, unggahBuktiBanyak, fileCls } from "./AlurKas";
+import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
 
 // =========================================================
 // FASE 4 — HOLDING
@@ -870,11 +871,11 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                       ubah
                     </button>
                   )}
-                  {t.bukti_url && (
-                    <a href={t.bukti_url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-emerald-400/80 hover:text-emerald-300 hover:bg-slate-800" title="Lihat bukti transfer">
+                  {daftarBukti(t).map((u, i) => (
+                    <a key={u} href={u} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-emerald-400/80 hover:text-emerald-300 hover:bg-slate-800" title={`Lihat bukti transfer ${i + 1}`}>
                       <Paperclip size={13} />
                     </a>
-                  )}
+                  ))}
                   {kelola && (
                     <>
                       <button onClick={() => setModal?.({ type: "keuangan-transaksi-form", item: t })} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800" title="Edit">
@@ -952,20 +953,12 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
   const [tujuan, setTujuan] = useState("");
   const [jumlah, setJumlah] = useState("");
   const [keterangan, setKeterangan] = useState("");
-  const [foto, setFoto] = useState(null);
-  const [fotoUrl, setFotoUrl] = useState(null); // pratinjau foto bukti
+  const [fotoList, setFotoList] = useState([]); // bukti transfer (banyak file; foto atau PDF)
   const [saving, setSaving] = useState(false);
 
-  // Buat URL pratinjau dari file yang dipilih, dan bebaskan lagi saat file diganti / form ditutup.
-  useEffect(() => {
-    if (!foto) {
-      setFotoUrl(null);
-      return undefined;
-    }
-    const url = URL.createObjectURL(foto);
-    setFotoUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [foto]);
+  // Pratinjau tiap file: URL sementara, dibebaskan lagi saat daftar berubah / form ditutup.
+  const pratinjau = useMemo(() => fotoList.map((f) => URL.createObjectURL(f)), [fotoList]);
+  useEffect(() => () => pratinjau.forEach((u) => URL.revokeObjectURL(u)), [pratinjau]);
 
   // Rincian sumber setoran: pemasukan cabang yang ikut disetor. Daftar HANYA memuat pemasukan yang
   // tercatat di rekening yang dipilih pada "Dari rekening" (cocok per kode rekening, bukan per entitas).
@@ -1080,7 +1073,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
     const daftarPenerima = rekPenerima(eT);
     return !daftarPenerima.length || daftarPenerima.includes(tujuan);
   };
-  const valid = validDasar && tujuanPenerimaOk() && !!foto; // bukti transfer WAJIB
+  const valid = validDasar && tujuanPenerimaOk() && fotoList.length > 0; // bukti transfer WAJIB (boleh banyak)
 
   const opsi = (kecualiKode, peran) =>
     k.entitasList.map((e) => {
@@ -1111,7 +1104,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
     if (!valid || saving) return;
     setSaving(true);
     try {
-      const buktiUrl = await unggahBukti(foto, `ent-${tujuan}`);
+      const buktiUrls = await unggahBuktiBanyak(fotoList, `ent-${tujuan}`);
       await sb("keuangan_transaksi", {
         method: "POST",
         body: JSON.stringify({
@@ -1123,7 +1116,8 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
           jumlah: jumlahNum,
           penanda,
           keterangan: keterangan.trim() || PENANDA_ANTAR_ENTITAS[penanda],
-          ...(buktiUrl ? { bukti_url: buktiUrl } : {}),
+          bukti_url: buktiUrls[0],
+          bukti_urls: buktiUrls,
           ...(modeRincian && terpilihList.length
             ? {
                 rincian_setoran: terpilihList.map((t) => ({
@@ -1251,30 +1245,31 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
       <Field label="Keterangan (opsional)">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
       </Field>
-      <Field label="Bukti Transfer (wajib — foto atau PDF)">
-        <input type="file" accept={BUKTI_ACCEPT} onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
-        {fotoUrl && (
-          <div className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
-            {fileAdalahPdf(foto) ? (
-              <a href={fotoUrl} target="_blank" rel="noreferrer" title="Buka PDF" className="block text-center text-xs text-emerald-400 hover:text-emerald-300 py-6">
-                📄 File PDF dipilih — klik untuk membuka
+      <Field label="Bukti Transfer (wajib — foto atau PDF, boleh lebih dari satu)">
+        <input type="file" accept={BUKTI_ACCEPT} multiple onChange={(e) => { setFotoList((l) => [...l, ...Array.from(e.target.files || [])]); e.target.value = ""; }} className={fileCls} />
+        {fotoList.length === 0 && <div className="text-[11px] text-slate-500 mt-1">Wajib dilampirkan sebelum bisa disimpan. Foto (JPG/PNG) atau PDF (maks 10 MB per file).</div>}
+        {fotoList.map((f, i) => (
+          <div key={`${f.name}-${i}`} className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+            {fileAdalahPdf(f) ? (
+              <a href={pratinjau[i]} target="_blank" rel="noreferrer" title="Buka PDF" className="block text-center text-xs text-emerald-400 hover:text-emerald-300 py-4">
+                📄 PDF — klik untuk membuka
               </a>
             ) : (
-              <a href={fotoUrl} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
-                <img src={fotoUrl} alt="Pratinjau bukti transfer" className="mx-auto max-h-56 w-auto max-w-full rounded-md object-contain" />
+              <a href={pratinjau[i]} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
+                <img src={pratinjau[i]} alt={`Pratinjau bukti transfer ${i + 1}`} className="mx-auto max-h-40 w-auto max-w-full rounded-md object-contain" />
               </a>
             )}
             <button
               type="button"
-              onClick={() => setFoto(null)}
-              aria-label="Hapus foto"
+              onClick={() => setFotoList((l) => l.filter((_, k2) => k2 !== i))}
+              aria-label="Hapus file"
               className="absolute right-3 top-3 rounded-full bg-slate-900/80 p-1 text-slate-200 hover:bg-red-500/80"
             >
               <X size={14} />
             </button>
-            <div className="mt-1 truncate text-center text-[11px] text-slate-500">{foto?.name}</div>
+            <div className="mt-1 truncate text-center text-[11px] text-slate-500">{f.name}</div>
           </div>
-        )}
+        ))}
       </Field>
       <button
         disabled={!valid || saving}

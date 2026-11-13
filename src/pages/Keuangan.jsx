@@ -41,6 +41,7 @@ import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING, bisa, roleHanyaLihat } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
+import { daftarBukti } from "../lib/bukti";
 import { AntarEntitas, Konsolidasi, RingkasanGrup, KelolaPerusahaan } from "./Holding";
 import PenarikanPemilik from "./PenarikanPemilik";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
@@ -1139,17 +1140,18 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                   >
                     {isTransfer ? "" : t.tipe === "masuk" ? "+" : "-"}{fmtRp(t.jumlah)}
                   </div>
-                  {t.bukti_url && (
+                  {daftarBukti(t).map((u, i) => (
                     <a
-                      href={t.bukti_url}
+                      key={u}
+                      href={u}
                       target="_blank"
                       rel="noreferrer"
                       className="p-1.5 rounded-lg text-emerald-400/80 hover:text-emerald-300 hover:bg-slate-800"
-                      title="Lihat bukti transfer"
+                      title={`Lihat bukti transfer ${i + 1}`}
                     >
                       <Paperclip size={13} />
                     </a>
-                  )}
+                  ))}
                   {petaPesanan.get(t.id) && (
                     <button
                       onClick={() => setDetailPesanan({ transaksi: t, pesanan: petaPesanan.get(t.id) })}

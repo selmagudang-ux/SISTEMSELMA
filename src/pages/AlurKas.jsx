@@ -52,6 +52,7 @@ import {
   kodeEntitasHolding,
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
+import { BUKTI_ACCEPT, fileAdalahPdf, urlAdalahPdf, daftarBukti } from "../lib/bukti";
 
 // =========================================================
 // FASE 3 — ALUR KAS
@@ -80,11 +81,14 @@ export const fileCls =
 
 // Foto bukti transfer: diperkecil sedikit (tetap tajam supaya nominal/nama
 // terbaca), lalu diupload ke bucket yang sama dengan bukti lain.
-// Bukti boleh berupa foto ATAU PDF. PDF diupload apa adanya (tidak dikompres), maksimal 10 MB.
-export const BUKTI_ACCEPT = "image/*,application/pdf,.pdf";
+// Bukti boleh berupa foto ATAU PDF (lihat lib/bukti.js). PDF diupload apa adanya (maks 10 MB).
 const BUKTI_PDF_MAKS = 10 * 1024 * 1024;
-export const fileAdalahPdf = (f) => !!f && (f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
-export const urlAdalahPdf = (u) => /\.pdf(\?|#|$)/i.test(String(u || ""));
+// Upload BANYAK file sekaligus -> array URL (urut sama dengan urutan file).
+export async function unggahBuktiBanyak(files, tanda) {
+  const urls = [];
+  for (let i = 0; i < files.length; i++) urls.push(await unggahBukti(files[i], `${tanda}-${i + 1}`));
+  return urls;
+}
 export async function unggahBukti(file, tanda) {
   if (fileAdalahPdf(file)) {
     if (file.size > BUKTI_PDF_MAKS) throw new Error("PDF terlalu besar (maksimal 10 MB).");
@@ -169,22 +173,23 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
 
   const totalPengisian = daftar.filter((x) => x.jenis === "pengisian").reduce((a, x) => a + (Number(x.t.jumlah) || 0), 0);
   const totalSetoran = daftar.filter((x) => x.jenis === "setoran").reduce((a, x) => a + (Number(x.t.jumlah) || 0), 0);
-  const tanpaBukti = daftar.filter((x) => !x.t.bukti_url).length;
+  const tanpaBukti = daftar.filter((x) => !daftarBukti(x.t).length).length;
 
   const mintaBukti = (t) => {
     targetRef.current = t;
     fileRef.current?.click();
   };
   const onPilihFile = async (e) => {
-    const f = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
     const t = targetRef.current;
-    if (!f || !t) return;
+    if (!files.length || !t) return;
     setMengunggahId(t.id);
     try {
-      const url = await unggahBukti(f, t.id);
-      await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "PATCH", body: JSON.stringify({ bukti_url: url }) });
-      showToast?.("Bukti transfer dilampirkan");
+      const baru = await unggahBuktiBanyak(files, t.id);
+      const semua = [...daftarBukti(t), ...baru];
+      await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "PATCH", body: JSON.stringify({ bukti_urls: semua, bukti_url: semua[0] }) });
+      showToast?.(baru.length > 1 ? `${baru.length} bukti transfer dilampirkan` : "Bukti transfer dilampirkan");
       await reload?.();
     } catch (err) {
       showToast?.(err.message || "Gagal mengunggah bukti", "err");
@@ -281,13 +286,13 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <div className="text-sm font-semibold text-sky-400">{fmtRp(t.jumlah)}</div>
-                  {t.bukti_url ? (
+                  {daftarBukti(t).length ? (
                     <button
                       onClick={() => setLihatBukti(t)}
                       className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg text-emerald-400 hover:bg-slate-800"
                       title="Lihat bukti transfer"
                     >
-                      <ImageIcon size={13} /> Bukti
+                      <ImageIcon size={13} /> Bukti{daftarBukti(t).length > 1 ? ` (${daftarBukti(t).length})` : ""}
                     </button>
                   ) : (
                     <button
@@ -320,7 +325,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
         </div>
       )}
 
-      <input ref={fileRef} type="file" accept={BUKTI_ACCEPT} className="hidden" onChange={onPilihFile} />
+      <input ref={fileRef} type="file" accept={BUKTI_ACCEPT} multiple className="hidden" onChange={onPilihFile} />
 
       {formBuka && (
         <FormPengisianKas
@@ -339,20 +344,22 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
           <div className="text-xs text-slate-400 mb-2">
             {formatTanggalID(lihatBukti.tanggal)} · {k.labelRek(lihatBukti.rekening)} → {k.labelRek(lihatBukti.rekening_tujuan)} · {fmtRp(lihatBukti.jumlah)}
           </div>
-          {urlAdalahPdf(lihatBukti.bukti_url) ? (
-            <iframe src={lihatBukti.bukti_url} title="Bukti transfer (PDF)" className="w-full h-[70vh] rounded-lg border border-slate-800 bg-white" />
-          ) : (
-            <ZoomableImage src={lihatBukti.bukti_url} alt="Bukti transfer" />
-          )}
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            {daftarBukti(lihatBukti).map((u, i, arr) => (
+              <div key={u}>
+                {arr.length > 1 && <div className="text-[11px] text-slate-500 mb-1">Bukti {i + 1} dari {arr.length}</div>}
+                {urlAdalahPdf(u) ? (
+                  <iframe src={u} title={`Bukti transfer ${i + 1} (PDF)`} className="w-full h-[60vh] rounded-lg border border-slate-800 bg-white" />
+                ) : (
+                  <ZoomableImage src={u} alt={`Bukti transfer ${i + 1}`} />
+                )}
+                <a href={u} target="_blank" rel="noreferrer" className="inline-block mt-1 text-[11px] text-emerald-400 hover:text-emerald-300">
+                  Buka di tab baru
+                </a>
+              </div>
+            ))}
+          </div>
           <div className="flex gap-2 mt-3">
-            <a
-              href={lihatBukti.bukti_url}
-              target="_blank"
-              rel="noreferrer"
-              className="flex-1 text-center border border-slate-700 hover:border-slate-600 text-slate-200 text-xs font-semibold py-2.5 rounded-lg"
-            >
-              Buka di tab baru
-            </a>
             <button
               onClick={() => {
                 const t = lihatBukti;
@@ -361,7 +368,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
               }}
               className="flex-1 border border-slate-700 hover:border-slate-600 text-slate-200 text-xs font-semibold py-2.5 rounded-lg"
             >
-              Ganti bukti
+              Tambah bukti
             </button>
           </div>
         </ModalShell>
@@ -382,7 +389,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
   const [tujuan, setTujuan] = useState(tujuanList.length === 1 ? tujuanList[0].kode : "");
   const [jumlah, setJumlah] = useState("");
   const [keterangan, setKeterangan] = useState("Pengisian kas kecil");
-  const [foto, setFoto] = useState(null);
+  const [fotoList, setFotoList] = useState([]);
   const [penanda, setPenanda] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -393,13 +400,13 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
   const jumlahNum = Number(jumlah) || 0;
   const saldoSumber = sumber ? k.saldoMap.get(sumber) ?? 0 : null;
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
-  const valid = tanggal && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !!foto; // bukti transfer WAJIB
+  const valid = tanggal && sumber && tujuan && jumlahNum > 0 && !saldoKurang && fotoList.length > 0; // bukti transfer WAJIB (boleh banyak)
 
   const simpan = async () => {
     if (!valid || saving) return;
     setSaving(true);
     try {
-      const buktiUrl = await unggahBukti(foto, `${tujuan}`);
+      const buktiUrls = await unggahBuktiBanyak(fotoList, `${tujuan}`);
       await sb("keuangan_transaksi", {
         method: "POST",
         body: JSON.stringify({
@@ -410,11 +417,12 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
           kategori: null,
           jumlah: jumlahNum,
           keterangan: keterangan.trim() || "Pengisian kas kecil",
-          ...(buktiUrl ? { bukti_url: buktiUrl } : {}),
+          bukti_url: buktiUrls[0],
+          bukti_urls: buktiUrls,
           ...(antarEntitas && penanda && penandaUntukArah(k.entDari(sumber), k.entDari(tujuan), kodeEntitasHolding(k.entitasList)).includes(penanda) ? { penanda } : {}),
         }),
       });
-      showToast?.("Kas kecil terisi — bukti tersimpan");
+      showToast?.(`Kas kecil terisi — ${buktiUrls.length} bukti tersimpan`);
       await onSaved();
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan pengisian kas", "err");
@@ -478,11 +486,20 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
       <Field label="Keterangan">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Pengisian kas kecil" />
       </Field>
-      <Field label="Bukti Transfer (wajib — foto atau PDF)">
-        <input type="file" accept={BUKTI_ACCEPT} onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
-        <div className="text-[11px] text-slate-500 mt-1 truncate">
-          {foto ? foto.name : "Wajib dilampirkan sebelum bisa disimpan. Format: foto (JPG/PNG) atau PDF, maksimal 10 MB untuk PDF."}
-        </div>
+      <Field label="Bukti Transfer (wajib — foto atau PDF, boleh lebih dari satu)">
+        <input type="file" accept={BUKTI_ACCEPT} multiple onChange={(e) => { setFotoList((l) => [...l, ...Array.from(e.target.files || [])]); e.target.value = ""; }} className={fileCls} />
+        {fotoList.length === 0 ? (
+          <div className="text-[11px] text-slate-500 mt-1">Wajib dilampirkan sebelum bisa disimpan. Foto (JPG/PNG) atau PDF (maks 10 MB per file).</div>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {fotoList.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 text-[11px] text-slate-300 bg-slate-900 border border-slate-800 rounded-md px-2 py-1">
+                <span className="truncate">{fileAdalahPdf(f) ? "📄 " : "🖼️ "}{f.name}</span>
+                <button type="button" onClick={() => setFotoList((l) => l.filter((_, k2) => k2 !== i))} className="text-slate-500 hover:text-red-400" aria-label="Hapus file">✕</button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Field>
       <button
         disabled={!valid || saving}
@@ -568,7 +585,7 @@ export function BukuKas({ keuanganTransaksi = [], master = {}, showToast }) {
       saldo += masuk - keluar;
       tm += masuk;
       tk += keluar;
-      out.push({ id: t.id, tanggal: t.tanggal, rek, uraian, keterangan: t.keterangan || "", masuk, keluar, saldo, bukti: t.bukti_url || null });
+      out.push({ id: t.id, tanggal: t.tanggal, rek, uraian, keterangan: t.keterangan || "", masuk, keluar, saldo, bukti: daftarBukti(t)[0] || null, buktiList: daftarBukti(t) });
     });
     return { baris: out, saldoAwal: awal, totalMasuk: tm, totalKeluar: tk, saldoAkhir: saldo };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -697,11 +714,11 @@ export function BukuKas({ keuanganTransaksi = [], master = {}, showToast }) {
                   <td className="px-2 py-2 text-slate-200">
                     <div className="flex items-center gap-1.5">
                       <span>{r.uraian}</span>
-                      {r.bukti && (
-                        <a href={r.bukti} target="_blank" rel="noreferrer" title="Lihat bukti transfer" className="text-emerald-400 hover:text-emerald-300">
+                      {(r.buktiList || []).map((u, i) => (
+                        <a key={u} href={u} target="_blank" rel="noreferrer" title={`Lihat bukti transfer ${i + 1}`} className="text-emerald-400 hover:text-emerald-300">
                           <Paperclip size={12} />
                         </a>
-                      )}
+                      ))}
                     </div>
                     {r.keterangan && <div className="text-[11px] text-slate-500 truncate max-w-[320px]">{r.keterangan}</div>}
                   </td>
