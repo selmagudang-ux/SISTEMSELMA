@@ -32,6 +32,7 @@ import {
   laporanBulananData,
   rekapTahunanData,
   laporanLabaRugi,
+  setoranSebagaiPemasukan,
   sb,
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
@@ -1508,7 +1509,9 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
-  const { data: dataRentang, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
+  const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
+  // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
+  const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(dataRentang, dari || null, sampai || null);
 
   // Saldo per rekening SENGAJA pakai data yang dimuat saja + saldo dasar dari database
@@ -1786,7 +1789,8 @@ function BarisBulananPohon({ d, depth, seksi, terbuka, toggle }) {
 function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master, entitasKode }) {
   // App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya; laporan
   // bulanan/tahunan butuh seluruh histori, jadi data lamanya ditarik sendiri.
-  const { data: keuanganTransaksi, status: errLama } = useKeuanganRentang(keuanganDimuat, null);
+  const { data: dataSemuaAsli, status: errLama } = useKeuanganRentang(keuanganDimuat, null);
+  const keuanganTransaksi = setoranSebagaiPemasukan(dataSemuaAsli, master, entitasKode);
   const [mode, setMode] = useState("bulanan"); // "bulanan" | "tahunan"
   const [terbuka, setTerbuka] = useState(() => new Set());
   const toggle = (k) =>

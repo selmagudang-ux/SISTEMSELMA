@@ -2421,6 +2421,37 @@ export function entitasDariRekening(peta, entitasList, kodeRekening) {
 // transaksi yang menyentuh rekeningnya (termasuk transfer antar-entitas, yang
 // netral untuk laporan pemasukan/pengeluaran). Tanpa entitas (atau cuma ada
 // satu) data dikembalikan apa adanya.
+// Setoran Pemasukan dari cabang (transfer antar entitas ber-penanda setoran_penghasilan, juga
+// "dividen" lama) = PEMASUKAN bagi entitas penerima (Pusat). Transfer aslinya tetap tipe "transfer"
+// (jadi saldo rekening benar), jadi untuk LAPORAN pemasukan ditambahkan baris pemasukan bayangan
+// per setoran, berkategori "Setoran dari <nama cabang>". Pakai HANYA untuk laporan (laba rugi,
+// breakdown, laporan bulanan) — JANGAN untuk saldo rekening/kas, nanti terhitung dua kali.
+export function setoranSebagaiPemasukan(transaksi, master, kodeEntitas) {
+  const entitasList = master?.entitas || [];
+  if (!kodeEntitas || entitasList.length < 2) return transaksi;
+  const peta = petaEntitasRekening(master.rekening_entitas);
+  const entDari = (kode) => entitasDariRekening(peta, entitasList, kode);
+  const tambahan = [];
+  (transaksi || []).forEach((t) => {
+    if (t.tipe !== "transfer" || (t.penanda !== "setoran_penghasilan" && t.penanda !== "dividen")) return;
+    const entAsal = entDari(t.rekening);
+    if (entDari(t.rekening_tujuan) !== kodeEntitas || entAsal === kodeEntitas) return;
+    const nama = entitasList.find((e) => e.kode === entAsal)?.label || entAsal;
+    tambahan.push({
+      ...t,
+      id: `setoran-${t.id}`,
+      tipe: "masuk",
+      rekening: t.rekening_tujuan,
+      rekening_tujuan: null,
+      penanda: null,
+      kategori: `Setoran dari ${nama}`,
+      keterangan: t.keterangan || "Setoran pemasukan dari cabang",
+      _setoran: true,
+    });
+  });
+  return tambahan.length ? [...transaksi, ...tambahan] : transaksi;
+}
+
 export function lingkupEntitas(transaksi, master, kodeEntitas) {
   const entitasList = master?.entitas || [];
   if (!kodeEntitas || entitasList.length < 2) return { transaksi, master };
