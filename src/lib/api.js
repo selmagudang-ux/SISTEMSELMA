@@ -2443,16 +2443,22 @@ export function setoranSebagaiPemasukan(transaksi, master, kodeEntitas) {
       tambahan.push({ ...dasar, id: `setoran-${t.id}`, kategori: `Setoran dari ${nama}`, keterangan: t.keterangan || "Setoran pemasukan dari cabang" });
       return;
     }
-    // Ada rincian sumber: satu baris pemasukan per sumber (kategori pemasukan cabang), sisanya "Lainnya".
-    const perSumber = {};
-    rincian.forEach((r) => {
-      const n = r.kategori || "Tanpa kategori";
-      perSumber[n] = (perSumber[n] || 0) + (Number(r.jumlah) || 0);
+    // Ada rincian sumber: satu baris pemasukan per transaksi yang disetor (kategori = sumbernya di cabang),
+    // sisanya "Lainnya". Tanggal laporan tetap tanggal setoran; tanggal asli ada di keterangan.
+    let totalRincian = 0;
+    rincian.forEach((r, i) => {
+      const jml = Number(r.jumlah) || 0;
+      totalRincian += jml;
+      const sumberNama = r.kategori || "Tanpa kategori";
+      tambahan.push({
+        ...dasar,
+        id: `setoran-${t.id}-${r.id ?? i}`,
+        jumlah: jml,
+        kategori: `Setoran dari ${nama} — ${sumberNama}`,
+        keterangan: [r.keterangan, r.tanggal ? `pemasukan ${r.tanggal}` : ""].filter(Boolean).join(" · ") || `Setoran ${nama}: ${sumberNama}`,
+      });
     });
-    Object.entries(perSumber).forEach(([sumberNama, jml]) =>
-      tambahan.push({ ...dasar, id: `setoran-${t.id}-${sumberNama}`, jumlah: jml, kategori: `Setoran dari ${nama} — ${sumberNama}`, keterangan: `Setoran ${nama}: ${sumberNama}` })
-    );
-    const sisa = (Number(t.jumlah) || 0) - Object.values(perSumber).reduce((a, b) => a + b, 0);
+    const sisa = (Number(t.jumlah) || 0) - totalRincian;
     if (sisa > 0) tambahan.push({ ...dasar, id: `setoran-${t.id}-lain`, jumlah: sisa, kategori: `Setoran dari ${nama} — Lainnya`, keterangan: `Setoran ${nama}: lainnya` });
   });
   return tambahan.length ? [...transaksi, ...tambahan] : transaksi;
