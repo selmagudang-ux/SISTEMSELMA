@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
+import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
@@ -16,7 +16,7 @@ import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./
 // (eliminasi) saat digabung di Konsolidasi.
 // =========================================================
 
-const WARNA_PENANDA = { modal: "sky", dividen: "emerald", pinjaman: "amber", pelunasan_pinjaman: "amber", biaya_antar: "violet" };
+const WARNA_PENANDA = { modal: "sky", dividen: "emerald", setoran_penghasilan: "emerald", pinjaman: "amber", pelunasan_pinjaman: "amber", biaya_antar: "violet" };
 const nilai = (t) => Number(t.jumlah) || 0;
 
 // Transfer yang melintasi dua entitas -> { asal, tujuan } (kode entitas), selain itu null.
@@ -28,14 +28,14 @@ function lintasEntitas(t, k) {
 }
 
 // Dua jenis transfer antar-entitas ikut masuk laba rugi tiap entitas, lalu dieliminasi di Konsolidasi:
-//   dividen     : pendapatan dividen bagi penerima (anak -> induk). Bagi pembayar BUKAN beban.
+//   setoran_penghasilan (dan dividen lama) : pemasukan bagi penerima (cabang -> Pusat). Bagi pengirim BUKAN beban.
 //   biaya_antar : pengeluaran bagi pembayar + pemasukan bagi penerima (management fee, sewa, royalti).
 // Keduanya tidak boleh dihitung di angka gabungan (sudah dihitung di sisi perusahaan asalnya).
 const efekLaba = (t, k) => {
   const x = lintasEntitas(t, k);
   if (!x) return null;
   const j = nilai(t);
-  if (t.penanda === "dividen") return { tujuan: x.tujuan, dividen: j };
+  if (t.penanda === "dividen" || t.penanda === "setoran_penghasilan") return { tujuan: x.tujuan, dividen: j };
   if (t.penanda === "biaya_antar") return { asal: x.asal, tujuan: x.tujuan, biaya: j };
   return null;
 };
@@ -627,7 +627,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
       </button>
       {lihatCara && (
         <div className="text-[11px] text-slate-500 mt-1">
-          Laba per perusahaan = pemasukan − pengeluaran tercatat di Keuangan + dividen yang diterima dari perusahaan lain + biaya antar perusahaan (sebagai pemasukan penerima / pengeluaran pembayar). Baris Gabungan membuang dividen dan biaya antar perusahaan agar tidak dihitung ganda. Modal dan pinjaman tidak dihitung sebagai laba. Saldo kas selalu posisi saat ini, bukan posisi akhir bulan yang dipilih. Donat per kategori hanya memuat transaksi biasa (tanpa biaya antar perusahaan). Lihat tab Konsolidasi untuk rinciannya.
+          Laba per perusahaan = pemasukan − pengeluaran tercatat di Keuangan + setoran pemasukan yang diterima dari cabang + biaya antar perusahaan (sebagai pemasukan penerima / pengeluaran pembayar). Baris Gabungan membuang setoran pemasukan dan biaya antar perusahaan agar tidak dihitung ganda. Modal dan pinjaman tidak dihitung sebagai laba. Saldo kas selalu posisi saat ini, bukan posisi akhir bulan yang dipilih. Donat per kategori hanya memuat transaksi biasa (tanpa biaya antar perusahaan). Lihat tab Konsolidasi untuk rinciannya.
         </div>
       )}
     </div>
@@ -689,7 +689,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
       {statusLama && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>}
       <PageHeader
         title="Antar Entitas"
-        description="Uang yang pindah antar perusahaan (mis. SELMA ↔ Holding): modal, dividen, pinjaman, dan pelunasannya. Bukan pemasukan/pengeluaran, jadi tidak masuk laba rugi masing-masing."
+        description="Uang yang pindah antar perusahaan (mis. SELMA ↔ Holding): pemberian modal, pinjaman, setoran pemasukan, dan pembayaran pinjaman. Bukan pemasukan/pengeluaran cabang; setoran pemasukan menjadi pemasukan Pusat."
         sticky
         action={
           bisaTambah ? (
@@ -704,18 +704,18 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
       />
       {role === "owner" && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
-          Anda hanya bisa mencatat transfer <b>dari Holding ke perusahaan</b> (mis. modal, pinjaman). Transfer dari perusahaan ke Holding dicatat oleh Admin.
+          Anda hanya bisa mencatat transfer <b>dari Holding ke perusahaan</b> (pemberian modal, pinjaman). Transfer dari perusahaan ke Holding dicatat oleh Admin.
         </div>
       )}
       {role === "superadmin" && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
-          Anda hanya bisa mencatat transfer <b>dari perusahaan ke Holding</b> (mis. dividen, pelunasan pinjaman). Transfer dari Holding ke perusahaan dicatat oleh Pemilik.
+          Anda hanya bisa mencatat transfer <b>dari perusahaan ke Holding</b> (setoran pemasukan, pembayaran pinjaman). Transfer dari Holding ke perusahaan dicatat oleh Pemilik.
         </div>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard label="Modal (periode)" value={fmtRp(total("modal"))} accent="text-sky-400" icon={Building2} iconColor="text-sky-500" />
-        <StatCard label="Dividen (periode)" value={fmtRp(total("dividen"))} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label="Pemberian Modal (periode)" value={fmtRp(total("modal"))} accent="text-sky-400" icon={Building2} iconColor="text-sky-500" />
+        <StatCard label="Setoran Pemasukan (periode)" value={fmtRp(total("setoran_penghasilan") + total("dividen"))} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
         <StatCard label="Pinjaman (periode)" value={fmtRp(total("pinjaman"))} accent="text-amber-400" icon={TrendingDown} iconColor="text-amber-500" />
         <StatCard label="Belum ditandai" value={`${belumDitandai} transaksi`} accent={belumDitandai ? "text-amber-400" : "text-slate-100"} icon={Paperclip} iconColor="text-slate-400" />
       </div>
@@ -776,8 +776,8 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                         aria-label="Beri penanda"
                       >
                         <option value="">Belum ditandai ▾</option>
-                        {Object.entries(PENANDA_ANTAR_ENTITAS).map(([v, l]) => (
-                          <option key={v} value={v}>{l}</option>
+                        {penandaUntukArah(x.asal, x.tujuan, kodeHolding).map((v) => (
+                          <option key={v} value={v}>{PENANDA_ANTAR_ENTITAS[v]}</option>
                         ))}
                       </select>
                     )}
@@ -852,7 +852,12 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
   const sama = sumber && tujuan && k.entDari(sumber) === k.entDari(tujuan);
   const arahDilarang = !!(sumber && tujuan && !sama && !bolehTransferAntarEntitas(role, k.entDari(sumber), k.entDari(tujuan), kodeHolding, entitasAkun));
-  const valid = tanggal && penanda && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama && !arahDilarang;
+  // Jenis yang boleh dipilih bergantung arah transfer (Pusat -> cabang / cabang -> Pusat).
+  const opsiPenanda = sumber && tujuan && !sama ? penandaUntukArah(k.entDari(sumber), k.entDari(tujuan), kodeHolding) : [];
+  useEffect(() => {
+    if (penanda && !opsiPenanda.includes(penanda)) setPenanda("");
+  }, [sumber, tujuan]); // eslint-disable-line react-hooks/exhaustive-deps
+  const valid = tanggal && opsiPenanda.includes(penanda) && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama && !arahDilarang;
 
   // Entitas yang masih mungkin dipilih sebagai sumber / tujuan untuk role ini
   // (mis. Pemilik: sumber hanya Holding, tujuan hanya perusahaan lain).
@@ -908,21 +913,6 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
 
   return (
     <ModalShell title="Transfer Antar Entitas" onClose={onClose}>
-      <Field label="Jenis">
-        <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)}>
-          <option value="">Pilih jenis…</option>
-          {Object.entries(PENANDA_ANTAR_ENTITAS).map(([v, l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
-        <div className="text-[11px] text-slate-500 mt-1">
-          {penanda === "modal" && "Setoran modal: biasanya dari rekening Holding ke rekening SELMA."}
-          {penanda === "dividen" && "Dividen: biasanya dari rekening SELMA ke rekening Holding. Jadi pendapatan dividen Holding, bukan beban SELMA."}
-          {penanda === "pinjaman" && "Pinjaman: dari pihak yang meminjamkan ke pihak yang meminjam."}
-          {penanda === "pelunasan_pinjaman" && "Pelunasan: dari pihak yang berutang ke pihak yang meminjamkan."}
-          {penanda === "biaya_antar" && "Biaya antar perusahaan (management fee, sewa, royalti): dari pihak yang membayar ke pihak yang menagih, mis. SELMA → Holding. Jadi pengeluaran pembayar dan pemasukan penerima, lalu dieliminasi di Konsolidasi."}
-        </div>
-      </Field>
       <Field label="Tanggal">
         <InputTanggal className={inputClass} value={tanggal} onChange={setTanggal} />
       </Field>
@@ -937,6 +927,20 @@ function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved,
           <option value="">Pilih rekening tujuan…</option>
           {opsi(sumber, "tujuan")}
         </select>
+      </Field>
+      <Field label="Jenis">
+        <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)} disabled={!opsiPenanda.length}>
+          <option value="">{opsiPenanda.length ? "Pilih jenis…" : "Pilih rekening sumber & tujuan dulu…"}</option>
+          {opsiPenanda.map((v) => (
+            <option key={v} value={v}>{PENANDA_ANTAR_ENTITAS[v]}</option>
+          ))}
+        </select>
+        <div className="text-[11px] text-slate-500 mt-1">
+          {penanda === "modal" && "Pemberian modal: dari rekening Pusat ke rekening cabang. Bukan pemasukan bagi cabang."}
+          {penanda === "pinjaman" && "Pinjaman: dari pihak yang meminjamkan ke pihak yang meminjam. Tercatat sebagai utang penerima."}
+          {penanda === "setoran_penghasilan" && "Setoran pemasukan: dari rekening cabang ke rekening Pusat. Menjadi pemasukan Pusat, bukan beban cabang."}
+          {penanda === "pelunasan_pinjaman" && "Pembayaran pinjaman: dari pihak yang berutang ke pihak yang meminjamkan, mengurangi utang."}
+        </div>
       </Field>
       {sama && (
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
@@ -1025,14 +1029,14 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
         if (!x) return;
         const kunci =
           t.penanda === "modal" ? "modal"
-          : t.penanda === "dividen" ? "dividen"
+          : t.penanda === "dividen" || t.penanda === "setoran_penghasilan" ? "dividen"
           : t.penanda === "biaya_antar" ? "biaya"
           : t.penanda === "pinjaman" || t.penanda === "pelunasan_pinjaman" ? "pinjaman"
           : "tanpa";
         if (perEnt[x.tujuan]) perEnt[x.tujuan][kunci] += j; // diterima
         if (perEnt[x.asal]) perEnt[x.asal][kunci] -= j; // diberikan
         // Dividen & biaya antar perusahaan ikut laba rugi tiap entitas (dieliminasi di kolom Konsolidasi).
-        if (t.penanda === "dividen" && perEnt[x.tujuan]) perEnt[x.tujuan].dividenMasuk += j;
+        if ((t.penanda === "dividen" || t.penanda === "setoran_penghasilan") && perEnt[x.tujuan]) perEnt[x.tujuan].dividenMasuk += j;
         if (t.penanda === "biaya_antar") {
           if (perEnt[x.tujuan]) {
             perEnt[x.tujuan].masuk += j;
@@ -1062,13 +1066,13 @@ export function Konsolidasi({ keuanganTransaksi = [], master = {} }) {
     { label: "Pemasukan", ambil: (p) => p.masuk, gabung: () => jumlahSemua((p) => p.masuk - p.antarMasuk), warna: "text-emerald-400" },
     { label: "Pengeluaran", ambil: (p) => p.keluar, gabung: () => jumlahSemua((p) => p.keluar - p.antarKeluar), warna: "text-red-400" },
     { label: "Laba operasional", ambil: (p) => p.masuk - p.keluar, tebal: true },
-    { label: "Pendapatan dividen (dieliminasi di Konsolidasi)", ambil: (p) => p.dividenMasuk, gabung: () => 0, indent: true },
+    { label: "Pendapatan setoran dari cabang (dieliminasi di Konsolidasi)", ambil: (p) => p.dividenMasuk, gabung: () => 0, indent: true },
     { label: "Laba (rugi) entitas", ambil: (p) => p.masuk - p.keluar + p.dividenMasuk, gabung: () => jumlahSemua((p) => p.masuk - p.keluar), tebal: true },
     { label: "Prive / dividen ke pemilik (tidak mengurangi laba)", ambil: (p) => p.prive, indent: true },
     { judul: "Dana antar entitas (periode; + diterima, − diberikan)" },
-    { label: "Modal", ambil: (p) => p.modal, indent: true },
-    { label: "Dividen", ambil: (p) => p.dividen, indent: true },
-    { label: "Pinjaman & pelunasan", ambil: (p) => p.pinjaman, indent: true },
+    { label: "Pemberian modal", ambil: (p) => p.modal, indent: true },
+    { label: "Setoran pemasukan", ambil: (p) => p.dividen, indent: true },
+    { label: "Pinjaman & pembayaran pinjaman", ambil: (p) => p.pinjaman, indent: true },
     { label: "Biaya antar perusahaan", ambil: (p) => p.biaya, indent: true },
     { label: "Belum ditandai", ambil: (p) => p.tanpa, indent: true },
     { judul: "Posisi pinjaman antar entitas (dari awal)" },

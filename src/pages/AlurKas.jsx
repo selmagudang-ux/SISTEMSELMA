@@ -48,6 +48,8 @@ import {
   petaEntitasRekening,
   entitasDariRekening,
   PENANDA_ANTAR_ENTITAS,
+  penandaUntukArah,
+  kodeEntitasHolding,
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 
@@ -395,7 +397,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
           jumlah: jumlahNum,
           keterangan: keterangan.trim() || "Pengisian kas kecil",
           ...(buktiUrl ? { bukti_url: buktiUrl } : {}),
-          ...(antarEntitas && penanda ? { penanda } : {}),
+          ...(antarEntitas && penanda && penandaUntukArah(k.entDari(sumber), k.entDari(tujuan), kodeEntitasHolding(k.entitasList)).includes(penanda) ? { penanda } : {}),
         }),
       });
       showToast?.(buktiUrl ? "Kas kecil terisi — bukti tersimpan" : "Kas kecil terisi (belum ada bukti)");
@@ -452,7 +454,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
         <Field label={`Penanda antar entitas (${k.entNama(k.entDari(sumber))} → ${k.entNama(k.entDari(tujuan))})`}>
           <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)}>
             <option value="">Belum ditandai</option>
-            {["modal", "pinjaman", "pelunasan_pinjaman", "dividen", "biaya_antar"].map((v) => (
+            {penandaUntukArah(k.entDari(sumber), k.entDari(tujuan), kodeEntitasHolding(k.entitasList)).map((v) => (
               <option key={v} value={v}>{PENANDA_ANTAR_ENTITAS[v]}</option>
             ))}
           </select>

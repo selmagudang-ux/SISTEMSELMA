@@ -2350,12 +2350,23 @@ export function namaStoreEntitas(master, kode) {
   return `Store ${namaUsahaEntitas(master, k).replace(/^\s*(pt|cv)\.?\s+/i, "").trim()}`;
 }
 export const PENANDA_ANTAR_ENTITAS = {
-  modal: "Modal",
-  dividen: "Dividen",
+  modal: "Pemberian Modal",
   pinjaman: "Pinjaman",
-  pelunasan_pinjaman: "Pelunasan Pinjaman",
-  biaya_antar: "Biaya Antar Perusahaan",
+  setoran_penghasilan: "Setoran Pemasukan",
+  pelunasan_pinjaman: "Pembayaran Pinjaman",
+  // Jenis lama: tidak bisa dipilih lagi untuk transaksi baru, tapi transaksi lama tetap terbaca.
+  dividen: "Dividen (lama)",
+  biaya_antar: "Biaya Antar Perusahaan (lama)",
 };
+// Jenis yang boleh dipilih menurut arah transfer:
+//   Pusat/Holding -> cabang : Pemberian Modal (bukan pemasukan cabang), Pinjaman.
+//   cabang -> Pusat/Holding : Setoran Pemasukan (jadi pemasukan Pusat), Pembayaran Pinjaman.
+//   antar dua cabang        : Pinjaman, Pembayaran Pinjaman.
+export function penandaUntukArah(entAsal, entTujuan, kodeHolding) {
+  if (kodeHolding && entAsal === kodeHolding) return ["modal", "pinjaman"];
+  if (kodeHolding && entTujuan === kodeHolding) return ["setoran_penghasilan", "pelunasan_pinjaman"];
+  return ["pinjaman", "pelunasan_pinjaman"];
+}
 
 // =========================================================
 // PENARIKAN PEMILIK (menu Holding > Penarikan Pemilik)
