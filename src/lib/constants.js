@@ -421,7 +421,7 @@ export const NAV = [
       // Menu Holding (hanya Super Appa, Pemilik, Pemegang Saham, Super Admin — lihat ROLE_MENUS):
       //  - "Perusahaan Grup" : semua yang menyangkut perusahaan dalam grup (ringkasan &
       //    konsolidasi, lihat keuangan perusahaan, transfer Antar Entitas).
-      //  - "Keuangan Holding": pembukuan Holding SENDIRI, dikunci ke entitas Holding.
+      //  - "Keuangan Pusat" (key "holding"): pembukuan Holding SENDIRI, dikunci ke entitas Holding.
       // Keduanya memakai pages/Keuangan.jsx (mode="grup" dan mode="holding").
       {
         key: "perusahaan", label: "Perusahaan Grup", icon: Building2,
@@ -436,7 +436,7 @@ export const NAV = [
         ],
       },
       {
-        key: "holding", label: "Keuangan Holding", icon: Landmark,
+        key: "holding", label: "Keuangan Pusat", icon: Landmark,
         children: [
           { key: "transaksi", label: "Transaksi" },
           { key: "kas", label: "Kas" },
