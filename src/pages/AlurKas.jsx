@@ -80,7 +80,17 @@ export const fileCls =
 
 // Foto bukti transfer: diperkecil sedikit (tetap tajam supaya nominal/nama
 // terbaca), lalu diupload ke bucket yang sama dengan bukti lain.
+// Bukti boleh berupa foto ATAU PDF. PDF diupload apa adanya (tidak dikompres), maksimal 10 MB.
+export const BUKTI_ACCEPT = "image/*,application/pdf,.pdf";
+const BUKTI_PDF_MAKS = 10 * 1024 * 1024;
+export const fileAdalahPdf = (f) => !!f && (f.type === "application/pdf" || /\.pdf$/i.test(f.name || ""));
+export const urlAdalahPdf = (u) => /\.pdf(\?|#|$)/i.test(String(u || ""));
 export async function unggahBukti(file, tanda) {
+  if (fileAdalahPdf(file)) {
+    if (file.size > BUKTI_PDF_MAKS) throw new Error("PDF terlalu besar (maksimal 10 MB).");
+    const pdf = file.type === "application/pdf" ? file : new File([file], file.name || "bukti.pdf", { type: "application/pdf" });
+    return sbUploadFoto(pdf, `bukti-kas-${Date.now()}-${tanda}.pdf`);
+  }
   const kecil = await kompresFotoProduk(file, { maxDim: 1600, quality: 0.88 });
   return sbUploadFoto(kecil, `bukti-kas-${Date.now()}-${tanda}.jpg`);
 }
@@ -310,7 +320,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
         </div>
       )}
 
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPilihFile} />
+      <input ref={fileRef} type="file" accept={BUKTI_ACCEPT} className="hidden" onChange={onPilihFile} />
 
       {formBuka && (
         <FormPengisianKas
@@ -329,7 +339,11 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
           <div className="text-xs text-slate-400 mb-2">
             {formatTanggalID(lihatBukti.tanggal)} · {k.labelRek(lihatBukti.rekening)} → {k.labelRek(lihatBukti.rekening_tujuan)} · {fmtRp(lihatBukti.jumlah)}
           </div>
-          <ZoomableImage src={lihatBukti.bukti_url} alt="Bukti transfer" />
+          {urlAdalahPdf(lihatBukti.bukti_url) ? (
+            <iframe src={lihatBukti.bukti_url} title="Bukti transfer (PDF)" className="w-full h-[70vh] rounded-lg border border-slate-800 bg-white" />
+          ) : (
+            <ZoomableImage src={lihatBukti.bukti_url} alt="Bukti transfer" />
+          )}
           <div className="flex gap-2 mt-3">
             <a
               href={lihatBukti.bukti_url}
@@ -379,13 +393,13 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
   const jumlahNum = Number(jumlah) || 0;
   const saldoSumber = sumber ? k.saldoMap.get(sumber) ?? 0 : null;
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
-  const valid = tanggal && sumber && tujuan && jumlahNum > 0 && !saldoKurang;
+  const valid = tanggal && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !!foto; // bukti transfer WAJIB
 
   const simpan = async () => {
     if (!valid || saving) return;
     setSaving(true);
     try {
-      const buktiUrl = foto ? await unggahBukti(foto, `${tujuan}`) : null;
+      const buktiUrl = await unggahBukti(foto, `${tujuan}`);
       await sb("keuangan_transaksi", {
         method: "POST",
         body: JSON.stringify({
@@ -400,7 +414,7 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
           ...(antarEntitas && penanda && penandaUntukArah(k.entDari(sumber), k.entDari(tujuan), kodeEntitasHolding(k.entitasList)).includes(penanda) ? { penanda } : {}),
         }),
       });
-      showToast?.(buktiUrl ? "Kas kecil terisi — bukti tersimpan" : "Kas kecil terisi (belum ada bukti)");
+      showToast?.("Kas kecil terisi — bukti tersimpan");
       await onSaved();
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan pengisian kas", "err");
@@ -464,10 +478,10 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
       <Field label="Keterangan">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Pengisian kas kecil" />
       </Field>
-      <Field label="Bukti Transfer (foto)">
-        <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
+      <Field label="Bukti Transfer (wajib — foto atau PDF)">
+        <input type="file" accept={BUKTI_ACCEPT} onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
         <div className="text-[11px] text-slate-500 mt-1 truncate">
-          {foto ? foto.name : 'Boleh dikosongkan — nanti ditandai "Belum ada bukti" dan bisa dilampirkan dari daftar.'}
+          {foto ? foto.name : "Wajib dilampirkan sebelum bisa disimpan. Format: foto (JPG/PNG) atau PDF, maksimal 10 MB untuk PDF."}
         </div>
       </Field>
       <button

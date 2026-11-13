@@ -4,7 +4,7 @@ import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, form
 import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
-import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
+import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls, BUKTI_ACCEPT, fileAdalahPdf } from "./AlurKas";
 
 // =========================================================
 // FASE 4 — HOLDING
@@ -1080,7 +1080,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
     const daftarPenerima = rekPenerima(eT);
     return !daftarPenerima.length || daftarPenerima.includes(tujuan);
   };
-  const valid = validDasar && tujuanPenerimaOk();
+  const valid = validDasar && tujuanPenerimaOk() && !!foto; // bukti transfer WAJIB
 
   const opsi = (kecualiKode, peran) =>
     k.entitasList.map((e) => {
@@ -1111,7 +1111,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
     if (!valid || saving) return;
     setSaving(true);
     try {
-      const buktiUrl = foto ? await unggahBukti(foto, `ent-${tujuan}`) : null;
+      const buktiUrl = await unggahBukti(foto, `ent-${tujuan}`);
       await sb("keuangan_transaksi", {
         method: "POST",
         body: JSON.stringify({
@@ -1251,13 +1251,19 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
       <Field label="Keterangan (opsional)">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
       </Field>
-      <Field label="Bukti Transfer (opsional)">
-        <input type="file" accept="image/*" onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
+      <Field label="Bukti Transfer (wajib — foto atau PDF)">
+        <input type="file" accept={BUKTI_ACCEPT} onChange={(e) => setFoto(e.target.files?.[0] || null)} className={fileCls} />
         {fotoUrl && (
           <div className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
-            <a href={fotoUrl} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
-              <img src={fotoUrl} alt="Pratinjau bukti transfer" className="mx-auto max-h-56 w-auto max-w-full rounded-md object-contain" />
-            </a>
+            {fileAdalahPdf(foto) ? (
+              <a href={fotoUrl} target="_blank" rel="noreferrer" title="Buka PDF" className="block text-center text-xs text-emerald-400 hover:text-emerald-300 py-6">
+                📄 File PDF dipilih — klik untuk membuka
+              </a>
+            ) : (
+              <a href={fotoUrl} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
+                <img src={fotoUrl} alt="Pratinjau bukti transfer" className="mx-auto max-h-56 w-auto max-w-full rounded-md object-contain" />
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setFoto(null)}
