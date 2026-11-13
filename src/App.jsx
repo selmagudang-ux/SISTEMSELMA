@@ -930,10 +930,12 @@ function MainApp({ session, onLogout }) {
   // keuangan_transaksi, cuma ditarik kalau lagi buka menu ini (atau dashboard).
   const loadMarketplace = useCallback(async (force = false) => {
     if (!force && masihSegar("marketplace")) return;
-    // Dibatasi ke bulan berjalan + 1 bulan sebelumnya juga — sama alasannya
-    // seperti keuangan_transaksi di atas.
+    // SEMUA riwayat dimuat (TIDAK dibatasi bulan). Beda dari keuangan_transaksi: saldo toko
+    // marketplace = akumulasi pemasukan - iklan - pencairan DARI AWAL (lihat saldoMarketplace di
+    // lib/api.js), dan Riwayat di Penjualan > Marketplace harus menampilkan bulan-bulan sebelumnya.
+    // Dulu dibatasi 2 bulan (hemat egress) -> riwayat lama hilang & saldo toko ikut salah.
     const res = await sbAll(
-      `marketplace_transaksi?select=*&tanggal=gte.${awalRentangEgressDefault()}&order=tanggal.desc`
+      `marketplace_transaksi?select=*&order=tanggal.desc`
     );
     setMarketplaceTransaksi(res || []);
     tandaiSudahDimuat("marketplace");
