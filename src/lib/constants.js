@@ -942,7 +942,11 @@ export function allowedMenus(role, entitas, fiturMati = []) {
   }
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
     // Dashboard PT sendiri (data dibatasi ke PT-nya di pages/Dashboard.jsx): hanya Super Admin.
-    menus = menus.filter((k) => MENU_PT_LAIN.includes(k) || (k === "dashboard" && role === "superadmin"));
+    // "Perusahaan Grup" (lihat keuangan perusahaan lain di grup) tidak ada di MENU_PT_LAIN, jadi dulu
+    // SELALU terpotong untuk akun PT (mis. Super Admin Alivia) walau sudah dicentang di Hak Akses.
+    // Sekarang tetap muncul kalau Super Appa memang memberikannya lewat Hak Akses (override tersimpan).
+    const diberiLewatHakAkses = (k) => k === "perusahaan" && !!ov && Array.isArray(ov.menus) && ov.menus.includes(k);
+    menus = menus.filter((k) => MENU_PT_LAIN.includes(k) || diberiLewatHakAkses(k) || (k === "dashboard" && role === "superadmin"));
   }
   if (role !== "superappa" && fiturMati.length) {
     const mati = new Set(fiturMati);
