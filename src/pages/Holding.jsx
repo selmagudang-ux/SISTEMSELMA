@@ -663,6 +663,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   const [formBuka, setFormBuka] = useState(false);
   const [menyimpanId, setMenyimpanId] = useState(null);
   const [bukaRincian, setBukaRincian] = useState(() => new Set());
+  const [detailRincian, setDetailRincian] = useState(null); // { judul, subtitle, rows } — modal rincian satu sumber setoran
   const toggleRincian = (id) =>
     setBukaRincian((a) => {
       const n = new Set(a);
@@ -699,11 +700,35 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
     }
   };
 
+  // Buka daftar pemasukan cabang yang ikut disetor untuk satu sumber (mis. "Grosir Transfer").
+  // Data terbaru dicari dari transaksi aslinya (by id); kalau sudah tidak ada, pakai salinan di rincian.
+  const bukaDetailRincian = (setoran, namaKategori) => {
+    const asal = k.entitasList.find((e) => e.kode === k.entDari(setoran.rekening))?.label || k.entDari(setoran.rekening);
+    const peta = new Map((semua || []).map((x) => [String(x.id), x]));
+    const rows = (setoran.rincian_setoran || [])
+      .filter((r) => (r.kategori || "Tanpa kategori") === namaKategori)
+      .map((r, i) => {
+        const asli = peta.get(String(r.id));
+        return {
+          id: r.id ?? i,
+          tanggal: asli?.tanggal || r.tanggal || "",
+          keterangan: asli?.keterangan || r.keterangan || "",
+          rekening: asli?.rekening ? (k.rekeningList.find((x) => x.kode === asli.rekening)?.label || asli.rekening) : "",
+          jumlah: Number(r.jumlah) || 0,
+        };
+      })
+      .sort((a, b) => String(b.tanggal).localeCompare(String(a.tanggal)));
+    const tgl = rows.map((r) => r.tanggal).filter(Boolean).sort();
+    const subtitle = tgl.length ? (tgl[0] === tgl[tgl.length - 1] ? formatTanggalID(tgl[0]) : `${formatTanggalID(tgl[0])} – ${formatTanggalID(tgl[tgl.length - 1])}`) : "";
+    setDetailRincian({ judul: `Setoran dari ${asal} — ${namaKategori}`, subtitle, rows });
+  };
+
   if (k.entitasList.length < 2) return <PesanSetup />;
 
   return (
     <div>
       {statusLama && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusLama}</div>}
+      {detailRincian && <DetailRincianSetoranModal data={detailRincian} onClose={() => setDetailRincian(null)} />}
       <PageHeader
         title="Antar Entitas"
         description="Uang yang pindah antar perusahaan (mis. SELMA ↔ Holding): pemberian modal, pinjaman, setoran pemasukan, dan pembayaran pinjaman. Bukan pemasukan/pengeluaran cabang; setoran pemasukan menjadi pemasukan Pusat."
@@ -822,10 +847,16 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                               return a;
                             }, {})
                           ).map(([nama, v]) => (
-                            <div key={nama} className="flex items-center justify-between gap-3 text-[11px] text-slate-400 pr-2">
-                              <span>{nama} · {v.banyak} transaksi</span>
+                            <button
+                              key={nama}
+                              type="button"
+                              onClick={() => bukaDetailRincian(t, nama)}
+                              className="w-full flex items-center justify-between gap-3 text-[11px] text-slate-400 pr-2 hover:text-slate-200 text-left"
+                              title="Lihat daftar transaksi"
+                            >
+                              <span>{nama} · {v.banyak} transaksi ›</span>
                               <span className="text-slate-300">{fmtRp(v.jumlah)}</span>
-                            </div>
+                            </button>
                           ))}
                         </div>
                       )}
@@ -878,6 +909,39 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         />
       )}
     </div>
+  );
+}
+
+// Daftar pemasukan cabang di balik satu sumber setoran (tampilan sama dengan rincian kategori di Laporan).
+function DetailRincianSetoranModal({ data, onClose }) {
+  const total = data.rows.reduce((a, r) => a + r.jumlah, 0);
+  return (
+    <ModalShell title={data.judul} onClose={onClose}>
+      {data.subtitle && <div className="text-[11px] text-slate-500 -mt-2 mb-3">{data.subtitle}</div>}
+      <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
+        <div className="max-h-[45vh] overflow-y-auto">
+          {data.rows.length === 0 ? (
+            <div className="px-4 py-6 text-center text-slate-500 text-sm">Tidak ada transaksi.</div>
+          ) : (
+            data.rows.map((r, i) => (
+              <div key={r.id} className={`px-3.5 py-2.5 flex items-center justify-between gap-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}>
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-200 truncate">{r.keterangan || "—"}</div>
+                  <div className="text-[11px] text-slate-500">
+                    {formatTanggalID(r.tanggal)}{r.rekening ? ` · ${r.rekening}` : ""}
+                  </div>
+                </div>
+                <div className="text-sm font-semibold text-emerald-400 shrink-0">{fmtRp(r.jumlah)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-1">
+        <span className="text-xs text-slate-400">Total ({data.rows.length} transaksi)</span>
+        <span className="text-sm font-semibold text-slate-100">{fmtRp(total)}</span>
+      </div>
+    </ModalShell>
   );
 }
 
