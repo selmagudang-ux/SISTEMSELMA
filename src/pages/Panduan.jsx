@@ -109,7 +109,7 @@ const SECTIONS = [
         langkah: [
           `Buka Master Barang.`,
           `Di sini ada foto, harga asli, HPP (modal), dan harga jual Grosir, Tengah, dan Ecer.`,
-          `Mau mengubah persentase naik harga (markup)? Itu diatur di menu Pengaturan oleh superadmin.`,
+          `Mau mengubah persentase naik harga (markup)? Itu diatur lewat menu Pengaturan.`,
         ],
       },
       {
@@ -190,7 +190,7 @@ const SECTIONS = [
         langkah: [
           `Pengirim bisa menekan Batalkan selama statusnya masih "Dalam perjalanan".`,
           `Kalau kiriman ditolak atau ada selisih, pengirim menekan "Kembalikan ke stok".`,
-          `Hapus dan kembalikan hanya bisa dilakukan orang yang punya hak. Kalau barang sudah diterima, stok penerima ditarik lagi. Kalau stok penerima sudah tidak cukup, prosesnya gagal.`,
+          `Hapus dan kembalikan hanya tersedia untuk akun tertentu. Kalau barang sudah diterima, stok penerima ditarik lagi. Kalau stok penerima sudah tidak cukup, prosesnya gagal.`,
           `Jumlah di Peta Rak tidak berubah sendiri. Jadi cek Peta Rak setelahnya.`,
         ],
       },
@@ -622,7 +622,9 @@ const SECTIONS = [
     fungsi: [
       `Pusat (Holding) adalah perusahaan induk grup, ibarat ibunya. Perusahaan lain adalah anak-anaknya.`,
       `Setiap perusahaan, termasuk Pusat, punya buku keuangan sendiri-sendiri.`,
-      `Menu ini untuk mengirim uang antar perusahaan, mencatat Penarikan Pemilik, dan melihat laporan gabungan (Konsolidasi).`,
+      `Menu ini untuk mengirim uang antar perusahaan, mencatat Modal dan Penarikan Pemilik, dan melihat laporan gabungan (Konsolidasi).`,
+      `Ada dua macam "modal", jangan tertukar. (1) Pemberian Modal: Pusat memberi uang ke perusahaan anak. Ini dicatat di Antar Entitas. (2) Setoran Modal Pemilik: pemilik memasukkan uang pribadinya ke Pusat. Ini dicatat di menu "Modal & Penarikan Pemilik".`,
+      `Penarikan Pemilik artinya pemilik mengambil uang dari Pusat. Ada beberapa jenisnya, dan tiap jenis berbeda cara hitungnya di laba rugi.`,
     ],
     cara: [
       {
@@ -638,6 +640,7 @@ const SECTIONS = [
           `Dari Pusat ke perusahaan: "Pemberian Modal" (bukan pemasukan untuk penerima) atau "Pinjaman" (jadi utang penerima).`,
           `Dari perusahaan ke Pusat: "Setoran Pemasukan" (jadi pemasukan Pusat, bukan beban pengirim) atau "Pembayaran Pinjaman".`,
           `Antar dua perusahaan: "Pinjaman" atau "Pembayaran Pinjaman".`,
+          `Jenis lama "Dividen" dan "Biaya Antar Perusahaan" tidak bisa dipilih lagi, tapi transaksi lamanya tetap bisa dibaca.`,
         ],
       },
       {
@@ -671,15 +674,6 @@ const SECTIONS = [
         ],
       },
       {
-        judul: "Siapa yang boleh mencatat",
-        langkah: [
-          `Dari Pusat ke perusahaan: Pemilik.`,
-          `Dari perusahaan ke Pusat: Super Admin.`,
-          `Antar dua perusahaan: hanya Super Appa.`,
-          `Super Appa bisa mengubahnya di Pengaturan, lalu Hak Akses.`,
-        ],
-      },
-      {
         judul: "Pinjaman dan Konsolidasi",
         langkah: [
           `Posisi pinjaman tiap perusahaan dihitung dari seluruh riwayat. Angka positif artinya piutang, angka negatif artinya utang.`,
@@ -695,13 +689,42 @@ const SECTIONS = [
         ],
       },
       {
-        judul: "Penarikan Pemilik (dicatat oleh Pemilik)",
+        judul: "Mencatat Modal atau Penarikan Pemilik (dicatat oleh Pemilik)",
         langkah: [
-          `Buka Keuangan Holding, lalu Penarikan Pemilik.`,
-          `Semua jenis menggerakkan saldo kas Pusat. Tapi cuma "Gaji Pemilik" yang menjadi beban di laba rugi.`,
-          `Untuk Gaji Pemilik, wajib memilih kategori.`,
-          `Namanya "Prive" kalau tanggalnya sebelum PT berdiri, Tanggal berdirinya diatur di pengaturan Pusat.`,
-          `Sisa pinjaman pemilik dihitung dari seluruh riwayat.`,
+          `Buka Keuangan Holding, lalu menu "Modal & Penarikan Pemilik".`,
+          `Klik tombol "Catat Modal / Penarikan".`,
+          `Pilih Jenis. Kalau bingung, lihat penjelasan jenis di bawah ini. Di bawah kotak Jenis ada tulisan kecil yang menjelaskan jenis yang dipilih.`,
+          `Isi tanggal.`,
+          `Pilih rekening Holding. Kalau uang MASUK, tulisannya "Masuk ke rekening Holding". Kalau uang KELUAR, tulisannya "Dari rekening Holding". Saldo tiap rekening tampil di pilihan.`,
+          `Kalau uang keluar dan saldo rekening kurang, sistem menolak dan muncul tulisan merah.`,
+          `Khusus Gaji Pemilik, wajib memilih kategori beban.`,
+          `Isi jumlahnya. Keterangan dan foto bukti boleh dikosongkan.`,
+          `Klik Simpan.`,
+        ],
+      },
+      {
+        judul: "Pilih jenis yang mana?",
+        langkah: [
+          `Pemilik memasukkan uang pribadi ke Pusat (modal awal atau tambahan modal): pilih "Setoran Modal Pemilik". Uang di Pusat bertambah, tapi ini bukan pemasukan usaha dan bukan laba.`,
+          `Pemilik mengambil uang Pusat untuk dirinya, sebagai bagi hasil: pilih "Prive / Dividen". Uang di Pusat berkurang, tapi laba tidak berkurang.`,
+          `Pemilik meminjam uang Pusat dan nanti harus dikembalikan: pilih "Pinjaman ke Pemilik". Uang di Pusat berkurang. Ini dicatat sebagai piutang, bukan biaya.`,
+          `Pemilik mengembalikan uang pinjaman tadi: pilih "Pelunasan Pinjaman Pemilik". Uang di Pusat bertambah. Ini bukan pemasukan usaha.`,
+          `Pemilik digaji karena bekerja: pilih "Gaji Pemilik". Uang di Pusat berkurang. Ini dianggap biaya biasa, jadi laba ikut berkurang. Cuma jenis ini yang mengurangi laba.`,
+        ],
+      },
+      {
+        judul: "Contoh gampang",
+        langkah: [
+          `Pemilik menaruh Rp 10.000.000 dari tabungan pribadinya ke Pusat. Pilih "Setoran Modal Pemilik".`,
+          `Bulan depan pemilik meminjam Rp 2.000.000. Pilih "Pinjaman ke Pemilik". Sisa pinjaman jadi Rp 2.000.000.`,
+          `Pemilik mengembalikan Rp 500.000. Pilih "Pelunasan Pinjaman Pemilik". Sisa pinjaman jadi Rp 1.500.000.`,
+        ],
+      },
+      {
+        judul: "Hal lain yang perlu diketahui",
+        langkah: [
+          `Di bagian atas halaman ada kotak "Sisa pinjaman pemilik ke Holding". Isinya hitungan dari awal sampai sekarang: pemilik masih berutang berapa, atau sudah lunas.`,
+          `Prive dan Dividen itu sama cara hitungnya. Bedanya cuma nama. Namanya "Prive" kalau tanggalnya sebelum PT berdiri, dan "Dividen" kalau sesudahnya. Tanggal PT berdiri diisi di kotak pengaturan di halaman ini. Kosongkan kalau PT belum berdiri.`,
           `Kalau salah catat, hapus lalu catat ulang. Laba rugi tidak ikut berubah, kecuali untuk Gaji Pemilik.`,
         ],
       },
