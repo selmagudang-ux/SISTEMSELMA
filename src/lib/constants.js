@@ -142,6 +142,13 @@ export const PERAN_REKENING = [
   { key: "ongkir_barang_datang", label: "Ongkir barang datang", desc: "Sumber dana ongkir saat Tandai Status Kedatangan", labelDefault: REKENING_ONGKIR_BARANG_DATANG },
   { key: "toko_offline_cash", label: "Toko Offline - Cash", desc: "Rekening penampung penjualan tunai", labelDefault: REKENING_TOKO_OFFLINE_CASH },
   { key: "toko_offline_cashless", label: "Toko Offline - Cashless", desc: "Rekening penampung Transfer / QRIS", labelDefault: REKENING_TOKO_OFFLINE_CASHLESS },
+  // Sumber dana tetap saat Pusat mengirim uang ke perusahaan lain (Antar Entitas: Pemberian Modal / Pinjaman).
+  // Tanpa nama bawaan: belum diatur = rekening dipilih manual di form. hanyaBank = hanya rekening jenis Bank.
+  { key: "sumber_dana_antar_entitas", label: "Sumber dana transfer antar perusahaan", desc: "Rekening bank Pusat yang selalu jadi sumber dana saat Pusat mengirim ke perusahaan lain", labelDefault: "", hanyaBank: true, untuk: "pusat" },
+  // Rekening penerima uang dari Pusat (maks. 2) untuk tiap perusahaan/cabang. Dipakai di Antar Entitas saat Pusat
+  // mengirim (Pemberian Modal / Pinjaman): pilihan rekening tujuan dibatasi ke rekening ini. Kosong = bebas pilih.
+  { key: "penerima_dari_pusat_1", label: "Rekening penerima dari Pusat (1)", desc: "Rekening perusahaan ini yang menerima uang dari Pusat", labelDefault: "", untuk: "perusahaan", grup: "penerima_pusat" },
+  { key: "penerima_dari_pusat_2", label: "Rekening penerima dari Pusat (2)", desc: "Rekening kedua (opsional). Maksimal 2 rekening penerima", labelDefault: "", untuk: "perusahaan", grup: "penerima_pusat" },
 ];
 
 export const STAGE_ROLE = {

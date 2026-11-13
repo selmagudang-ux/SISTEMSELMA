@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
+import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBukti, fileCls } from "./AlurKas";
@@ -407,8 +407,8 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
             <div className="bg-violet-400 flex-1" />
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-            <div><span className="inline-block w-2 h-2 rounded-sm bg-sky-400 mr-1.5" /><span className="text-slate-500">Bank</span><div className="text-slate-200 font-medium">{fmtRp(kasBank)}</div></div>
-            <div><span className="inline-block w-2 h-2 rounded-sm bg-violet-400 mr-1.5" /><span className="text-slate-500">Kas Kecil</span><div className="text-slate-200 font-medium">{fmtRp(kasKecil)}</div></div>
+            <div><span className="inline-block w-2 h-2 rounded-sm bg-sky-400 mr-1.5" /><span className="text-slate-500">Saldo Bank</span><div className="text-slate-200 font-medium">{fmtRp(kasBank)}</div></div>
+            <div><span className="inline-block w-2 h-2 rounded-sm bg-violet-400 mr-1.5" /><span className="text-slate-500">Uang Cash</span><div className="text-slate-200 font-medium">{fmtRp(kasKecil)}</div></div>
           </div>
         </div>
       </div>
@@ -1000,26 +1000,89 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
   const sama = sumber && tujuan && k.entDari(sumber) === k.entDari(tujuan);
   const arahDilarang = !!(sumber && tujuan && !sama && !bolehTransferAntarEntitas(role, k.entDari(sumber), k.entDari(tujuan), kodeHolding, entitasAkun));
-  // Jenis yang boleh dipilih bergantung arah transfer (Pusat -> cabang / cabang -> Pusat).
-  const opsiPenanda = sumber && tujuan && !sama ? penandaUntukArah(k.entDari(sumber), k.entDari(tujuan), kodeHolding) : [];
+  // Jenis dipilih PERTAMA (sebelum rekening). Jenis menentukan arah yang boleh dipilih di rekening
+  // sumber & tujuan (Pusat -> cabang / cabang -> Pusat / antar cabang), lihat penandaUntukArah.
+  const JENIS_SEMUA = ["modal", "pinjaman", "setoran_penghasilan", "pelunasan_pinjaman"];
+  // Jenis yang ditampilkan dibatasi menurut siapa yang mencatat:
+  //   Pusat (Holding) mengirim      -> Pemberian Modal, Pinjaman
+  //   Perusahaan mengirim ke Pusat  -> Setoran Pemasukan, Pembayaran Pinjaman
+  // Akun terikat satu perusahaan hanya melihat jenis arah perusahaan -> Pusat; akun Pusat hanya arah Pusat -> perusahaan.
+  // Role lintas perusahaan (Pemilik, Super Appa) mengikuti hak arah di ARAH_ANTAR_ENTITAS (lib/constants.js).
+  const akunLintas = ROLE_LINTAS_ENTITAS_LIHAT.includes(role);
+  const JENIS_PILIHAN = JENIS_SEMUA.filter((v) =>
+    k.entitasList.some((a) =>
+      k.entitasList.some((b) => {
+        if (a.kode === b.kode) return false;
+        if (!bolehTransferAntarEntitas(role, a.kode, b.kode, kodeHolding, entitasAkun)) return false;
+        if (!penandaUntukArah(a.kode, b.kode, kodeHolding).includes(v)) return false;
+        if (!akunLintas && entitasAkun) return entitasAkun === kodeHolding ? a.kode === kodeHolding : b.kode === kodeHolding;
+        return true;
+      })
+    )
+  );
+  const jenisCocokArah = (entAsal, entTujuan) => !penanda || penandaUntukArah(entAsal, entTujuan, kodeHolding).includes(penanda);
   useEffect(() => {
-    if (penanda && !opsiPenanda.includes(penanda)) setPenanda("");
-  }, [sumber, tujuan]); // eslint-disable-line react-hooks/exhaustive-deps
-  const valid = tanggal && opsiPenanda.includes(penanda) && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama && !arahDilarang;
+    // Ganti jenis: kosongkan rekening yang arahnya tidak cocok lagi dengan jenis baru.
+    if (!penanda) return;
+    const eS = sumber ? k.entDari(sumber) : "";
+    const eT = tujuan ? k.entDari(tujuan) : "";
+    if (eS && eT && !jenisCocokArah(eS, eT)) {
+      setSumber("");
+      setTujuan("");
+    } else {
+      if (eS && !entCocok(eS, "sumber")) setSumber("");
+      if (eT && !entCocok(eT, "tujuan")) setTujuan("");
+    }
+  }, [penanda]); // eslint-disable-line react-hooks/exhaustive-deps
+  const validDasar = tanggal && penanda && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama && !arahDilarang && jenisCocokArah(k.entDari(sumber), k.entDari(tujuan));
 
-  // Entitas yang masih mungkin dipilih sebagai sumber / tujuan untuk role ini
-  // (mis. Pemilik: sumber hanya Holding, tujuan hanya perusahaan lain).
+  // Perusahaan yang masih mungkin dipilih sebagai sumber / tujuan untuk role ini dan jenis yang dipilih
+  // (mis. Pemilik: sumber hanya Pusat, tujuan hanya perusahaan lain; Setoran Pemasukan: tujuan hanya Pusat).
   const entCocok = (kode, peran) =>
     k.entitasList.some((e) =>
-      peran === "sumber"
-        ? bolehTransferAntarEntitas(role, kode, e.kode, kodeHolding, entitasAkun)
-        : bolehTransferAntarEntitas(role, e.kode, kode, kodeHolding, entitasAkun)
+      e.kode !== kode &&
+      (peran === "sumber"
+        ? bolehTransferAntarEntitas(role, kode, e.kode, kodeHolding, entitasAkun) && jenisCocokArah(kode, e.kode)
+        : bolehTransferAntarEntitas(role, e.kode, kode, kodeHolding, entitasAkun) && jenisCocokArah(e.kode, kode))
     );
+
+  // Sumber dana Pusat TETAP: rekening bank yang diatur di Keuangan Holding > Pengaturan > Penggunaan Rekening.
+  // Kalau Pusat satu-satunya perusahaan yang boleh jadi sumber (mis. Pemberian Modal, atau Pemilik), rekening
+  // sumber otomatis terisi dan terkunci. Belum diatur = tetap pilih manual.
+  const sumberPusat = kodeHolding ? kodeRekeningPeran(master, kodeHolding, "sumber_dana_antar_entitas") : null;
+  const entSumberBoleh = penanda ? k.entitasList.filter((e) => entCocok(e.kode, "sumber")).map((e) => e.kode) : [];
+  const sumberHanyaPusat = !!sumberPusat && entSumberBoleh.length === 1 && entSumberBoleh[0] === kodeHolding;
+  useEffect(() => {
+    if (sumberHanyaPusat && sumber !== sumberPusat) setSumber(sumberPusat);
+  }, [penanda, sumberHanyaPusat, sumberPusat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rekening penerima uang dari Pusat yang diatur tiap perusahaan (maks. 2). Kalau diatur, saat Pusat mengirim,
+  // rekening tujuan perusahaan itu dibatasi ke rekening tersebut; belum diatur = bebas pilih.
+  const rekPenerima = (entKode) =>
+    ["penerima_dari_pusat_1", "penerima_dari_pusat_2"].map((p) => kodeRekeningPeran(master, entKode, p)).filter(Boolean);
+  const dariPusatKeTujuan = penanda === "modal" || (!!sumber && !!kodeHolding && k.entDari(sumber) === kodeHolding);
+  const tujuanPenerimaOk = () => {
+    if (!tujuan || !dariPusatKeTujuan) return true;
+    const eT = k.entDari(tujuan);
+    if (eT === kodeHolding) return true;
+    const daftarPenerima = rekPenerima(eT);
+    return !daftarPenerima.length || daftarPenerima.includes(tujuan);
+  };
+  const valid = validDasar && tujuanPenerimaOk();
 
   const opsi = (kecualiKode, peran) =>
     k.entitasList.map((e) => {
       if (!entCocok(e.kode, peran)) return null;
-      const items = k.rekeningList.filter((r) => k.entDari(r.kode) === e.kode && r.kode !== kecualiKode).sort(k.urutKas);
+      if (kecualiKode) {
+        // Rekening di sisi lawan sudah dipilih: hanya tampilkan perusahaan yang cocok pasangannya.
+        const eL = k.entDari(kecualiKode);
+        const [a, b] = peran === "sumber" ? [e.kode, eL] : [eL, e.kode];
+        if (a === b || !bolehTransferAntarEntitas(role, a, b, kodeHolding, entitasAkun) || !jenisCocokArah(a, b)) return null;
+      }
+      const items = k.rekeningList
+        .filter((r) => k.entDari(r.kode) === e.kode && r.kode !== kecualiKode && !(peran === "sumber" && e.kode === kodeHolding && sumberPusat && r.kode !== sumberPusat)
+          && !(peran === "tujuan" && dariPusatKeTujuan && e.kode !== kodeHolding && rekPenerima(e.kode).length > 0 && !rekPenerima(e.kode).includes(r.kode)))
+        .sort(k.urutKas);
       if (!items.length) return null;
       return (
         <optgroup key={e.kode} label={e.label}>
@@ -1075,22 +1138,10 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
       <Field label="Tanggal">
         <InputTanggal className={inputClass} value={tanggal} onChange={setTanggal} />
       </Field>
-      <Field label="Dari rekening">
-        <select className={inputClass} value={sumber} onChange={(e) => setSumber(e.target.value)}>
-          <option value="">Pilih rekening sumber…</option>
-          {opsi(tujuan, "sumber")}
-        </select>
-      </Field>
-      <Field label="Ke rekening">
-        <select className={inputClass} value={tujuan} onChange={(e) => setTujuan(e.target.value)}>
-          <option value="">Pilih rekening tujuan…</option>
-          {opsi(sumber, "tujuan")}
-        </select>
-      </Field>
       <Field label="Jenis">
-        <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)} disabled={!opsiPenanda.length}>
-          <option value="">{opsiPenanda.length ? "Pilih jenis…" : "Pilih rekening sumber & tujuan dulu…"}</option>
-          {opsiPenanda.map((v) => (
+        <select className={inputClass} value={penanda} onChange={(e) => setPenanda(e.target.value)}>
+          <option value="">Pilih jenis dulu…</option>
+          {JENIS_PILIHAN.map((v) => (
             <option key={v} value={v}>{PENANDA_ANTAR_ENTITAS[v]}</option>
           ))}
         </select>
@@ -1100,6 +1151,27 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
           {penanda === "setoran_penghasilan" && "Setoran pemasukan: dari rekening cabang ke rekening Pusat. Menjadi pemasukan Pusat, bukan beban cabang."}
           {penanda === "pelunasan_pinjaman" && "Pembayaran pinjaman: dari pihak yang berutang ke pihak yang meminjamkan, mengurangi utang."}
         </div>
+      </Field>
+      <Field label="Dari rekening">
+        <select className={inputClass} value={sumber} onChange={(e) => setSumber(e.target.value)} disabled={!penanda || sumberHanyaPusat}>
+          <option value="">{penanda ? "Pilih rekening sumber…" : "Pilih jenis dulu…"}</option>
+          {penanda && opsi(tujuan, "sumber")}
+        </select>
+        {sumberHanyaPusat && (
+          <div className="text-[11px] text-slate-500 mt-1">Sumber dana Pusat sudah ditetapkan. Ubah di Keuangan Holding &gt; Pengaturan &gt; Penggunaan Rekening.</div>
+        )}
+      </Field>
+      <Field label="Ke rekening">
+        <select className={inputClass} value={tujuan} onChange={(e) => setTujuan(e.target.value)} disabled={!penanda}>
+          <option value="">{penanda ? "Pilih rekening tujuan…" : "Pilih jenis dulu…"}</option>
+          {penanda && opsi(sumber, "tujuan")}
+        </select>
+        {tujuan && !tujuanPenerimaOk() && (
+          <div className="text-[11px] text-red-400 mt-1">Rekening ini bukan rekening penerima dari Pusat yang diatur perusahaan tujuan. Pilih rekening penerima yang tersedia.</div>
+        )}
+        {penanda && dariPusatKeTujuan && !tujuan && (
+          <div className="text-[11px] text-slate-500 mt-1">Jika perusahaan tujuan sudah mengatur rekening penerima dari Pusat (maks. 2), hanya rekening itu yang tampil.</div>
+        )}
       </Field>
       {modeRincian && (
         <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 mb-3">

@@ -124,8 +124,8 @@ function jenisTransferKas(t, kasDari) {
   return null;
 }
 const LABEL_JENIS_TRANSFER = {
-  pengisian: "Pengisian Kas Kecil",
-  setoran: "Setoran dari Kas Kecil",
+  pengisian: "Pengisian Uang Cash",
+  setoran: "Setoran dari Uang Cash",
 };
 const WARNA_JENIS_TRANSFER = { pengisian: "emerald", setoran: "amber" };
 
@@ -193,14 +193,14 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
       )}
       <PageHeader
         title="Transaksi Kas"
-        description="Perpindahan uang ANTAR kas: isi kas kecil dari Bank (dengan bukti transfer) dan setoran kembali ke Bank. Pemasukan & pengeluaran biasa tetap dicatat di menu Transaksi."
+        description="Perpindahan uang ANTAR kas: isi uang cash dari saldo bank (dengan bukti transfer) dan setoran kembali ke saldo bank. Pemasukan & pengeluaran biasa tetap dicatat di menu Transaksi."
         sticky
         action={
           <button
             onClick={() => setFormBuka(true)}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
           >
-            <Plus size={14} /> Isi Kas Kecil
+            <Plus size={14} /> Isi Uang Cash
           </button>
         }
       />
@@ -209,7 +209,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
         {URUTAN_KAS.map((kk) => (
           <div key={kk} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-              <Landmark size={12} /> Saldo {LABEL_KAS[kk]}
+              <Landmark size={12} /> {LABEL_KAS[kk]}
             </div>
             <div className={`text-base font-semibold ${k.saldoKas[kk] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(k.saldoKas[kk])}</div>
           </div>
@@ -217,8 +217,8 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
-        <StatCard label="Pengisian Kas Kecil (periode)" value={fmtRp(totalPengisian)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label="Setoran dari Kas Kecil (periode)" value={fmtRp(totalSetoran)} accent="text-amber-400" icon={TrendingDown} iconColor="text-amber-500" />
+        <StatCard label="Pengisian Uang Cash (periode)" value={fmtRp(totalPengisian)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+        <StatCard label="Setoran dari Uang Cash (periode)" value={fmtRp(totalSetoran)} accent="text-amber-400" icon={TrendingDown} iconColor="text-amber-500" />
         <StatCard
           label="Belum ada bukti"
           value={`${tanpaBukti} transaksi`}
@@ -244,7 +244,7 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
 
       {(!adaBank || !adaKasKecil) && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
-          Untuk isi kas kecil, perlu minimal satu akun Bank dan satu akun Kas Kecil. Atur jenis akun di Keuangan &gt; Kas &gt; Akun Kas.
+          Untuk isi uang cash, perlu minimal satu akun Saldo Bank dan satu akun Uang Cash. Atur jenis akun di Keuangan &gt; Kas &gt; Akun Kas.
         </div>
       )}
 
@@ -425,17 +425,17 @@ function FormPengisianKas({ k, onClose, onSaved, showToast }) {
     });
 
   return (
-    <ModalShell title="Isi Kas Kecil" onClose={onClose}>
+    <ModalShell title="Isi Uang Cash" onClose={onClose}>
       <Field label="Tanggal">
         <InputTanggal className={inputClass} value={tanggal} onChange={setTanggal} />
       </Field>
-      <Field label="Dari (Bank)">
+      <Field label="Dari (Saldo Bank)">
         <select className={inputClass} value={sumber} onChange={(e) => setSumber(e.target.value)}>
           <option value="">Pilih akun sumber…</option>
           {opsi(sumberList)}
         </select>
       </Field>
-      <Field label="Ke (Kas Kecil)">
+      <Field label="Ke (Uang Cash)">
         <select className={inputClass} value={tujuan} onChange={(e) => setTujuan(e.target.value)}>
           <option value="">Pilih akun kas kecil…</option>
           {opsi(tujuanList)}

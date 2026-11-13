@@ -904,6 +904,106 @@ export async function renameMasterKode({ masterDataId, tipe, oldKode, newKode, n
 }
 
 
+// =========================================================
+// GANTI KODE REKENING / KATEGORI KEUANGAN
+// Transaksi Keuangan menyimpan kode rekening & kategori sebagai TEKS (bukan id),
+// jadi kalau kode di Master Data diganti begitu saja, transaksi lama jadi "yatim"
+// (kodenya tidak ketemu lagi). Fungsi di bawah mengganti kodenya di semua tempat
+// yang memakainya, baru terakhir baris Master Data-nya sendiri — supaya kalau ada
+// yang gagal di tengah jalan, tinggal simpan ulang (aman diulang: baris yang
+// sudah pindah ke kode baru tidak ikut diproses lagi).
+// =========================================================
+const encKode = (v) => encodeURIComponent(String(v));
+
+// Ganti isi satu kolom (kolom = kodeLama -> kodeBaru) pada semua baris yang cocok.
+// Mengembalikan jumlah baris yang berubah. Melempar Error kalau masih ada sisa baris
+// (mis. ditolak izin/RLS, yang tidak melempar error sendiri tapi hasilnya kosong).
+async function gantiKolomKode(tabel, kolom, kodeLama, kodeBaru, filterTambahan = "") {
+  const q = `${tabel}?${kolom}=eq.${encKode(kodeLama)}${filterTambahan}`;
+  let jumlah = 0;
+  for (let i = 0; i < 50; i++) {
+    const hasil = await sb(`${q}&select=id`, { method: "PATCH", body: JSON.stringify({ [kolom]: kodeBaru }) });
+    if (!Array.isArray(hasil) || hasil.length === 0) break;
+    jumlah += hasil.length;
+  }
+  const sisa = await sb(`${q}&select=id&limit=1`);
+  if (Array.isArray(sisa) && sisa.length > 0) {
+    throw new Error(
+      `Gagal memperbarui ${tabel}.${kolom} (kemungkinan akun ini tidak punya izin mengubahnya). Kode belum berubah sepenuhnya — coba lagi atau hubungi Super Appa.`
+    );
+  }
+  return jumlah;
+}
+
+// Pastikan kode baru belum dipakai di database (lintas perusahaan — master_data global).
+async function pastikanKodeBebas(tipeList, kodeBaru) {
+  const ada = await sb(`master_data?select=id,tipe&tipe=in.(${tipeList.join(",")})&kode=eq.${encKode(kodeBaru)}&limit=1`);
+  if (Array.isArray(ada) && ada.length > 0) {
+    throw new Error(`Kode "${kodeBaru}" sudah dipakai (mungkin oleh perusahaan lain). Pilih kode yang berbeda.`);
+  }
+}
+
+// Ganti kode REKENING dan rambatkan ke: transaksi (rekening & rekening tujuan), rekonsiliasi kas,
+// belanja habis pakai, penanda Bank/Kas Kecil, lokasi, entitas, Penggunaan Rekening, dan Saldo Awal.
+export async function renameRekeningKode({ masterDataId, oldKode, newKode, newLabel }) {
+  await pastikanKodeBebas(["rekening", "kas_grup", "rekening_lokasi", "rekening_entitas"], newKode);
+
+  let jumlahTransaksi = 0;
+  jumlahTransaksi += await gantiKolomKode("keuangan_transaksi", "rekening", oldKode, newKode);
+  jumlahTransaksi += await gantiKolomKode("keuangan_transaksi", "rekening_tujuan", oldKode, newKode);
+  await gantiKolomKode("rekonsiliasi_kas", "rekening", oldKode, newKode);
+  await gantiKolomKode("belanja_habis_pakai", "rekening", oldKode, newKode);
+
+  // Penanda yang kuncinya = kode rekening.
+  const pendamping =
+    (await sbAll(`master_data?select=id&tipe=in.(kas_grup,rekening_lokasi,rekening_entitas)&kode=eq.${encKode(oldKode)}`)) || [];
+  for (const m of pendamping) {
+    await sb(`master_data?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ kode: newKode }) });
+  }
+  // Pengaturan Penggunaan Rekening: label = kode rekening.
+  const peran = (await sbAll(`master_data?select=id&tipe=eq.rekening_peran&label=eq.${encKode(oldKode)}`)) || [];
+  for (const m of peran) {
+    await sb(`master_data?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ label: newKode }) });
+  }
+  // Saldo awal per bulan: kode = "YYYY-MM-<KODE_REKENING>".
+  const saldoAwal = (await sbAll("master_data?select=id,kode&tipe=eq.saldo_awal")) || [];
+  for (const m of saldoAwal) {
+    if (/^\d{4}-\d{2}-/.test(m.kode || "") && m.kode.slice(8) === oldKode) {
+      await sb(`master_data?id=eq.${m.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ kode: kodeSaldoAwal(m.kode.slice(0, 4), m.kode.slice(5, 7), newKode) }),
+      });
+    }
+  }
+
+  await sb(`master_data?id=eq.${masterDataId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ kode: newKode, label: newLabel }),
+  });
+  return { jumlahTransaksi };
+}
+
+// Ganti kode KATEGORI (tipe "kategori_masuk" / "kategori_keluar") dan rambatkan ke transaksi
+// dengan jenis yang sama + pengelompokan Kategori & Sub Kategori.
+export async function renameKategoriKode({ masterDataId, tipe, oldKode, newKode, newLabel }) {
+  const jenis = tipe === "kategori_masuk" ? "masuk" : "keluar";
+  const tipeKelompok = tipe === "kategori_masuk" ? "kelompok_masuk" : "kelompok_keluar";
+  await pastikanKodeBebas([tipe], newKode);
+
+  const jumlahTransaksi = await gantiKolomKode("keuangan_transaksi", "kategori", oldKode, newKode, `&tipe=eq.${jenis}`);
+
+  const kelompok = (await sbAll(`master_data?select=id&tipe=eq.${tipeKelompok}&kode=eq.${encKode(oldKode)}`)) || [];
+  for (const m of kelompok) {
+    await sb(`master_data?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ kode: newKode }) });
+  }
+
+  await sb(`master_data?id=eq.${masterDataId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ kode: newKode, label: newLabel }),
+  });
+  return { jumlahTransaksi };
+}
+
 export function labelFor(master, tipe, kode) {
   const found = (master[tipe] || []).find((m) => m.kode === kode);
   return found ? found.label : kode || "—";
@@ -2157,7 +2257,7 @@ export async function downloadFotos(fotos, opts = {}) {
 // =========================================================
 export const KAS_KECIL = "kecil";
 export const KAS_BANK = "bank";
-export const LABEL_KAS = { kecil: "Kas Kecil", bank: "Bank" };
+export const LABEL_KAS = { kecil: "Uang Cash", bank: "Saldo Bank" };
 // Urutan tampil: Bank, Kas Kecil
 export const URUTAN_KAS = [KAS_BANK, KAS_KECIL];
 

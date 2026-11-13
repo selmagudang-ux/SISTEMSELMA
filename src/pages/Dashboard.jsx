@@ -453,8 +453,8 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
       <div className="flex flex-wrap gap-1.5 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
         {[
           { key: "semua", label: "Semua Kas" },
-          { key: KAS_BANK, label: "Bank" },
-          { key: KAS_KECIL, label: "Kas Kecil" },
+          { key: KAS_BANK, label: LABEL_KAS[KAS_BANK] },
+          { key: KAS_KECIL, label: LABEL_KAS[KAS_KECIL] },
         ].map((t) => (
           <button
             key={t.key}
@@ -497,7 +497,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
             <Landmark size={17} />
           </div>
           <div className="text-base font-semibold text-slate-100">Ringkasan</div>
-          <div className="text-[11px] mt-1 text-slate-500">{`${kasTab === "semua" ? "Saldo kas" : `Saldo ${LABEL_KAS[kasTab]}`} ${fmtRp(totalSaldoKas)}`}</div>
+          <div className="text-[11px] mt-1 text-slate-500">{`${kasTab === "semua" ? "Saldo kas" : LABEL_KAS[kasTab]} ${fmtRp(totalSaldoKas)}`}</div>
         </button>
         <button
           type="button"
@@ -556,7 +556,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
       {panelAktif === "ringkasan" && (
       <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label={kasTab === "semua" ? "Saldo Kas Saat Ini" : `Saldo ${LABEL_KAS[kasTab]} Saat Ini`} value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
+        <StatCard label={kasTab === "semua" ? "Saldo Kas Saat Ini" : `${LABEL_KAS[kasTab]} Saat Ini`} value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
         <StatCard label={`Kas Masuk (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
         <StatCard label={`Kas Keluar (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
         <StatCard
@@ -569,7 +569,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         {kasTab === "semua" ? (
           <>
             <StatCard label="Saldo Bank" value={fmtRp(saldoKas[KAS_BANK])} icon={Landmark} accent={saldoKas[KAS_BANK] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
-            <StatCard label="Saldo Kas Kecil" value={fmtRp(saldoKas[KAS_KECIL])} icon={Landmark} accent={saldoKas[KAS_KECIL] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
+            <StatCard label="Uang Cash" value={fmtRp(saldoKas[KAS_KECIL])} icon={Landmark} accent={saldoKas[KAS_KECIL] >= 0 ? "text-slate-100" : "text-red-400"} iconColor="text-slate-400" />
           </>
         ) : (
           <>
@@ -625,7 +625,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
 
         <div className="rounded-xl border border-slate-800 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 flex items-baseline justify-between gap-3">
-            <span className="text-sm font-semibold">Pengisian Kas Kecil, {periodeLabel}</span>
+            <span className="text-sm font-semibold">Pengisian Uang Cash, {periodeLabel}</span>
             <span className="text-xs text-slate-400">Total <b className="text-slate-100">{fmtRp(totalPengisianKasKecil)}</b></span>
           </div>
           {pengisianKasKecil.length === 0 ? (
@@ -669,8 +669,8 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
               <thead>
                 <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800/60">
                   <th className="px-4 py-2 font-medium">Lokasi</th>
-                  <th className="px-2 py-2 font-medium text-right">Bank</th>
-                  <th className="px-2 py-2 font-medium text-right">Kas Kecil</th>
+                  <th className="px-2 py-2 font-medium text-right">Saldo Bank</th>
+                  <th className="px-2 py-2 font-medium text-right">Uang Cash</th>
                   <th className="px-4 py-2 font-medium text-right">Total</th>
                 </tr>
               </thead>
