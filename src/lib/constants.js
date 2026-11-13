@@ -952,13 +952,23 @@ export function allowedMenus(role, entitas, fiturMati = []) {
     // pengaturan itu yang dipakai (blok ini dilewati).
     menus = [...menus, ...MENU_GUDANG_HOLDING.filter((k) => !menus.includes(k))];
   }
+  // Admin Keuangan yang akunnya terikat ke entitas Holding memegang pembukuan Pusat, jadi dapat menu
+  // "Keuangan Pusat" (key "holding") secara bawaan. Kalau Super Appa sudah mengatur menu role ini di Hak Akses,
+  // pengaturan itu yang dipakai (tidak ditambah di sini).
+  if (!(ov && Array.isArray(ov.menus)) && role === "keuangan" && entitas && entitas === KODE_HOLDING_MENU && !menus.includes("holding")) {
+    menus = [...menus, "holding"];
+  }
   if (entitas && entitas !== "OPS" && !ROLE_LINTAS_ENTITAS.includes(role)) {
     // Dashboard PT sendiri (data dibatasi ke PT-nya di pages/Dashboard.jsx): hanya Super Admin.
     // "Perusahaan Grup" (lihat keuangan perusahaan lain di grup) tidak ada di MENU_PT_LAIN, jadi dulu
     // SELALU terpotong untuk akun PT (mis. Super Admin Alivia) walau sudah dicentang di Hak Akses.
     // Sekarang tetap muncul kalau Super Appa memang memberikannya lewat Hak Akses (override tersimpan).
     const diberiLewatHakAkses = (k) => k === "perusahaan" && !!ov && Array.isArray(ov.menus) && ov.menus.includes(k);
-    menus = menus.filter((k) => MENU_PT_LAIN.includes(k) || diberiLewatHakAkses(k) || (k === "dashboard" && role === "superadmin"));
+    // "Keuangan Pusat": tetap ada untuk akun yang terikat ke entitas Holding sendiri, atau kalau Super Appa
+    // memberikannya lewat Hak Akses. Akun PT biasa tetap tidak mendapatkannya.
+    const holdingBoleh = (k) =>
+      k === "holding" && (entitas === KODE_HOLDING_MENU || (!!ov && Array.isArray(ov.menus) && ov.menus.includes(k)));
+    menus = menus.filter((k) => MENU_PT_LAIN.includes(k) || diberiLewatHakAkses(k) || holdingBoleh(k) || (k === "dashboard" && role === "superadmin"));
   }
   if (role !== "superappa" && fiturMati.length) {
     const mati = new Set(fiturMati);
