@@ -800,6 +800,7 @@ export const ROLES = [
   { key: "marketplace", label: "Admin Marketplace" },
   { key: "grosir", label: "Admin Grosir" },
   { key: "keuangan", label: "Admin Keuangan" },
+  { key: "keuangan_pusat", label: "Admin Keuangan Pusat" },
   { key: "scan_resi", label: "Admin Scan Resi" },
   { key: "kasir", label: "Kasir" },
 ];
@@ -852,6 +853,10 @@ export const ROLE_MENUS = {
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
   // karena tidak didaftarkan di ROLE_SUBMENUS.
   keuangan: ["keuangan", "chat", "panduan"],
+  // Admin Keuangan Pusat: HANYA menu "Keuangan Pusat" (key "holding" = pembukuan Holding sendiri) + Chat & Panduan.
+  // Sub-menunya diatur di allowedSubMenusBawaan (tanpa "Modal & Penarikan Pemilik"); bisa diubah di Pengaturan > Hak Akses.
+  // Landing page login = menu pertama ("holding"). Tidak dapat Perusahaan Grup / Antar Entitas.
+  keuangan_pusat: ["holding", "chat", "panduan"],
   // Admin Scan Resi: HANYA Scan Resi & Urut Resi (tanpa Chat/Panduan). Landing page = menu pertama (scan-resi).
   scan_resi: ["scan-resi", "urut-resi"],
   // Kasir: bekerja di aplikasi kasir (/kasir), bukan di sidebar SELMA. Di SELMA hanya Chat & Panduan.
@@ -1097,6 +1102,8 @@ export function allowedSubMenusBawaan(role, menuKey) {
   // Keuangan Holding (pembukuan Holding sendiri): Pemilik & Super Appa semua sub.
   if (menuKey === "holding") {
     if (role === "pemegang_saham" || role === "superadmin") return [];
+    // Admin Keuangan Pusat: Transaksi, Kas, Laporan, Pengaturan. "Modal & Penarikan Pemilik" khusus Pemilik / Super Appa.
+    if (role === "keuangan_pusat") return ["transaksi", "kas", "laporan", "pengaturan"];
     return null;
   }
   // Keuangan SELMA (OPS) tidak punya Antar Entitas / Konsolidasi — itu di menu Holding.

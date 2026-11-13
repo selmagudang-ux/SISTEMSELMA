@@ -833,6 +833,7 @@ const ROLE_SECTIONS = {
   marketplace: ["marketplace"],
   grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi"],
   keuangan: ["keuangan"],
+  keuangan_pusat: ["holding"],
   scan_resi: ["scan-resi", "urut-resi"],
 };
 
