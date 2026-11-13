@@ -20,6 +20,9 @@ const WARNA_PENANDA = { modal: "sky", dividen: "emerald", setoran_penghasilan: "
 const nilai = (t) => Number(t.jumlah) || 0;
 
 // Transfer yang melintasi dua entitas -> { asal, tujuan } (kode entitas), selain itu null.
+// Role lintas-entitas (boleh melihat semua PT). Harus sama dengan ROLE_LINTAS_ENTITAS di lib/constants.js.
+const ROLE_LINTAS_ENTITAS_LIHAT = ["superappa", "owner", "pemegang_saham"];
+
 function lintasEntitas(t, k) {
   if (t.tipe !== "transfer") return null;
   const asal = k.entDari(t.rekening);
@@ -647,6 +650,13 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
     const x = lintasEntitas(t, k);
     return !!x && bolehTransferAntarEntitas(role, x.asal, x.tujuan, kodeHolding, entitasAkun);
   };
+  // Akun terikat ke satu PT (mis. Super Admin Alivia) hanya boleh MELIHAT transfer yang melibatkan
+  // PT-nya sendiri (mis. Alivia -> Holding). Transfer PT lain (mis. Selma -> Holding) disembunyikan.
+  const kodeTerikat = entitasAkun && entitasAkun !== kodeHolding && !ROLE_LINTAS_ENTITAS_LIHAT.includes(role) ? entitasAkun : "";
+  const melibatkanPT = (t) => {
+    const x = lintasEntitas(t, k);
+    return !!x && (!kodeTerikat || x.asal === kodeTerikat || x.tujuan === kodeTerikat);
+  };
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniLokal());
   const [filterPenanda, setFilterPenanda] = useState("semua");
@@ -666,16 +676,16 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   const daftar = useMemo(
     () =>
       semua
-        .filter((t) => lintasEntitas(t, k))
+        .filter((t) => melibatkanPT(t))
         .filter((t) => (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai))
         .filter((t) => filterPenanda === "semua" || (filterPenanda === "kosong" ? !t.penanda : t.penanda === filterPenanda))
         .sort((a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [semua, dari, sampai, filterPenanda, master.rekening_entitas, master.entitas]
+    [semua, dari, sampai, filterPenanda, master.rekening_entitas, master.entitas, kodeTerikat]
   );
   const total = (p) => daftar.filter((t) => t.penanda === p).reduce((a, t) => a + nilai(t), 0);
   const belumDitandai = daftar.filter((t) => !t.penanda).length;
-  const posisi = useMemo(() => posisiPinjaman(semua, k), [semua, master.rekening_entitas, master.entitas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const posisi = useMemo(() => posisiPinjaman(kodeTerikat ? semua.filter((t) => melibatkanPT(t)) : semua, k), [semua, master.rekening_entitas, master.entitas, kodeTerikat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setPenanda = async (t, penanda) => {
     setMenyimpanId(t.id);
@@ -730,7 +740,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
       <div className="rounded-xl border border-slate-800 p-3 bg-slate-900/50 mb-4">
         <div className="text-xs text-slate-300 mb-2">Posisi pinjaman antar entitas (dari awal, belum lunas)</div>
         <div className="flex flex-wrap gap-x-6 gap-y-1.5">
-          {k.entitasList.map((e) => {
+          {k.entitasList.filter((e) => !kodeTerikat || e.kode === kodeTerikat).map((e) => {
             const p = posisi[e.kode] || 0;
             return (
               <div key={e.kode} className="text-sm">
