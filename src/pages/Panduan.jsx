@@ -196,6 +196,79 @@ const SECTIONS = [
     ],
   },
   {
+    key: "keuangan-transfer-uang",
+    label: "Keuangan: Transfer Uang Antar Entitas",
+    icon: Landmark,
+    ringkasan: "Modal, pinjaman, setoran pemasukan, dan pembayaran pinjaman antar perusahaan grup.",
+    poin: [
+      "Buka Perusahaan Grup > Antar Entitas > Transfer Antar Entitas. Pastikan menu dan entitas sudah benar sebelum menyimpan, karena tiap entitas punya pembukuan sendiri.",
+      "Jenis transfer mengikuti arah. Holding ke perusahaan: Pemberian Modal (bukan pemasukan perusahaan penerima) atau Pinjaman (utang penerima). Perusahaan ke Holding: Setoran Pemasukan (pemasukan Holding, bukan beban pengirim) atau Pembayaran Pinjaman. Antar dua perusahaan: Pinjaman atau Pembayaran Pinjaman.",
+      "Langkah: isi tanggal, pilih rekening sumber dan tujuan (saldo tampil di pilihan), pilih jenis, isi jumlah dan keterangan, lampirkan foto bukti (boleh menyusul), lalu simpan. Tombol aktif hanya jika entitas berbeda, jumlah lebih dari nol, dan saldo sumber cukup.",
+      "Setoran Pemasukan: centang pemasukan cabang yang ikut disetor (mis. Grosir Transfer/Cash). Jumlah otomatis sama dengan total centang, dan pemasukan yang sudah pernah disetor tidak muncul lagi. Pindahkan dulu uang Petty Cash ke bank karena setoran keluar dari satu rekening bank.",
+      "Transfer beda entitas yang dibuat lewat Isi Kas Kecil boleh dibiarkan Belum ditandai, lalu diberi penanda dari daftar Antar Entitas. Jenis lama Dividen dan Biaya Antar Perusahaan tidak bisa dipilih lagi, tetapi transaksi lamanya tetap terbaca.",
+      "Hak mencatat bawaan: Pemilik untuk arah Holding ke perusahaan, Super Admin untuk arah perusahaan ke Holding, antar dua perusahaan hanya Super Appa. Super Appa bisa mengubahnya di Pengaturan > Hak Akses.",
+      "Posisi pinjaman tiap perusahaan dihitung dari seluruh riwayat (positif = piutang, negatif = utang). Di Konsolidasi, transfer antar entitas dieliminasi supaya tidak terhitung dua kali.",
+    ],
+  },
+  {
+    key: "transfer-barang",
+    label: "Transfer Barang Antar Entitas",
+    icon: Truck,
+    ringkasan: "Kirim stok gudang ke entitas lain dengan surat jalan dan kode terima.",
+    poin: [
+      "Transfer barang tidak membuat transaksi uang. Kalau barangnya harus dibayar, catat pembayarannya sendiri sebagai transfer uang antar entitas.",
+      "Pengirim: Stok > Transfer Antar Entitas > Buat Transfer. Pilih perusahaan tujuan, cari SKU (hanya yang stoknya ada), isi qty tidak melebihi stok, lalu Kirim Barang. Stok pengirim langsung berkurang, status menjadi Dalam perjalanan, dan HPP per pcs dicatat saat itu.",
+      "Cetak Surat Jalan dan Label Paket dari kartu transfer. Surat jalan memuat kode terima 6 karakter dan barcode-nya; kode itu tidak tampil di aplikasi.",
+      "Penerima: Terima Barang, lalu scan barcode atau ketik kode terima dari surat jalan. Hitung barang fisik dan isi qty diterima untuk setiap SKU (isi 0 kalau tidak datang). Jika ada selisih, catatan alasan wajib diisi. Setelah konfirmasi, stok penerima bertambah; SKU dan kode master data yang belum ada dibuat otomatis.",
+      "Barang tidak sesuai atau tidak pernah tiba: pakai Tolak dan isi alasannya.",
+      "Pengirim mengembalikan stok lewat tombol Kembalikan ke stok untuk transfer yang ditolak atau berselisih. Selama masih Dalam perjalanan, transfer bisa Dibatalkan dan stok kembali penuh.",
+      "Hapus dan kembalikan hanya untuk pengirim yang punya hak. Jika sudah diterima, stok penerima ditarik lagi; gagal bila stok penerima sudah tidak cukup, jadi minta penerima mengembalikan barangnya dulu. Qty di Peta Rak tidak diubah otomatis saat stok dikembalikan atau transfer dihapus, jadi cek Peta Rak setelahnya.",
+      "Entitas yang butuh barang bisa mengajukan Permintaan Stok. Pemberi yang menyetujuinya masuk ke form transfer dengan qty terisi, lalu alurnya sama.",
+    ],
+  },
+  {
+    key: "keuangan-transaksi-lain",
+    label: "Keuangan: Pemasukan, Pengeluaran & Kas Kecil",
+    icon: Landmark,
+    ringkasan: "Mana yang otomatis masuk Keuangan, mana yang dicatat manual, dan cara Isi Kas Kecil.",
+    poin: [
+      "Aturan utama: kalau sebuah menu sudah mencatat ke Keuangan otomatis, jangan dicatat ulang manual. Cek daftar Transaksi dulu supaya tidak terhitung dua kali.",
+      "Otomatis masuk sebagai pemasukan: Toko Offline (Cash ke Petty Cash, Cashless ke rekening BCA tetap) dan Grosir yang Langsung Bayar. Pesanan Grosir Draf dilunasi nanti lewat Catat Pembayaran.",
+      "Marketplace per platform belum masuk Keuangan; baru tercatat saat saldo dicairkan. Reseller Toko selalu menjadi hutang dan ditagih tiap Kamis. Reseller Cekout dibayar sesuai nominal yang cair: kelebihan menjadi deposit, kekurangan tetap piutang.",
+      "Otomatis masuk sebagai pengeluaran: Belanja Habis Pakai saat ditandai dibayar dan rekening dipilih. Gaji disusun Draft, Diserahkan, lalu Diterima; menghapus gaji ikut menghapus transaksi Keuangan terkaitnya.",
+      "Pengeluaran lain manual: Keuangan > Transaksi > Tambah Transaksi. Pilih jenis, tanggal, rekening, kategori, jumlah, dan keterangan. Isi beberapa baris keterangan untuk membuat beberapa transaksi sekaligus dengan nominal sama (saldo dicek terhadap totalnya). Sistem menolak bila saldo rekening kurang.",
+      "Salah catat diperbaiki dengan Edit atau Hapus lalu catat ulang, bukan dengan transaksi pengimbang.",
+      "Isi Kas Kecil: Keuangan > Transaksi > Transfer Antar Kas > Isi Kas Kecil. Pilih rekening Bank sebagai sumber dan Kas Kecil sebagai tujuan, isi jumlah, lampirkan foto bukti (jika kosong ditandai Belum ada bukti dan bisa dilampirkan dari daftar), lalu simpan. Arah sebaliknya tercatat sebagai Setoran dari Kas Kecil. Transfer antar kas bukan pemasukan atau pengeluaran, jadi tidak mengubah laba.",
+    ],
+  },
+  {
+    key: "penarikan-pemilik",
+    label: "Keuangan Holding: Penarikan Pemilik",
+    icon: Landmark,
+    ringkasan: "Setoran modal, prive/dividen, pinjaman pemilik, dan gaji pemilik.",
+    poin: [
+      "Dicatat Pemilik di Keuangan Holding > Penarikan Pemilik. Semua jenis menggerakkan saldo kas Holding, tetapi hanya Gaji Pemilik yang menjadi beban di laba rugi.",
+      "Setoran Modal Pemilik (kas masuk), Prive/Dividen (kas keluar), Pinjaman ke Pemilik (kas keluar, menjadi piutang), dan Pelunasan Pinjaman Pemilik (kas masuk) tidak masuk laba rugi. Gaji Pemilik (kas keluar) adalah beban biasa dan wajib memilih kategori.",
+      "Prive/Dividen bernama Prive sebelum tanggal PT berdiri dan Dividen sesudahnya; tanggalnya diatur di pengaturan Holding.",
+      "Sisa pinjaman pemilik dihitung dari seluruh riwayat: tampil sebagai Pemilik masih berutang, Lunas, atau kelebihan pengembalian. Transaksi keluar ditolak bila saldo rekening kurang.",
+      "Salah catat: hapus lalu catat ulang. Angka laba rugi tidak ikut berubah kecuali untuk Gaji Pemilik.",
+    ],
+  },
+  {
+    key: "keuangan-rekonsiliasi",
+    label: "Keuangan: Rekonsiliasi & Penutupan Periode",
+    icon: BarChart3,
+    ringkasan: "Cocokkan saldo dengan uang fisik/mutasi bank, laporan, dan rutinitas harian sampai bulanan.",
+    poin: [
+      "Rekonsiliasi: Keuangan > Kas > Rekonsiliasi. Isi saldo fisik tiap akun yang dicek (kas kecil = uang fisik, bank = saldo mutasi). Sistem menampilkan selisih Sesuai, Lebih, atau Kurang; isi catatan penyebabnya.",
+      "Telusuri dulu penyebab selisih (transaksi belum dicatat, salah rekening, salah nominal) dan perbaiki transaksinya. Hanya selisih yang tidak terjelaskan yang dicatat sebagai penyesuaian: pilih kategori pemasukan untuk Lebih atau pengeluaran untuk Kurang. Sistem meminta konfirmasi lalu mencatat Penyesuaian rekonsiliasi kas bertanggal hari ini.",
+      "Laporan: Buku Kas (riwayat dan saldo berjalan, bisa diunduh CSV), Laporan Keuangan (ringkasan, arus kas, rincian pengeluaran, PDF bulanan dan tahunan, ringkasan narasi untuk WhatsApp), dan Konsolidasi (gabungan semua entitas).",
+      "Saran rutinitas harian: input Toko Offline, catat pengeluaran yang belum otomatis, lampirkan bukti yang masih kosong, terima atau tolak transfer barang yang Dalam perjalanan.",
+      "Saran rutinitas mingguan: tagih Reseller Toko tiap Kamis, cairkan saldo marketplace, tindak lanjuti transfer barang berselisih, rekonsiliasi kas kecil.",
+      "Saran rutinitas bulanan: rekonsiliasi semua rekening bank, beri penanda transfer antar entitas yang Belum ditandai, cek posisi pinjaman antar entitas dan sisa pinjaman pemilik, setor pemasukan cabang ke Holding sesuai kebijakan grup, buat laporan bulanan PDF tiap entitas lalu periksa Konsolidasi, dan cek Peta Rak untuk SKU yang ikut transfer barang.",
+    ],
+  },
+  {
     key: "absensi",
     label: "Absensi",
     icon: CalendarClock,
@@ -233,11 +306,11 @@ const SECTIONS = [
 // dapat SEMUA bagian (lihat visibleSections di bawah), superadmin ditambah
 // bagian "Pengaturan" yang tidak diberikan ke owner biasa.
 const ROLE_SECTIONS = {
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "transfer-barang"],
   pemotretan: ["foto"],
   marketplace: ["marketplace"],
   grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi"],
-  keuangan: ["keuangan"],
+  keuangan: ["keuangan", "keuangan-transfer-uang", "keuangan-transaksi-lain", "penarikan-pemilik", "keuangan-rekonsiliasi"],
   scan_resi: ["scan-resi", "urut-resi"],
 };
 
