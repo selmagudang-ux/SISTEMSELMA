@@ -637,7 +637,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
 // =========================================================
 // ANTAR ENTITAS
 // =========================================================
-export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal, role }) {
+export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal, role, entitasAkun }) {
   const k = useDataKas(master, keuanganTransaksi);
   // Hak per arah transfer (lihat ARAH_ANTAR_ENTITAS di lib/constants.js):
   // Pemilik = Holding -> perusahaan, Super Admin = perusahaan -> Holding, Super Appa = keduanya.
@@ -645,7 +645,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   const bisaTambah = bisaTransferAntarEntitas(role);
   const bolehKelola = (t) => {
     const x = lintasEntitas(t, k);
-    return !!x && bolehTransferAntarEntitas(role, x.asal, x.tujuan, kodeHolding);
+    return !!x && bolehTransferAntarEntitas(role, x.asal, x.tujuan, kodeHolding, entitasAkun);
   };
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniLokal());
@@ -823,6 +823,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         <FormAntarEntitas
           k={k}
           role={role}
+          entitasAkun={entitasAkun}
           kodeHolding={kodeHolding}
           onClose={() => setFormBuka(false)}
           showToast={showToast}
@@ -836,7 +837,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
   );
 }
 
-function FormAntarEntitas({ k, role, kodeHolding, onClose, onSaved, showToast }) {
+function FormAntarEntitas({ k, role, entitasAkun, kodeHolding, onClose, onSaved, showToast }) {
   const [tanggal, setTanggal] = useState(hariIniLokal());
   const [penanda, setPenanda] = useState("");
   const [sumber, setSumber] = useState("");
@@ -850,7 +851,7 @@ function FormAntarEntitas({ k, role, kodeHolding, onClose, onSaved, showToast })
   const saldoSumber = sumber ? k.saldoMap.get(sumber) ?? 0 : null;
   const saldoKurang = sumber && jumlahNum > 0 && jumlahNum > (saldoSumber ?? 0);
   const sama = sumber && tujuan && k.entDari(sumber) === k.entDari(tujuan);
-  const arahDilarang = !!(sumber && tujuan && !sama && !bolehTransferAntarEntitas(role, k.entDari(sumber), k.entDari(tujuan), kodeHolding));
+  const arahDilarang = !!(sumber && tujuan && !sama && !bolehTransferAntarEntitas(role, k.entDari(sumber), k.entDari(tujuan), kodeHolding, entitasAkun));
   const valid = tanggal && penanda && sumber && tujuan && jumlahNum > 0 && !saldoKurang && !sama && !arahDilarang;
 
   // Entitas yang masih mungkin dipilih sebagai sumber / tujuan untuk role ini
@@ -858,8 +859,8 @@ function FormAntarEntitas({ k, role, kodeHolding, onClose, onSaved, showToast })
   const entCocok = (kode, peran) =>
     k.entitasList.some((e) =>
       peran === "sumber"
-        ? bolehTransferAntarEntitas(role, kode, e.kode, kodeHolding)
-        : bolehTransferAntarEntitas(role, e.kode, kode, kodeHolding)
+        ? bolehTransferAntarEntitas(role, kode, e.kode, kodeHolding, entitasAkun)
+        : bolehTransferAntarEntitas(role, e.kode, kode, kodeHolding, entitasAkun)
     );
 
   const opsi = (kecualiKode, peran) =>

@@ -874,8 +874,13 @@ export const ARAH_ANTAR_ENTITAS = {
 
 // Boleh tidaknya role ini mencatat/mengubah transfer dengan entitas asal & tujuan tertentu.
 // kodeHolding = kode entitas Holding (mis. "HOLD").
-export function bolehTransferAntarEntitas(role, entAsal, entTujuan, kodeHolding) {
+// entitasAkun = PT tempat akun terikat. Akun terikat PT (bukan lintas-entitas, bukan akun Holding) hanya
+// boleh mengurus transfer yang MELIBATKAN PT-nya sendiri (mis. Super Admin Alivia: transfer Alivia -> Holding).
+export function bolehTransferAntarEntitas(role, entAsal, entTujuan, kodeHolding, entitasAkun) {
   if (!kodeHolding || !entAsal || !entTujuan || entAsal === entTujuan) return false;
+  if (entitasAkun && entitasAkun !== kodeHolding && !ROLE_LINTAS_ENTITAS.includes(role)) {
+    if (![entAsal, entTujuan].filter((e) => e !== kodeHolding).includes(entitasAkun)) return false;
+  }
   if (entAsal === kodeHolding) return bisa(role, "holding.transfer_dari_holding");
   if (entTujuan === kodeHolding) return bisa(role, "holding.transfer_ke_holding");
   return bisa(role, "holding.transfer_antar_anak"); // dua perusahaan non-Holding
