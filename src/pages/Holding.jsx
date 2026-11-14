@@ -962,7 +962,8 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
 
   // Rincian sumber setoran: pemasukan cabang yang ikut disetor. Daftar HANYA memuat pemasukan yang
   // tercatat di rekening yang dipilih pada "Dari rekening" (cocok per kode rekening, bukan per entitas).
-  // Pemasukan yang sudah pernah disetor tidak muncul lagi.
+  // Pemasukan yang sudah pernah disetor tidak muncul lagi (dari rincian setoran sebelumnya, atau
+  // sudah ditandai kolom sudah_disetor — dipakai untuk "mengnolkan" riwayat lama sekali jalan).
   const [pilih, setPilih] = useState(() => new Set());
   const [dariT, setDariT] = useState(awalBulanIni());
   const [sampaiT, setSampaiT] = useState(hariIniLokal());
@@ -980,7 +981,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
         : (semua || [])
             .filter(
               (t) =>
-                t.tipe === "masuk" && !bukanLabaRugi(t) && t.rekening === sumber && !sudahDisetor.has(String(t.id)) &&
+                t.tipe === "masuk" && !bukanLabaRugi(t) && t.rekening === sumber && !t.sudah_disetor && !sudahDisetor.has(String(t.id)) &&
                 (!dariT || t.tanggal >= dariT) && (!sampaiT || t.tanggal <= sampaiT)
             )
             .sort((a, b) => ((b.tanggal || "") + (b.created_at || "")).localeCompare((a.tanggal || "") + (a.created_at || ""))),
