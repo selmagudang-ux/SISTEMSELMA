@@ -85,8 +85,11 @@ export function buatKunci() {
 // Simpan transaksi lewat fungsi database kasir_simpan_transaksi (satu transaksi
 // atomik: stok, rak, riwayat stok, keuangan). Angka final dihitung ulang & diperiksa
 // di database; kalau tidak cocok, seluruh transaksi dibatalkan.
-export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, keuangan, catatan, kunci }) {
+// sumber: "toko" (Barang Toko, bawaan) | "master" (Master Barang). Ikut tersimpan di payload supaya
+// transaksi yang antri offline dikirim ke fungsi database yang benar.
+export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, keuangan, catatan, kunci, sumber = "toko" }) {
   return {
+    sumber,
     entitas: entitasSesi(),
     kunci,
     kasir_id: String(session?.id ?? ""),
@@ -115,7 +118,8 @@ export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, ke
 // Kirim payload yang sudah jadi. Dipakai jalur online (di bawah) DAN pengiriman ulang antrian
 // offline (kasirOffline.js) — keduanya membawa `kunci` yang sama, jadi tidak pernah tersimpan dobel.
 export function kirimPayload(payload, { timeoutMs } = {}) {
-  return sb("rpc/kasir_simpan_transaksi", { method: "POST", body: JSON.stringify({ p: payload }), ...(timeoutMs ? { timeoutMs } : {}) });
+  const fn = payload?.sumber === "master" ? "kasir_simpan_transaksi_master" : "kasir_simpan_transaksi";
+  return sb(`rpc/${fn}`, { method: "POST", body: JSON.stringify({ p: payload }), ...(timeoutMs ? { timeoutMs } : {}) });
 }
 
 export async function simpanTransaksiKasir(args, opsi = {}) {
@@ -135,8 +139,10 @@ export function pesanErrorKasir(err, konteks) {
     case "HARGA_BERUBAH":
       return { pesan: `Harga ${a} berubah menjadi ${rp(b)}. Keranjang sudah disesuaikan — cek total lalu tekan Bayar lagi.`, perluMuatUlang: true };
     case "SKU_TIDAK_ADA":
-      if (konteks === "koreksi") return { pesan: `Barang ${a} sudah tidak ada di Master Barang Toko, jadi stoknya tidak bisa dikembalikan.`, perluMuatUlang: false };
+      if (konteks === "koreksi") return { pesan: `Barang ${a} sudah tidak ada di data stok, jadi stoknya tidak bisa dikembalikan.`, perluMuatUlang: false };
       return { pesan: `${a} sudah tidak bisa dijual. Hapus dari keranjang.`, perluMuatUlang: true };
+    case "ITEM_DUPLIKAT":
+      return { pesan: "Ada barang ganda di keranjang. Gabungkan jadi satu baris lalu coba lagi.", perluMuatUlang: true };
     case "SKU_NONAKTIF":
       return { pesan: `${a} sudah tidak bisa dijual. Hapus dari keranjang.`, perluMuatUlang: true };
     case "REKENING_KATEGORI_KOSONG":

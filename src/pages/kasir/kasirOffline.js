@@ -172,8 +172,8 @@ export async function hapusCacheEnt(nama) {
 // ---------------------------------------------------------
 // Klasifikasi galat
 // ---------------------------------------------------------
-// Kode penolakan bisnis dari fungsi database kasir_simpan_transaksi.
-const KODE_BISNIS = /(STOK_KURANG|HARGA_BERUBAH|SKU_TIDAK_ADA|SKU_NONAKTIF|REKENING_KATEGORI_KOSONG|PEMBAYARAN_TIDAK_SAMA|SHIFT_BELUM_BUKA|SHIFT_TIDAK_AKTIF|SHIFT_SUDAH_TUTUP)/;
+// Kode penolakan bisnis dari fungsi database kasir_simpan_transaksi / kasir_simpan_transaksi_master.
+const KODE_BISNIS = /(STOK_KURANG|HARGA_BERUBAH|SKU_TIDAK_ADA|SKU_NONAKTIF|REKENING_KATEGORI_KOSONG|PEMBAYARAN_TIDAK_SAMA|SHIFT_BELUM_BUKA|SHIFT_TIDAK_AKTIF|SHIFT_SUDAH_TUTUP|ITEM_DUPLIKAT)/;
 export const kodeBisnis = (err) => String(err?.message || err || "").match(KODE_BISNIS)?.[1] || null;
 
 // true = masalahnya koneksi/server tidak terjangkau (bukan penolakan aturan). Aman diulang karena
@@ -303,10 +303,11 @@ export async function hapusAntrian(kunci) {
 
 // Jumlah per SKU yang sudah terjual di perangkat ini tapi belum tercatat di server — dikurangkan
 // dari stok yang tampil supaya barang yang sama tidak terjual melebihi stok saat offline.
-export async function qtyDiAntrian() {
+export async function qtyDiAntrian(sumber = "toko") {
   const peta = new Map();
   try {
     for (const e of await idbAll(S_ANTRIAN)) {
+      if ((e.payload?.sumber || "toko") !== sumber) continue; // kode toko & SKU Master Barang tidak boleh tercampur
       for (const it of e.payload?.items || []) peta.set(it.sku, (peta.get(it.sku) || 0) + (Number(it.qty) || 0));
     }
   } catch {

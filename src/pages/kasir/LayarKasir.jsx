@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload } from "lucide-react";
 import { sbAll, fmtRp } from "../../lib/api";
+import { kasirModeMaster } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
 import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
@@ -25,7 +26,7 @@ import {
 // KASIR — LAYAR KASIR INTI (fase 2)
 // Cari/scan SKU -> keranjang -> diskon -> total.
 // Barang & harga jual = Master Barang TOKO (master_toko: harga_jual, stok toko), terpisah
-// dari Master Barang gudang. Stok dibatasi sesuai stok toko yang tercatat. Pembayaran & potong stok (fase 3): ModalBayar.jsx
+// dari Master Barang gudang. (Role dengan hak akses "kasir.dari_master" memakai mode Master Barang: lihat KOLOM_MASTER.) Stok dibatasi sesuai stok toko yang tercatat. Pembayaran & potong stok (fase 3): ModalBayar.jsx
 // + kasirApi.js, disimpan lewat fungsi database kasir_simpan_transaksi.
 // Scanner USB/Bluetooth bekerja seperti keyboard: ketik kode + Enter di kolom cari.
 // =========================================================
@@ -57,6 +58,28 @@ const dariToko = (r) => ({
   skuGudang: r.sku_gudang,
   grosir: r.harga_grosir,
 });
+// MODE MASTER BARANG (hak akses "kasir.dari_master"): barang = sku_master (katalog bersama), harga = kolom ecer,
+// stok = sku_stok PT ini (sb/sbAll menyamarkannya jadi kolom `stok`, lihat lib/api.js). Bentuknya sudah sama dengan
+// bentuk yang dipakai layar ini, jadi cukup dipilih kolomnya. Disimpan lewat kasir_simpan_transaksi_master.
+const KOLOM_MASTER = "id,sku,model,warna,ukuran,kategori,barcode_supplier,hpp,ecer,grosir,stok,nonaktif";
+// Harga jual mode ini = harga GROSIR Master Barang (kolom grosir), disimpan di field `ecer` supaya seluruh layar
+// tidak perlu diubah. Foto Master Barang disimpan per-barang di tabel items (foto terbaru per SKU), sama seperti
+// halaman SKU & Harga. Foto ikut disimpan di cache offline bersama datanya.
+async function muatBarangMaster() {
+  const [rows, items] = await Promise.all([
+    sbAll(`sku_master?select=${KOLOM_MASTER}&order=sku`),
+    sbAll("items?select=sku,foto_url,created_at,tanggal&foto_url=not.is.null").catch(() => []), // foto gagal dimuat: kasir tetap jalan tanpa foto
+  ]);
+  const terbaru = new Map();
+  for (const i of items || []) {
+    if (!i.sku || !i.foto_url) continue;
+    const t = new Date(i.created_at || i.tanggal || 0).getTime() || 0;
+    const cur = terbaru.get(i.sku);
+    if (!cur || t > cur.t) terbaru.set(i.sku, { t, url: i.foto_url });
+  }
+  return (rows || []).map((r) => ({ ...r, foto_url: terbaru.get(r.sku)?.url || null }));
+}
+const dariMaster = (r) => ({ ...r, ecer: r.grosir, grosir: 0, foto: r.foto_url || null, skuGudang: r.sku });
 const MAKS_HASIL = 40;
 const tglPendekJam = (ms) => new Date(ms).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -145,7 +168,10 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
 }
 
 // versiData: angka yang dinaikkan induk (mis. setelah Barang Toko ditutup) supaya daftar barang dimuat ulang.
-export default function LayarKasir({ session, versiData = 0 }) {
+// pilihMaster: hanya dipakai Super Appa (tombol pilih mode di header KasirApp); role lain ikut hak akses kasir.dari_master.
+export default function LayarKasir({ session, versiData = 0, pilihMaster = false }) {
+  const modeMaster = kasirModeMaster(session?.role, pilihMaster);
+  const kunciCacheBarang = modeMaster ? "master_barang" : "master_toko";
   const [skuList, setSkuList] = useState([]);
   // Map(sku -> promo yang sedang berjalan). Gagal dimuat (mis. tabel belum dibuat) = tanpa promo, kasir tetap jalan.
   const [promoMap, setPromoMap] = useState(() => new Map());
@@ -191,15 +217,16 @@ export default function LayarKasir({ session, versiData = 0 }) {
   // tidak terjual melebihi stok saat offline.
   const terapkan = useCallback(
     async (rowsToko, rowsPromo, dataPaket) => {
-      const antri = await qtyDiAntrian();
+      const antri = await qtyDiAntrian(modeMaster ? "master" : "toko");
       const rows = (rowsToko || [])
-        .map(dariToko)
+        .map(modeMaster ? dariMaster : dariToko)
         .map((r) => (antri.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - antri.get(r.sku)) } : r));
       setSkuList(rows.filter((s) => !s.nonaktif));
       // Promo paket (diskon) dijadikan baris promo per kategori dan digabung dengan promo lama.
       if (dataPaket) paketRef.current = { paket: dataPaket.paket || [], master: new Map(dataPaket.master || []) };
       const kategoriSemua = [...new Map(rows.filter((r) => r.kategori && !r.nonaktif).map((r) => [normKat(r.kategori), String(r.kategori).trim()])).values()];
-      const rowsGab = rowsPromo ? [...rowsPromo, ...paketKeBarisPromo(paketRef.current.paket, kategoriSemua)] : null;
+      // Harga grosir sudah harga jual, jadi promo apa pun (termasuk paket & grosir bertingkat) dimatikan.
+      const rowsGab = modeMaster ? [] : rowsPromo ? [...rowsPromo, ...paketKeBarisPromo(paketRef.current.paket, kategoriSemua)] : null;
       // Kalau promo gagal dimuat, pakai promo terakhir yang berhasil dimuat (jangan hilang mendadak).
       const peta = rowsGab ? petaPromoAktif(rowsGab, new Map(rows.map((s) => [s.sku, { harga: Number(s.ecer) || 0, kategori: s.kategori }]))) : promoRef.current;
       promoRef.current = peta;
@@ -213,14 +240,14 @@ export default function LayarKasir({ session, versiData = 0 }) {
         if (g > 0) pg.set(r.sku, g);
       });
       setGrosirMap(pg);
-      setDaftarPaket(paketRef.current.paket);
+      setDaftarPaket(modeMaster ? [] : paketRef.current.paket);
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows, peta);
       if (catatan.length) {
         setItems(baru);
         tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`);
       }
     },
-    [tampilToast]
+    [tampilToast, modeMaster]
   );
 
   // diam = true: muat ulang di latar belakang (tanpa spinner / pesan galat), dipakai sinkronisasi otomatis.
@@ -232,7 +259,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
     }
     try {
       if (diam && statusSekarang().offline) {
-        const c = await bacaCacheEnt("master_toko");
+        const c = await bacaCacheEnt(kunciCacheBarang);
         if (c) {
           const p = await bacaCacheEnt("promo");
           const g = await bacaCacheEnt("paket");
@@ -242,21 +269,21 @@ export default function LayarKasir({ session, versiData = 0 }) {
         }
       }
       const [rowsToko, rowsPromo, dataPaket] = await Promise.all([
-        muatBarangToko(),
+        modeMaster ? muatBarangMaster() : muatBarangToko(),
         muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
         muatDataPaket().catch(() => null), // null = promo paket gagal dimuat, jangan ganggu penjualan
       ]);
       terakhirMuat.current = Date.now();
       tandaiOnline();
       setDariCache(null);
-      simpanCacheEnt("master_toko", rowsToko || []);
+      simpanCacheEnt(kunciCacheBarang, rowsToko || []);
       if (rowsPromo) simpanCacheEnt("promo", rowsPromo);
       if (dataPaket) simpanCacheEnt("paket", dataPaket);
       await terapkan(rowsToko, rowsPromo, dataPaket);
     } catch (e) {
       if (adalahGalatJaringan(e)) {
         tandaiOffline();
-        const c = await bacaCacheEnt("master_toko");
+        const c = await bacaCacheEnt(kunciCacheBarang);
         if (c) {
           const p = await bacaCacheEnt("promo");
           const g = await bacaCacheEnt("paket");
@@ -271,7 +298,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [terapkan]);
+  }, [terapkan, modeMaster, kunciCacheBarang]);
   useEffect(() => {
     muat();
   }, [muat, versiData]);
@@ -363,7 +390,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
     (s) => {
       const harga = Number(s.ecer) || 0;
       const stok = Number(s.stok) || 0;
-      if (harga <= 0) return { ok: false, pesan: `${s.sku}: harga ecer belum diisi di Master Barang` };
+      if (harga <= 0) return { ok: false, pesan: `${s.sku}: harga ${modeMaster ? "grosir" : "ecer"} belum diisi di Master Barang` };
       if (stok <= 0) return { ok: false, pesan: `${s.sku}: stok habis` };
       const ada = items.find((it) => it.sku === s.sku);
       if (ada && ada.qty + 1 > stok) return { ok: false, pesan: `${s.sku}: stok hanya ${stok}` };
@@ -377,7 +404,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
       );
       return { ok: true, pesan: `${namaTampil(s)} ditambahkan` };
     },
-    [items, promoMap]
+    [items, promoMap, modeMaster]
   );
 
   const tambahDariKode = (kode) => {
@@ -580,8 +607,10 @@ export default function LayarKasir({ session, versiData = 0 }) {
           cariKosong ? (
             <div className="mt-12 text-center text-sm text-slate-400">
               <Tag size={28} className="mx-auto mb-2 text-slate-600" />
-              Belum ada barang toko aktif.
-              <div className="text-xs text-slate-500 mt-1">Tambahkan lewat Barang Toko atau pindahkan dari Master Barang.</div>
+              {modeMaster ? "Belum ada barang di Master Barang PT ini." : "Belum ada barang toko aktif."}
+              <div className="text-xs text-slate-500 mt-1">
+                {modeMaster ? "Barang muncul setelah SKU-nya punya stok di PT ini." : "Tambahkan lewat Barang Toko atau pindahkan dari Master Barang."}
+              </div>
             </div>
           ) : (
             <div className="mt-12 text-center text-sm text-slate-400">
@@ -894,6 +923,7 @@ export default function LayarKasir({ session, versiData = 0 }) {
           diskonTransaksi={ringkas.diskonTransaksi}
           session={session}
           kunci={kunci}
+          sumber={modeMaster ? "master" : "toko"}
           onSukses={setelahBayar}
           onMuatUlang={muat}
           onClose={() => setBayarBuka(false)}

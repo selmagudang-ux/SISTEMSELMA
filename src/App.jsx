@@ -45,6 +45,7 @@ const Penjualanmarketplace = lazy(() => import("./pages/Penjualanmarketplace"));
 const Reseller = lazy(() => import("./pages/Reseller"));
 const ScanResi = lazy(() => import("./pages/ScanResi"));
 const UrutResi = lazy(() => import("./pages/UrutResi"));
+const RekapPerpindahan = lazy(() => import("./pages/RekapPerpindahan"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Penggajian = lazy(() => import("./pages/Penggajian"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
@@ -1013,6 +1014,9 @@ function MainApp({ session, onLogout }) {
       // menampilkan info tambahan "Iklan Marketplace" periode berjalan
       // (murni tampilan, tidak ikut dihitung ke saldo/rekening Keuangan).
       if (menu === "keuangan" || menu === "holding" || menu === "perusahaan") return runLoaders([loadCore, loadKeuangan, loadMarketplace], force);
+      // Rekap Perpindahan membaca keuangan_transaksi (Uang: Antar Entitas & Transaksi periode terpilih),
+      // jadi datanya harus ditarik juga; kalau tidak, hasilnya kosong kecuali menu Keuangan sudah pernah dibuka.
+      if (menu === "rekap-perpindahan") return runLoaders([loadCore, loadKeuangan], force);
       // Toko Offline nyatat langsung ke keuangan_transaksi (lihat pages/TokoOffline.jsx)
       // jadi butuh master (rekening/kategori) + riwayat transaksi juga, sama seperti "keuangan".
       if (menu === "toko-offline") return runLoaders([loadCore, loadKeuangan], force);
@@ -1533,6 +1537,9 @@ function MainApp({ session, onLogout }) {
                   showToast={showToast}
                   setModal={setModal}
                 />
+              )}
+              {nav.menu === "rekap-perpindahan" && (
+                <RekapPerpindahan keuanganTransaksi={keuanganTransaksi} master={master} session={session} showToast={showToast} />
               )}
               {nav.menu === "penggajian" && (
                 <Penggajian session={session} master={master} showToast={showToast} />

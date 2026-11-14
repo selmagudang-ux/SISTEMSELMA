@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Store, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent } from "lucide-react";
+import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
@@ -56,6 +56,24 @@ export default function KasirApp() {
   const [errShift, setErrShift] = useState("");
   const [tutupBuka, setTutupBuka] = useState(false);
   const [antrianBuka, setAntrianBuka] = useState(false);
+  // Super Appa memilih sumber barang kasir: Barang Toko (bawaan) atau Master Barang (harga grosir). Diingat di perangkat.
+  const [pilihMaster, setPilihMaster] = useState(() => {
+    try {
+      return localStorage.getItem("kasir_mode_master") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const gantiMode = () => {
+    if (!window.confirm(`Pindah ke mode ${pilihMaster ? "Barang Toko" : "Master Barang (harga grosir)"}? Keranjang yang sedang berisi akan dikosongkan.`)) return;
+    try {
+      sessionStorage.removeItem(`kasir_keranjang_${session?.id ?? "x"}`);
+      localStorage.setItem("kasir_mode_master", pilihMaster ? "0" : "1");
+    } catch {
+      /* penyimpanan diblokir — mode tetap berganti untuk sesi ini */
+    }
+    setPilihMaster((v) => !v);
+  };
 
   // Mode offline: pengirim ulang transaksi antrian berjalan selama halaman kasir terbuka.
   useEffect(() => {
@@ -238,6 +256,15 @@ export default function KasirApp() {
               <Download size={13} /> Unduh Aplikasi
             </a>
           )}
+          {session.role === "superappa" && (
+            <button
+              onClick={gantiMode}
+              title="Ganti sumber barang kasir"
+              className="flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-slate-800 px-3 py-2 rounded-xl border border-amber-500/40 transition-colors"
+            >
+              <Repeat size={13} /> Mode: {pilihMaster ? "Master Barang" : "Barang Toko"}
+            </button>
+          )}
           {bisa(session.role, "kasir.buka_laci") && (
             <button
               onClick={() => bukaLaciManual({ kasir: session.nama || session.username })}
@@ -301,7 +328,7 @@ export default function KasirApp() {
           <LayarBukaShift session={session} onBuka={(s) => setShift(s)} onKeluar={keluar} />
         </>
       ) : (
-        <LayarKasir session={sesiKasir} versiData={versiData} />
+        <LayarKasir key={pilihMaster ? "m" : "t"} session={sesiKasir} versiData={versiData} pilihMaster={pilihMaster} />
       )}
       {riwayatBuka && <RiwayatStruk session={sesiKasir} shift={shift || null} onClose={() => setRiwayatBuka(false)} />}
       {tutupBuka && shift && (

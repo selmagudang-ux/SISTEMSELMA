@@ -88,8 +88,18 @@ async function dalamPotongan(ids, ukuran, kerja, serentak = 4) {
 let cacheBarangToko = { waktu: 0, janji: null };
 function petaBarangToko() {
   if (cacheBarangToko.janji && Date.now() - cacheBarangToko.waktu < 5 * 60 * 1000) return cacheBarangToko.janji;
-  const janji = sbAll("master_toko?select=kode,sku_gudang,hpp")
-    .then((rows) => new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, hpp: num(r.hpp) }])))
+  const janji = Promise.all([
+    sbAll("master_toko?select=kode,sku_gudang,hpp"),
+    // Transaksi kasir mode Master Barang menyimpan SKU Master Barang langsung -> HPP-nya dari sku_master.
+    sbAll("sku_master?select=sku,hpp").catch(() => []),
+  ])
+    .then(([rows, master]) => {
+      const m = new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, hpp: num(r.hpp) }]));
+      (master || []).forEach((r) => {
+        if (!m.has(r.sku)) m.set(r.sku, { sku_gudang: null, hpp: num(r.hpp) });
+      });
+      return m;
+    })
     .catch(() => {
       cacheBarangToko = { waktu: 0, janji: null }; // jangan simpan kegagalan; laporan tetap tampil dengan kode toko
       return new Map();

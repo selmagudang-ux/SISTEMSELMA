@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
-  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle, ScanLine, ListOrdered,
+  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle, ScanLine, ListOrdered, ArrowRightLeft,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -475,6 +475,9 @@ export const NAV = [
   // login (lihat pages/Panduan.jsx) — jadi satu menu ini isinya beda-beda
   // tergantung siapa yang buka, bukan cuma soal boleh/tidak boleh akses.
   // Chat pribadi antar user (teks + foto, hapus otomatis 3 hari) — untuk SEMUA role.
+  // Rekap harian/mingguan/bulanan perpindahan barang & uang antar tempat (Gudang<->Toko,
+  // Antar Entitas, antar kas). Halaman: pages/RekapPerpindahan.jsx.
+  { key: "rekap-perpindahan", label: "REKAP PERPINDAHAN", icon: ArrowRightLeft },
   { key: "chat", label: "CHAT", icon: MessageCircle },
   { key: "panduan", label: "PANDUAN PENGGUNAAN", icon: BookOpen },
   { key: "pengaturan", label: "PENGATURAN", icon: Settings },
@@ -648,6 +651,15 @@ export function bolehKasir(role) {
   if (o && typeof o.kasir === "boolean") return o.kasir;
   return ROLE_BOLEH_KASIR.includes(role);
 }
+// Kasir mode "Master Barang"? true = layar kasir menjual dari sku_master (harga ecer, stok PT) dan
+// transaksinya disimpan lewat kasir_simpan_transaksi_master. Super Appa SELALU memakai mode Barang Toko
+// Super Appa memilih sendiri lewat tombol mode di header kasir (pilihSuperappa); bawaannya Barang Toko.
+// (bisa() mengembalikan true untuk Super Appa di semua izin, jadi tidak boleh dipakai langsung untuk dia.)
+export function kasirModeMaster(role, pilihSuperappa = false) {
+  if (!role) return false;
+  if (role === "superappa") return !!pilihSuperappa;
+  return bisa(role, "kasir.dari_master");
+}
 // Role ini hanya boleh melihat data (read-only)? Dipakai lib/api.js untuk memblokir POST/PATCH/DELETE.
 export function roleHanyaLihat(role) {
   if (role === "superappa") return false;
@@ -719,6 +731,7 @@ export const GRUP_AKSI = [
       { key: "stok.minta_entitas", label: "Meminta barang ke entitas lain (Permintaan Stok)", bawaan: dari("gudang", "superadmin") },
       { key: "stok.hapus_transfer_entitas", label: "Hapus transfer antar entitas (stok dibalikkan ke semula)", bawaan: dari("superadmin") },
       { key: "restock.setujui", label: "Menyetujui / menolak pengajuan restock", bawaan: dari("owner", "superadmin") },
+      { key: "stok.hapus_mutasi_toko", label: "Hapus riwayat mutasi Gudang ↔ Toko di Rekap Perpindahan (hanya catatan riwayat, stok tidak berubah)", bawaan: tak },
     ],
   },
   {
@@ -745,6 +758,7 @@ export const GRUP_AKSI = [
     aksi: [
       { key: "kasir.lihat_semua", label: "Melihat transaksi & shift SEMUA kasir (bukan hanya miliknya)", bawaan: semuaKecuali("kasir") },
       { key: "kasir.void", label: "Membatalkan seluruh transaksi (void)", bawaan: tak },
+      { key: "kasir.dari_master", label: "Kasir mengambil barang dari Master Barang (harga ecer & stok Master Barang, bukan Barang Toko)", bawaan: tak },
       { key: "kasir.barang_toko", label: "Tombol Barang Toko di aplikasi kasir", bawaan: tak },
       { key: "kasir.promo", label: "Tombol Promo di aplikasi kasir", bawaan: tak },
       { key: "kasir.buka_laci", label: "Tombol Buka Laci di aplikasi kasir", bawaan: tak },
@@ -827,7 +841,7 @@ export const ROLE_MENUS = {
   superappa: [...ALL_MENU_KEYS, "barang-masuk"],
   // Pemilik: Dashboard Monitoring SELMA (semua tab, read-only) + menu Holding (Perusahaan Grup + Keuangan Holding; read-only, KECUALI mencatat transfer Antar Entitas
   // dari Holding KE perusahaan — lihat ARAH_ANTAR_ENTITAS), plus Chat & Panduan.
-  owner: ["dashboard", "perusahaan", "holding", "chat", "panduan"],
+  owner: ["dashboard", "perusahaan", "holding", "rekap-perpindahan", "chat", "panduan"],
   // Gudang: menu operasionalnya sendiri (Barang Datang, Alur Barang, SKU &
   // Harga, Stok, Rak, Cetak Label) — default penuh karena tidak didaftarkan
   // di ROLE_SUBMENUS. "Stok Menipis" (ajukan restock) sekarang jadi sub-menu
@@ -852,7 +866,7 @@ export const ROLE_MENUS = {
   // sama seperti pola role operasional lain — tidak dapat "dashboard" (langsung
   // ke halaman Keuangan sebagai landing page), dan default penuh ke kedua sub-nya
   // karena tidak didaftarkan di ROLE_SUBMENUS.
-  keuangan: ["keuangan", "chat", "panduan"],
+  keuangan: ["keuangan", "rekap-perpindahan", "chat", "panduan"],
   // Admin Keuangan Pusat: HANYA menu "Keuangan Pusat" (key "holding" = pembukuan Holding sendiri) + Chat & Panduan.
   // Sub-menunya diatur di allowedSubMenusBawaan (tanpa "Modal & Penarikan Pemilik"); bisa diubah di Pengaturan > Hak Akses.
   // Landing page login = menu pertama ("holding"). Tidak dapat Perusahaan Grup / Antar Entitas.
@@ -936,6 +950,8 @@ const MENU_PT_LAIN = [
   // Penggajian juga dipisah per PT (kolom entitas di tabel penggajian, lihat penggajian_per_pt.sql);
   // gaji hanya boleh keluar dari rekening milik PT-nya sendiri.
   "absensi", "penggajian",
+  // Rekap Perpindahan: datanya (toko_stok_mutasi, transfer_barang, keuangan) sudah per PT.
+  "rekap-perpindahan",
   // Pengaturan per PT (rumus harga, pembersih data PT-nya sendiri) — Kelola User tetap hanya untuk Selma/Super Appa.
   "pengaturan",
   // Grup PENJUALAN (di sidebar PT selain Selma, grup "Store Selma" tampil sebagai "Store <nama PT>").
