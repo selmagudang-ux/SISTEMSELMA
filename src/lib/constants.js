@@ -613,7 +613,7 @@ export function withParentBadges(nav, rawBadges) {
 // Role yang boleh membuka aplikasi kasir (/kasir). SEMENTARA hanya superappa (tahap uji coba).
 // Untuk membuka ke kasir lagi nanti, tambahkan "kasir" (dan "superadmin") ke daftar ini.
 // Dibaca oleh pages/kasir/KasirApp.jsx (penjaga login) dan panel "Hak Akses" di Pengaturan.
-export const ROLE_BOLEH_KASIR = ["superappa", "kasir"];
+export const ROLE_BOLEH_KASIR = ["superappa", "kasir", "kasir_grosir"];
 
 // Role yang bawaannya hanya boleh MELIHAT data (tidak bisa tambah/ubah/hapus). Dipakai lib/api.js.
 export const ROLE_HANYA_LIHAT_BAWAAN = ["owner", "pemegang_saham"];
@@ -756,9 +756,9 @@ export const GRUP_AKSI = [
   {
     grup: "Kasir (/kasir)",
     aksi: [
-      { key: "kasir.lihat_semua", label: "Melihat transaksi & shift SEMUA kasir (bukan hanya miliknya)", bawaan: semuaKecuali("kasir") },
+      { key: "kasir.lihat_semua", label: "Melihat transaksi & shift SEMUA kasir (bukan hanya miliknya)", bawaan: semuaKecuali("kasir", "kasir_grosir") },
       { key: "kasir.void", label: "Membatalkan seluruh transaksi (void)", bawaan: tak },
-      { key: "kasir.dari_master", label: "Kasir mengambil barang dari Master Barang (harga ecer & stok Master Barang, bukan Barang Toko)", bawaan: tak },
+      { key: "kasir.dari_master", label: "Kasir mengambil barang dari Master Barang (harga GROSIR & stok Master Barang, bukan Barang Toko)", bawaan: dari("kasir_grosir") },
       { key: "kasir.barang_toko", label: "Tombol Barang Toko di aplikasi kasir", bawaan: tak },
       { key: "kasir.promo", label: "Tombol Promo di aplikasi kasir", bawaan: tak },
       { key: "kasir.buka_laci", label: "Tombol Buka Laci di aplikasi kasir", bawaan: tak },
@@ -817,6 +817,8 @@ export const ROLES = [
   { key: "keuangan_pusat", label: "Admin Keuangan Pusat" },
   { key: "scan_resi", label: "Admin Scan Resi" },
   { key: "kasir", label: "Kasir" },
+  // Kasir Grosir: sama seperti Kasir, tapi bawaannya menjual dari Master Barang dengan harga grosir (kasir.dari_master).
+  { key: "kasir_grosir", label: "Kasir Grosir" },
 ];
 
 // Daftar key menu (dari NAV di atas) yang boleh diakses tiap role.
@@ -875,6 +877,7 @@ export const ROLE_MENUS = {
   scan_resi: ["scan-resi", "urut-resi"],
   // Kasir: bekerja di aplikasi kasir (/kasir), bukan di sidebar SELMA. Di SELMA hanya Chat & Panduan.
   kasir: ["chat", "panduan"],
+  kasir_grosir: ["chat", "panduan"],
   // Pemegang Saham: hanya melihat tab Konsolidasi di menu Holding (read-only,
   // lihat ROLE_READONLY di lib/api.js & allowedSubMenus di bawah).
   pemegang_saham: ["perusahaan"],
