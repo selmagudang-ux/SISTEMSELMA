@@ -651,13 +651,19 @@ export function bolehKasir(role) {
   if (o && typeof o.kasir === "boolean") return o.kasir;
   return ROLE_BOLEH_KASIR.includes(role);
 }
-// Kasir mode "Master Barang"? true = layar kasir menjual dari sku_master (harga ecer, stok PT) dan
-// transaksinya disimpan lewat kasir_simpan_transaksi_master. Super Appa SELALU memakai mode Barang Toko
-// Super Appa memilih sendiri lewat tombol mode di header kasir (pilihSuperappa); bawaannya Barang Toko.
-// (bisa() mengembalikan true untuk Super Appa di semua izin, jadi tidak boleh dipakai langsung untuk dia.)
-export function kasirModeMaster(role, pilihSuperappa = false) {
+// Kasir mode "Master Barang"? true = layar kasir menjual dari sku_master (harga GROSIR, stok PT) dan
+// transaksinya disimpan lewat kasir_simpan_transaksi_master.
+// Mode bawaan = izin "kasir.dari_master". Super Appa, dan role dengan izin "kasir.pilih_mode", bisa memilih sendiri lewat
+// tombol Mode di header (pilih = true/false; null = belum memilih -> mode bawaan, untuk Super Appa = Barang Toko).
+// (bisa() mengembalikan true untuk Super Appa di semua izin, jadi dia tidak boleh dibaca lewat bisa().)
+export function kasirBisaPilihMode(role) {
   if (!role) return false;
-  if (role === "superappa") return !!pilihSuperappa;
+  return role === "superappa" || bisa(role, "kasir.pilih_mode");
+}
+export function kasirModeMaster(role, pilih = null) {
+  if (!role) return false;
+  if (role === "superappa") return pilih === true;
+  if (typeof pilih === "boolean" && bisa(role, "kasir.pilih_mode")) return pilih;
   return bisa(role, "kasir.dari_master");
 }
 // Mode "keranjang HP": hanya mengisi keranjang & Simpan. Super Appa tidak pernah masuk mode ini.
@@ -764,6 +770,7 @@ export const GRUP_AKSI = [
       { key: "kasir.lihat_semua", label: "Melihat transaksi & shift SEMUA kasir (bukan hanya miliknya)", bawaan: semuaKecuali("kasir", "kasir_grosir", "pramuniaga", "pramuniaga_grosir") },
       { key: "kasir.void", label: "Membatalkan seluruh transaksi (void)", bawaan: tak },
       { key: "kasir.hanya_keranjang", label: "Kasir HP: hanya mengisi keranjang lalu Simpan (tanpa buka shift & tanpa tombol Bayar)", bawaan: dari("pramuniaga", "pramuniaga_grosir") },
+      { key: "kasir.pilih_mode", label: "Kasir boleh berpindah sendiri antara Barang Toko dan Master Barang (tombol Mode di header)", bawaan: tak },
       { key: "kasir.dari_master", label: "Kasir mengambil barang dari Master Barang (harga GROSIR & stok Master Barang, bukan Barang Toko)", bawaan: dari("kasir_grosir", "pramuniaga_grosir") },
       { key: "kasir.barang_toko", label: "Tombol Barang Toko di aplikasi kasir", bawaan: tak },
       { key: "kasir.promo", label: "Tombol Promo di aplikasi kasir", bawaan: tak },

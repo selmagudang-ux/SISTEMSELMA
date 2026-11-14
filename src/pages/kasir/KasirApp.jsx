@@ -3,7 +3,7 @@ import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Ar
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
-import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang } from "../../lib/constants";
+import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang, kasirBisaPilihMode, kasirModeMaster } from "../../lib/constants";
 import { PasangAplikasi, adalahHp } from "./kasirPasang";
 import { sb } from "../../lib/api";
 import LayarKasir from "./LayarKasir";
@@ -57,23 +57,38 @@ export default function KasirApp() {
   const [errShift, setErrShift] = useState("");
   const [tutupBuka, setTutupBuka] = useState(false);
   const [antrianBuka, setAntrianBuka] = useState(false);
-  // Super Appa memilih sumber barang kasir: Barang Toko (bawaan) atau Master Barang (harga grosir). Diingat di perangkat.
+  // Pilihan sumber barang kasir (Barang Toko / Master Barang) untuk Super Appa & role dengan izin "kasir.pilih_mode".
+  // Diingat per akun di perangkat ini. null = belum memilih -> mode bawaan role.
+  const kunciMode = `kasir_mode_master_${session?.id ?? "x"}`;
   const [pilihMaster, setPilihMaster] = useState(() => {
     try {
-      return localStorage.getItem("kasir_mode_master") === "1";
+      const v = localStorage.getItem(`kasir_mode_master_${getSession()?.id ?? "x"}`);
+      return v === "1" ? true : v === "0" ? false : null;
     } catch {
-      return false;
+      return null;
     }
   });
+  // Ganti akun di perangkat yang sama -> pakai pilihan mode milik akun itu.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(kunciMode);
+      setPilihMaster(v === "1" ? true : v === "0" ? false : null);
+    } catch {
+      setPilihMaster(null);
+    }
+  }, [kunciMode]);
+  const modeMasterSekarang = kasirModeMaster(session?.role, pilihMaster);
+  const bisaGantiMode = !!session && aksesSiap && kasirBisaPilihMode(session.role);
   const gantiMode = () => {
-    if (!window.confirm(`Pindah ke mode ${pilihMaster ? "Barang Toko" : "Master Barang (harga grosir)"}? Keranjang yang sedang berisi akan dikosongkan.`)) return;
+    if (!window.confirm(`Pindah ke mode ${modeMasterSekarang ? "Barang Toko" : "Master Barang (harga grosir)"}? Keranjang yang sedang berisi akan dikosongkan.`)) return;
+    const baru = !modeMasterSekarang;
     try {
       sessionStorage.removeItem(`kasir_keranjang_${session?.id ?? "x"}`);
-      localStorage.setItem("kasir_mode_master", pilihMaster ? "0" : "1");
+      localStorage.setItem(kunciMode, baru ? "1" : "0");
     } catch {
       /* penyimpanan diblokir — mode tetap berganti untuk sesi ini */
     }
-    setPilihMaster((v) => !v);
+    setPilihMaster(baru);
   };
 
   // Mode offline: pengirim ulang transaksi antrian berjalan selama halaman kasir terbuka.
@@ -260,13 +275,13 @@ export default function KasirApp() {
               <Download size={13} /> Unduh Aplikasi
             </a>
           )}
-          {session.role === "superappa" && (
+          {bisaGantiMode && (
             <button
               onClick={gantiMode}
               title="Ganti sumber barang kasir"
               className="flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-slate-800 px-3 py-2 rounded-xl border border-amber-500/40 transition-colors"
             >
-              <Repeat size={13} /> Mode: {pilihMaster ? "Master Barang" : "Barang Toko"}
+              <Repeat size={13} /> Mode: {modeMasterSekarang ? "Master Barang" : "Barang Toko"}
             </button>
           )}
           {!hanyaKeranjang && bisa(session.role, "kasir.buka_laci") && (
@@ -336,7 +351,7 @@ export default function KasirApp() {
           <LayarBukaShift session={session} onBuka={(s) => setShift(s)} onKeluar={keluar} />
         </>
       ) : (
-        <LayarKasir key={pilihMaster ? "m" : "t"} session={sesiKasir} versiData={versiData} pilihMaster={pilihMaster} />
+        <LayarKasir key={modeMasterSekarang ? "m" : "t"} session={sesiKasir} versiData={versiData} pilihMaster={pilihMaster} />
       )}
       {riwayatBuka && <RiwayatStruk session={sesiKasir} shift={shift || null} onClose={() => setRiwayatBuka(false)} />}
       {tutupBuka && shift && (

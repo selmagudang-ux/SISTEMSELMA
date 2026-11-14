@@ -168,8 +168,8 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
 }
 
 // versiData: angka yang dinaikkan induk (mis. setelah Barang Toko ditutup) supaya daftar barang dimuat ulang.
-// pilihMaster: hanya dipakai Super Appa (tombol pilih mode di header KasirApp); role lain ikut hak akses kasir.dari_master.
-export default function LayarKasir({ session, versiData = 0, pilihMaster = false, hanyaKeranjang = false }) {
+// pilihMaster: pilihan dari tombol Mode di header KasirApp (Super Appa / role dengan izin kasir.pilih_mode); selain itu mode ikut izin kasir.dari_master.
+export default function LayarKasir({ session, versiData = 0, pilihMaster = null, hanyaKeranjang = false }) {
   const modeMaster = kasirModeMaster(session?.role, pilihMaster);
   const kunciCacheBarang = modeMaster ? "master_barang" : "master_toko";
   const [skuList, setSkuList] = useState([]);
