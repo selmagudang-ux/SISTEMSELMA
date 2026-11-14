@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload } from "lucide-react";
 import { sbAll, fmtRp } from "../../lib/api";
 import { kasirModeMaster } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
@@ -188,6 +188,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
   const [kunci, setKunci] = useState(() => bacaSimpan(session).kunci);
   const [bayarBuka, setBayarBuka] = useState(false);
   const [daftarTersimpanBuka, setDaftarTersimpanBuka] = useState(false);
+  // Di HP keranjang berupa lembar yang naik dari bawah (dibuka lewat bar bawah); di layar lebar tetap kolom kanan.
+  const [keranjangHp, setKeranjangHp] = useState(false);
   const [menyimpan, setMenyimpan] = useState(false);
   const [bukaDiskon, setBukaDiskon] = useState(() => new Set());
   const [toast, setToast] = useState(null);
@@ -547,12 +549,15 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
     : items;
   const ringkas = hitungKeranjang(itemsH, diskonTrx);
   const totalDiskonItem = itemsH.reduce((a, it) => a + hitungItem(it).diskon, 0);
+  useEffect(() => {
+    if (!items.length) setKeranjangHp(false);
+  }, [items.length]);
   const qtyDiKeranjang = useMemo(() => new Map(items.map((it) => [it.sku, it.qty])), [items]);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
       {/* ===== KIRI: cari & pilih barang ===== */}
-      <section className="lg:flex-1 p-3 lg:p-5 lg:overflow-y-auto">
+      <section className={`lg:flex-1 p-3 lg:p-5 lg:overflow-y-auto ${items.length ? "pb-24" : ""} lg:pb-5`}>
         <div className="flex items-center gap-2.5">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -626,7 +631,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
                 {cariKosong ? `${skuList.length} barang aktif` : `${daftarTampil.length} barang`}
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5">
               {daftarTampil.map((s) => {
                 const stok = Number(s.stok) || 0;
                 const harga = Number(s.ecer) || 0;
@@ -639,14 +644,14 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
                     key={s.id ?? s.sku}
                     onClick={() => pilihHasil(s)}
                     disabled={tidakBisa}
-                    className={`relative text-left rounded-2xl p-3.5 border transition-all active:scale-[0.99] disabled:opacity-45 disabled:cursor-not-allowed ${
+                    className={`relative text-left rounded-2xl p-2.5 sm:p-3.5 border transition-all active:scale-[0.99] disabled:opacity-45 disabled:cursor-not-allowed ${
                       diKeranjang > 0
                         ? "bg-amber-500/[0.06] border-amber-500/50"
                         : "bg-slate-900/70 border-slate-800 hover:border-slate-600 hover:bg-slate-900"
                     }`}
                   >
                     {diKeranjang > 0 && (
-                      <span className="absolute top-3 right-3 text-[11px] font-bold bg-amber-500 text-slate-950 rounded-full px-2 py-0.5 tabular-nums">
+                      <span className="absolute top-2 right-2 sm:top-3 sm:right-3 text-[11px] font-bold bg-amber-500 text-slate-950 rounded-full px-2 py-0.5 tabular-nums">
                         × {diKeranjang}
                       </span>
                     )}
@@ -661,18 +666,18 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
                           src={s.foto}
                           alt=""
                           loading="lazy"
-                          className="w-14 h-14 rounded-xl object-cover bg-slate-800 flex-shrink-0"
+                          className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover bg-slate-800 flex-shrink-0"
                           onError={(e) => { e.currentTarget.style.display = "none"; }}
                         />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className={`text-sm font-semibold text-slate-100 leading-snug line-clamp-2 min-h-[2.5rem] ${diKeranjang > 0 ? "pr-12" : ""}`}>
+                        <div className={`text-sm font-semibold text-slate-100 leading-snug line-clamp-2 sm:min-h-[2.5rem] ${diKeranjang > 0 ? "pr-12" : ""}`}>
                           {namaTampil(s)}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-1 font-mono">{s.sku}</div>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-dashed border-slate-800">
+                    <div className="flex items-center justify-between mt-1.5 sm:mt-3 sm:pt-3 sm:border-t border-dashed border-slate-800">
                       {promo && harga > 0 ? (
                         <span className="flex flex-col leading-tight">
                           <span className="text-[11px] text-slate-500 line-through tabular-nums">{fmtRp(harga)}</span>
@@ -707,10 +712,13 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
       </section>
 
       {/* ===== KANAN: keranjang (seperti struk) ===== */}
-      <aside className="lg:w-[420px] lg:border-l border-t lg:border-t-0 border-slate-800 bg-slate-900/50 flex flex-col lg:overflow-hidden">
+      <aside className={`${keranjangHp ? "fixed inset-0 z-40 flex bg-slate-900" : "hidden"} lg:static lg:z-auto lg:flex lg:bg-slate-900/50 lg:w-[420px] lg:border-l border-slate-800 flex-col lg:overflow-hidden`}>
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <ShoppingCart size={17} className="text-amber-500" />
+            <button onClick={() => setKeranjangHp(false)} className="lg:hidden -ml-1.5 p-1.5 text-slate-400 hover:text-slate-200" title="Kembali ke daftar barang" aria-label="Tutup keranjang">
+              <ChevronDown size={20} />
+            </button>
             <span className="text-[15px] font-semibold">Keranjang</span>
             {ringkas.jumlahQty > 0 && (
               <span className="text-xs font-semibold bg-slate-800 text-slate-300 rounded-full px-2 py-0.5 tabular-nums">{ringkas.jumlahQty} pcs</span>
@@ -759,7 +767,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
             })}
           </div>
         )}
-        <div className="flex-1 lg:overflow-y-auto px-3 py-3 space-y-2 min-h-[120px]">
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 min-h-[120px]">
           {items.length === 0 ? (
             <div className="text-center py-12">
               <ShoppingCart size={30} className="mx-auto mb-2 text-slate-700" />
@@ -916,6 +924,22 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
           )}
         </div>
       </aside>
+
+      {items.length > 0 && !keranjangHp && (
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 p-3 bg-slate-950/95 backdrop-blur border-t border-slate-800" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+          <button
+            onClick={() => setKeranjangHp(true)}
+            className="w-full flex items-center justify-between gap-3 bg-amber-500 active:bg-amber-400 text-slate-950 font-bold rounded-2xl px-4 py-3.5"
+          >
+            <span className="flex items-center gap-2">
+              <ShoppingCart size={18} />
+              <span className="tabular-nums">{ringkas.jumlahQty} pcs</span>
+            </span>
+            <span className="tabular-nums text-lg">{fmtRp(ringkas.total)}</span>
+            <span className="text-sm">Lihat ›</span>
+          </button>
+        </div>
+      )}
 
       {toast && (
         <div
