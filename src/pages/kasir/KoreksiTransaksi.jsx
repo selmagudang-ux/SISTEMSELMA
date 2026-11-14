@@ -494,6 +494,15 @@ export function ModalHapus({ row, shiftSudahTutup, onSelesai, onClose }) {
             </div>
           )}
 
+          {row.grosir_pesanan_id && (
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Transaksi ini sudah masuk Pesanan Grosir. Menghapusnya di sini TIDAK menghapus pesanan di menu Grosir dan catatan Keuangan "Grosir Transfer/Cash"-nya. Hapus pesanan itu juga lewat menu Penjualan &gt; Grosir.
+              </span>
+            </div>
+          )}
+
           <div>
             <label className="text-sm font-medium text-slate-300 mb-1.5 block">Ketik HAPUS untuk melanjutkan</label>
             <input
