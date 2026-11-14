@@ -765,14 +765,17 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
               <div className="text-xs text-slate-500 mt-1">Scan barcode atau pilih barang di sebelah kiri.</div>
             </div>
           ) : (
-            itemsH.map((it) => {
+            itemsH.map((it, idx) => {
               const h = hitungItem(it);
               const terbuka = bukaDiskon.has(it.sku) || h.diskonManual > 0;
               return (
                 <div key={it.sku} className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-100 leading-snug">{it.nama}</div>
+                      <div className="text-sm font-semibold text-slate-100 leading-snug">
+                        <span className="text-amber-500 tabular-nums mr-1.5">{idx + 1}.</span>
+                        {it.nama}
+                      </div>
                       <div className="text-[11px] text-slate-500 font-mono mt-0.5">
                         {it.sku} · <span className="tabular-nums">{fmtRp(it.harga)}</span>
                       </div>
