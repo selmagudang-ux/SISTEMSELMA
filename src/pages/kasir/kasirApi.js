@@ -331,15 +331,21 @@ async function tampilkanSkuGudang(items) {
   const kode = [...new Set(items.map((it) => it[SKEMA.item.sku]).filter(Boolean))];
   if (!kode.length) return;
   const peta = new Map();
+  const adaDiToko = new Set(); // semua kode yang ada di master_toko = barang dijual lewat mode Barang Toko (ecer)
   try {
     for (let i = 0; i < kode.length; i += 60) {
       const potong = kode.slice(i, i + 60).map((k) => encodeURIComponent(`"${String(k).replace(/"/g, '\\"')}"`)).join(",");
       const rows = (await sb(`master_toko?select=kode,sku_gudang&kode=in.(${potong})`)) || [];
-      rows.forEach((r) => r.sku_gudang && peta.set(r.kode, r.sku_gudang));
+      rows.forEach((r) => {
+        adaDiToko.add(r.kode);
+        if (r.sku_gudang) peta.set(r.kode, r.sku_gudang);
+      });
     }
   } catch {
-    return; // gagal ambil peta: rincian tetap tampil dengan kode toko
+    return; // gagal ambil peta: rincian tetap tampil dengan kode toko (jenis ecer/grosir tidak diketahui)
   }
+  // Penanda asal item: kode ada di master_toko -> "toko" (ecer); tidak ada -> SKU Master Barang -> "master" (grosir).
+  for (const it of items) it.asal = adaDiToko.has(it[SKEMA.item.sku]) ? "toko" : "master";
   for (const it of items) {
     const sku = peta.get(it[SKEMA.item.sku]);
     if (sku) {

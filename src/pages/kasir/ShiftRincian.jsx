@@ -32,12 +32,23 @@ export function olahRincian({ transaksi, items, pembayaran }) {
     metodePerTrx.set(id, m);
   }
 
+  // Jenis penjualan per transaksi: "grosir" (mode Master Barang) / "ecer" (mode Barang Toko) / null (tidak diketahui).
+  // Dipakai kolom `sumber` di transaksi kalau ada; kalau tidak, dari asal barangnya (it.asal, diisi kasirApi).
+  const asalPerTrx = new Map();
+  for (const it of items) if (it.asal && !asalPerTrx.has(it[I.trxId])) asalPerTrx.set(it[I.trxId], it.asal);
+  const jenisDari = (r) => {
+    const sb = String(r.sumber || "").toLowerCase();
+    const a = sb === "master" || sb === "toko" ? sb : asalPerTrx.get(r[T.id]);
+    return a === "master" ? "grosir" : a === "toko" ? "ecer" : null;
+  };
+
   const daftar = transaksi.map((r) => {
     const id = r[T.id];
     const st = status(r);
     const bayar = metodePerTrx.get(id) || [];
     return {
       id,
+      jenis: jenisDari(r),
       nomor: r[T.nomor],
       waktu: r[T.waktu],
       status: st,
@@ -71,7 +82,18 @@ export function olahRincian({ transaksi, items, pembayaran }) {
   }
 
   const aktif = daftar.filter((d) => d.status !== "void");
+  const perJenis = {};
+  for (const j of ["ecer", "grosir"]) {
+    const l = aktif.filter((d) => d.jenis === j);
+    perJenis[j] = { jumlah: l.length, omzet: l.reduce((a, d) => a + d.total, 0), retur: l.reduce((a, d) => a + d.retur, 0), bersih: l.reduce((a, d) => a + d.bersih, 0) };
+  }
+  const adaJenis = aktif.some((d) => d.jenis);
+  const jenisTakDikenal = aktif.filter((d) => !d.jenis);
+  if (adaJenis && jenisTakDikenal.length) {
+    perJenis.lain = { jumlah: jenisTakDikenal.length, omzet: jenisTakDikenal.reduce((a, d) => a + d.total, 0), retur: 0, bersih: jenisTakDikenal.reduce((a, d) => a + d.bersih, 0) };
+  }
   return {
+    perJenis: adaJenis ? perJenis : null,
     daftar,
     barang,
     perMetode,
@@ -118,6 +140,23 @@ export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, b
 
       {buka && r && (
         <div className="px-4 pb-4 space-y-3">
+          {r.perJenis && (
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ["ecer", "Ecer", "text-sky-300 border-sky-500/30"],
+                ["grosir", "Grosir", "text-violet-300 border-violet-500/30"],
+              ].map(([k, label, kls]) => (
+                <div key={k} className={`rounded-xl border bg-slate-900/60 px-3 py-2 ${kls}`}>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide">{label}</div>
+                  <div className="text-sm font-bold tabular-nums text-slate-100 mt-0.5">{fmtRp(r.perJenis[k].bersih)}</div>
+                  <div className="text-[10px] text-slate-500">{r.perJenis[k].jumlah} transaksi{r.perJenis[k].retur > 0 ? ` · retur ${fmtRp(r.perJenis[k].retur)}` : ""}</div>
+                </div>
+              ))}
+              {r.perJenis.lain && (
+                <div className="col-span-2 text-[10px] text-slate-500">Belum terklasifikasi: {r.perJenis.lain.jumlah} transaksi · {fmtRp(r.perJenis.lain.bersih)}</div>
+              )}
+            </div>
+          )}
           <div className="flex gap-1.5">
             {[
               ["transaksi", `Transaksi (${r.daftar.length})`],
@@ -147,6 +186,7 @@ export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, b
                           <div className="font-mono text-slate-300">{d.nomor}</div>
                           <div className="text-[10px] text-slate-500">
                             {jam(d.waktu)} · {d.metode || "–"}
+                            {d.jenis && <span className={d.jenis === "grosir" ? "text-violet-300" : "text-sky-300"}> · {d.jenis === "grosir" ? "Grosir" : "Ecer"}</span>}
                             {d.status === "void" && <span className="text-red-300"> · VOID</span>}
                             {d.retur > 0 && <span className="text-orange-300"> · retur {fmtRp(d.retur)}</span>}
                           </div>
@@ -218,7 +258,9 @@ function susunBarisRincian({ rincian, info }) {
   for (const d of r.daftar) {
     const tag = d.status === "void" ? " VOID" : d.retur > 0 ? " (retur)" : "";
     kolom(`${jam(d.waktu)} ${d.nomor}${tag}`, d.status === "void" ? "-" : rp(d.total));
-    if (d.metode || d.retur > 0) kiri(`   ${d.metode || ""}${d.retur > 0 ? `${d.metode ? " - " : ""}retur ${rp(d.retur)}` : ""}`);
+    const jenisTeks = d.jenis === "grosir" ? "Grosir" : d.jenis === "ecer" ? "Ecer" : "";
+    const sub = [jenisTeks, d.metode || "", d.retur > 0 ? `retur ${rp(d.retur)}` : ""].filter(Boolean).join(" - ");
+    if (sub) kiri(`   ${sub}`);
   }
   garis();
 
@@ -238,6 +280,11 @@ function susunBarisRincian({ rincian, info }) {
   if (r.totalRetur > 0) kolom(`Retur (${r.jumlahRetur})`, `-${rp(r.totalRetur)}`);
   if (r.jumlahVoid > 0) kolom("Transaksi void", `${r.jumlahVoid}`);
   kolom("Penjualan bersih", rp(r.bersih), true);
+  if (r.perJenis) {
+    kolom(`  Ecer (${r.perJenis.ecer.jumlah})`, rp(r.perJenis.ecer.bersih));
+    kolom(`  Grosir (${r.perJenis.grosir.jumlah})`, rp(r.perJenis.grosir.bersih));
+    if (r.perJenis.lain) kolom(`  Lainnya (${r.perJenis.lain.jumlah})`, rp(r.perJenis.lain.bersih));
+  }
   for (const [m, v] of Object.entries(r.perMetode)) kolom(`  ${m}`, rp(v));
   garis();
 
