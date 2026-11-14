@@ -60,6 +60,15 @@ export default function KasirApp() {
   const [antrianBuka, setAntrianBuka] = useState(false);
   const [menuHp, setMenuHp] = useState(false); // menu aksi (HP): lembar dari bawah
   const skala = useSkalaTampilan(); // ukuran tampilan di HP (otomatis / besar)
+  // HP layar sentuh yang browsernya dalam mode "Situs desktop" (UA tanpa Android/Mobile): tampilan jadi kecil & pengaturan ukuran diabaikan.
+  const [tutupPeringatanDesktop, setTutupPeringatanDesktop] = useState(false);
+  const modeDesktopDiHp = (() => {
+    try {
+      return (navigator.maxTouchPoints || 0) > 0 && !/Android|Mobi|iPhone|iPad/i.test(navigator.userAgent) && window.screen?.width < 900;
+    } catch {
+      return false;
+    }
+  })();
   // Pilihan sumber barang kasir (Barang Toko / Master Barang) untuk Super Appa & role dengan izin "kasir.pilih_mode".
   // Diingat per akun di perangkat ini. null = belum memilih -> mode bawaan role.
   // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
@@ -390,6 +399,18 @@ export default function KasirApp() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {modeDesktopDiHp && !tutupPeringatanDesktop && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border-b border-amber-500/30 text-amber-200 text-xs px-3 py-2">
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <span className="flex-1">
+            Browser HP ini dalam mode <b>Situs desktop</b>, jadi tampilan kasir kecil. Buka Chrome, ketuk ⋮ lalu matikan <b>Situs desktop</b>, kemudian buka ulang aplikasi kasir.
+          </span>
+          <button onClick={() => setTutupPeringatanDesktop(true)} aria-label="Tutup peringatan" className="p-0.5 text-amber-300">
+            <X size={14} />
+          </button>
         </div>
       )}
 
