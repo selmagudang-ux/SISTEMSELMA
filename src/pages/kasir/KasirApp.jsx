@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent, Menu, X } from "lucide-react";
+import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent, Menu, X, ZoomIn } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
 import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang, kasirBisaPilihMode, kasirModeMaster } from "../../lib/constants";
 import { PasangAplikasi, adalahHp } from "./kasirPasang";
+import { useSkalaTampilan, skalaBerikutnya } from "./kasirTampilan";
 import { sb } from "../../lib/api";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
@@ -58,6 +59,7 @@ export default function KasirApp() {
   const [tutupBuka, setTutupBuka] = useState(false);
   const [antrianBuka, setAntrianBuka] = useState(false);
   const [menuHp, setMenuHp] = useState(false); // menu aksi (HP): lembar dari bawah
+  const skala = useSkalaTampilan(); // ukuran tampilan di HP (otomatis / besar)
   // Pilihan sumber barang kasir (Barang Toko / Master Barang) untuk Super Appa & role dengan izin "kasir.pilih_mode".
   // Diingat per akun di perangkat ini. null = belum memilih -> mode bawaan role.
   // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
@@ -360,6 +362,13 @@ export default function KasirApp() {
                   <Ikon size={20} /> {label}
                 </button>
               ))}
+              <button
+                onClick={() => skala.setPilihan(skalaBerikutnya(skala.pilihan))}
+                className="flex items-center gap-3 w-full text-left text-base font-medium px-4 h-14 rounded-2xl border border-slate-800 text-slate-100 active:bg-slate-800"
+              >
+                <ZoomIn size={20} /> <span className="flex-1">Ukuran tampilan</span>
+                <span className="text-sm text-amber-300">{skala.label}</span>
+              </button>
               <div className="flex items-center gap-2 px-1 pt-1">
                 <ThemeToggle />
                 <PasangAplikasi />
