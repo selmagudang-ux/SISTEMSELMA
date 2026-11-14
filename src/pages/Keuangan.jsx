@@ -324,7 +324,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
         barTab
       );
     }
-    return bungkus(<Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} />, barTab);
+    return bungkus(<Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} namaUsaha={namaUsahaEntitas(lingkup.master, kodeAktif || ENTITAS_DEFAULT)} />, barTab);
   }
   if (modeGrup && sub === "grup") {
     return (
@@ -374,7 +374,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     return bungkus(<TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModalAman} />, barTab);
   }
   return bungkus(
-    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} />,
+    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} namaUsaha={namaUsahaEntitas(lingkup.master, kodeAktif || ENTITAS_DEFAULT)} />,
     barTab
   );
 }
@@ -964,7 +964,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
   );
 }
 
-function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, showToast }) {
+function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, showToast, namaUsaha = "SELMA" }) {
   const [detailPesanan, setDetailPesanan] = useState(null); // { transaksi, pesanan }
   const petaPesanan = useMemo(() => petaPesananKeuangan(pesananMasuk), [pesananMasuk]);
   const [dari, setDari] = useState(awalBulanIni());
@@ -1006,14 +1006,14 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
 
   // Unduh daftar yang sedang tampil di layar (ikut semua filter aktif:
   // Bank/Kas Kecil, rentang tanggal, jenis, dan kata pencarian).
-  const unduhExcel = async () => {
-    try {
-      const rows = filtered.map((t) => {
+  const barisUnduh = () =>
+    filtered.map((t) => {
         const isTransfer = t.tipe === "transfer";
         const kasAsal = kasDariRekening(petaKas, t.rekening);
         const kasTujuan = isTransfer ? kasDariRekening(petaKas, t.rekening_tujuan) : null;
         return {
           tanggal: t.tanggal,
+          tipe: t.tipe,
           jenis: t.tipe === "masuk" ? "Pemasukan" : t.tipe === "keluar" ? "Pengeluaran" : "Transfer",
           kas: isTransfer && kasAsal !== kasTujuan ? `${LABEL_KAS[kasAsal]} → ${LABEL_KAS[kasTujuan]}` : LABEL_KAS[kasAsal],
           rekening: labelDari(rekeningList, t.rekening),
@@ -1022,7 +1022,11 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
           keterangan: t.keterangan || "",
           jumlah: Number(t.jumlah) || 0,
         };
-      });
+    });
+
+  const unduhExcel = async () => {
+    try {
+      const rows = barisUnduh();
       await downloadXlsx(`transaksi-keuangan_${dari || "awal"}_sd_${sampai || "sekarang"}.xlsx`, [
         {
           name: "Transaksi",
@@ -1044,6 +1048,36 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
     }
   };
 
+  const unduhPdf = async () => {
+    try {
+      const filterTeks = [
+        kasTab !== "semua" ? `Kas: ${LABEL_KAS[kasTab]}` : "",
+        tipeFilter ? `Jenis: ${tipeFilter === "masuk" ? "Pemasukan" : tipeFilter === "keluar" ? "Pengeluaran" : "Transfer Antar Rekening"}` : "",
+        q.trim() ? `Pencarian: "${q.trim()}"` : "",
+      ]
+        .filter(Boolean)
+        .join("  |  ");
+      const { generateTransaksiKeuanganPdf } = await import("../lib/TransaksiKeuanganPdf");
+      generateTransaksiKeuanganPdf({
+        rows: barisUnduh().map((r) => ({
+          tanggal: r.tanggal,
+          tipe: r.tipe,
+          rekening: r.rekening,
+          rekeningTujuan: r.rekeningTujuan,
+          kategori: r.kategori,
+          keterangan: r.keterangan,
+          jumlah: r.jumlah,
+        })),
+        dari,
+        sampai,
+        filterTeks,
+        namaUsaha,
+      });
+    } catch (e) {
+      showToast?.(e.message || "Gagal membuat PDF", "err");
+    }
+  };
+
   return (
     <div>
       {statusLama && (
@@ -1062,6 +1096,14 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
               className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
             >
               <Download size={14} /> Unduh Excel
+            </button>
+            <button
+              onClick={unduhPdf}
+              disabled={filtered.length === 0}
+              title="Unduh PDF daftar transaksi yang sedang tampil (siap cetak)"
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <FileText size={14} /> Unduh PDF
             </button>
             <button
               onClick={() => setModal({ type: "keuangan-transaksi-form" })}
