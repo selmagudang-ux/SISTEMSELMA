@@ -366,7 +366,13 @@ export default function KasirApp() {
                 onClick={() => skala.setPilihan(skalaBerikutnya(skala.pilihan))}
                 className="flex items-center gap-3 w-full text-left text-base font-medium px-4 h-14 rounded-2xl border border-slate-800 text-slate-100 active:bg-slate-800"
               >
-                <ZoomIn size={20} /> <span className="flex-1">Ukuran tampilan</span>
+                <ZoomIn size={20} />
+                <span className="flex-1 min-w-0">
+                  Ukuran tampilan
+                  <span className="block text-[11px] font-normal text-slate-500">
+                    Lebar halaman {window.innerWidth}px · layar perangkat {window.screen?.width || "?"}px
+                  </span>
+                </span>
                 <span className="text-sm text-amber-300">{skala.label}</span>
               </button>
               <div className="flex items-center gap-2 px-1 pt-1">
