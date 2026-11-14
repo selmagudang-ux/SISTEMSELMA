@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Warehouse, Loader2, AlertCircle } from "lucide-react";
 import { unifiedLogin } from "../lib/unifiedLogin";
 import ThemeToggle from "../components/ThemeToggle";
@@ -8,6 +8,25 @@ import ThemeToggle from "../components/ThemeToggle";
 // dimasukkan (lihat lib/unifiedLogin.js), jadi link yang dibagikan sama
 // persis untuk siapa saja.
 export default function Login({ onLogin }) {
+  // Pengaman fokus: di aplikasi desktop (Electron) jendela kadang kehilangan fokus keyboard setelah logout /
+  // dialog sistem, sehingga kolom tidak bisa diketik. Minta fokus jendela lagi lalu fokuskan kolom username.
+  const refUsername = useRef(null);
+  useEffect(() => {
+    const fokus = () => {
+      try {
+        window.focus();
+        refUsername.current?.focus();
+      } catch {
+        /* abaikan */
+      }
+    };
+    const t1 = setTimeout(fokus, 50);
+    const t2 = setTimeout(fokus, 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -54,6 +73,7 @@ export default function Login({ onLogin }) {
             <div className="text-xs text-slate-400 mb-1">Username / ID Karyawan</div>
             <input
               autoFocus
+              ref={refUsername}
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500"
               value={username}
               onChange={(e) => setUsername(e.target.value)}

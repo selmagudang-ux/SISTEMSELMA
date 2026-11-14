@@ -60,6 +60,7 @@ export default function KasirApp() {
   const [antrianBuka, setAntrianBuka] = useState(false);
   const [menuHp, setMenuHp] = useState(false); // menu aksi (HP): lembar dari bawah
   const skala = useSkalaTampilan(); // ukuran tampilan di HP (otomatis / besar)
+  const [konfirmKeluar, setKonfirmKeluar] = useState(null); // daftar pesan konfirmasi keluar (null = tertutup)
   // HP layar sentuh yang browsernya dalam mode "Situs desktop" (UA tanpa Android/Mobile): tampilan jadi kecil & pengaturan ukuran diabaikan.
   const [tutupPeringatanDesktop, setTutupPeringatanDesktop] = useState(false);
   const modeDesktopDiHp = (() => {
@@ -205,13 +206,21 @@ export default function KasirApp() {
     setTutupBuka(true);
   };
 
-  const keluar = async () => {
-    const belum = await jumlahBelumTerkirim();
-    if (belum > 0 && !window.confirm(`Masih ada ${belum} transaksi yang belum terkirim ke server. Transaksi itu tetap tersimpan di perangkat ini dan terkirim saat internet kembali (selama halaman kasir dibuka). Tetap keluar?`)) return;
-    if (shift && !window.confirm("Shift kasir masih buka. Keluar sekarang? (Shift tetap buka dan bisa dilanjutkan saat login lagi — gunakan Tutup Kasir untuk mengakhirinya.)")) return;
+  const keluarSekarang = () => {
+    setKonfirmKeluar(null);
     logout();
     setSession(null);
     setShift(undefined);
+  };
+  // Konfirmasi DI DALAM aplikasi (bukan window.confirm): di aplikasi desktop (Electron), dialog native membuat
+  // jendela kehilangan fokus keyboard sehingga kolom login sesudahnya tidak bisa diketik.
+  const keluar = async () => {
+    const belum = await jumlahBelumTerkirim();
+    const pesan = [];
+    if (belum > 0) pesan.push(`Masih ada ${belum} transaksi yang belum terkirim ke server. Transaksi itu tetap tersimpan di perangkat ini dan terkirim saat internet kembali (selama halaman kasir dibuka).`);
+    if (shift) pesan.push("Shift kasir masih buka. Shift tetap buka dan bisa dilanjutkan saat login lagi — gunakan Tutup Kasir untuk mengakhirinya.");
+    if (pesan.length) setKonfirmKeluar(pesan);
+    else keluarSekarang();
   };
 
   if (!session) {
@@ -411,6 +420,27 @@ export default function KasirApp() {
           <button onClick={() => setTutupPeringatanDesktop(true)} aria-label="Tutup peringatan" className="p-0.5 text-amber-300">
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {konfirmKeluar && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setKonfirmKeluar(null)}>
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="font-bold text-base mb-2">Keluar sekarang?</div>
+            <div className="space-y-2 text-sm text-slate-300">
+              {konfirmKeluar.map((t, i) => (
+                <p key={i}>{t}</p>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setKonfirmKeluar(null)} autoFocus className="flex-1 py-3 rounded-2xl border border-slate-700 text-slate-200 font-semibold hover:bg-slate-800">
+                Batal
+              </button>
+              <button onClick={keluarSekarang} className="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold">
+                Keluar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
