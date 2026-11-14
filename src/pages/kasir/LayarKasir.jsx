@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users, PencilLine } from "lucide-react";
 import { sbAll, fmtRp } from "../../lib/api";
 import { kasirModeMaster } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
@@ -9,6 +9,7 @@ import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
 import { simpanKeranjangTersimpan } from "./kasirKeranjang";
 import KeranjangTersimpan from "./KeranjangTersimpan";
+import ModalItemManual from "./ModalItemManual";
 import PilihPelanggan, { kunciHargaPelanggan, LABEL_KATEGORI_PELANGGAN, warnaKategori } from "./PilihPelanggan";
 import {
   useStatusKasir,
@@ -111,6 +112,10 @@ function sinkronItems(items, rows, promoMap) {
   const catatan = [];
   const out = [];
   for (const it of items) {
+    if (it.manual) {
+      out.push(it); // item manual tidak ada di Master Barang: tidak ikut disinkronkan
+      continue;
+    }
     const s = peta.get(it.sku);
     if (!s || s.nonaktif) {
       catatan.push(`${it.sku} dihapus (tidak dijual)`);
@@ -195,6 +200,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [daftarPelanggan, setDaftarPelanggan] = useState([]);
   const [memuatPelanggan, setMemuatPelanggan] = useState(false);
   const [pilihPelBuka, setPilihPelBuka] = useState(false);
+  const [manualBuka, setManualBuka] = useState(false);
   // Data kategori terbaru dari daftar (kalau kategori pelanggan diubah di menu Grosir), selain itu pakai yang tersimpan di keranjang.
   const pelTerbaru = modeMaster && pelanggan ? daftarPelanggan.find((p) => p.id === pelanggan.id) : null;
   const pelangganAktif = modeMaster && pelanggan ? (pelTerbaru ? { id: pelanggan.id, nama: pelTerbaru.nama, kategori: kunciHargaPelanggan(pelTerbaru) } : pelanggan) : null;
@@ -455,6 +461,14 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     [items, promoMap, modeMaster, kunciHarga]
   );
 
+  // Item manual (mode Master Barang): kode sementara "MNL-…", tanpa batas stok, HPP 0.
+  const tambahManual = ({ nama, harga, qty }) => {
+    const sku = `MNL-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+    setItems((prev) => [...prev, { sku, nama, harga, hpp: 0, stok: 999999, qty, manual: true, diskonTipe: "rp", diskonNilai: "", promo: null, promoLepas: false }]);
+    setManualBuka(false);
+    tampilToast(`${nama} ditambahkan (item manual)`, "ok");
+  };
+
   const tambahDariKode = (kode) => {
     const s = indeks.perKode.get(String(kode).trim().toLowerCase());
     if (!s) return { ok: false, pesan: `Kode "${kode}" tidak ditemukan` };
@@ -613,13 +627,14 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       {/* ===== KIRI: cari & pilih barang ===== */}
       <section className={`lg:flex-1 p-3 lg:p-5 lg:overflow-y-auto ${items.length ? "pb-24" : ""} lg:pb-5`}>
         {modeMaster && (
+          <div className="mb-3 flex items-stretch gap-2">
           <button
             type="button"
             onClick={() => {
               muatPelangganList();
               setPilihPelBuka(true);
             }}
-            className={`mb-3 w-full flex items-center gap-3 text-left px-4 py-3 rounded-2xl border transition-colors ${
+            className={`flex-1 min-w-0 flex items-center gap-3 text-left px-4 py-3 rounded-2xl border transition-colors ${
               pelangganAktif ? "border-slate-800 bg-slate-900 hover:border-amber-500/50" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
             }`}
           >
@@ -633,6 +648,15 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             )}
             <ChevronDown size={16} className="text-slate-500 flex-shrink-0" />
           </button>
+          <button
+            type="button"
+            onClick={() => setManualBuka(true)}
+            title="Tambah barang yang tidak ada di Master Barang (nama & harga diketik)"
+            className="flex items-center gap-2 px-4 rounded-2xl border border-slate-800 bg-slate-900 text-slate-300 hover:border-amber-500/50 hover:text-amber-300 text-sm font-semibold flex-shrink-0 transition-colors"
+          >
+            <PencilLine size={16} /> <span className="hidden sm:inline">Item manual</span>
+          </button>
+          </div>
         )}
         <div className="flex items-center gap-2.5">
           <div className="relative flex-1">
@@ -863,7 +887,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
                         {it.nama}
                       </div>
                       <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        {it.sku} · <span className="tabular-nums">{fmtRp(it.harga)}</span>
+                        {it.manual ? "Manual" : it.sku} · <span className="tabular-nums">{fmtRp(it.harga)}</span>
                       </div>
                     </div>
                     <button
@@ -1028,6 +1052,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           {toast.pesan}
         </div>
       )}
+
+      {manualBuka && <ModalItemManual onTambah={tambahManual} onClose={() => setManualBuka(false)} />}
 
       {pilihPelBuka && (
         <PilihPelanggan

@@ -108,6 +108,7 @@ export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, ke
       qty: it.qty,
       harga_satuan: it.harga,
       diskon: hitungItem(it).diskon,
+      ...(it.manual ? { manual: true } : {}),
     })),
     pembayaran: hitungBayar.pembayaran.map((p) => ({
       metode: p.metode,
@@ -176,6 +177,10 @@ export function pesanErrorKasir(err, konteks) {
       return { pesan: `Jumlah retur ${a} melebihi sisa yang bisa diretur (${b}).`, perluMuatUlang: true };
     case "PELANGGAN_TIDAK_ADA":
       return { pesan: "Pelanggan tidak ditemukan (mungkin sudah dihapus di menu Grosir). Pilih pelanggan lagi.", perluMuatUlang: true };
+    case "MANUAL_BUTUH_PELANGGAN":
+      return { pesan: "Item manual hanya bisa dijual ke pelanggan. Pilih pelanggan dulu.", perluMuatUlang: false };
+    case "ITEM_MANUAL_TIDAK_VALID":
+      return { pesan: "Item manual tidak valid: nama dan harga wajib diisi. Hapus lalu tambahkan lagi.", perluMuatUlang: false };
     case "RETUR_GROSIR":
       return {
         pesan: `Transaksi ${a || ""} adalah penjualan grosir ke pelanggan, jadi tidak bisa diretur dari kasir. Pakai Void kalau shift-nya masih buka; kalau sudah ditutup, retur/batalkan lewat menu Penjualan > Grosir.`,
