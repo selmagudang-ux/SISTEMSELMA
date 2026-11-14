@@ -59,6 +59,8 @@ export default function KasirApp() {
   const [antrianBuka, setAntrianBuka] = useState(false);
   // Pilihan sumber barang kasir (Barang Toko / Master Barang) untuk Super Appa & role dengan izin "kasir.pilih_mode".
   // Diingat per akun di perangkat ini. null = belum memilih -> mode bawaan role.
+  // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
+  const [aksesSiap, setAksesSiap] = useState(false);
   const kunciMode = `kasir_mode_master_${session?.id ?? "x"}`;
   const [pilihMaster, setPilihMaster] = useState(() => {
     try {
@@ -97,8 +99,6 @@ export default function KasirApp() {
   }, []);
 
   const idSesi = session?.id;
-  // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
-  const [aksesSiap, setAksesSiap] = useState(false);
   useEffect(() => {
     if (!session) return undefined;
     if (session.role === "superappa") {
