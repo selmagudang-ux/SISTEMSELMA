@@ -281,7 +281,7 @@ export default function KasirApp() {
   return (
     <div className="bg-slate-950 text-slate-100 flex flex-col tabular-nums" style={{ height: "100dvh", minHeight: "-webkit-fill-available" }}>
       <header
-        className="flex items-center justify-between gap-2 px-3 lg:px-5 py-2.5 lg:py-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur"
+        className="flex items-center justify-between gap-2 px-3 lg:px-5 py-2.5 lg:py-3 border-b border-slate-800 bg-slate-900"
         style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}
       >
         <div className="flex items-center gap-2.5 min-w-0">
@@ -424,7 +424,7 @@ export default function KasirApp() {
       )}
 
       {konfirmKeluar && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setKonfirmKeluar(null)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4" onClick={() => setKonfirmKeluar(null)}>
           <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5" onClick={(e) => e.stopPropagation()}>
             <div className="font-bold text-base mb-2">Keluar sekarang?</div>
             <div className="space-y-2 text-sm text-slate-300">

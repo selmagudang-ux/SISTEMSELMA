@@ -66,7 +66,7 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={(e) => e.target === e.currentTarget && !sibuk && onClose()}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4" onClick={(e) => e.target === e.currentTarget && !sibuk && onClose()}>
       <div className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] flex flex-col">
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div>

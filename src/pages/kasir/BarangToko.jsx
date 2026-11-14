@@ -51,7 +51,7 @@ export function Kerangka({ judul, onClose, children, lebar = "sm:max-w-md" }) {
   const mulaiDiLatar = useRef(false);
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4"
       onMouseDown={(e) => {
         mulaiDiLatar.current = e.target === e.currentTarget;
       }}

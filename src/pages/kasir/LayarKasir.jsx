@@ -1026,7 +1026,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       </aside>
 
       {items.length > 0 && !keranjangHp && (
-        <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 p-3 bg-slate-950/95 backdrop-blur border-t border-slate-800" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-30 p-3 bg-slate-950 border-t border-slate-800" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
           <button
             onClick={() => setKeranjangHp(true)}
             className="w-full flex items-center justify-between gap-3 bg-amber-500 active:bg-amber-400 text-slate-950 font-bold rounded-2xl px-4 py-3.5"

@@ -209,7 +209,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const r = hasil || ringkas;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={() => !saving && !hasil && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4" onClick={() => !saving && !hasil && onClose()}>
       <div
         className="w-full sm:max-w-lg bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}

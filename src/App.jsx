@@ -319,7 +319,7 @@ function AppShell({
         {/* Top App Bar Material 3 — selalu tampil di semua halaman (termasuk
             Cetak Label) supaya tombol buka menu di HP tetap bisa diakses.
             Disembunyikan otomatis saat print lewat class print:hidden. */}
-        <header className="print:hidden sticky top-0 bg-md-surface/95 backdrop-blur z-20 h-16 flex items-center">
+        <header className="print:hidden sticky top-0 bg-md-surface z-20 h-16 flex items-center">
           <div className="px-3 w-full flex items-center justify-between gap-4">
             <div className="flex items-center gap-1 min-w-0">
               <MobileMenuButton onClick={() => setMobileOpen(true)} />

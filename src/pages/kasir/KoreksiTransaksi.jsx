@@ -30,7 +30,7 @@ const inputCls =
 
 function Kerangka({ judul, subjudul, onClose, bebasTutup, children }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={() => bebasTutup && onClose()}>
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4" onClick={() => bebasTutup && onClose()}>
       <div
         className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -496,7 +496,18 @@ export function ModalHapus({ row, shiftSudahTutup, onSelesai, onClose }) {
 
           <div>
             <label className="text-sm font-medium text-slate-300 mb-1.5 block">Ketik HAPUS untuk melanjutkan</label>
-            <input value={konfirmasi} onChange={(e) => setKonfirmasi(e.target.value)} placeholder="HAPUS" className={inputCls} />
+            <input
+              value={konfirmasi}
+              onChange={(e) => setKonfirmasi(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && hapus()}
+              placeholder="HAPUS"
+              autoFocus
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              readOnly={saving}
+              className={inputCls}
+            />
           </div>
 
           <KotakError pesan={error} />
@@ -506,7 +517,7 @@ export function ModalHapus({ row, shiftSudahTutup, onSelesai, onClose }) {
             disabled={!siap || saving}
             className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-bold py-3.5 rounded-2xl"
           >
-            {saving && <Loader2 size={16} className="animate-spin" />} Hapus Permanen
+            {saving && <Loader2 size={16} className="animate-spin" />} {saving ? "Menghapus… tunggu sebentar" : "Hapus Permanen"}
           </button>
         </>
       )}

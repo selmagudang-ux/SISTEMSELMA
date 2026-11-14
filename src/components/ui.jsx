@@ -72,7 +72,7 @@ export function chipClass(color = "slate") {
 
 export function ModalShell({ title, onClose, children, maxWidth }) {
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-40 p-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
       <div
         className={`bg-md-container-high rounded-md-xl shadow-elevation-3 w-full ${maxWidth || "max-w-md"} max-h-[85vh] overflow-y-auto`}
       >

@@ -143,7 +143,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={tutup}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4" onClick={tutup}>
       <div
         className="w-full sm:max-w-md bg-slate-900 border border-slate-800 sm:rounded-3xl rounded-t-3xl shadow-elevation-3 max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
