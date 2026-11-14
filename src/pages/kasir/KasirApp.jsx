@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent } from "lucide-react";
+import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent, Menu, X } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
@@ -57,6 +57,7 @@ export default function KasirApp() {
   const [errShift, setErrShift] = useState("");
   const [tutupBuka, setTutupBuka] = useState(false);
   const [antrianBuka, setAntrianBuka] = useState(false);
+  const [menuHp, setMenuHp] = useState(false); // menu aksi (HP): lembar dari bawah
   // Pilihan sumber barang kasir (Barang Toko / Master Barang) untuk Super Appa & role dengan izin "kasir.pilih_mode".
   // Diingat per akun di perangkat ini. null = belum memilih -> mode bawaan role.
   // Hak akses yang diatur Super Appa (master_data tipe "role_akses") dimuat dulu sebelum role dicek.
@@ -247,68 +248,75 @@ export default function KasirApp() {
     );
   }
 
+  // Daftar aksi header. Di layar lebar tampil sebagai deretan tombol; di HP masuk ke lembar "Menu".
+  const aksi = [
+    bisaGantiMode && { k: "mode", Ikon: Repeat, label: `Mode: ${modeMasterSekarang ? "Master Barang" : "Barang Toko"}`, onClick: gantiMode, aksen: true },
+    !hanyaKeranjang && bisa(session.role, "kasir.buka_laci") && { k: "laci", Ikon: Archive, label: "Buka Laci", onClick: () => bukaLaciManual({ kasir: session.nama || session.username }) },
+    !hanyaKeranjang && bisa(session.role, "kasir.barang_toko") && { k: "barang", Ikon: Package, label: "Barang Toko", onClick: () => setBarangBuka(true) },
+    !hanyaKeranjang && bisa(session.role, "kasir.promo") && { k: "promo", Ikon: BadgePercent, label: "Promo", onClick: () => setPromoBuka(true) },
+    !hanyaKeranjang && { k: "riwayat", Ikon: History, label: "Riwayat", onClick: () => setRiwayatBuka(true) },
+  ].filter(Boolean);
+  const kelasTombol = "flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors";
+
   return (
-    <div className="h-screen bg-slate-950 text-slate-100 flex flex-col tabular-nums">
-      <header className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+    <div className="bg-slate-950 text-slate-100 flex flex-col tabular-nums" style={{ height: "100dvh", minHeight: "-webkit-fill-available" }}>
+      <header
+        className="flex items-center justify-between gap-2 px-3 lg:px-5 py-2.5 lg:py-3 border-b border-slate-800 bg-slate-900/80 backdrop-blur"
+        style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}
+      >
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0">
             <Store size={18} className="text-slate-950" />
           </div>
           <div className="min-w-0">
-            <div className="font-bold text-[15px] leading-tight">Kasir Selma</div>
+            <div className="font-bold text-base lg:text-[15px] leading-tight">Kasir Selma</div>
             <div className="text-xs text-slate-500 truncate mt-0.5">
               {session.nama || session.username}
               {shift ? ` · shift sejak ${tglJamId(shift.buka_at)}` : ""}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+
+        {/* ===== HP / layar kecil: ringkas — status, Tutup Kasir, tombol Menu ===== */}
+        <div className="flex items-center gap-2 lg:hidden flex-shrink-0">
+          <ChipKoneksi onBuka={() => setAntrianBuka(true)} />
+          {shift && (
+            <button
+              onClick={mintaTutup}
+              aria-label="Tutup Kasir"
+              className="flex items-center gap-1.5 text-sm text-slate-950 bg-amber-500 active:bg-amber-400 font-bold px-3.5 h-11 rounded-xl"
+            >
+              <Lock size={16} /> <span className="hidden min-[400px]:inline">Tutup</span>
+            </button>
+          )}
+          <button
+            onClick={() => setMenuHp(true)}
+            aria-label="Menu"
+            className="w-11 h-11 flex items-center justify-center rounded-xl border border-slate-700 text-slate-200 active:bg-slate-800"
+          >
+            <Menu size={22} />
+          </button>
+        </div>
+
+        {/* ===== Layar lebar (tablet landscape / desktop): deretan tombol seperti semula ===== */}
+        <div className="hidden lg:flex items-center gap-2 flex-wrap justify-end">
           <ChipKoneksi onBuka={() => setAntrianBuka(true)} />
           <ThemeToggle />
           <PasangAplikasi />
           {!adalahAppDesktop() && !adalahHp() && (
-            <a
-              href={URL_UNDUH_APP_KASIR}
-              title="Unduh aplikasi kasir untuk Windows"
-              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
-            >
+            <a href={URL_UNDUH_APP_KASIR} title="Unduh aplikasi kasir untuk Windows" className={kelasTombol}>
               <Download size={13} /> Unduh Aplikasi
             </a>
           )}
-          {bisaGantiMode && (
+          {aksi.map(({ k, Ikon, label, onClick, aksen }) => (
             <button
-              onClick={gantiMode}
-              title="Ganti sumber barang kasir"
-              className="flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-slate-800 px-3 py-2 rounded-xl border border-amber-500/40 transition-colors"
+              key={k}
+              onClick={onClick}
+              className={aksen ? "flex items-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-slate-800 px-3 py-2 rounded-xl border border-amber-500/40 transition-colors" : kelasTombol}
             >
-              <Repeat size={13} /> Mode: {modeMasterSekarang ? "Master Barang" : "Barang Toko"}
+              <Ikon size={13} /> {label}
             </button>
-          )}
-          {!hanyaKeranjang && bisa(session.role, "kasir.buka_laci") && (
-            <button
-              onClick={() => bukaLaciManual({ kasir: session.nama || session.username })}
-              title="Cetak slip kecil agar printer membuka laci"
-              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
-            >
-              <Archive size={13} /> Buka Laci
-            </button>
-          )}
-          {!hanyaKeranjang && bisa(session.role, "kasir.barang_toko") && (
-            <button
-              onClick={() => setBarangBuka(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
-            >
-              <Package size={13} /> Barang Toko
-            </button>
-          )}
-          {!hanyaKeranjang && bisa(session.role, "kasir.promo") && (
-            <button
-              onClick={() => setPromoBuka(true)}
-              className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
-            >
-              <BadgePercent size={13} /> Promo
-            </button>
-          )}
+          ))}
           {shift && (
             <button
               onClick={mintaTutup}
@@ -317,22 +325,58 @@ export default function KasirApp() {
               <Lock size={13} /> Tutup Kasir
             </button>
           )}
-          {!hanyaKeranjang && (
-          <button
-            onClick={() => setRiwayatBuka(true)}
-            className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
-          >
-            <History size={13} /> Riwayat
-          </button>
-          )}
-          <button
-            onClick={keluar}
-            className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
-          >
+          <button onClick={keluar} className={kelasTombol}>
             <LogOut size={13} /> Keluar
           </button>
         </div>
       </header>
+
+      {/* Lembar Menu (HP): tombol besar, mudah disentuh */}
+      {menuHp && (
+        <div className="lg:hidden fixed inset-0 z-50 flex items-end bg-black/60" onClick={() => setMenuHp(false)}>
+          <div
+            className="w-full bg-slate-900 border-t border-slate-700 rounded-t-3xl p-3 max-h-[85dvh] overflow-y-auto"
+            style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-2 pt-1 pb-2">
+              <div className="font-bold text-base">Menu</div>
+              <button onClick={() => setMenuHp(false)} aria-label="Tutup menu" className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 active:bg-slate-800">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {aksi.map(({ k, Ikon, label, onClick, aksen }) => (
+                <button
+                  key={k}
+                  onClick={() => {
+                    setMenuHp(false);
+                    onClick();
+                  }}
+                  className={`flex items-center gap-3 w-full text-left text-base font-medium px-4 h-14 rounded-2xl border active:bg-slate-800 ${
+                    aksen ? "text-amber-300 border-amber-500/40" : "text-slate-100 border-slate-800"
+                  }`}
+                >
+                  <Ikon size={20} /> {label}
+                </button>
+              ))}
+              <div className="flex items-center gap-2 px-1 pt-1">
+                <ThemeToggle />
+                <PasangAplikasi />
+              </div>
+              <button
+                onClick={() => {
+                  setMenuHp(false);
+                  keluar();
+                }}
+                className="flex items-center gap-3 w-full text-left text-base font-medium px-4 h-14 rounded-2xl border border-slate-800 text-red-300 active:bg-slate-800 mt-1"
+              >
+                <LogOut size={20} /> Keluar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BannerOffline onBuka={() => setAntrianBuka(true)} />
       {hanyaKeranjang ? (
