@@ -60,19 +60,28 @@ export function olahRincian({ transaksi, items, pembayaran }) {
   });
 
   const adaVoid = new Set(transaksi.filter((r) => status(r) === "void").map((r) => r[T.id]));
-  const peta = new Map(); // sku -> { sku, nama, qty, nilai }
+  const jenisPerTrx = new Map(daftar.map((d) => [d.id, d.jenis]));
+  const adaJenisDiShift = daftar.some((d) => d.status !== "void" && d.jenis);
+  const peta = new Map(); // sku -> { sku, nama, qty, nilai }  (gabungan semua jenis)
+  const petaJenis = { ecer: new Map(), grosir: new Map(), lain: new Map() }; // lampiran: barang terjual per jenis penjualan
   for (const it of items) {
     if (adaVoid.has(it[I.trxId])) continue;
     const qty = num(it[I.qty]) - num(it.qty_retur);
     if (qty <= 0) continue;
     const nilai = num(it.subtotal) - num(it.nilai_retur);
     const kunci = it[I.sku] || it[I.nama];
-    const a = peta.get(kunci) || { sku: it[I.sku], nama: it[I.nama], qty: 0, nilai: 0 };
-    a.qty += qty;
-    a.nilai += nilai;
-    peta.set(kunci, a);
+    const tambah = (m) => {
+      const a = m.get(kunci) || { sku: it[I.sku], nama: it[I.nama], qty: 0, nilai: 0 };
+      a.qty += qty;
+      a.nilai += nilai;
+      m.set(kunci, a);
+    };
+    tambah(peta);
+    tambah(petaJenis[jenisPerTrx.get(it[I.trxId]) || "lain"]);
   }
-  const barang = [...peta.values()].sort((a, b) => b.nilai - a.nilai);
+  const urut = (m) => [...m.values()].sort((a, b) => b.nilai - a.nilai);
+  const barang = urut(peta);
+  const barangPerJenis = adaJenisDiShift ? { ecer: urut(petaJenis.ecer), grosir: urut(petaJenis.grosir), lain: urut(petaJenis.lain) } : null;
 
   // Rincian per metode bayar (transaksi void dibuang; retur tidak dipecah per metode di sini).
   const perMetode = {};
@@ -96,6 +105,7 @@ export function olahRincian({ transaksi, items, pembayaran }) {
     perJenis: adaJenis ? perJenis : null,
     daftar,
     barang,
+    barangPerJenis,
     perMetode,
     jumlahTransaksi: aktif.length,
     jumlahVoid: daftar.length - aktif.length,
@@ -199,6 +209,34 @@ export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, b
               )
             ) : r.barang.length === 0 ? (
               <div className="py-6 text-center text-xs text-slate-500">Belum ada barang terjual.</div>
+            ) : r.barangPerJenis ? (
+              [
+                ["ecer", "Penjualan Ecer", "text-sky-300"],
+                ["grosir", "Penjualan Grosir", "text-violet-300"],
+                ["lain", "Belum terklasifikasi", "text-slate-400"],
+              ].map(([k, judul, kls]) =>
+                r.barangPerJenis[k].length === 0 ? null : (
+                  <div key={k}>
+                    <div className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide bg-slate-900/80 border-t first:border-t-0 border-slate-800 ${kls}`}>
+                      {judul} · {r.barangPerJenis[k].length} barang · {r.barangPerJenis[k].reduce((a, b) => a + b.qty, 0)} pcs
+                    </div>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {r.barangPerJenis[k].map((b) => (
+                          <tr key={b.sku || b.nama} className="border-t border-slate-800">
+                            <td className="px-3 py-1.5">
+                              <div className="text-slate-200">{b.nama}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">{b.sku}</div>
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">× {b.qty}</td>
+                            <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmtRp(b.nilai)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )
             ) : (
               <table className="w-full text-xs">
                 <tbody>
@@ -264,16 +302,33 @@ function susunBarisRincian({ rincian, info }) {
   }
   garis();
 
-  tengah("BARANG TERJUAL", true);
-  if (!r.barang.length) kiri("(belum ada)");
-  const digit = String(r.barang.length).length;
-  const indent = digit + 2;
-  r.barang.forEach((x, i) => {
-    kiri(`${String(i + 1).padStart(digit, " ")}. ${x.nama}`, indent);
-    kolom(`${" ".repeat(indent)}${x.sku ? `${x.sku} x ` : ""}${x.qty}`, rp(x.nilai));
-  });
-  kolom("Total barang", `${r.totalQty} pcs`);
-  garis();
+  // Daftar barang: satu bagian, atau (kalau shift punya penjualan ecer/grosir) dipisah jadi lampiran per jenis.
+  const tulisBarang = (daftarBarang) => {
+    const digit = String(daftarBarang.length).length;
+    const indent = digit + 2;
+    daftarBarang.forEach((x, i) => {
+      kiri(`${String(i + 1).padStart(digit, " ")}. ${x.nama}`, indent);
+      kolom(`${" ".repeat(indent)}${x.sku ? `${x.sku} x ` : ""}${x.qty}`, rp(x.nilai));
+    });
+  };
+  if (r.barangPerJenis) {
+    for (const [k, judul] of [["ecer", "BARANG TERJUAL - ECER"], ["grosir", "BARANG TERJUAL - GROSIR"], ["lain", "BARANG TERJUAL - LAINNYA"]]) {
+      const l = r.barangPerJenis[k];
+      if (!l.length) continue;
+      tengah(judul, true);
+      tulisBarang(l);
+      kolom(`Total ${k === "lain" ? "lainnya" : k}`, `${l.reduce((a, x) => a + x.qty, 0)} pcs`);
+      garis();
+    }
+    kolom("Total semua barang", `${r.totalQty} pcs`);
+    garis();
+  } else {
+    tengah("BARANG TERJUAL", true);
+    if (!r.barang.length) kiri("(belum ada)");
+    tulisBarang(r.barang);
+    kolom("Total barang", `${r.totalQty} pcs`);
+    garis();
+  }
 
   tengah("RINGKASAN", true);
   kolom(`Transaksi (${r.jumlahTransaksi})`, rp(r.omzet));
