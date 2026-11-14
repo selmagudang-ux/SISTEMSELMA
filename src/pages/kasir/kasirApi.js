@@ -87,9 +87,12 @@ export function buatKunci() {
 // di database; kalau tidak cocok, seluruh transaksi dibatalkan.
 // sumber: "toko" (Barang Toko, bawaan) | "master" (Master Barang). Ikut tersimpan di payload supaya
 // transaksi yang antri offline dikirim ke fungsi database yang benar.
-export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, keuangan, catatan, kunci, sumber = "toko" }) {
+export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, keuangan, catatan, kunci, sumber = "toko", pelanggan = null }) {
   return {
     sumber,
+    // Mode Master Barang: pelanggan (menu Grosir). Transaksi yang punya pelanggan masuk Pesanan Grosir saat tutup kasir.
+    pelanggan_id: sumber === "master" ? pelanggan?.id ?? null : null,
+    pelanggan_nama: sumber === "master" ? pelanggan?.nama ?? null : null,
     entitas: entitasSesi(),
     kunci,
     kasir_id: String(session?.id ?? ""),
@@ -171,6 +174,13 @@ export function pesanErrorKasir(err, konteks) {
       return { pesan: "Semua barang di transaksi ini sudah diretur.", perluMuatUlang: true };
     case "QTY_RETUR_LEBIH":
       return { pesan: `Jumlah retur ${a} melebihi sisa yang bisa diretur (${b}).`, perluMuatUlang: true };
+    case "PELANGGAN_TIDAK_ADA":
+      return { pesan: "Pelanggan tidak ditemukan (mungkin sudah dihapus di menu Grosir). Pilih pelanggan lagi.", perluMuatUlang: true };
+    case "RETUR_GROSIR":
+      return {
+        pesan: `Transaksi ${a || ""} adalah penjualan grosir ke pelanggan, jadi tidak bisa diretur dari kasir. Pakai Void kalau shift-nya masih buka; kalau sudah ditutup, retur/batalkan lewat menu Penjualan > Grosir.`,
+        perluMuatUlang: false,
+      };
     case "ITEM_RETUR_KOSONG":
       return { pesan: "Pilih minimal satu barang yang diretur.", perluMuatUlang: false };
     case "TRANSAKSI_TIDAK_ADA":

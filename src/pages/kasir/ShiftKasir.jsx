@@ -268,6 +268,11 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
                 </div>
                 {hasil.catatan && <div className="mt-2 text-xs text-slate-400">Catatan: {hasil.catatan}</div>}
               </div>
+              {Number(hasil.pesanan_grosir) > 0 && (
+                <div className="rounded-2xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-xs text-violet-200">
+                  {hasil.pesanan_grosir} transaksi grosir sudah masuk ke Pesanan Grosir (menu Penjualan &gt; Store Selma &gt; Grosir). Penjualan ecer tetap dibukukan ke Toko Offline.
+                </div>
+              )}
               <RincianShiftPanel
                 rincian={rincian}
                 memuat={memuatRincian}

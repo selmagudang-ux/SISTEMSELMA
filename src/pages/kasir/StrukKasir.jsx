@@ -39,6 +39,12 @@ function StrukIsi({ s }) {
             Kasir: {s.kasir}
           </>
         )}
+        {s.pelanggan && (
+          <>
+            <br />
+            Pelanggan: {s.pelanggan}
+          </>
+        )}
       </p>
       {garis}
       <table className="w-full border-collapse">
@@ -131,6 +137,7 @@ function barisPrinter(s) {
   b.push({ tipe: "kiri", teks: `No: ${s.nomor}` });
   b.push({ tipe: "kiri", teks: `Tanggal: ${tglJamId(s.waktu)}` });
   if (s.kasir) b.push({ tipe: "kiri", teks: `Kasir: ${s.kasir}` });
+  if (s.pelanggan) b.push({ tipe: "kiri", teks: `Pelanggan: ${s.pelanggan}` });
   b.push({ tipe: "garis" });
   const digit = String(s.items.length).length;
   const indent = digit + 2;

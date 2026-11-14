@@ -38,7 +38,7 @@ const MODE = [
 const inputCls =
   "w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-base outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10";
 
-export default function ModalBayar({ total, items, diskonTransaksi, session, kunci, sumber = "toko", onSukses, onMuatUlang, onClose }) {
+export default function ModalBayar({ total, items, diskonTransaksi, session, kunci, sumber = "toko", pelanggan = null, onSukses, onMuatUlang, onClose }) {
   const [master, setMaster] = useState(null);
   const [errMaster, setErrMaster] = useState("");
   const [mode, setMode] = useState("Cash");
@@ -79,7 +79,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
     setError("");
     try {
       const metodeList = hb.pembayaran.map((p) => p.metode);
-      const args = { session, items, diskonTransaksi, hitungBayar: hb, keuangan: null, catatan, kunci, sumber };
+      const args = { session, items, diskonTransaksi, hitungBayar: hb, keuangan: null, catatan, kunci, sumber, pelanggan };
       // Offline (atau koneksi gagal saat menyimpan): transaksi masuk antrian di perangkat dan dikirim
       // otomatis nanti. Kunci yang sama dipakai jalur online & antrian, jadi tidak bisa tersimpan dobel.
       const antri = (keuangan) =>
@@ -115,6 +115,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
           nomor: res.nomor,
           waktu: res.waktu,
           kasir: session?.nama || session?.username,
+          pelanggan: sumber === "master" ? pelanggan?.nama : "",
           items: items.map((it) => ({ sku: it.sku, nama: it.nama, qty: it.qty, harga: it.harga, diskon: hitungItem(it).diskon })),
           diskonTransaksi,
           pembayaran: hb.pembayaran,

@@ -188,7 +188,9 @@ export default function RiwayatStruk({ session, shift, onClose }) {
 
   const bolehVoid = (r) =>
     bolehVoidRole && statusTrx(r) === "selesai" && !(num(r[T.totalRetur]) > 0) && r[T.shiftId] != null && shiftBuka.has(r[T.shiftId]);
-  const bolehRetur = (r) => !!shift && ["selesai"].includes(statusTrx(r));
+  // Transaksi grosir yang punya pelanggan masuk Pesanan Grosir saat tutup kasir, jadi retur dari kasir diblokir (pakai Void / menu Grosir).
+  const trxGrosirPelanggan = (r) => r.sumber === "master" && !!r.pelanggan_id;
+  const bolehRetur = (r) => !!shift && ["selesai"].includes(statusTrx(r)) && !trxGrosirPelanggan(r);
 
   const selesaiAksi = () => {
     setAksi(null);
@@ -364,6 +366,12 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                                 {tglJamId(r[T.waktu])}
                                 {semuaKasir && r[T.kasirNama] ? ` · ${r[T.kasirNama]}` : ""}
                               </div>
+                              {trxGrosirPelanggan(r) && (
+                                <div className="text-[11px] text-violet-300/80">
+                                  Grosir · {r.pelanggan_nama || "Pelanggan"}
+                                  {r.grosir_pesanan_id ? " · sudah masuk Pesanan Grosir" : " · masuk Pesanan Grosir saat tutup kasir"}
+                                </div>
+                              )}
                               {void_ && r[T.voidAlasan] && <div className="text-[11px] text-red-300/80">Alasan void: {r[T.voidAlasan]}</div>}
                               {num(r[T.totalRetur]) > 0 && (
                                 <div className="text-[11px] text-orange-300/80">Diretur {fmtRp(r[T.totalRetur])}</div>

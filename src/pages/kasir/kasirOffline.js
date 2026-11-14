@@ -173,7 +173,7 @@ export async function hapusCacheEnt(nama) {
 // Klasifikasi galat
 // ---------------------------------------------------------
 // Kode penolakan bisnis dari fungsi database kasir_simpan_transaksi / kasir_simpan_transaksi_master.
-const KODE_BISNIS = /(STOK_KURANG|HARGA_BERUBAH|SKU_TIDAK_ADA|SKU_NONAKTIF|REKENING_KATEGORI_KOSONG|PEMBAYARAN_TIDAK_SAMA|SHIFT_BELUM_BUKA|SHIFT_TIDAK_AKTIF|SHIFT_SUDAH_TUTUP|ITEM_DUPLIKAT)/;
+const KODE_BISNIS = /(STOK_KURANG|HARGA_BERUBAH|SKU_TIDAK_ADA|SKU_NONAKTIF|REKENING_KATEGORI_KOSONG|PEMBAYARAN_TIDAK_SAMA|SHIFT_BELUM_BUKA|SHIFT_TIDAK_AKTIF|SHIFT_SUDAH_TUTUP|ITEM_DUPLIKAT|PELANGGAN_TIDAK_ADA)/;
 export const kodeBisnis = (err) => String(err?.message || err || "").match(KODE_BISNIS)?.[1] || null;
 
 // true = masalahnya koneksi/server tidak terjangkau (bukan penolakan aturan). Aman diulang karena
@@ -207,6 +207,8 @@ function pesanSinkron(err) {
     case "SHIFT_TIDAK_AKTIF":
     case "SHIFT_SUDAH_TUTUP":
       return "Shift transaksi ini sudah tidak aktif di server.";
+    case "PELANGGAN_TIDAK_ADA":
+      return "Pelanggan transaksi ini sudah tidak ada di menu Grosir.";
     default:
       return msg || "Gagal mengirim";
   }

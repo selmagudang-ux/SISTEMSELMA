@@ -16,14 +16,15 @@ const BATAS_DAFTAR = 50;
 
 // sumber ("toko" | "master") ikut disimpan di dalam diskon_trx (kolom json), supaya keranjang dari HP mode Master Barang
 // hanya muncul di kasir yang juga mode Master Barang (kode barang kedua mode berbeda). Tanpa perubahan tabel.
-export async function simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs, totalPerkiraan, sumber = "toko" }) {
+export async function simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs, totalPerkiraan, sumber = "toko", pelanggan = null }) {
   const baris = {
     entitas: entitasSesi(),
     kasir_id: String(session?.id ?? ""),
     kasir_nama: session?.nama || session?.username || "",
     nama: (nama || "").trim() || null,
     items,
-    diskon_trx: { ...(diskonTrx || {}), sumber },
+    // pelanggan ({id,nama,kategori}) ikut disimpan di sini juga (mode Master Barang) supaya kasir yang mengambilnya langsung tahu kategori harganya.
+    diskon_trx: { ...(diskonTrx || {}), sumber, ...(pelanggan?.id ? { pelanggan: { id: pelanggan.id, nama: pelanggan.nama, kategori: pelanggan.kategori } } : {}) },
     jumlah_pcs: Math.round(Number(jumlahPcs) || 0),
     total_perkiraan: Math.round(Number(totalPerkiraan) || 0),
   };

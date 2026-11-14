@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users } from "lucide-react";
 import { sbAll, fmtRp } from "../../lib/api";
 import { kasirModeMaster } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
@@ -9,6 +9,7 @@ import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
 import { simpanKeranjangTersimpan } from "./kasirKeranjang";
 import KeranjangTersimpan from "./KeranjangTersimpan";
+import PilihPelanggan, { kunciHargaPelanggan, LABEL_KATEGORI_PELANGGAN, warnaKategori } from "./PilihPelanggan";
 import {
   useStatusKasir,
   statusSekarang,
@@ -61,8 +62,8 @@ const dariToko = (r) => ({
 // MODE MASTER BARANG (hak akses "kasir.dari_master"): barang = sku_master (katalog bersama), harga = kolom ecer,
 // stok = sku_stok PT ini (sb/sbAll menyamarkannya jadi kolom `stok`, lihat lib/api.js). Bentuknya sudah sama dengan
 // bentuk yang dipakai layar ini, jadi cukup dipilih kolomnya. Disimpan lewat kasir_simpan_transaksi_master.
-const KOLOM_MASTER = "id,sku,model,warna,ukuran,kategori,barcode_supplier,hpp,ecer,grosir,stok,nonaktif";
-// Harga jual mode ini = harga GROSIR Master Barang (kolom grosir), disimpan di field `ecer` supaya seluruh layar
+const KOLOM_MASTER = "id,sku,model,warna,ukuran,kategori,barcode_supplier,hpp,ecer,tengah,grosir,stok,nonaktif";
+// Harga jual mode ini mengikuti KATEGORI PELANGGAN (kolom grosir / tengah / ecer di Master Barang), disimpan di field `ecer` supaya seluruh layar
 // tidak perlu diubah. Foto Master Barang disimpan per-barang di tabel items (foto terbaru per SKU), sama seperti
 // halaman SKU & Harga. Foto ikut disimpan di cache offline bersama datanya.
 async function muatBarangMaster() {
@@ -79,7 +80,9 @@ async function muatBarangMaster() {
   }
   return (rows || []).map((r) => ({ ...r, foto_url: terbaru.get(r.sku)?.url || null }));
 }
-const dariMaster = (r) => ({ ...r, ecer: r.grosir, grosir: 0, foto: r.foto_url || null, skuGudang: r.sku });
+const dariMaster = (r, kunciHarga = "grosir") => ({ ...r, ecer: r[kunciHarga], grosir: 0, foto: r.foto_url || null, skuGudang: r.sku });
+// Daftar pelanggan Menu Grosir (difilter per PT otomatis oleh sbAll). Dipakai mode Master Barang.
+const muatDaftarPelanggan = async () => (await sbAll("grosir_pelanggan?select=id,kode,nama,kategori,wa&order=nama")) || [];
 const MAKS_HASIL = 40;
 const tglPendekJam = (ms) => new Date(ms).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -94,9 +97,10 @@ function bacaSimpan(session) {
       items: Array.isArray(d?.items) ? d.items : [],
       diskonTrx: d?.diskonTrx || { tipe: "rp", nilai: "" },
       kunci: d?.kunci || null,
+      pelanggan: d?.pelanggan?.id ? d.pelanggan : null,
     };
   } catch {
-    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null };
+    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null, pelanggan: null };
   }
 }
 
@@ -186,6 +190,18 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // Satu keranjang = satu kunci. Dikirim ke database supaya transaksi yang sama tidak
   // tersimpan dua kali kalau tombol Bayar ditekan ulang (mis. koneksi putus).
   const [kunci, setKunci] = useState(() => bacaSimpan(session).kunci);
+  // Mode Master Barang: pelanggan (dari menu Grosir) menentukan kategori harga, dan transaksinya masuk Pesanan Grosir saat tutup kasir.
+  const [pelanggan, setPelanggan] = useState(() => bacaSimpan(session).pelanggan);
+  const [daftarPelanggan, setDaftarPelanggan] = useState([]);
+  const [memuatPelanggan, setMemuatPelanggan] = useState(false);
+  const [pilihPelBuka, setPilihPelBuka] = useState(false);
+  // Data kategori terbaru dari daftar (kalau kategori pelanggan diubah di menu Grosir), selain itu pakai yang tersimpan di keranjang.
+  const pelTerbaru = modeMaster && pelanggan ? daftarPelanggan.find((p) => p.id === pelanggan.id) : null;
+  const pelangganAktif = modeMaster && pelanggan ? (pelTerbaru ? { id: pelanggan.id, nama: pelTerbaru.nama, kategori: kunciHargaPelanggan(pelTerbaru) } : pelanggan) : null;
+  const kunciHarga = modeMaster ? kunciHargaPelanggan(pelangganAktif) : "grosir";
+  const kunciHargaRef = useRef(kunciHarga);
+  kunciHargaRef.current = kunciHarga;
+  const rawRef = useRef(null); // data barang terakhir (mentah) supaya harga bisa dihitung ulang tanpa memuat ulang dari server
   const [bayarBuka, setBayarBuka] = useState(false);
   const [daftarTersimpanBuka, setDaftarTersimpanBuka] = useState(false);
   // Di HP keranjang berupa lembar yang naik dari bawah (dibuka lewat bar bawah); di layar lebar tetap kolom kanan.
@@ -219,9 +235,10 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // tidak terjual melebihi stok saat offline.
   const terapkan = useCallback(
     async (rowsToko, rowsPromo, dataPaket) => {
+      rawRef.current = { rowsToko, rowsPromo, dataPaket };
       const antri = await qtyDiAntrian(modeMaster ? "master" : "toko");
       const rows = (rowsToko || [])
-        .map(modeMaster ? dariMaster : dariToko)
+        .map(modeMaster ? (r) => dariMaster(r, kunciHargaRef.current) : dariToko)
         .map((r) => (antri.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - antri.get(r.sku)) } : r));
       setSkuList(rows.filter((s) => !s.nonaktif));
       // Promo paket (diskon) dijadikan baris promo per kategori dan digabung dengan promo lama.
@@ -347,14 +364,43 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     }
   }, [statusKoneksi.offline, muat]);
 
+  // Daftar pelanggan (mode Master Barang). Gagal dimuat / offline = pakai salinan di perangkat.
+  const muatPelangganList = useCallback(async () => {
+    if (!modeMaster) return;
+    setMemuatPelanggan(true);
+    try {
+      if (statusSekarang().offline) throw new Error("offline");
+      const rows = await muatDaftarPelanggan();
+      setDaftarPelanggan(rows);
+      simpanCacheEnt("pelanggan", rows);
+    } catch {
+      const c = await bacaCacheEnt("pelanggan");
+      if (c?.data) setDaftarPelanggan(c.data);
+    } finally {
+      setMemuatPelanggan(false);
+    }
+  }, [modeMaster]);
+  useEffect(() => {
+    muatPelangganList();
+  }, [muatPelangganList, versiData]);
+
+  // Pelanggan berganti kategori (grosir/tengah/ecer) -> harga keranjang dihitung ulang dari data barang yang sudah dimuat.
+  const kunciHargaTerakhir = useRef(kunciHarga);
+  useEffect(() => {
+    if (kunciHargaTerakhir.current === kunciHarga) return;
+    kunciHargaTerakhir.current = kunciHarga;
+    const r = rawRef.current;
+    if (modeMaster && r) terapkan(r.rowsToko, r.rowsPromo, r.dataPaket);
+  }, [kunciHarga, modeMaster, terapkan]);
+
   // Keranjang bertahan kalau halaman di-refresh (hilang saat tab ditutup / logout).
   useEffect(() => {
     try {
-      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci }));
+      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci, pelanggan }));
     } catch {
       /* penyimpanan penuh / diblokir — abaikan */
     }
-  }, [items, diskonTrx, kunci, session]);
+  }, [items, diskonTrx, kunci, pelanggan, session]);
 
   // Indeks pencarian: dibuat sekali per daftar SKU.
   const indeks = useMemo(() => {
@@ -392,7 +438,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     (s) => {
       const harga = Number(s.ecer) || 0;
       const stok = Number(s.stok) || 0;
-      if (harga <= 0) return { ok: false, pesan: `${s.sku}: harga ${modeMaster ? "grosir" : "ecer"} belum diisi di Master Barang` };
+      if (harga <= 0) return { ok: false, pesan: `${s.sku}: harga ${modeMaster ? (LABEL_KATEGORI_PELANGGAN[kunciHarga] || "grosir").toLowerCase() : "ecer"} belum diisi di Master Barang` };
       if (stok <= 0) return { ok: false, pesan: `${s.sku}: stok habis` };
       const ada = items.find((it) => it.sku === s.sku);
       if (ada && ada.qty + 1 > stok) return { ok: false, pesan: `${s.sku}: stok hanya ${stok}` };
@@ -406,7 +452,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       );
       return { ok: true, pesan: `${namaTampil(s)} ditambahkan` };
     },
-    [items, promoMap, modeMaster]
+    [items, promoMap, modeMaster, kunciHarga]
   );
 
   const tambahDariKode = (kode) => {
@@ -486,8 +532,9 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     if (nama === null) return; // dibatalkan
     setMenyimpan(true);
     try {
-      await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total, sumber: modeMaster ? "master" : "toko" });
+      await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total, sumber: modeMaster ? "master" : "toko", pelanggan: pelangganAktif });
       setItems([]);
+      setPelanggan(null);
       setDiskonTrx({ tipe: "rp", nilai: "" });
       setBukaDiskon(new Set());
       setKunci(null);
@@ -511,6 +558,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       return false;
     }
     setItems(baru);
+    if (modeMaster && r.diskon_trx?.pelanggan?.id) setPelanggan(r.diskon_trx.pelanggan);
     setDiskonTrx(r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
@@ -519,6 +567,11 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   };
 
   const bukaBayar = () => {
+    if (modeMaster && !pelangganAktif) {
+      tampilToast("Pilih pelanggan dulu sebelum bayar.");
+      setPilihPelBuka(true);
+      return;
+    }
     if (!kunci) setKunci(buatKunci());
     setBayarBuka(true);
   };
@@ -526,6 +579,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // stok di layar dimuat ulang. Modal tetap terbuka menampilkan kembalian.
   const setelahBayar = () => {
     setItems([]);
+    setPelanggan(null);
     setDiskonTrx({ tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
@@ -558,6 +612,28 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
       {/* ===== KIRI: cari & pilih barang ===== */}
       <section className={`lg:flex-1 p-3 lg:p-5 lg:overflow-y-auto ${items.length ? "pb-24" : ""} lg:pb-5`}>
+        {modeMaster && (
+          <button
+            type="button"
+            onClick={() => {
+              muatPelangganList();
+              setPilihPelBuka(true);
+            }}
+            className={`mb-3 w-full flex items-center gap-3 text-left px-4 py-3 rounded-2xl border transition-colors ${
+              pelangganAktif ? "border-slate-800 bg-slate-900 hover:border-amber-500/50" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
+            }`}
+          >
+            <Users size={18} className={pelangganAktif ? "text-slate-400" : "text-amber-400"} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-slate-500">Pelanggan</div>
+              <div className="text-sm font-semibold truncate">{pelangganAktif ? pelangganAktif.nama : "Pilih pelanggan (wajib)"}</div>
+            </div>
+            {pelangganAktif && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${warnaKategori(kunciHarga)}`}>Harga {LABEL_KATEGORI_PELANGGAN[kunciHarga]}</span>
+            )}
+            <ChevronDown size={16} className="text-slate-500 flex-shrink-0" />
+          </button>
+        )}
         <div className="flex items-center gap-2.5">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -919,7 +995,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             disabled={!items.length || ringkas.total <= 0}
             className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold text-base py-3.5 rounded-2xl transition-colors"
           >
-            Bayar
+            {modeMaster && !pelangganAktif ? "Pilih Pelanggan & Bayar" : "Bayar"}
           </button>
           )}
         </div>
@@ -953,6 +1029,19 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
         </div>
       )}
 
+      {pilihPelBuka && (
+        <PilihPelanggan
+          daftar={daftarPelanggan}
+          terpilih={pelangganAktif}
+          memuat={memuatPelanggan}
+          onPilih={(p) => {
+            setPelanggan(p);
+            setPilihPelBuka(false);
+          }}
+          onClose={() => setPilihPelBuka(false)}
+        />
+      )}
+
       {daftarTersimpanBuka && <KeranjangTersimpan session={session} sumber={modeMaster ? "master" : "toko"} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
 
       {bayarBuka && (
@@ -963,6 +1052,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           session={session}
           kunci={kunci}
           sumber={modeMaster ? "master" : "toko"}
+          pelanggan={pelangganAktif}
           onSukses={setelahBayar}
           onMuatUlang={muat}
           onClose={() => setBayarBuka(false)}

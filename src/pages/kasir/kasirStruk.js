@@ -54,6 +54,7 @@ export function susunStruk(d) {
     nomor: d.nomor || "",
     waktu: d.waktu || new Date().toISOString(),
     kasir: d.kasir || "",
+    pelanggan: d.pelanggan || "",
     catatan: d.catatan || "",
     identitas: d.identitas || { nama: "", alamat: [] },
     salinan: !!d.salinan,
@@ -88,6 +89,7 @@ export function pesanWaStruk(s) {
     ``,
     `No: ${s.nomor}`,
     `Tanggal: ${tglJamId(s.waktu)}`,
+    ...(s.pelanggan ? [`Pelanggan: ${s.pelanggan}`] : []),
     ``,
     ...baris,
     ``,
@@ -140,7 +142,7 @@ function gambarStruk(doc, s) {
   }
   garis();
   doc.setFont("helvetica", "normal").setFontSize(8.5);
-  [`No: ${s.nomor}`, `Tanggal: ${tglJamId(s.waktu)}`, ...(s.kasir ? [`Kasir: ${s.kasir}`] : [])].forEach((t) => {
+  [`No: ${s.nomor}`, `Tanggal: ${tglJamId(s.waktu)}`, ...(s.kasir ? [`Kasir: ${s.kasir}`] : []), ...(s.pelanggan ? [`Pelanggan: ${s.pelanggan}`] : [])].forEach((t) => {
     doc.text(t, MARGIN, y);
     y += 4;
   });
