@@ -1548,7 +1548,10 @@ export function saldoMarketplace(marketplaceTransaksi, platform, toko) {
     .reduce((saldo, t) => {
       const jumlah = Number(t.jumlah) || 0;
       if (t.tipe === "pemasukan") return saldo + jumlah;
-      if (t.tipe === "iklan" || t.tipe === "pencairan") return saldo - jumlah;
+      if (t.tipe === "pencairan") return saldo - jumlah;
+      // Iklan yang sudah dibayar dari rekening lain (kolom rekening terisi saat
+      // diselesaikan lewat Pencairan) TIDAK memotong saldo marketplace.
+      if (t.tipe === "iklan") return t.rekening ? saldo : saldo - jumlah;
       return saldo;
     }, 0);
 }

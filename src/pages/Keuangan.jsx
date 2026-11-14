@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { downloadXlsx } from "../lib/exportData";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -1003,6 +1004,46 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
     })
     .sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
 
+  // Unduh daftar yang sedang tampil di layar (ikut semua filter aktif:
+  // Bank/Kas Kecil, rentang tanggal, jenis, dan kata pencarian).
+  const unduhExcel = async () => {
+    try {
+      const rows = filtered.map((t) => {
+        const isTransfer = t.tipe === "transfer";
+        const kasAsal = kasDariRekening(petaKas, t.rekening);
+        const kasTujuan = isTransfer ? kasDariRekening(petaKas, t.rekening_tujuan) : null;
+        return {
+          tanggal: t.tanggal,
+          jenis: t.tipe === "masuk" ? "Pemasukan" : t.tipe === "keluar" ? "Pengeluaran" : "Transfer",
+          kas: isTransfer && kasAsal !== kasTujuan ? `${LABEL_KAS[kasAsal]} → ${LABEL_KAS[kasTujuan]}` : LABEL_KAS[kasAsal],
+          rekening: labelDari(rekeningList, t.rekening),
+          rekeningTujuan: isTransfer ? labelDari(rekeningList, t.rekening_tujuan) : "",
+          kategori: isTransfer ? "" : labelDari(t.tipe === "masuk" ? kategoriMasukList : kategoriKeluarList, t.kategori),
+          keterangan: t.keterangan || "",
+          jumlah: Number(t.jumlah) || 0,
+        };
+      });
+      await downloadXlsx(`transaksi-keuangan_${dari || "awal"}_sd_${sampai || "sekarang"}.xlsx`, [
+        {
+          name: "Transaksi",
+          columns: [
+            { key: "tanggal", label: "Tanggal" },
+            { key: "jenis", label: "Jenis" },
+            { key: "kas", label: "Kas" },
+            { key: "rekening", label: "Rekening" },
+            { key: "rekeningTujuan", label: "Rekening Tujuan" },
+            { key: "kategori", label: "Kategori" },
+            { key: "keterangan", label: "Keterangan" },
+            { key: "jumlah", label: "Jumlah" },
+          ],
+          rows,
+        },
+      ]);
+    } catch (e) {
+      showToast?.(e.message || "Gagal mengunduh", "err");
+    }
+  };
+
   return (
     <div>
       {statusLama && (
@@ -1013,12 +1054,22 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
         description="Pencatatan kas masuk, kas keluar, dan transfer antar rekening. Untuk ringkasan, grafik, dan unduh laporan, buka menu Laporan Keuangan."
         sticky
         action={
-          <button
-            onClick={() => setModal({ type: "keuangan-transaksi-form" })}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-          >
-            <Plus size={14} /> Transaksi
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={unduhExcel}
+              disabled={filtered.length === 0}
+              title="Unduh daftar transaksi yang sedang tampil (sesuai tanggal, jenis, dan pencarian)"
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Download size={14} /> Unduh Excel
+            </button>
+            <button
+              onClick={() => setModal({ type: "keuangan-transaksi-form" })}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Plus size={14} /> Transaksi
+            </button>
+          </div>
         }
       />
 
