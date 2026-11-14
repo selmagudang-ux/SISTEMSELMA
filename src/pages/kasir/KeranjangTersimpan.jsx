@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { X, Loader2, AlertCircle, CloudDownload, Trash2, ShoppingCart } from "lucide-react";
 import { fmtRp } from "../../lib/api";
-import { bisa } from "../../lib/constants";
 import { muatKeranjangTersimpan, hapusKeranjangTersimpan } from "./kasirKeranjang";
 
 // =========================================================
@@ -11,8 +10,8 @@ import { muatKeranjangTersimpan, hapusKeranjangTersimpan } from "./kasirKeranjan
 
 const tglJam = (v) => new Date(v).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-export default function KeranjangTersimpan({ session, onAmbil, onClose }) {
-  const semuaKasir = bisa(session?.role, "kasir.lihat_semua");
+export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, onClose }) {
+  const semuaKasir = true;
   const [daftar, setDaftar] = useState(null);
   const [error, setError] = useState("");
   const [sibuk, setSibuk] = useState(null); // id yang sedang diproses
@@ -20,7 +19,7 @@ export default function KeranjangTersimpan({ session, onAmbil, onClose }) {
   const muat = async () => {
     setError("");
     try {
-      setDaftar(await muatKeranjangTersimpan(session));
+      setDaftar(await muatKeranjangTersimpan(session, sumber));
     } catch (e) {
       setDaftar([]);
       setError(e?.message || "Gagal memuat keranjang tersimpan");
@@ -72,7 +71,7 @@ export default function KeranjangTersimpan({ session, onAmbil, onClose }) {
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div>
             <div className="font-bold">Keranjang Tersimpan</div>
-            <div className="text-xs text-slate-500">{semuaKasir ? "Semua kasir di toko ini" : "Milik akun ini"}</div>
+            <div className="text-xs text-slate-500">Dari semua petugas di toko ini</div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-500 hover:text-slate-200">
             <X size={18} />
@@ -92,7 +91,7 @@ export default function KeranjangTersimpan({ session, onAmbil, onClose }) {
             <div className="text-center py-10">
               <ShoppingCart size={30} className="mx-auto mb-2 text-slate-700" />
               <div className="text-sm text-slate-400">Belum ada keranjang tersimpan</div>
-              <div className="text-xs text-slate-500 mt-1">Isi keranjang lalu tekan "Simpan" untuk melanjutkannya di perangkat lain.</div>
+              <div className="text-xs text-slate-500 mt-1">Petugas mengisi keranjang di HP lalu menekan "Simpan"; keranjangnya muncul di sini.</div>
             </div>
           ) : (
             daftar.map((r) => (

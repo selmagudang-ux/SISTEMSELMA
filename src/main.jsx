@@ -63,6 +63,22 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   </React.StrictMode>
 );
 
+// Kasir bisa dipasang di HP (PWA): tautan manifest hanya dipasang di halaman /kasir, bukan di SELMA.
+if (adalahKasir) {
+  const m = document.createElement("link");
+  m.rel = "manifest";
+  m.href = "/kasir.webmanifest";
+  document.head.appendChild(m);
+  const a = document.createElement("link");
+  a.rel = "apple-touch-icon";
+  a.href = "/kasir-icon-192.png";
+  document.head.appendChild(a);
+  const t = document.createElement("meta");
+  t.name = "theme-color";
+  t.content = "#004aad";
+  document.head.appendChild(t);
+}
+
 // Mode offline kasir: service worker membuat halaman /kasir bisa dibuka tanpa internet
 // (lihat public/sw.js). Hanya didaftarkan dari halaman kasir & hanya di build produksi.
 if (adalahKasir && import.meta.env.PROD && "serviceWorker" in navigator) {

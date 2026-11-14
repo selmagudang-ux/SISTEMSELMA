@@ -1,5 +1,4 @@
 import { sb, entitasSesi } from "../../lib/api";
-import { bisa } from "../../lib/constants";
 
 // =========================================================
 // KASIR — KERANJANG TERSIMPAN (lanjutkan di perangkat lain)
@@ -15,14 +14,16 @@ const KOLOM = "id,kasir_id,kasir_nama,nama,items,diskon_trx,jumlah_pcs,total_per
 // Batas keranjang tersimpan yang ditampilkan (yang terbaru dulu).
 const BATAS_DAFTAR = 50;
 
-export async function simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs, totalPerkiraan }) {
+// sumber ("toko" | "master") ikut disimpan di dalam diskon_trx (kolom json), supaya keranjang dari HP mode Master Barang
+// hanya muncul di kasir yang juga mode Master Barang (kode barang kedua mode berbeda). Tanpa perubahan tabel.
+export async function simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs, totalPerkiraan, sumber = "toko" }) {
   const baris = {
     entitas: entitasSesi(),
     kasir_id: String(session?.id ?? ""),
     kasir_nama: session?.nama || session?.username || "",
     nama: (nama || "").trim() || null,
     items,
-    diskon_trx: diskonTrx || null,
+    diskon_trx: { ...(diskonTrx || {}), sumber },
     jumlah_pcs: Math.round(Number(jumlahPcs) || 0),
     total_perkiraan: Math.round(Number(totalPerkiraan) || 0),
   };
@@ -30,11 +31,12 @@ export async function simpanKeranjangTersimpan({ session, items, diskonTrx, nama
   return Array.isArray(hasil) ? hasil[0] : hasil;
 }
 
-// Kasir biasa hanya melihat keranjang miliknya; role dengan kasir.lihat_semua melihat semua kasir di PT ini.
-export async function muatKeranjangTersimpan(session) {
+// Keranjang tersimpan adalah antrian serah-terima antar petugas (HP -> kasir meja), jadi SEMUA akun kasir di PT ini
+// melihat semuanya, tapi hanya yang sumbernya sama dengan mode layar ini (toko / master).
+export async function muatKeranjangTersimpan(session, sumber = "toko") {
   const q = [`select=${KOLOM}`, `entitas=eq.${encodeURIComponent(entitasSesi())}`, "order=created_at.desc", `limit=${BATAS_DAFTAR}`];
-  if (!bisa(session?.role, "kasir.lihat_semua")) q.push(`kasir_id=eq.${encodeURIComponent(String(session?.id ?? ""))}`);
-  return (await sb(`${TABEL}?${q.join("&")}`)) || [];
+  const rows = (await sb(`${TABEL}?${q.join("&")}`)) || [];
+  return rows.filter((r) => (r.diskon_trx?.sumber || "toko") === sumber);
 }
 
 export async function hapusKeranjangTersimpan(id) {

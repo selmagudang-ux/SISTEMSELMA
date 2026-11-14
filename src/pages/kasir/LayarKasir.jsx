@@ -169,7 +169,7 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
 
 // versiData: angka yang dinaikkan induk (mis. setelah Barang Toko ditutup) supaya daftar barang dimuat ulang.
 // pilihMaster: hanya dipakai Super Appa (tombol pilih mode di header KasirApp); role lain ikut hak akses kasir.dari_master.
-export default function LayarKasir({ session, versiData = 0, pilihMaster = false }) {
+export default function LayarKasir({ session, versiData = 0, pilihMaster = false, hanyaKeranjang = false }) {
   const modeMaster = kasirModeMaster(session?.role, pilihMaster);
   const kunciCacheBarang = modeMaster ? "master_barang" : "master_toko";
   const [skuList, setSkuList] = useState([]);
@@ -480,11 +480,11 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
   const simpanKeCloud = async () => {
     if (!items.length || menyimpan) return;
     if (statusKoneksi.offline) return tampilToast("Tidak ada internet — keranjang hanya bisa disimpan saat online.");
-    const nama = window.prompt("Nama keranjang (boleh dikosongkan), mis. nama pelanggan:", "");
+    const nama = window.prompt(hanyaKeranjang ? "Nama / nomor keranjang (mis. nama pelanggan), supaya mudah dicari kasir:" : "Nama keranjang (boleh dikosongkan), mis. nama pelanggan:", "");
     if (nama === null) return; // dibatalkan
     setMenyimpan(true);
     try {
-      await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total });
+      await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total, sumber: modeMaster ? "master" : "toko" });
       setItems([]);
       setDiskonTrx({ tipe: "rp", nilai: "" });
       setBukaDiskon(new Set());
@@ -509,7 +509,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
       return false;
     }
     setItems(baru);
-    setDiskonTrx(r.diskon_trx || { tipe: "rp", nilai: "" });
+    setDiskonTrx(r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
     tampilToast(catatan.length ? `Keranjang dimuat, disesuaikan: ${catatan.join("; ")}` : "Keranjang dimuat.", catatan.length ? "err" : "ok");
@@ -725,6 +725,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
             >
               {menyimpan ? <Loader2 size={13} className="animate-spin" /> : <CloudUpload size={13} />} Simpan
             </button>
+            {!hanyaKeranjang && (
             <button
               onClick={() => setDaftarTersimpanBuka(true)}
               title="Ambil keranjang yang disimpan dari perangkat lain"
@@ -732,6 +733,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
             >
               <CloudDownload size={13} /> Ambil
             </button>
+            )}
             <button
               onClick={kosongkan}
               disabled={!items.length}
@@ -895,6 +897,15 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
             <span className="text-sm font-semibold text-slate-300 pb-1">Total</span>
             <span className="text-3xl font-extrabold text-amber-400 tabular-nums tracking-tight leading-none">{fmtRp(ringkas.total)}</span>
           </div>
+          {hanyaKeranjang ? (
+            <button
+              onClick={simpanKeCloud}
+              disabled={!items.length || menyimpan}
+              className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold text-base py-3.5 rounded-2xl transition-colors"
+            >
+              {menyimpan ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />} Simpan Keranjang untuk Kasir
+            </button>
+          ) : (
           <button
             onClick={bukaBayar}
             disabled={!items.length || ringkas.total <= 0}
@@ -902,6 +913,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
           >
             Bayar
           </button>
+          )}
         </div>
       </aside>
 
@@ -917,7 +929,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = false
         </div>
       )}
 
-      {daftarTersimpanBuka && <KeranjangTersimpan session={session} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
+      {daftarTersimpanBuka && <KeranjangTersimpan session={session} sumber={modeMaster ? "master" : "toko"} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
 
       {bayarBuka && (
         <ModalBayar

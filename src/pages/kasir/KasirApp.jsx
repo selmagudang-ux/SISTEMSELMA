@@ -3,7 +3,8 @@ import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Ar
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
-import { bolehKasir as bolehKasirRole, setAksesRole, bisa } from "../../lib/constants";
+import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang } from "../../lib/constants";
+import { PasangAplikasi, adalahHp } from "./kasirPasang";
 import { sb } from "../../lib/api";
 import LayarKasir from "./LayarKasir";
 import RiwayatStruk from "./RiwayatStruk";
@@ -112,8 +113,10 @@ export default function KasirApp() {
   }, [session?.id, session?.role]);
 
   const bolehKasir = !!session && aksesSiap && bolehKasirRole(session.role);
+  // Mode keranjang HP: tanpa shift, tanpa pembayaran. Hanya mengisi keranjang lalu Simpan.
+  const hanyaKeranjang = !!session && aksesSiap && kasirHanyaKeranjang(session.role);
   useEffect(() => {
-    if (!bolehKasir) return undefined;
+    if (!bolehKasir || hanyaKeranjang) return undefined;
     let batal = false;
     setShift(undefined);
     setErrShift("");
@@ -148,7 +151,7 @@ export default function KasirApp() {
       batal = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idSesi, bolehKasir]);
+  }, [idSesi, bolehKasir, hanyaKeranjang]);
 
   // Shift yang baru dibuka langsung disalin ke perangkat (dipakai kalau halaman dimuat ulang saat offline).
   useEffect(() => {
@@ -244,10 +247,11 @@ export default function KasirApp() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <ChipKoneksi onBuka={() => setAntrianBuka(true)} />
           <ThemeToggle />
-          {!adalahAppDesktop() && (
+          <PasangAplikasi />
+          {!adalahAppDesktop() && !adalahHp() && (
             <a
               href={URL_UNDUH_APP_KASIR}
               title="Unduh aplikasi kasir untuk Windows"
@@ -265,7 +269,7 @@ export default function KasirApp() {
               <Repeat size={13} /> Mode: {pilihMaster ? "Master Barang" : "Barang Toko"}
             </button>
           )}
-          {bisa(session.role, "kasir.buka_laci") && (
+          {!hanyaKeranjang && bisa(session.role, "kasir.buka_laci") && (
             <button
               onClick={() => bukaLaciManual({ kasir: session.nama || session.username })}
               title="Cetak slip kecil agar printer membuka laci"
@@ -274,7 +278,7 @@ export default function KasirApp() {
               <Archive size={13} /> Buka Laci
             </button>
           )}
-          {bisa(session.role, "kasir.barang_toko") && (
+          {!hanyaKeranjang && bisa(session.role, "kasir.barang_toko") && (
             <button
               onClick={() => setBarangBuka(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
@@ -282,7 +286,7 @@ export default function KasirApp() {
               <Package size={13} /> Barang Toko
             </button>
           )}
-          {bisa(session.role, "kasir.promo") && (
+          {!hanyaKeranjang && bisa(session.role, "kasir.promo") && (
             <button
               onClick={() => setPromoBuka(true)}
               className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
@@ -298,12 +302,14 @@ export default function KasirApp() {
               <Lock size={13} /> Tutup Kasir
             </button>
           )}
+          {!hanyaKeranjang && (
           <button
             onClick={() => setRiwayatBuka(true)}
             className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
           >
             <History size={13} /> Riwayat
           </button>
+          )}
           <button
             onClick={keluar}
             className="flex items-center gap-1.5 text-xs font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800 px-3 py-2 rounded-xl border border-slate-800 transition-colors"
@@ -314,7 +320,9 @@ export default function KasirApp() {
       </header>
 
       <BannerOffline onBuka={() => setAntrianBuka(true)} />
-      {shift === undefined ? (
+      {hanyaKeranjang ? (
+        <LayarKasir session={sesiKasir} versiData={versiData} hanyaKeranjang />
+      ) : shift === undefined ? (
         <div className="flex-1 flex items-center justify-center text-slate-500">
           <Loader2 className="animate-spin" size={22} />
         </div>
