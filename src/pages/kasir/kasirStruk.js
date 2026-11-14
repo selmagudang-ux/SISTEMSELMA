@@ -212,3 +212,44 @@ export async function bagikanAtauUnduhPdf({ blob, nama }, pesan) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   return "diunduh";
 }
+
+// ---------------------------------------------------------
+// Printer struk (ESC/POS) hanya bisa mencetak karakter ASCII biasa; karakter lain (mis. tanda hubung panjang
+// "–" / "—", garis miring khusus "⁄" "∕", tanda kutip melengkung, spasi khusus, simbol) dicetak sebagai "?".
+// Fungsi ini mengganti karakter itu dengan padanan ASCII sebelum dikirim ke printer. Hanya untuk jalur cetak teks
+// printer — tampilan di layar, PDF, dan cetak lewat HTML tidak berubah.
+const PETA_ASCII = {
+  "–": "-", "—": "-", "‐": "-", "‑": "-", "‒": "-", "−": "-", "﹣": "-", "－": "-",
+  "⁄": "/", "∕": "/", "／": "/", "⧸": "/", "\\": "/",
+  "‘": "'", "’": "'", "‚": "'", "“": '"', "”": '"', "„": '"',
+  "×": "x", "✕": "x", "·": ".", "•": "-", "…": "...", "°": "o",
+  "½": "1/2", "¼": "1/4", "¾": "3/4", "™": "TM", "©": "(c)", "®": "(R)",
+};
+export function keAsciiPrinter(teks) {
+  if (typeof teks !== "string") return teks;
+  let h = "";
+  for (const ch of teks) {
+    if (ch >= " " && ch <= "~") {
+      h += ch;
+      continue;
+    }
+    if (PETA_ASCII[ch]) {
+      h += PETA_ASCII[ch];
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      h += " "; // spasi khusus (nbsp, tab, dll.)
+      continue;
+    }
+    const dasar = ch.normalize("NFKD").replace(/[\u0300-\u036f]/g, ""); // é -> e
+    h += dasar && /^[\x20-\x7e]+$/.test(dasar) ? dasar : "-";
+  }
+  return h;
+}
+export const keAsciiBaris = (baris) =>
+  (baris || []).map((b) => ({
+    ...b,
+    ...(b.teks != null ? { teks: keAsciiPrinter(b.teks) } : {}),
+    ...(b.kiri != null ? { kiri: keAsciiPrinter(b.kiri) } : {}),
+    ...(b.kanan != null ? { kanan: keAsciiPrinter(b.kanan) } : {}),
+  }));

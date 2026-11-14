@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState } from "react";
 import { X, Printer, FileDown, MessageCircle, Loader2 } from "lucide-react";
 import { fmtRp } from "../../lib/api";
-import { tglJamId, pesanWaStruk, linkWaStruk, buatPdfStruk, bagikanAtauUnduhPdf } from "./kasirStruk";
+import { tglJamId, pesanWaStruk, linkWaStruk, buatPdfStruk, bagikanAtauUnduhPdf, keAsciiBaris } from "./kasirStruk";
 
 // =========================================================
 // KASIR — PREVIEW, CETAK, PDF & WHATSAPP STRUK (fase 4)
@@ -202,7 +202,7 @@ export default function ModalStruk({ struk, onClose }) {
         if (desktop && el && (desktop.cetakStruk || desktop.cetakHtml)) {
           // Aplikasi desktop, urutan: 1) teks ESC/POS (hemat kertas)  2) HTML di jendela tersembunyi  3) window.print()
           const viaHtml = () => (desktop.cetakHtml ? desktop.cetakHtml(htmlCetak(el), mmCetak) : Promise.resolve({ ok: false, error: "tidak tersedia" }));
-          const awal = desktop.cetakStruk ? desktop.cetakStruk(barisPrinter(struk)) : Promise.resolve({ ok: false, error: "mode-html" });
+          const awal = desktop.cetakStruk ? desktop.cetakStruk(keAsciiBaris(barisPrinter(struk))) : Promise.resolve({ ok: false, error: "mode-html" });
           awal
             .catch(() => ({ ok: false, error: "mode-html" }))
             .then((r) => {

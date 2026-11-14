@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Printer, Loader2 } from "lucide-react";
 import { fmtRp } from "../../lib/api";
 import { SKEMA, HARI_WIB } from "./kasirApi";
-import { tglJamId } from "./kasirStruk";
+import { tglJamId, keAsciiBaris } from "./kasirStruk";
 
 // =========================================================
 // RINCIAN PENJUALAN SHIFT — dipakai di layar Tutup Kasir.
@@ -360,7 +360,7 @@ export async function cetakRincianShift({ rincian, info }) {
 
   // Aplikasi desktop, urutan seperti struk: 1) teks ESC/POS (hemat kertas)  2) HTML di jendela tersembunyi.
   if (desktop?.cetakStruk) {
-    const r = await desktop.cetakStruk(baris).catch(() => ({ ok: false, error: "mode-html" }));
+    const r = await desktop.cetakStruk(keAsciiBaris(baris)).catch(() => ({ ok: false, error: "mode-html" }));
     if (!r || r.ok !== false) return;
   }
   const mm = await ukurTinggiMm(baris, adaNama);
