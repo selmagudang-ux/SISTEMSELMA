@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw, FileText, Tag } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, ENTITAS_DEFAULT } from "../lib/api";
+import { sb, sbAll, nextKode, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, ENTITAS_DEFAULT } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
@@ -16,6 +16,13 @@ import PermintaanStok from "./PermintaanStok";
 // entitas otomatis), jadi stok yang tidak jadi pindah (batal / ditolak / selisih)
 // dikembalikan oleh PENGIRIM sendiri lewat tombol "Kembalikan ke stok".
 // Tabel: transfer_barang (supabase/migrations/20261110_transfer_antar_entitas.sql).
+//
+// BARANG HABIS PAKAI (bubble wrap, lakban, ATK, dst) ikut bisa ditransfer lewat tabel yang sama:
+//   - item transfer diberi penanda jenis: "habis_pakai" + nama + satuan (tanpa kolom/SQL baru).
+//   - stoknya bukan di sku_stok, tapi dihitung dari perlengkapan_mutasi (lihat BelanjaHabisPakai.jsx).
+//     Kirim = mutasi "koreksi" minus di gudang pengirim; terima / kembalikan = mutasi "koreksi" plus.
+//   - barang habis pakai tidak sama antar PT (id & kode PLK- beda), jadi PT penerima mencocokkan
+//     lewat NAMA barang; kalau belum ada, barangnya dibuat otomatis di PT penerima.
 // =========================================================
 
 const STATUS = {
@@ -27,6 +34,26 @@ const STATUS = {
 
 // Atribut kode SKU yang disimpan di transfer (untuk membuat kode Master Data di PT penerima).
 const TIPE_KODE_SKU = ["bahan", "peruntukan", "kategori", "subkategori", "warna", "ukuran"];
+
+// ---- Barang habis pakai ----
+const adalahHP = (it) => it?.jenis === "habis_pakai";
+const satuanItem = (it) => (adalahHP(it) ? it.satuan || "pcs" : "pcs");
+const fmtQty = (n) => (Number(n) || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
+const bulat2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const tglHariIni = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+function LabelItem({ it }) {
+  return adalahHP(it) ? (
+    <>
+      {it.nama}
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 ml-1.5 font-sans">Habis pakai</span>
+    </>
+  ) : (
+    <span className="font-mono">{it.sku}</span>
+  );
+}
 
 const fmtWaktu = (v) => (v ? new Date(v).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "");
 
@@ -165,6 +192,50 @@ async function terapkanDeltaStok(ent, daftar) {
   return { riwayat, undo };
 }
 
+// Tambah stok barang habis pakai ke PT akun sendiri. daftar: [{ nama, satuan, jumlah, catatan }].
+// Barang dicocokkan lewat NAMA (tidak peduli huruf besar/kecil); kalau belum ada di PT ini dibuat
+// otomatis (kode PLK- berikutnya). Stok = mutasi "koreksi" positif. Mengembalikan { undo } yang
+// menghapus mutasi (dan barang baru) kalau langkah berikutnya gagal.
+async function tambahHabisPakai(daftar) {
+  const mutasiId = [];
+  const barangBaruId = [];
+  const undo = async () => {
+    for (const id of mutasiId) await sb(`perlengkapan_mutasi?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
+    for (const id of barangBaruId) await sb(`perlengkapan?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
+  };
+  try {
+    const ada = (await sbAll("perlengkapan?select=id,kode,nama,satuan")) || [];
+    const kunci = (n) => String(n || "").trim().toLowerCase();
+    const baris = [];
+    for (const d of daftar) {
+      let b = ada.find((x) => kunci(x.nama) === kunci(d.nama));
+      if (!b) {
+        const res = await sb("perlengkapan", {
+          method: "POST",
+          body: JSON.stringify({ kode: nextKode(ada, "kode", "PLK-"), nama: String(d.nama).trim(), satuan: d.satuan || "pcs", stok_minimum: 0 }),
+        });
+        b = Array.isArray(res) ? res[0] : res;
+        if (!b?.id) throw new Error(`Gagal membuat barang habis pakai "${d.nama}" di gudang ini.`);
+        ada.push(b);
+        barangBaruId.push(b.id);
+      }
+      baris.push({
+        perlengkapan_id: b.id,
+        tipe: "koreksi",
+        jumlah: bulat2(d.jumlah),
+        tanggal: tglHariIni(),
+        keterangan: d.catatan || null,
+      });
+    }
+    const hasil = await sb("perlengkapan_mutasi", { method: "POST", body: JSON.stringify(baris) });
+    (Array.isArray(hasil) ? hasil : [hasil]).forEach((r) => r?.id && mutasiId.push(r.id));
+  } catch (err) {
+    await undo();
+    throw err;
+  }
+  return { undo };
+}
+
 // Rencana membalikkan satu transfer ke kondisi semula (untuk tombol Hapus):
 //   ambil   = stok yang harus DITARIK dari penerima (hanya kalau sudah diterima)
 //   kembali = stok yang harus DIKEMBALIKAN ke pengirim (yang belum pernah dikembalikan)
@@ -175,8 +246,9 @@ function rencanaHapus(t) {
     const qty = Number(it.qty) || 0;
     const diterima = t.status === "diterima" ? Math.min(Number(it.qty_diterima) || 0, qty) : 0;
     const balik = t.stok_dikembalikan ? diterima : qty;
-    if (diterima > 0) ambil.push({ sku: it.sku, jumlah: diterima });
-    if (balik > 0) kembali.push({ sku: it.sku, jumlah: balik });
+    const info = { sku: it.sku, hp: adalahHP(it), nama: it.nama, satuan: it.satuan };
+    if (diterima > 0) ambil.push({ ...info, jumlah: diterima });
+    if (balik > 0) kembali.push({ ...info, jumlah: balik });
   }
   return { ambil, kembali };
 }
@@ -190,6 +262,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const [permintaan, setPermintaan] = useState([]);
   const [tabelPermintaanAda, setTabelPermintaanAda] = useState(true);
   const [rows, setRows] = useState([]);
+  const [habisPakai, setHabisPakai] = useState([]); // stok barang habis pakai gudang ini (untuk form Buat Transfer)
   const [memuat, setMemuat] = useState(true);
   const [filter, setFilter] = useState("perlu");
   const [modal, setModal] = useState(null); // {jenis: "buat"} | {jenis: "terima"|"tolak", t}
@@ -207,6 +280,12 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       setRows((await sb(`transfer_barang?or=(entitas_asal.eq.${e},entitas_tujuan.eq.${e})&order=created_at.desc&limit=300`)) || []);
     } catch (err) {
       showToast?.(err.message?.includes("transfer_barang") ? "Tabel transfer_barang belum dibuat — jalankan SQL migrasi dulu." : err.message, "err");
+    }
+    // Barang habis pakai dimuat terpisah: kalau gagal, transfer barang dagangan tetap jalan.
+    try {
+      setHabisPakai((await sbAll("perlengkapan_stok?select=id,kode,nama,satuan,stok&order=nama")) || []);
+    } catch {
+      setHabisPakai([]);
     }
     // Permintaan stok dimuat terpisah: kalau tabelnya belum dibuat, halaman Transfer tetap jalan.
     try {
@@ -269,12 +348,34 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const buatInti = async (tujuan, daftar, catatan) => {
       const e = encodeURIComponent(entSaya);
       const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
-      const segar = await sb(`sku_stok?entitas=eq.${e}&sku=in.(${daftar.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
-      const petaStok = new Map((segar || []).map((r) => [r.sku, Number(r.stok) || 0]));
-      daftar.forEach((d) => {
-        if ((petaStok.get(d.sku) ?? 0) < d.jumlah) throw new Error(`Stok ${d.sku} tidak cukup (tersisa ${petaStok.get(d.sku) ?? 0}).`);
-      });
+      const daftarSku = daftar.filter((d) => !adalahHP(d));
+      const daftarHP = daftar.filter(adalahHP);
+      // Cek stok terbaru: barang dagangan (sku_stok) dan barang habis pakai (perlengkapan_stok).
+      let petaStok = new Map();
+      if (daftarSku.length) {
+        const segar = await sb(`sku_stok?entitas=eq.${e}&sku=in.(${daftarSku.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
+        petaStok = new Map((segar || []).map((r) => [r.sku, Number(r.stok) || 0]));
+        daftarSku.forEach((d) => {
+          if ((petaStok.get(d.sku) ?? 0) < d.jumlah) throw new Error(`Stok ${d.sku} tidak cukup (tersisa ${petaStok.get(d.sku) ?? 0}).`);
+        });
+      }
+      let petaHP = new Map();
+      if (daftarHP.length) {
+        const segarHP = await sbAll(`perlengkapan_stok?select=id,nama,satuan,stok&id=in.(${daftarHP.map((d) => d.id).join(",")})`);
+        petaHP = new Map((segarHP || []).map((r) => [r.id, r]));
+        daftarHP.forEach((d) => {
+          const r = petaHP.get(d.id);
+          if (!r) throw new Error(`Barang habis pakai "${d.nama}" tidak ditemukan di gudang Anda.`);
+          if (Math.round((Number(r.stok) || 0) * 100) < Math.round(d.jumlah * 100)) {
+            throw new Error(`Stok ${r.nama} tidak cukup (tersisa ${fmtQty(r.stok)} ${r.satuan || "pcs"}).`);
+          }
+        });
+      }
       const items = daftar.map((d) => {
+        if (adalahHP(d)) {
+          const r = petaHP.get(d.id);
+          return { jenis: "habis_pakai", sku: `${r.nama} (habis pakai)`, nama: r.nama, satuan: r.satuan || "pcs", qty: d.jumlah, qty_diterima: 0 };
+        }
         // hpp = HPP per pcs saat transfer dibuat (dicatat supaya tidak ikut berubah kalau harga katalog berubah).
         const o = { sku: d.sku, qty: d.jumlah, qty_diterima: 0, hpp: Math.round(Number(d.src?.hpp) || 0) };
         TIPE_KODE_SKU.forEach((k) => {
@@ -299,7 +400,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       const dikurangi = [];
       const riwayat = [];
       try {
-        for (const d of daftar) {
+        for (const d of daftarSku) {
           const sebelum = petaStok.get(d.sku);
           const hasil = await sb(`sku_stok?sku=eq.${encodeURIComponent(d.sku)}&entitas=eq.${e}&stok=eq.${sebelum}`, {
             method: "PATCH",
@@ -310,6 +411,21 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
           riwayat.push({
             sku: d.sku, type: "keluar", qty_before: sebelum, qty_change: -d.jumlah, qty_after: sebelum - d.jumlah,
             note: `Transfer ke ${namaEnt(tujuan)} (${t.kode})`,
+          });
+        }
+        // Barang habis pakai paling akhir: kalau langkah ini gagal tidak ada yang tersisa selain stok SKU (dibatalkan di bawah).
+        if (daftarHP.length) {
+          await sb("perlengkapan_mutasi", {
+            method: "POST",
+            body: JSON.stringify(
+              daftarHP.map((d) => ({
+                perlengkapan_id: d.id,
+                tipe: "koreksi",
+                jumlah: -bulat2(d.jumlah),
+                tanggal: tglHariIni(),
+                keterangan: `Transfer ke ${namaEnt(tujuan)} (${t.kode})`,
+              }))
+            ),
           });
         }
       } catch (err) {
@@ -324,9 +440,9 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         throw err;
       }
       await catatRiwayat(riwayat);
-      // Samakan qty rak (FIFO) seperti Barang Keluar, supaya Peta Rak tidak menyimpang.
+      // Samakan qty rak (FIFO) seperti Barang Keluar, supaya Peta Rak tidak menyimpang. (Hanya barang dagangan.)
       try {
-        for (const d of daftar) {
+        for (const d of daftarSku) {
           for (const r of rencanaKurangiRak(d.sku, d.jumlah, penempatan)) {
             await sb(`penempatan?id=eq.${r.id}`, { method: "PATCH", body: JSON.stringify({ qty: Math.max(r.qtyBaru, 0) }) });
             if (r.qtyBaru <= 0) {
@@ -370,7 +486,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         throw err;
       }
       try {
-        const dikirim = new Map(daftar.map((d) => [d.sku, d.jumlah]));
+        // permSku: nama item di permintaan (barang habis pakai dicocokkan lewat nama, penulisannya bisa beda dari gudang pengirim).
+        const dikirim = new Map(daftar.map((d) => [d.permSku || d.sku, d.jumlah]));
         await sb(`permintaan_stok?id=eq.${perm.id}`, {
           method: "PATCH",
           body: JSON.stringify({
@@ -406,11 +523,21 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       });
       if (!klaim?.length) throw new Error("Transfer ini sudah diproses atau dibatalkan pengirim. Muat ulang.");
       try {
-        const { riwayat } = await tambahStokBanyak(
-          items.filter((it) => it.qty_diterima > 0).map((it) => ({ ...it, jumlah: it.qty_diterima, catatan: `Transfer dari ${namaEnt(t.entitas_asal)} (${t.kode})` })),
-          master
-        );
-        await catatRiwayat(riwayat);
+        const diterima = items.filter((it) => it.qty_diterima > 0);
+        const dSku = diterima.filter((it) => !adalahHP(it));
+        const dHP = diterima.filter(adalahHP);
+        const catatanStok = `Transfer dari ${namaEnt(t.entitas_asal)} (${t.kode})`;
+        let hasilSku = null;
+        if (dSku.length) hasilSku = await tambahStokBanyak(dSku.map((it) => ({ ...it, jumlah: it.qty_diterima, catatan: catatanStok })), master);
+        if (dHP.length) {
+          try {
+            await tambahHabisPakai(dHP.map((it) => ({ nama: it.nama, satuan: it.satuan, jumlah: it.qty_diterima, catatan: catatanStok })));
+          } catch (e2) {
+            await hasilSku?.undo();
+            throw e2;
+          }
+        }
+        if (hasilSku) await catatRiwayat(hasilSku.riwayat);
       } catch (e) {
         await sb(`transfer_barang?id=eq.${t.id}`, {
           method: "PATCH",
@@ -443,11 +570,20 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     });
     if (!klaim?.length) throw new Error("Stok transfer ini sudah dikembalikan.");
     try {
-      const { riwayat } = await tambahStokBanyak(
-        daftar.map((it) => ({ ...it, jumlah: it.kembali, catatan: `Pengembalian transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} (${STATUS[t.status]?.label})` })),
-        master
-      );
-      await catatRiwayat(riwayat);
+      const catatanStok = `Pengembalian transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} (${STATUS[t.status]?.label})`;
+      const dSku = daftar.filter((it) => !adalahHP(it));
+      const dHP = daftar.filter(adalahHP);
+      let hasilSku = null;
+      if (dSku.length) hasilSku = await tambahStokBanyak(dSku.map((it) => ({ ...it, jumlah: it.kembali, catatan: catatanStok })), master);
+      if (dHP.length) {
+        try {
+          await tambahHabisPakai(dHP.map((it) => ({ nama: it.nama, satuan: it.satuan, jumlah: it.kembali, catatan: catatanStok })));
+        } catch (e2) {
+          await hasilSku?.undo();
+          throw e2;
+        }
+      }
+      if (hasilSku) await catatRiwayat(hasilSku.riwayat);
     } catch (e) {
       await sb(`transfer_barang?id=eq.${t.id}`, { method: "PATCH", body: JSON.stringify({ stok_dikembalikan: false }) }).catch(() => {});
       throw e;
@@ -474,6 +610,13 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       if (!bisaHapus) throw new Error("Role Anda tidak punya akses menghapus transfer antar entitas.");
       if (t.entitas_asal !== entSaya) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
       const { ambil, kembali } = rencanaHapus(t);
+      // Barang habis pakai yang sudah diterima ada di gudang PT penerima (datanya terpisah per PT), jadi
+      // tidak bisa ditarik dari sini. Penerima mengirim baliknya lewat transfer baru.
+      if (ambil.some((d) => d.hp)) {
+        throw new Error("Tidak bisa dihapus: transfer ini berisi barang habis pakai yang sudah diterima. Minta penerima mengirim baliknya lewat transfer baru.");
+      }
+      const kembaliSku = kembali.filter((d) => !d.hp);
+      const kembaliHP = kembali.filter((d) => d.hp);
       if (ambil.length) {
         const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
         const ada = await sb(`sku_stok?entitas=eq.${encodeURIComponent(t.entitas_tujuan)}&sku=in.(${ambil.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
@@ -499,13 +642,19 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
             ambil.map((d) => ({ sku: d.sku, delta: -d.jumlah, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` }))
           );
         }
-        if (kembali.length) {
+        if (kembaliSku.length) {
           pengirim = await terapkanDeltaStok(
             entSaya,
-            kembali.map((d) => ({ sku: d.sku, delta: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
+            kembaliSku.map((d) => ({ sku: d.sku, delta: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
+          );
+        }
+        if (kembaliHP.length) {
+          await tambahHabisPakai(
+            kembaliHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
           );
         }
       } catch (e) {
+        await pengirim?.undo();
         await penerima?.undo();
         try {
           await sb("transfer_barang", { method: "POST", body: JSON.stringify(baris) });
@@ -585,6 +734,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         <PermintaanStok
           rows={permintaan}
           transfers={rows}
+          habisPakai={habisPakai}
           entSaya={entSaya}
           namaEnt={namaEnt}
           skuMaster={skuMaster}
@@ -603,7 +753,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       <>
       <PageHeader
         title="Transfer Barang Antar Entitas"
-        description="Kirim stok gudang ke Holding atau perusahaan lain di grup. Kode SKU sama di semua perusahaan. Stok pengirim berkurang saat dikirim; stok penerima bertambah setelah penerima mengonfirmasi."
+        description="Kirim stok gudang (barang dagangan maupun barang habis pakai) ke Holding atau perusahaan lain di grup. Kode SKU sama di semua perusahaan. Stok pengirim berkurang saat dikirim; stok penerima bertambah setelah penerima mengonfirmasi."
         action={
           <div className="flex items-center gap-2">
             <button onClick={muat} title="Muat ulang" className="p-2 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800">
@@ -665,17 +815,17 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                 <div className="px-4 py-2">
                   {(t.items || []).map((it) => (
                     <div key={it.sku} className="flex items-center justify-between py-1 text-xs">
-                      <span className="font-mono text-slate-300 truncate">
-                        {it.sku}
+                      <span className="text-slate-300 truncate">
+                        <LabelItem it={it} />
                       </span>
                       <span className="text-slate-400 shrink-0 ml-3">
-                        {t.status === "diterima" ? `${it.qty_diterima} dari ${it.qty}` : `${it.qty} pcs`}
+                        {t.status === "diterima" ? `${fmtQty(it.qty_diterima)} dari ${fmtQty(it.qty)} ${satuanItem(it)}` : `${fmtQty(it.qty)} ${satuanItem(it)}`}
                         {it.hpp != null ? ` · HPP ${fmtRp(it.hpp)}` : ""}
                       </span>
                     </div>
                   ))}
                   <div className="text-[11px] text-slate-500 mt-1">
-                    {(t.items || []).length} SKU · {totalQty} pcs
+                    {(t.items || []).some(adalahHP) ? `${(t.items || []).length} barang · total qty ${fmtQty(totalQty)}` : `${(t.items || []).length} SKU · ${totalQty} pcs`}
                     {nilaiHpp != null ? ` · Nilai HPP ${fmtRp(nilaiHpp)}` : ""}
                     {t.catatan ? ` · Catatan: ${t.catatan}` : ""}
                   </div>
@@ -757,8 +907,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
 
       {modal?.jenis === "buat" && (
         <FormBuat
-          skuMaster={skuMaster} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)}
-          awal={modal.permintaan ? awalDariPermintaan(modal.permintaan, skuMaster, namaEnt) : null}
+          skuMaster={skuMaster} habisPakai={habisPakai} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)}
+          awal={modal.permintaan ? awalDariPermintaan(modal.permintaan, skuMaster, namaEnt, habisPakai) : null}
           onSubmit={(tujuan, daftar, catatan) => buat(tujuan, daftar, catatan, modal.permintaan)}
         />
       )}
@@ -771,10 +921,19 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
 // Isi awal form transfer saat menyetujui PERMINTAAN stok: tujuan terkunci ke peminta, qty = yang
 // diminta (dibatasi stok yang ada, boleh dikurangi lagi). SKU yang stoknya kosong tidak ikut dan
 // ditampilkan sebagai peringatan.
-function awalDariPermintaan(p, skuMaster, namaEnt) {
+function awalDariPermintaan(p, skuMaster, namaEnt, habisPakai = []) {
   const pilih = [];
   const kosong = [];
   for (const it of p.items || []) {
+    // Barang habis pakai: dicocokkan lewat NAMA dengan barang habis pakai di gudang ini.
+    if (adalahHP(it)) {
+      const k = (n) => String(n || "").trim().toLowerCase();
+      const srcHP = habisPakai.find((h) => k(h.nama) === k(it.nama));
+      const stokHP = Number(srcHP?.stok) || 0;
+      if (!srcHP || stokHP <= 0) kosong.push(it.nama);
+      else pilih.push({ jenis: "habis_pakai", permSku: it.sku, src: srcHP, jumlah: Math.min(Number(it.qty) || 0, stokHP), minta: Number(it.qty) || 0 });
+      continue;
+    }
     const src = skuMaster.find((s) => s.sku === it.sku);
     const stok = Number(src?.stok) || 0;
     if (!src || stok <= 0) kosong.push(it.sku);
@@ -783,27 +942,43 @@ function awalDariPermintaan(p, skuMaster, namaEnt) {
   return { tujuan: p.entitas_peminta, pilih, kosong, catatan: `Permintaan ${p.kode} dari ${namaEnt(p.entitas_peminta)}${p.catatan ? ` — ${p.catatan}` : ""}`, kode: p.kode };
 }
 
-function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit, awal }) {
+const kunciPilih = (p) => `${p.jenis === "habis_pakai" ? "hp" : "sku"}-${p.src.id}`;
+
+function FormBuat({ skuMaster, habisPakai = [], master, entSaya, saving, onClose, onSubmit, awal }) {
   // Holding memegang stok (Master Barang), jadi Holding juga bisa jadi tujuan/pengirim transfer.
   const pilihanTujuan = (master?.entitas || []).filter(
     (e) => e.kode !== entSaya && !fiturMatiEntitas(master, e.kode).includes("stok")
   );
   const [tujuan, setTujuan] = useState(awal?.tujuan || "");
   const [catatan, setCatatan] = useState(awal?.catatan || "");
+  const [jenisCari, setJenisCari] = useState("sku"); // "sku" = barang dagangan | "habis_pakai"
   const [q, setQ] = useState("");
-  const [pilih, setPilih] = useState(awal?.pilih || []); // [{src, jumlah, minta?}]
+  const [pilih, setPilih] = useState(awal?.pilih || []); // [{src, jumlah, minta?, jenis?}]
+  const modeHP = jenisCari === "habis_pakai";
 
   const hasil = useMemo(() => {
     const k = q.trim().toLowerCase();
     if (!k) return [];
-    const terpilih = new Set(pilih.map((p) => p.src.id));
+    const terpilih = new Set(pilih.map(kunciPilih));
+    if (modeHP) {
+      return habisPakai
+        .filter((h) => Number(h.stok) > 0 && !terpilih.has(`hp-${h.id}`) && String(h.nama || "").toLowerCase().includes(k))
+        .slice(0, 8);
+    }
     return skuMaster
-      .filter((s) => !s.nonaktif && Number(s.stok) > 0 && !terpilih.has(s.id) && s.sku.toLowerCase().includes(k))
+      .filter((s) => !s.nonaktif && Number(s.stok) > 0 && !terpilih.has(`sku-${s.id}`) && s.sku.toLowerCase().includes(k))
       .slice(0, 8);
-  }, [q, skuMaster, pilih]);
+  }, [q, skuMaster, habisPakai, pilih, modeHP]);
 
-  const ubahJumlah = (id, v) =>
-    setPilih((l) => l.map((p) => (p.src.id === id ? { ...p, jumlah: Math.min(Math.max(Math.floor(Number(v) || 0), 0), Number(p.src.stok)) } : p)));
+  const ubahJumlah = (kunci, v) =>
+    setPilih((l) =>
+      l.map((p) => {
+        if (kunciPilih(p) !== kunci) return p;
+        const maks = Number(p.src.stok);
+        const angka = p.jenis === "habis_pakai" ? bulat2(v) : Math.floor(Number(v) || 0);
+        return { ...p, jumlah: Math.min(Math.max(angka, 0), maks) };
+      })
+    );
 
   const valid = tujuan && pilih.length > 0 && pilih.every((p) => p.jumlah > 0);
 
@@ -828,12 +1003,41 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit, awal 
         </select>
       </Field>
 
-      <Field label="Cari SKU (hanya yang stoknya ada)">
+      {!awal && (
+        <div className="flex gap-1 mb-2 bg-slate-900 border border-slate-800 rounded-lg p-1">
+          {[
+            ["sku", "Barang Dagangan (SKU)"],
+            ["habis_pakai", "Barang Habis Pakai"],
+          ].map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => {
+                setJenisCari(k);
+                setQ("");
+              }}
+              className={`flex-1 text-xs font-medium py-1.5 rounded-md transition ${jenisCari === k ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Field label={modeHP ? "Cari barang habis pakai (hanya yang stoknya ada)" : "Cari SKU (hanya yang stoknya ada)"}>
         <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
           <Search size={14} className="text-slate-500" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ketik kode SKU…" className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={modeHP ? "Ketik nama barang, mis. lakban…" : "Ketik kode SKU…"}
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
         </div>
       </Field>
+      {modeHP && habisPakai.length === 0 && (
+        <div className="text-[11px] text-slate-500 mb-3">Belum ada barang habis pakai di gudang ini. Tambahkan dulu di Pengadaan Barang → Belanja Barang Habis Pakai.</div>
+      )}
       {hasil.length > 0 && (
         <div className="rounded-lg border border-slate-700 mb-3 overflow-hidden">
           {hasil.map((s) => (
@@ -841,13 +1045,15 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit, awal 
               key={s.id}
               type="button"
               onClick={() => {
-                setPilih((l) => [...l, { src: s, jumlah: 1 }]);
+                setPilih((l) => [...l, { src: s, jumlah: 1, jenis: modeHP ? "habis_pakai" : "sku" }]);
                 setQ("");
               }}
               className="w-full flex items-center justify-between px-3 py-2 text-left text-xs hover:bg-slate-800 border-b border-slate-800 last:border-0"
             >
-              <span className="font-mono text-slate-200 truncate">{s.sku}</span>
-              <span className="text-slate-500 shrink-0 ml-3">stok {s.stok}</span>
+              <span className={`text-slate-200 truncate ${modeHP ? "" : "font-mono"}`}>{modeHP ? s.nama : s.sku}</span>
+              <span className="text-slate-500 shrink-0 ml-3">
+                stok {modeHP ? `${fmtQty(s.stok)} ${s.satuan || "pcs"}` : s.stok}
+              </span>
             </button>
           ))}
         </div>
@@ -855,25 +1061,39 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit, awal 
 
       {pilih.length > 0 && (
         <div className="rounded-lg border border-slate-700 mb-3">
-          {pilih.map((p) => (
-            <div key={p.src.id} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
-              <div className="min-w-0 flex-1">
-                <div className="font-mono text-xs text-slate-200 truncate">{p.src.sku}</div>
-                <div className="text-[11px] text-slate-500">
-                  stok tersedia {p.src.stok}
-                  {p.minta ? ` · diminta ${p.minta}` : ""}
+          {pilih.map((p) => {
+            const hp = p.jenis === "habis_pakai";
+            const satuan = hp ? p.src.satuan || "pcs" : "pcs";
+            return (
+              <div key={kunciPilih(p)} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-slate-200 truncate">
+                    {hp ? (
+                      <>
+                        {p.src.nama}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 ml-1.5">Habis pakai</span>
+                      </>
+                    ) : (
+                      <span className="font-mono">{p.src.sku}</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    stok tersedia {fmtQty(p.src.stok)} {satuan}
+                    {p.minta ? ` · diminta ${fmtQty(p.minta)}` : ""}
+                  </div>
                 </div>
+                <input
+                  type="number" min={hp ? 0.01 : 1} step={hp ? "any" : 1} max={p.src.stok} value={p.jumlah || ""}
+                  onChange={(e) => ubahJumlah(kunciPilih(p), e.target.value)}
+                  className={`${inputClass} !w-20 text-center`}
+                />
+                <span className="text-[11px] text-slate-500 w-8 shrink-0 truncate">{satuan}</span>
+                <button onClick={() => setPilih((l) => l.filter((x) => kunciPilih(x) !== kunciPilih(p)))} className="p-1.5 text-slate-500 hover:text-red-400">
+                  <Trash2 size={14} />
+                </button>
               </div>
-              <input
-                type="number" min={1} max={p.src.stok} value={p.jumlah || ""}
-                onChange={(e) => ubahJumlah(p.src.id, e.target.value)}
-                className={`${inputClass} !w-20 text-center`}
-              />
-              <button onClick={() => setPilih((l) => l.filter((x) => x.src.id !== p.src.id))} className="p-1.5 text-slate-500 hover:text-red-400">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -883,10 +1103,21 @@ function FormBuat({ skuMaster, master, entSaya, saving, onClose, onSubmit, awal 
 
       <div className="text-[11px] text-slate-500 mb-3">
         Stok gudang Anda langsung berkurang. Kode SKU sama di semua perusahaan; stok di perusahaan tujuan bertambah setelah barang diterima.
+        Barang habis pakai yang belum ada di perusahaan tujuan dibuat otomatis (dicocokkan lewat nama barang).
       </div>
       <button
         disabled={!valid || saving}
-        onClick={() => onSubmit(tujuan, pilih.map((p) => ({ id: p.src.id, sku: p.src.sku, jumlah: p.jumlah, src: p.src })), catatan.trim())}
+        onClick={() =>
+          onSubmit(
+            tujuan,
+            pilih.map((p) =>
+              p.jenis === "habis_pakai"
+                ? { jenis: "habis_pakai", id: p.src.id, sku: `${p.src.nama} (habis pakai)`, permSku: p.permSku, nama: p.src.nama, satuan: p.src.satuan || "pcs", jumlah: p.jumlah, src: p.src }
+                : { id: p.src.id, sku: p.src.sku, jumlah: p.jumlah, src: p.src }
+            ),
+            catatan.trim()
+          )
+        }
         className="w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-40"
       >
         <Truck size={15} /> {saving ? "Memproses…" : "Kirim Barang"}
@@ -967,15 +1198,17 @@ function FormTerima({ t, namaEnt, saving, onClose, onSubmit }) {
           return (
             <div key={it.sku} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-xs text-slate-200 truncate">{it.sku}</div>
+                <div className="text-xs text-slate-200 truncate">
+                  <LabelItem it={it} />
+                </div>
                 <div className={`text-[11px] ${sel ? "text-amber-400" : "text-slate-500"}`}>
-                  dikirim {it.qty}
-                  {sel ? ` · selisih ${Number(qty[it.sku]) - Number(it.qty)}` : ""}
+                  dikirim {fmtQty(it.qty)} {satuanItem(it)}
+                  {sel ? ` · selisih ${fmtQty(bulat2(Number(qty[it.sku]) - Number(it.qty)))}` : ""}
                 </div>
               </div>
               <input
-                type="number" min={0} max={it.qty} value={qty[it.sku] ?? ""} placeholder="qty"
-                onChange={(e) => setQty((m) => ({ ...m, [it.sku]: e.target.value === "" ? "" : Math.min(Math.max(Math.floor(Number(e.target.value)), 0), Number(it.qty)) }))}
+                type="number" min={0} step={adalahHP(it) ? "any" : 1} max={it.qty} value={qty[it.sku] ?? ""} placeholder="qty"
+                onChange={(e) => setQty((m) => ({ ...m, [it.sku]: e.target.value === "" ? "" : Math.min(Math.max(adalahHP(it) ? bulat2(e.target.value) : Math.floor(Number(e.target.value)), 0), Number(it.qty)) }))}
                 className={`${inputClass} !w-20 text-center`}
               />
             </div>

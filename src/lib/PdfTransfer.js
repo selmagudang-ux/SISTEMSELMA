@@ -38,6 +38,9 @@ const rapikanNama = (s) => String(s || "transfer").replace(/[^\w-]+/g, "_");
 
 // ---------------------------------------------------------
 // SURAT JALAN (A5 portrait, otomatis lanjut halaman kalau SKU banyak)
+// Barang habis pakai membawa satuannya sendiri (roll, box, dst); barang dagangan selalu pcs.
+const satuanItem = (it) => (it?.jenis === "habis_pakai" ? it.satuan || "pcs" : "pcs");
+
 // t: baris transfer_barang { kode, created_at, catatan, items:[{sku, qty, hpp?}] }
 // Kalau ada barang yang punya hpp (dicatat saat transfer dibuat), tabel menampilkan kolom HPP & Nilai + total nilai.
 // ---------------------------------------------------------
@@ -135,7 +138,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
     doc.setFillColor(238, 241, 245).rect(M, y - 4, W - M * 2, 6, "F");
     doc.setFont("helvetica", "bold").setFontSize(8.5);
     teks("No", kol.no + 1);
-    teks("SKU", kol.sku);
+    teks(items.some((x) => x.jenis === "habis_pakai") ? "SKU / Barang" : "SKU", kol.sku);
     if (adaHpp) teks("HPP", kol.hpp, { align: "right" });
     teks("Qty", kol.qty, { align: "right" });
     if (adaHpp) teks("Nilai", kol.nilai, { align: "right" });
@@ -160,10 +163,10 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
       const nilai = it.hpp != null ? (Number(it.hpp) || 0) * (Number(it.qty) || 0) : null;
       if (nilai != null) totalNilai += nilai;
       teks(it.hpp != null ? rp(it.hpp) : "-", kol.hpp, { align: "right" });
-      teks(`${it.qty} pcs`, kol.qty, { align: "right" });
+      teks(`${it.qty} ${satuanItem(it)}`, kol.qty, { align: "right" });
       teks(nilai != null ? rp(nilai) : "-", kol.nilai, { align: "right" });
     } else {
-      teks(`${it.qty} pcs`, kol.qty, { align: "right" });
+      teks(`${it.qty} ${satuanItem(it)}`, kol.qty, { align: "right" });
     }
     // kotak kosong untuk dicentang / diisi penerima saat mengecek barang
     doc.setDrawColor(120).rect(kol.cek - kol.kotak, y - 3.3, kol.kotak, 4.6);
@@ -173,7 +176,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
 
   y += 1;
   doc.setFont("helvetica", "bold").setFontSize(9);
-  teks(`Total: ${items.length} SKU · ${totalQty} pcs`, M);
+  teks(items.some((x) => x.jenis === "habis_pakai") ? `Total: ${items.length} barang · qty ${totalQty}` : `Total: ${items.length} SKU · ${totalQty} pcs`, M);
   if (adaHpp) teks(`Nilai HPP: Rp ${rp(totalNilai)}`, W - M, { align: "right" });
   y += 5;
   if (t.catatan) {

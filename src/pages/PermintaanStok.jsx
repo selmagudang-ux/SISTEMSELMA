@@ -12,8 +12,28 @@ import { fiturMatiEntitas } from "../lib/constants";
 //       -> setelah disetujui, barang berjalan lewat TRANSFER biasa (surat jalan + kode terima);
 //          status permintaan mengikuti status transfernya (dalam perjalanan / selesai).
 // Tidak ada stok yang bergerak di sini — stok hanya berubah lewat transfer_barang.
+// BARANG HABIS PAKAI ikut bisa diminta: item permintaan diberi penanda jenis: "habis_pakai" + nama + satuan
+// (tanpa kolom/SQL baru). Pemberi mencocokkan lewat NAMA barang; peminta boleh memilih barang habis pakai
+// miliknya sendiri atau mengetik nama barang baru (dibuat otomatis di PT peminta saat barang diterima).
 // Tabel: permintaan_stok (supabase/migrations/20261111_permintaan_stok.sql).
 // =========================================================
+
+// ---- Barang habis pakai (sama dengan helper di TransferEntitas.jsx) ----
+const adalahHP = (it) => it?.jenis === "habis_pakai";
+const satuanItem = (it) => (adalahHP(it) ? it.satuan || "pcs" : "pcs");
+const fmtQty = (n) => (Number(n) || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
+const bulat2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const kunciPilih = (p) => `${p.jenis === "habis_pakai" ? "hp" : "sku"}-${p.src.id}`;
+function LabelItem({ it }) {
+  return adalahHP(it) ? (
+    <>
+      {it.nama}
+      <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 ml-1.5 font-sans">Habis pakai</span>
+    </>
+  ) : (
+    <span className="font-mono">{it.sku}</span>
+  );
+}
 
 const fmtWaktu = (v) => (v ? new Date(v).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "");
 
@@ -37,7 +57,7 @@ export function statusPermintaan(p, transfers) {
 }
 
 export default function PermintaanStok({
-  rows, transfers, entSaya, namaEnt, skuMaster, master, session, bisaMinta, bisaKirim, proses, jalankan, muat, memuat, tabelAda, onSetujui,
+  rows, transfers, habisPakai = [], entSaya, namaEnt, skuMaster, master, session, bisaMinta, bisaKirim, proses, jalankan, muat, memuat, tabelAda, onSetujui,
 }) {
   const [filter, setFilter] = useState("perlu");
   const [modal, setModal] = useState(null); // {jenis:"minta"} | {jenis:"tolak", p}
@@ -62,7 +82,11 @@ export default function PermintaanStok({
           kode: kodePermintaan(),
           entitas_peminta: entSaya,
           entitas_pemberi: pemberi,
-          items: daftar.map((d) => ({ sku: d.sku, qty: d.jumlah, qty_dikirim: 0 })),
+          items: daftar.map((d) =>
+            d.jenis === "habis_pakai"
+              ? { jenis: "habis_pakai", sku: `${d.nama} (habis pakai)`, nama: d.nama, satuan: d.satuan || "pcs", qty: d.jumlah, qty_dikirim: 0 }
+              : { sku: d.sku, qty: d.jumlah, qty_dikirim: 0 }
+          ),
           catatan: catatan || null,
           dibuat_oleh: session?.username || null,
           dibuat_oleh_nama: session?.nama || session?.username || null,
@@ -148,14 +172,16 @@ export default function PermintaanStok({
                 <div className="px-4 py-2">
                   {(p.items || []).map((it) => (
                     <div key={it.sku} className="flex items-center justify-between py-1 text-xs">
-                      <span className="font-mono text-slate-300 truncate">{it.sku}</span>
+                      <span className="text-slate-300 truncate">
+                        <LabelItem it={it} />
+                      </span>
                       <span className="text-slate-400 shrink-0 ml-3">
-                        {p.status === "diproses" ? `dikirim ${it.qty_dikirim ?? 0} dari diminta ${it.qty}` : `${it.qty} pcs`}
+                        {p.status === "diproses" ? `dikirim ${fmtQty(it.qty_dikirim ?? 0)} dari diminta ${fmtQty(it.qty)} ${satuanItem(it)}` : `${fmtQty(it.qty)} ${satuanItem(it)}`}
                       </span>
                     </div>
                   ))}
                   <div className="text-[11px] text-slate-500 mt-1">
-                    {(p.items || []).length} SKU · {totalQty} pcs diminta
+                    {(p.items || []).some(adalahHP) ? `${(p.items || []).length} barang · total qty ${fmtQty(totalQty)} diminta` : `${(p.items || []).length} SKU · ${totalQty} pcs diminta`}
                     {p.catatan ? ` · Catatan: ${p.catatan}` : ""}
                   </div>
                   {p.status === "ditolak" && p.alasan_tolak && (
@@ -208,7 +234,7 @@ export default function PermintaanStok({
       )}
 
       {modal?.jenis === "minta" && (
-        <FormMinta skuMaster={skuMaster} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)} onSubmit={(...a) => minta(...a).then((ok) => ok && setModal(null))} />
+        <FormMinta skuMaster={skuMaster} habisPakai={habisPakai} master={master} entSaya={entSaya} saving={proses} onClose={() => setModal(null)} onSubmit={(...a) => minta(...a).then((ok) => ok && setModal(null))} />
       )}
       {modal?.jenis === "tolak" && (
         <FormTolakPermintaan
@@ -223,27 +249,48 @@ export default function PermintaanStok({
   );
 }
 
-function FormMinta({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
+function FormMinta({ skuMaster, habisPakai = [], master, entSaya, saving, onClose, onSubmit }) {
   const pilihanPemberi = (master?.entitas || []).filter(
     (e) => e.kode !== entSaya && !fiturMatiEntitas(master, e.kode).includes("stok")
   );
   const [pemberi, setPemberi] = useState("");
   const [catatan, setCatatan] = useState("");
+  const [jenisCari, setJenisCari] = useState("sku"); // "sku" = barang dagangan | "habis_pakai"
   const [q, setQ] = useState("");
-  const [pilih, setPilih] = useState([]); // [{src, jumlah}]
+  const [pilih, setPilih] = useState([]); // [{src, jumlah, jenis?, satuan?}]
+  const modeHP = jenisCari === "habis_pakai";
 
   // Peminta boleh memilih SKU apa pun di katalog (stok sendiri boleh 0 — justru itu alasan meminta).
+  // Barang habis pakai: dari daftar barang di gudang sendiri (stok boleh 0), atau ketik nama barang baru.
   const hasil = useMemo(() => {
     const k = q.trim().toLowerCase();
     if (!k) return [];
-    const terpilih = new Set(pilih.map((p) => p.src.id));
-    return skuMaster.filter((s) => !s.nonaktif && !terpilih.has(s.id) && s.sku.toLowerCase().includes(k)).slice(0, 8);
-  }, [q, skuMaster, pilih]);
+    const terpilih = new Set(pilih.map(kunciPilih));
+    if (modeHP) {
+      return habisPakai.filter((h) => !terpilih.has(`hp-${h.id}`) && String(h.nama || "").toLowerCase().includes(k)).slice(0, 8);
+    }
+    return skuMaster.filter((s) => !s.nonaktif && !terpilih.has(`sku-${s.id}`) && s.sku.toLowerCase().includes(k)).slice(0, 8);
+  }, [q, skuMaster, habisPakai, pilih, modeHP]);
 
-  const ubahJumlah = (id, v) =>
-    setPilih((l) => l.map((p) => (p.src.id === id ? { ...p, jumlah: Math.min(Math.max(Math.floor(Number(v) || 0), 0), 99999) } : p)));
+  // Tawarkan "barang baru" kalau nama yang diketik belum ada di daftar habis pakai gudang ini.
+  const namaBaru = q.trim();
+  const bisaBuatBaru =
+    modeHP &&
+    namaBaru.length > 0 &&
+    !habisPakai.some((h) => String(h.nama || "").trim().toLowerCase() === namaBaru.toLowerCase()) &&
+    !pilih.some((p) => p.jenis === "habis_pakai" && String(p.src.nama).trim().toLowerCase() === namaBaru.toLowerCase());
 
-  const valid = pemberi && pilih.length > 0 && pilih.every((p) => p.jumlah > 0);
+  const ubahJumlah = (kunci, v) =>
+    setPilih((l) =>
+      l.map((p) => {
+        if (kunciPilih(p) !== kunci) return p;
+        const angka = p.jenis === "habis_pakai" ? bulat2(v) : Math.floor(Number(v) || 0);
+        return { ...p, jumlah: Math.min(Math.max(angka, 0), 99999) };
+      })
+    );
+  const ubahSatuan = (kunci, v) => setPilih((l) => l.map((p) => (kunciPilih(p) === kunci ? { ...p, satuan: v } : p)));
+
+  const valid = pemberi && pilih.length > 0 && pilih.every((p) => p.jumlah > 0 && (p.jenis !== "habis_pakai" || String(p.satuan || "").trim()));
 
   return (
     <ModalShell title="Minta Barang dari Entitas Lain" onClose={onClose} maxWidth="max-w-xl">
@@ -258,49 +305,116 @@ function FormMinta({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
         </select>
       </Field>
 
-      <Field label="Cari SKU yang dibutuhkan">
+      <div className="flex gap-1 mb-2 bg-slate-900 border border-slate-800 rounded-lg p-1">
+        {[
+          ["sku", "Barang Dagangan (SKU)"],
+          ["habis_pakai", "Barang Habis Pakai"],
+        ].map(([k, l]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => {
+              setJenisCari(k);
+              setQ("");
+            }}
+            className={`flex-1 text-xs font-medium py-1.5 rounded-md transition ${jenisCari === k ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <Field label={modeHP ? "Cari barang habis pakai yang dibutuhkan" : "Cari SKU yang dibutuhkan"}>
         <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
           <Search size={14} className="text-slate-500" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ketik kode SKU…" className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={modeHP ? "Ketik nama barang, mis. lakban…" : "Ketik kode SKU…"}
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
         </div>
       </Field>
-      {hasil.length > 0 && (
+      {(hasil.length > 0 || bisaBuatBaru) && (
         <div className="rounded-lg border border-slate-700 mb-3 overflow-hidden">
           {hasil.map((s) => (
             <button
               key={s.id}
               type="button"
               onClick={() => {
-                setPilih((l) => [...l, { src: s, jumlah: 1 }]);
+                setPilih((l) => [...l, modeHP ? { src: s, jumlah: 1, jenis: "habis_pakai", satuan: s.satuan || "pcs" } : { src: s, jumlah: 1 }]);
                 setQ("");
               }}
               className="w-full flex items-center justify-between px-3 py-2 text-left text-xs hover:bg-slate-800 border-b border-slate-800 last:border-0"
             >
-              <span className="font-mono text-slate-200 truncate">{s.sku}</span>
-              <span className="text-slate-500 shrink-0 ml-3">stok saya {Number(s.stok) || 0}</span>
+              <span className={`text-slate-200 truncate ${modeHP ? "" : "font-mono"}`}>{modeHP ? s.nama : s.sku}</span>
+              <span className="text-slate-500 shrink-0 ml-3">
+                stok saya {modeHP ? `${fmtQty(s.stok)} ${s.satuan || "pcs"}` : Number(s.stok) || 0}
+              </span>
             </button>
           ))}
+          {bisaBuatBaru && (
+            <button
+              type="button"
+              onClick={() => {
+                setPilih((l) => [
+                  ...l,
+                  { src: { id: `baru-${namaBaru.toLowerCase()}`, nama: namaBaru, satuan: "pcs", stok: 0, baru: true }, jumlah: 1, jenis: "habis_pakai", satuan: "pcs" },
+                ]);
+                setQ("");
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-sky-300 hover:bg-slate-800"
+            >
+              <Plus size={13} /> Tambah barang baru: “{namaBaru}”
+            </button>
+          )}
         </div>
       )}
 
       {pilih.length > 0 && (
         <div className="rounded-lg border border-slate-700 mb-3">
-          {pilih.map((p) => (
-            <div key={p.src.id} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
-              <div className="min-w-0 flex-1">
-                <div className="font-mono text-xs text-slate-200 truncate">{p.src.sku}</div>
-                <div className="text-[11px] text-slate-500">stok saya sekarang {Number(p.src.stok) || 0}</div>
+          {pilih.map((p) => {
+            const hp = p.jenis === "habis_pakai";
+            return (
+              <div key={kunciPilih(p)} className="flex items-center gap-2 px-3 py-2 border-b border-slate-800 last:border-0">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-slate-200 truncate">
+                    {hp ? (
+                      <>
+                        {p.src.nama}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 ml-1.5">Habis pakai</span>
+                        {p.src.baru && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 ml-1">Baru</span>}
+                      </>
+                    ) : (
+                      <span className="font-mono">{p.src.sku}</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    stok saya sekarang {fmtQty(p.src.stok)} {hp ? p.satuan || "pcs" : ""}
+                  </div>
+                </div>
+                <input
+                  type="number" min={hp ? 0.01 : 1} step={hp ? "any" : 1} value={p.jumlah || ""}
+                  onChange={(e) => ubahJumlah(kunciPilih(p), e.target.value)}
+                  className={`${inputClass} !w-20 text-center`}
+                />
+                {hp &&
+                  (p.src.baru ? (
+                    <input
+                      value={p.satuan || ""}
+                      onChange={(e) => ubahSatuan(kunciPilih(p), e.target.value)}
+                      placeholder="satuan"
+                      className={`${inputClass} !w-20 text-center`}
+                    />
+                  ) : (
+                    <span className="text-[11px] text-slate-500 w-12 shrink-0 truncate">{p.satuan || "pcs"}</span>
+                  ))}
+                <button onClick={() => setPilih((l) => l.filter((x) => kunciPilih(x) !== kunciPilih(p)))} className="p-1.5 text-slate-500 hover:text-red-400">
+                  <Trash2 size={14} />
+                </button>
               </div>
-              <input
-                type="number" min={1} value={p.jumlah || ""}
-                onChange={(e) => ubahJumlah(p.src.id, e.target.value)}
-                className={`${inputClass} !w-20 text-center`}
-              />
-              <button onClick={() => setPilih((l) => l.filter((x) => x.src.id !== p.src.id))} className="p-1.5 text-slate-500 hover:text-red-400">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -310,10 +424,21 @@ function FormMinta({ skuMaster, master, entSaya, saving, onClose, onSubmit }) {
 
       <div className="text-[11px] text-slate-500 mb-3">
         Permintaan ini belum menggerakkan stok. Pihak yang dimintai bisa menyetujui (qty boleh dikurangi) lalu mengirim barang, atau menolak.
+        Barang habis pakai dicocokkan lewat nama barang.
       </div>
       <button
         disabled={!valid || saving}
-        onClick={() => onSubmit(pemberi, pilih.map((p) => ({ sku: p.src.sku, jumlah: p.jumlah })), catatan.trim())}
+        onClick={() =>
+          onSubmit(
+            pemberi,
+            pilih.map((p) =>
+              p.jenis === "habis_pakai"
+                ? { jenis: "habis_pakai", nama: p.src.nama, satuan: String(p.satuan || "pcs").trim(), jumlah: p.jumlah }
+                : { sku: p.src.sku, jumlah: p.jumlah }
+            ),
+            catatan.trim()
+          )
+        }
         className="w-full flex items-center justify-center gap-2 text-sm font-medium py-2.5 rounded-lg bg-amber-500 text-slate-900 hover:bg-amber-400 disabled:opacity-40"
       >
         <HandHelping size={15} /> {saving ? "Memproses…" : "Kirim Permintaan"}
