@@ -283,6 +283,9 @@ export const NAV = [
             ],
           },
           { key: "cetak-label", label: "Cetak Label", icon: Printer },
+          // Kirim/terima barang antar perusahaan di grup (pages/TransferEntitas.jsx). Dulu sub-menu "Transfer
+          // Antar Entitas" di dalam Stok. (Beda dengan "Antar Entitas" di Perusahaan Grup, yang khusus transfer UANG.)
+          { key: "transfer-entitas", label: "Transfer Barang", icon: Send },
         ],
       },
       {
@@ -475,10 +478,6 @@ export const NAV = [
   // Chat pribadi antar user (teks + foto, hapus otomatis 3 hari) — untuk SEMUA role.
   // Rekap harian/mingguan/bulanan perpindahan barang & uang antar tempat (Gudang<->Toko,
   // Antar Entitas, antar kas). Halaman: pages/RekapPerpindahan.jsx.
-  // Kirim/terima barang antar perusahaan di grup (pages/TransferEntitas.jsx). Dulu sub-menu "Transfer
-  // Antar Entitas" di dalam Stok; dipisah jadi menu sendiri karena yang dikirim bukan cuma stok barang.
-  // (Beda dengan "Antar Entitas" di Perusahaan Grup, yang khusus transfer UANG.)
-  { key: "transfer-entitas", label: "TRANSFER BARANG", icon: Send },
   { key: "rekap-perpindahan", label: "REKAP PERPINDAHAN", icon: ArrowRightLeft },
   { key: "chat", label: "CHAT", icon: MessageCircle },
   { key: "panduan", label: "PANDUAN PENGGUNAAN", icon: BookOpen },
