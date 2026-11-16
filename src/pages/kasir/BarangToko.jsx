@@ -6,6 +6,7 @@ import { bisa } from "../../lib/constants";
 import { getSession } from "../../lib/auth";
 import ImporBarangToko from "./ImporBarangToko";
 import FotoMassalToko from "./FotoMassalToko";
+import TambahDariMaster from "./TambahDariMaster";
 import { FotoZoom, FotoThumb } from "./FotoZoom";
 
 // =========================================================
@@ -650,6 +651,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const bolehHapusSemua = bisa(getSession()?.role, "kasir.hapus_semua_barang_toko");
   const [impor, setImpor] = useState(false);
   const [fotoMassal, setFotoMassal] = useState(false);
+  const [dariMaster, setDariMaster] = useState(false); // tambah barang toko dari Master Barang (TambahDariMaster.jsx)
   const [filter, setFilter] = useState("semua");
   const [kategori, setKategori] = useState("");
   const [urut, setUrut] = useState("kode");
@@ -761,6 +763,13 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
               <Trash2 size={15} /> Hapus Semua
             </button>
           )}
+          <button
+            onClick={() => setDariMaster(true)}
+            title="Pilih barang dari Master Barang untuk dijadikan barang toko"
+            className="flex items-center gap-1.5 border border-amber-500/50 hover:bg-amber-500/10 text-amber-300 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <ArrowDownToLine size={15} /> Dari Master
+          </button>
           <button
             onClick={() => setForm({ barang: {} })}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg"
@@ -892,6 +901,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
 
       {impor && <ImporBarangToko barangAda={rows || []} onSelesai={() => { setImpor(false); muat(); }} onClose={() => setImpor(false)} />}
       {fotoMassal && <FotoMassalToko barangAda={rows || []} onSelesai={() => { setFotoMassal(false); muat(); }} onClose={() => setFotoMassal(false)} />}
+      {dariMaster && <TambahDariMaster onSelesai={() => { setDariMaster(false); muat(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {hapus && <FormHapus barang={hapus} onSelesai={selesai} onClose={() => setHapus(null)} />}
