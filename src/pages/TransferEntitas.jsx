@@ -602,7 +602,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       ) : (
       <>
       <PageHeader
-        title="Transfer Antar Entitas"
+        title="Transfer Barang Antar Entitas"
         description="Kirim stok gudang ke Holding atau perusahaan lain di grup. Kode SKU sama di semua perusahaan. Stok pengirim berkurang saat dikirim; stok penerima bertambah setelah penerima mengonfirmasi."
         action={
           <div className="flex items-center gap-2">

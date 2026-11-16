@@ -46,6 +46,7 @@ const Reseller = lazy(() => import("./pages/Reseller"));
 const ScanResi = lazy(() => import("./pages/ScanResi"));
 const UrutResi = lazy(() => import("./pages/UrutResi"));
 const RekapPerpindahan = lazy(() => import("./pages/RekapPerpindahan"));
+const TransferEntitas = lazy(() => import("./pages/TransferEntitas"));
 const Keuangan = lazy(() => import("./pages/Keuangan"));
 const Penggajian = lazy(() => import("./pages/Penggajian"));
 const Pengaturan = lazy(() => import("./pages/Pengaturan"));
@@ -424,6 +425,8 @@ function MainApp({ session, onLogout }) {
         let s = lama ? { ...saved, sub: lama.sub } : saved;
         // Menu Holding lama dipecah: halaman grup/antar-entitas sekarang di "Perusahaan Grup".
         if (s.menu === "holding" && ["grup", "antar-entitas"].includes(s.sub)) s = { ...s, menu: "perusahaan" };
+        // Transfer Antar Entitas dulu sub-menu Stok, sekarang menu sendiri.
+        if (s.menu === "stok" && s.sub === "transfer") s = { menu: "transfer-entitas", sub: null };
         if (allowedAwal.includes(s.menu)) return s;
       }
     } catch {}
@@ -1370,6 +1373,16 @@ function MainApp({ session, onLogout }) {
                   session={session}
                   barangRusak={barangRusak}
                   pesananMasuk={pesananMasuk}
+                />
+              )}
+              {nav.menu === "transfer-entitas" && (
+                <TransferEntitas
+                  skuMaster={skuMaster}
+                  penempatan={penempatan}
+                  master={master}
+                  session={session}
+                  reload={reloadCurrentMenu}
+                  showToast={showToast}
                 />
               )}
               {nav.menu === "stok" && (

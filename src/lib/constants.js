@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, ClipboardList, Tag, BarChart3, MapPin,
   Camera, ShoppingBag, Settings, Boxes, Printer, Store, Warehouse, Wallet, Clock, Truck, Building2,
-  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle, ScanLine, ListOrdered, ArrowRightLeft,
+  Home, Users, UserRound, Image, Globe, Landmark, CalendarClock, Database, BookOpen, Banknote, MessageCircle, ScanLine, ListOrdered, ArrowRightLeft, Send,
 } from "lucide-react";
 
 export const STAGE_ORDER = ["sku", "rak", "menunggu-harga", "verifikasi", "marketplace", "selesai"];
@@ -267,8 +267,6 @@ export const NAV = [
               { key: "barang", label: "Stok Barang" },
               { key: "menipis", label: "Stok Menipis" },
               { key: "keluar", label: "Barang Keluar" },
-              // Kirim/terima stok gudang antar perusahaan di grup (pages/TransferEntitas.jsx).
-              { key: "transfer", label: "Transfer Antar Entitas" },
               // Dulu "Hitung Qty" — diganti nama jadi "Stok Opname" (istilah yang
               // lebih umum dipakai gudang untuk hitung fisik vs stok sistem).
               { key: "hitung", label: "Stok Opname" },
@@ -477,6 +475,10 @@ export const NAV = [
   // Chat pribadi antar user (teks + foto, hapus otomatis 3 hari) — untuk SEMUA role.
   // Rekap harian/mingguan/bulanan perpindahan barang & uang antar tempat (Gudang<->Toko,
   // Antar Entitas, antar kas). Halaman: pages/RekapPerpindahan.jsx.
+  // Kirim/terima barang antar perusahaan di grup (pages/TransferEntitas.jsx). Dulu sub-menu "Transfer
+  // Antar Entitas" di dalam Stok; dipisah jadi menu sendiri karena yang dikirim bukan cuma stok barang.
+  // (Beda dengan "Antar Entitas" di Perusahaan Grup, yang khusus transfer UANG.)
+  { key: "transfer-entitas", label: "TRANSFER BARANG", icon: Send },
   { key: "rekap-perpindahan", label: "REKAP PERPINDAHAN", icon: ArrowRightLeft },
   { key: "chat", label: "CHAT", icon: MessageCircle },
   { key: "panduan", label: "PANDUAN PENGGUNAAN", icon: BookOpen },
@@ -878,7 +880,7 @@ export const ROLE_MENUS = {
   // "persetujuan-restock" sama sekali — keduanya murni untuk owner &
   // superadmin. Landing page login gudang tetap ke "barang-datang" (lihat
   // App.jsx).
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "chat", "panduan", "barang-masuk"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "transfer-entitas", "chat", "panduan", "barang-masuk"],
   // Pemotretan: hanya menu di dalam grup "ADMIN PEMOTRETAN" (cuma "Foto Produk").
   pemotretan: ["foto", "chat", "panduan"],
   // Admin Marketplace: hanya menu di dalam grup "ADMIN MARKETPLACE" (cuma
@@ -965,7 +967,7 @@ export function bisaTransferAntarEntitas(role) {
 // Pemilik, Pemegang Saham, dan Super Appa lintas entitas (tidak dibatasi).
 const ROLE_LINTAS_ENTITAS = ["superappa", "owner", "pemegang_saham"];
 // Menu grup gudang yang otomatis dimiliki akun Holding (lihat allowedMenus). Pemegang Saham tidak ikut.
-const MENU_GUDANG_HOLDING = ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "barang-masuk"];
+const MENU_GUDANG_HOLDING = ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "transfer-entitas", "barang-masuk"];
 const MENU_GUDANG_HOLDING_ROLE = ["owner", "superadmin", "gudang"];
 // Kode entitas Holding untuk keperluan menu. Bawaan "HOLD"; diperbarui lib/api.js (daftarkanProfilEntitas)
 // begitu master dimuat, supaya Holding yang kodenya diganti lewat profil perusahaan tetap dikenali.
@@ -976,7 +978,7 @@ export function setKodeHoldingMenu(kode) {
 const MENU_PT_LAIN = [
   "keuangan", "chat", "panduan",
   "persetujuan-restock", "barang-datang", "data-barang", "sku-harga", "stok", "rak",
-  "cetak-label", "foto", "marketplace",
+  "cetak-label", "transfer-entitas", "foto", "marketplace",
   // Absensi dipisah per PT lewat kolom entitas di karyawan/absensi/absensi_settings (absensi_per_pt.sql).
   // Penggajian juga dipisah per PT (kolom entitas di tabel penggajian, lihat penggajian_per_pt.sql);
   // gaji hanya boleh keluar dari rekening milik PT-nya sendiri.
@@ -1048,6 +1050,7 @@ export const FITUR_ENTITAS = [
     { key: "stok", label: "Stok" },
     { key: "rak", label: "Rak" },
     { key: "cetak-label", label: "Cetak Label" },
+    { key: "transfer-entitas", label: "Transfer Barang" },
     { key: "persetujuan-restock", label: "Persetujuan Restok" },
   ] },
   { grup: "Pemotretan & Marketplace", fitur: [

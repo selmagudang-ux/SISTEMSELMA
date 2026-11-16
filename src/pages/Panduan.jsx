@@ -135,10 +135,10 @@ const SECTIONS = [
     key: "stok",
     label: "Stok",
     icon: BarChart3,
-    ringkasan: "Melihat dan mengatur jumlah barang di gudang, termasuk kirim barang ke perusahaan lain.",
+    ringkasan: "Melihat dan mengatur jumlah barang di gudang.",
     fungsi: [
       `Menu ini untuk melihat berapa jumlah barang di gudang dan mengatur kalau jumlahnya berubah.`,
-      `Ada Stok Barang, Stok Menipis, Barang Keluar, Stok Opname, dan Riwayat Stok. Di sini juga bisa kirim dan terima barang antar perusahaan (Transfer Antar Entitas).`,
+      `Ada Stok Barang, Stok Menipis, Barang Keluar, Stok Opname, dan Riwayat Stok. Kirim dan terima barang antar perusahaan ada di menu sendiri, yaitu Transfer Barang.`,
     ],
     cara: [
       {
@@ -164,6 +164,18 @@ const SECTIONS = [
           `Lihat selisihnya, lalu cari tahu kenapa bisa beda.`,
         ],
       },
+    ],
+  },
+  {
+    key: "transfer-entitas",
+    label: "Transfer Barang Antar Entitas",
+    icon: ArrowRightLeft,
+    ringkasan: "Kirim dan terima barang antar perusahaan di grup, lengkap dengan surat jalan.",
+    fungsi: [
+      `Menu ini dipakai untuk memindahkan barang dari satu perusahaan ke perusahaan lain di grup. Pengirim membuat transfer, penerima mengonfirmasi setelah barangnya datang.`,
+      `Menu ini terpisah dari Antar Entitas di Perusahaan Grup. Di sana yang dipindah adalah uang, di sini yang dipindah adalah barang.`,
+    ],
+    cara: [
       {
         judul: "Mengirim barang ke perusahaan lain",
         langkah: [
@@ -1066,7 +1078,7 @@ const SECTIONS = [
 // dapat SEMUA bagian (lihat visibleSections di bawah), superadmin ditambah
 // bagian "Pengaturan" yang tidak diberikan ke owner biasa.
 const ROLE_SECTIONS = {
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "chat"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "transfer-entitas", "chat"],
   pemotretan: ["foto", "chat"],
   marketplace: ["marketplace", "chat"],
   grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi", "chat"],

@@ -6,7 +6,6 @@ import { fmtTgl, downloadCsv } from "../lib/api";
 import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
 import { cariSkuDariBarcode } from "../lib/code128";
 import { TombolScanKamera } from "../components/ScanKamera";
-import TransferEntitas from "./TransferEntitas";
 
 // Ambang batas "Stok Menipis" khusus tampilan badge per-baris di Stok Barang —
 // beda dari AMBANG_MENIPIS_RESTOCK (yang dipakai buat halaman "Stok Menipis" /
@@ -34,7 +33,6 @@ const compareModel = (a, b, arah = 1) => {
 };
 
 export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengajuanRestock, session, setModal, master, reload, showToast }) {
-  if (sub === "transfer") return <TransferEntitas skuMaster={skuMaster} penempatan={penempatan} master={master} session={session} reload={reload} showToast={showToast} />;
   if (sub === "menipis") return <StokMenipis skuMaster={skuMaster} pengajuanRestock={pengajuanRestock} session={session} setModal={setModal} />;
   if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
   if (sub === "hitung") return <StokOpname skuMaster={skuMaster} setModal={setModal} />;
