@@ -1194,6 +1194,29 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
             // Transfer yang salah satu rekeningnya milik entitas lain (modal, dividen, pinjaman).
             const antarEntitas =
               isTransfer && rekeningList.__batasi && !(rekeningList.some((r) => r.kode === t.rekening) && rekeningList.some((r) => r.kode === t.rekening_tujuan));
+            // Arah uang untuk transfer Antar Entitas, dilihat dari entitas yang sedang dibuka:
+            //   rekening asal milik sendiri, tujuan milik entitas lain → uang keluar (merah)
+            //   rekening tujuan milik sendiri, asal milik entitas lain → uang masuk (hijau)
+            //   transfer biasa antar rekening sendiri → biru
+            let arahEntitas = null;
+            if (antarEntitas) {
+              const asalSendiri = rekeningList.some((r) => r.kode === t.rekening);
+              const tujuanSendiri = rekeningList.some((r) => r.kode === t.rekening_tujuan);
+              if (asalSendiri && !tujuanSendiri) arahEntitas = "keluar";
+              else if (!asalSendiri && tujuanSendiri) arahEntitas = "masuk";
+            }
+            const warnaBadgeTransfer = arahEntitas === "keluar" ? "red" : arahEntitas === "masuk" ? "emerald" : "sky";
+            const warnaJumlah =
+              arahEntitas === "keluar"
+                ? "text-red-400"
+                : arahEntitas === "masuk"
+                ? "text-emerald-400"
+                : isTransfer
+                ? "text-sky-400"
+                : t.tipe === "masuk"
+                ? "text-emerald-400"
+                : "text-red-400";
+            const tandaJumlah = arahEntitas === "keluar" ? "-" : arahEntitas === "masuk" ? "+" : isTransfer ? "" : t.tipe === "masuk" ? "+" : "-";
             return (
               <div
                 key={t.id}
@@ -1205,7 +1228,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                 >
                   <div className="flex items-center gap-2 flex-wrap">
                     {isTransfer ? (
-                      <Badge color="sky">Transfer</Badge>
+                      <Badge color={warnaBadgeTransfer}>Transfer</Badge>
                     ) : (
                       <Badge color={t.tipe === "masuk" ? "emerald" : "red"}>{kategoriLabel}</Badge>
                     )}
@@ -1226,12 +1249,8 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                   </div>
                 </button>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <div
-                    className={`text-sm font-semibold ${
-                      isTransfer ? "text-sky-400" : t.tipe === "masuk" ? "text-emerald-400" : "text-red-400"
-                    }`}
-                  >
-                    {isTransfer ? "" : t.tipe === "masuk" ? "+" : "-"}{fmtRp(t.jumlah)}
+                  <div className={`text-sm font-semibold ${warnaJumlah}`}>
+                    {tandaJumlah}{fmtRp(t.jumlah)}
                   </div>
                   {daftarBukti(t).map((u, i) => (
                     <a
