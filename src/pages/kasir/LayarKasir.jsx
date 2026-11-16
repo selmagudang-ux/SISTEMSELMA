@@ -696,10 +696,6 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   };
   // Dipanggil dari daftar keranjang tersimpan. Mengembalikan true kalau keranjang berhasil dimuat ke layar ini.
   const ambilDariCloud = async (r) => {
-    if (!skuList.length) {
-      tampilToast("Daftar barang belum selesai dimuat. Coba lagi sebentar.");
-      return false;
-    }
     if (items.length && !window.confirm("Keranjang yang sedang berisi akan diganti dengan keranjang tersimpan ini. Lanjutkan?")) return false;
     const pramuniagaR = r.kasir_nama ? { id: r.kasir_id || null, nama: r.kasir_nama } : null;
     // Kasir meja: keranjang berbeda jenis (Toko <-> Grosir) -> simpan keranjangnya ke sesi lalu pindah mode. Layar baru memulihkannya
@@ -723,6 +719,11 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       }
       onModeKeranjang(keMaster);
       return true;
+    }
+    // Cek daftar barang HANYA untuk keranjang semode (pindah mode di atas tidak butuh daftar barang layar ini).
+    if (!skuList.length) {
+      tampilToast(loading ? "Daftar barang belum selesai dimuat. Coba lagi sebentar." : `Tidak ada barang aktif di mode ${modeMaster ? "Master Barang" : "Toko"} ini, jadi keranjang tidak bisa dimuat. Periksa stok barangnya.`);
+      return false;
     }
     const { items: baru, catatan } = sinkronItems(Array.isArray(r.items) ? r.items : [], skuList, promoRef.current);
     if (!baru.length) {
