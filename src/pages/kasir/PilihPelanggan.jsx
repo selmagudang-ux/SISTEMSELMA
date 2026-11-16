@@ -16,7 +16,7 @@ export const kunciHargaPelanggan = (p) => (p?.kategori === "tengah" || p?.katego
 export const warnaKategori = (k) =>
   k === "ecer" ? "bg-sky-500/15 text-sky-300" : k === "tengah" ? "bg-violet-500/15 text-violet-300" : "bg-amber-500/15 text-amber-300";
 
-export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPilih, onClose, bolehTambah = false, onTambah }) {
+export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPilih, onClose, bolehTambah = false, onTambah, ikutiHarga = true }) {
   const [q, setQ] = useState("");
   // Form pelanggan baru (hanya untuk role dengan izin "kasir.tambah_pelanggan").
   const [formBuka, setFormBuka] = useState(false);
@@ -77,7 +77,8 @@ export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPil
             />
           </div>
           <p className="mt-2 text-[11px] text-slate-500">
-            Harga barang mengikuti kategori pelanggan.{bolehTambah ? "" : " Pelanggan baru ditambahkan lewat menu Grosir."}
+            {ikutiHarga ? "Harga barang mengikuti kategori pelanggan." : "Pelanggan hanya dicatat di transaksi; harga tidak berubah."}
+            {bolehTambah ? "" : " Pelanggan baru ditambahkan lewat menu Grosir."}
           </p>
           {bolehTambah && !formBuka && (
             <button
@@ -170,7 +171,7 @@ export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPil
                         <div className="text-sm font-medium truncate">{p.nama}</div>
                         <div className="text-[11px] text-slate-500 truncate">{[p.kode, p.wa].filter(Boolean).join(" · ") || "—"}</div>
                       </div>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${warnaKategori(kat)}`}>{LABEL_KATEGORI_PELANGGAN[kat]}</span>
+                      {ikutiHarga && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${warnaKategori(kat)}`}>{LABEL_KATEGORI_PELANGGAN[kat]}</span>}
                       {aktif && <Check size={15} className="text-amber-400 flex-shrink-0" />}
                     </button>
                   </li>

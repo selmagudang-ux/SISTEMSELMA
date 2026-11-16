@@ -208,8 +208,9 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [pilihPelBuka, setPilihPelBuka] = useState(false);
   const [manualBuka, setManualBuka] = useState(false);
   // Data kategori terbaru dari daftar (kalau kategori pelanggan diubah di menu Grosir), selain itu pakai yang tersimpan di keranjang.
-  const pelTerbaru = modeMaster && pelanggan ? daftarPelanggan.find((p) => p.id === pelanggan.id) : null;
-  const pelangganAktif = modeMaster && pelanggan ? (pelTerbaru ? { id: pelanggan.id, nama: pelTerbaru.nama, kategori: kunciHargaPelanggan(pelTerbaru) } : pelanggan) : null;
+  // Mode Toko: pelanggan OPSIONAL dan tidak mengubah harga (hanya dicatat di transaksi). Mode Master: wajib & menentukan kategori harga.
+  const pelTerbaru = pelanggan ? daftarPelanggan.find((p) => p.id === pelanggan.id) : null;
+  const pelangganAktif = pelanggan ? (pelTerbaru ? { id: pelanggan.id, nama: pelTerbaru.nama, kategori: kunciHargaPelanggan(pelTerbaru) } : pelanggan) : null;
   const kunciHarga = modeMaster ? kunciHargaPelanggan(pelangganAktif) : "grosir";
   const kunciHargaRef = useRef(kunciHarga);
   kunciHargaRef.current = kunciHarga;
@@ -378,7 +379,6 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
 
   // Daftar pelanggan (mode Master Barang). Gagal dimuat / offline = pakai salinan di perangkat.
   const muatPelangganList = useCallback(async () => {
-    if (!modeMaster) return;
     setMemuatPelanggan(true);
     try {
       if (statusSekarang().offline) throw new Error("offline");
@@ -391,7 +391,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     } finally {
       setMemuatPelanggan(false);
     }
-  }, [modeMaster]);
+  }, []);
   useEffect(() => {
     muatPelangganList();
   }, [muatPelangganList, versiData]);
@@ -610,7 +610,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             items: Array.isArray(r.items) ? r.items : [],
             diskonTrx: r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" },
             kunci: null,
-            pelanggan: keMaster && r.diskon_trx?.pelanggan?.id ? r.diskon_trx.pelanggan : null,
+            pelanggan: r.diskon_trx?.pelanggan?.id ? r.diskon_trx.pelanggan : null,
             pramuniaga: pramuniagaR,
           })
         );
@@ -628,7 +628,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     }
     setItems(baru);
     setPramuniaga(pramuniagaR);
-    if (modeMaster && r.diskon_trx?.pelanggan?.id) setPelanggan(r.diskon_trx.pelanggan);
+    setPelanggan(r.diskon_trx?.pelanggan?.id ? r.diskon_trx.pelanggan : null);
     setDiskonTrx(r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
@@ -684,7 +684,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
       {/* ===== KIRI: cari & pilih barang ===== */}
       <section className={`lg:flex-1 p-3 lg:p-5 lg:overflow-y-auto ${items.length ? "pb-24" : ""} lg:pb-5`}>
-        {modeMaster && (
+        {(
           <div className="mb-3 flex items-stretch gap-2">
           <button
             type="button"
@@ -693,19 +693,30 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
               setPilihPelBuka(true);
             }}
             className={`flex-1 min-w-0 flex items-center gap-3 text-left px-4 py-3 rounded-2xl border transition-colors ${
-              pelangganAktif ? "border-slate-800 bg-slate-900 hover:border-amber-500/50" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
+              pelangganAktif || !modeMaster ? "border-slate-800 bg-slate-900 hover:border-amber-500/50" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
             }`}
           >
-            <Users size={18} className={pelangganAktif ? "text-slate-400" : "text-amber-400"} />
+            <Users size={18} className={pelangganAktif || !modeMaster ? "text-slate-400" : "text-amber-400"} />
             <div className="min-w-0 flex-1">
               <div className="text-[11px] text-slate-500">Pelanggan</div>
-              <div className="text-sm font-semibold truncate">{pelangganAktif ? pelangganAktif.nama : "Pilih pelanggan (wajib)"}</div>
+              <div className="text-sm font-semibold truncate">{pelangganAktif ? pelangganAktif.nama : modeMaster ? "Pilih pelanggan (wajib)" : "Pilih pelanggan (opsional)"}</div>
             </div>
-            {pelangganAktif && (
+            {pelangganAktif && modeMaster && (
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${warnaKategori(kunciHarga)}`}>Harga {LABEL_KATEGORI_PELANGGAN[kunciHarga]}</span>
             )}
             <ChevronDown size={16} className="text-slate-500 flex-shrink-0" />
           </button>
+          {!modeMaster && pelangganAktif && (
+            <button
+              type="button"
+              onClick={() => setPelanggan(null)}
+              title="Hapus pelanggan dari keranjang ini"
+              className="px-3.5 rounded-2xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-red-300 hover:border-red-500/40 text-sm font-semibold flex-shrink-0"
+            >
+              ✕
+            </button>
+          )}
+          {modeMaster && (
           <button
             type="button"
             onClick={() => setManualBuka(true)}
@@ -714,7 +725,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           >
             <PencilLine size={16} /> <span className="hidden sm:inline">Item manual</span>
           </button>
-          {modeOtomatis && onModeKeranjang && (
+          )}
+          {modeMaster && modeOtomatis && onModeKeranjang && (
             <button
               type="button"
               onClick={() => {
@@ -1139,6 +1151,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           daftar={daftarPelanggan}
           terpilih={pelangganAktif}
           memuat={memuatPelanggan}
+          ikutiHarga={modeMaster}
           bolehTambah={bisa(session?.role, "kasir.tambah_pelanggan")}
           onTambah={tambahPelanggan}
           onPilih={(p) => {

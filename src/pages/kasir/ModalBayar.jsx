@@ -47,7 +47,8 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
   const [qris, setQris] = useState("");
   const [catatan, setCatatan] = useState("");
   // Pramuniaga yang melayani (dari keranjang yang diambil) otomatis ditulis di catatan transaksi, jadi muncul di struk, riwayat & riwayat shift.
-  const catatanFinal = [pramuniaga ? `Dilayani: ${pramuniaga}` : "", catatan.trim()].filter(Boolean).join(" · ");
+  // Mode Toko: pelanggan (opsional) juga ditulis di catatan, karena transaksi Toko tidak punya kolom pelanggan (Master sudah punya sendiri).
+  const catatanFinal = [pramuniaga ? `Dilayani: ${pramuniaga}` : "", sumber !== "master" && pelanggan?.nama ? `Pelanggan: ${pelanggan.nama}` : "", catatan.trim()].filter(Boolean).join(" · ");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [hasil, setHasil] = useState(null);
@@ -261,6 +262,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
               )}
 
               {pramuniaga && <div className="text-xs text-slate-400">Dilayani pramuniaga: <span className="font-semibold text-slate-200">{pramuniaga}</span> (tercatat di transaksi)</div>}
+              {sumber !== "master" && pelanggan?.nama && <div className="text-xs text-slate-400">Pelanggan: <span className="font-semibold text-slate-200">{pelanggan.nama}</span> (tercatat di transaksi)</div>}
               <input
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}
