@@ -3,6 +3,7 @@ import {
   ChevronDown, Truck, ClipboardList, Tag, BarChart3, MapPin, Printer, Camera,
   ShoppingBag, Store, Home, Globe, Users, Landmark, CalendarClock, Settings,
   LayoutDashboard, BookOpen, Search, ScanLine, ListOrdered, Download,
+  Banknote, MessageCircle, ArrowRightLeft, Receipt,
 } from "lucide-react";
 import { PageHeader } from "../components/ui";
 import { isSuperadminLike, roleLabel } from "../lib/constants";
@@ -412,6 +413,92 @@ const SECTIONS = [
     ],
   },
   {
+    key: "kasir-pos",
+    label: "Kasir (POS) di Toko Offline",
+    icon: Receipt,
+    ringkasan: "Aplikasi kasir untuk jualan di toko, plus pengaturan barang, promo, dan laporannya.",
+    fungsi: [
+      `Aplikasi kasir dipakai untuk berjualan langsung di toko offline. Alamatnya /kasir. Tampilannya berdiri sendiri, tanpa menu SELMA.`,
+      `Akun kasir dibuat di Pengaturan, Kelola User, dengan role Kasir.`,
+      `Menu POS di Penjualan, Toko Offline, dipakai untuk mengatur barang toko, promo, dan melihat laporan kasir. Menu POS ini khusus Super Appa.`,
+      `Satu transaksi kasir menyimpan stok, riwayat stok, dan Keuangan sekaligus. Kalau gagal, semuanya batal. Jadi tidak ada yang setengah tercatat.`,
+    ],
+    cara: [
+      {
+        judul: "Masuk dan buka kasir (shift)",
+        langkah: [
+          `Buka alamat /kasir lalu login dengan akun Kasir.`,
+          `Sebelum bisa berjualan, klik "Buka Kasir" dan isi kas awal, yaitu uang tunai yang ada di laci.`,
+        ],
+      },
+      {
+        judul: "Berjualan",
+        langkah: [
+          `Cari barang atau scan barcode-nya. Barang masuk ke keranjang.`,
+          `Atur jumlah dan diskon kalau perlu. Promo yang sedang berjalan terpasang sendiri di keranjang. Kasir bisa melepasnya per barang.`,
+          `Klik Bayar. Pilih Cash (isi uang diterima, kembaliannya tampil), Transfer, QRIS, atau Split (gabungan).`,
+          `Tekan Bayar sekali saja. Kalau tertekan dua kali, transaksinya tetap tidak tersimpan dobel.`,
+          `Setelah bayar, struk bisa dicetak, dijadikan PDF, atau dikirim lewat WhatsApp.`,
+          `Pelanggan belum selesai? Simpan keranjangnya di Keranjang Tersimpan, lalu ambil lagi nanti. Selama keranjang dipegang satu kasir, kasir lain tidak bisa mengambilnya.`,
+        ],
+      },
+      {
+        judul: "Riwayat, Void, dan Retur",
+        langkah: [
+          `Buka Riwayat. Tab Transaksi untuk cetak ulang struk. Kasir hanya melihat transaksinya sendiri.`,
+          `Void artinya membatalkan SELURUH transaksi. Stok kembali dan uangnya dikeluarkan lagi di Keuangan. Void hanya bisa selama shift transaksi itu masih buka dan belum ada retur.`,
+          `Retur artinya mengembalikan sebagian atau seluruh barang. Stok bertambah. Uang keluar lewat metode yang dipilih dan tercatat di shift yang sedang buka.`,
+        ],
+      },
+      {
+        judul: "Menutup kasir",
+        langkah: [
+          `Klik "Tutup Kasir" saat selesai.`,
+          `Hitung uang tunai di laci, lalu isi jumlahnya.`,
+          `Sistem menampilkan kas seharusnya, yaitu kas awal ditambah penjualan cash dikurangi retur lewat cash. Transfer dan QRIS tidak masuk laci.`,
+          `Lihat selisihnya, lalu tutup. Hasil tiap shift ada di tab Shift pada Riwayat.`,
+        ],
+      },
+      {
+        judul: "Kalau internet putus",
+        langkah: [
+          `Lihat titik Online atau Offline di bagian atas layar kasir. Klik titiknya untuk membuka daftar antrian.`,
+          `Saat offline kasir tetap bisa berjualan. Struk tetap tercetak, laci tetap terbuka, dan stok di layar ikut berkurang.`,
+          `Transaksinya masuk antrian. Begitu internet kembali, antrian terkirim sendiri. Transaksi yang sama tidak akan tersimpan dobel.`,
+          `Kalau ada yang gagal, klik "Coba kirim lagi" di daftar antrian. Jangan klik Hapus kalau transaksinya belum masuk sistem, karena transaksinya hilang.`,
+          `Login, Buka Kasir, Tutup Kasir, Void, Retur, dan Riwayat tetap butuh internet. Tutup Kasir ditolak selama masih ada transaksi yang belum terkirim.`,
+        ],
+      },
+      {
+        judul: "POS: Barang Toko (khusus Super Appa)",
+        langkah: [
+          `Buka Penjualan, Toko Offline, POS, tab Barang Toko.`,
+          `Di sini ada harga jual, HPP, foto, dan stok toko tiap barang.`,
+          `Stok toko tidak bisa diketik langsung. Stok hanya berubah lewat pindah dari gudang, penjualan kasir, atau opname, supaya selalu ada catatannya.`,
+          `Barang baru bisa diambil dari Master Barang gudang lewat "Dari Master". Kode toko dibuat otomatis, harga jual diambil dari harga Ecer, HPP ikut, dan barcode memakai SKU gudang. Kalau jumlah diisi, stok gudang ikut pindah ke toko. SKU yang sudah ada di Barang Toko dilewati.`,
+          `Barang hanya bisa dihapus kalau stok tokonya 0.`,
+        ],
+      },
+      {
+        judul: "POS: Promo (khusus Super Appa)",
+        langkah: [
+          `Buka tab Promo.`,
+          `Promo bisa untuk satu barang atau satu kategori. Diskonnya persen atau rupiah per pcs.`,
+          `Isi tanggal mulai dan selesai. Keduanya ikut berlaku.`,
+          `Kalau satu barang punya beberapa promo yang berjalan bersamaan, yang dipakai adalah potongan terbesar.`,
+        ],
+      },
+      {
+        judul: "POS: Laporan (khusus Super Appa)",
+        langkah: [
+          `Buka tab Laporan.`,
+          `Pilih rentang tanggal, lalu lihat tab Harian, Per Kasir, Per Produk, atau Barang Terlaris.`,
+          `Di sini terlihat omzet, retur, void, pembayaran cash dan cashless, serta selisih kas tiap kasir.`,
+        ],
+      },
+    ],
+  },
+  {
     key: "penjualan-marketplace",
     label: "Marketplace (Keuangan per Platform)",
     icon: Globe,
@@ -493,6 +580,20 @@ const SECTIONS = [
           `Buka tab Daftar Cancel.`,
           `Tempel nomor resi pesanan yang dibatalkan. Atau upload file export pesanan dari Shopee, TikTok, atau Lazada.`,
           `Kalau ada resi yang ternyata sudah terlanjur di-scan, muncul peringatan merah. Tarik paketnya.`,
+        ],
+      },
+      {
+        judul: "Retur Resi (paket yang balik ke gudang)",
+        langkah: [
+          `Tab ini sementara hanya untuk Super Appa. Role lain baru bisa memakainya kalau Super Appa memberi akses di Pengaturan, Hak Akses.`,
+          `Buka tab Retur Resi.`,
+          `Scan atau ketik resi paket yang balik ke gudang, lalu tekan Enter.`,
+          `Sistem menentukan jenisnya sendiri. "Cancel" kalau resinya ada di Daftar Cancel. "Gagal kirim" kalau paketnya pernah di-scan kirim tapi bukan cancel (ditolak atau alamat salah).`,
+          `Kalau resinya tidak ada di keduanya, jenisnya "Tidak dikenal". Sistem bertanya dulu. Resi itu TIDAK tercatat sebelum kamu memilih Simpan.`,
+          `Satu resi hanya bisa dicatat balik satu kali. Kalau di-scan lagi, muncul tulisan "SUDAH PERNAH DI-RETUR".`,
+          `Lihat daftar "Menunggu balik". Kartu "Cancel terlanjur dikirim, belum balik" berisi paket yang sudah di-scan kirim sebelum cancel-nya diketahui. Paket itu harus balik ke gudang. Kartu "Semua cancel belum dikonfirmasi" berisi semua resi cancel yang belum dikonfirmasi balik.`,
+          `Resi yang sudah balik diberi tanda "Sudah balik" di tabel.`,
+          `Salah mencatat? Batalkan catatan retur resi itu. Resinya kembali berstatus belum balik.`,
         ],
       },
       {
@@ -731,6 +832,121 @@ const SECTIONS = [
     ],
   },
   {
+    key: "penggajian",
+    label: "Penggajian",
+    icon: Banknote,
+    ringkasan: "Menyiapkan gaji karyawan, menyerahkannya lewat QR, dan mencatatnya otomatis ke Keuangan.",
+    fungsi: [
+      `Menu ini untuk menyiapkan gaji karyawan lalu menyerahkannya. Karyawan menerima gajinya dengan memindai (scan) QR dari halaman absen di HP-nya sendiri.`,
+      `Data gaji dikunci. Setiap membuka menu ini, kamu harus mengisi password akunmu dulu. Akun Owner hanya bisa melihat (mode lihat saja).`,
+      `Ada tiga tab: Siapkan Gaji, Riwayat, dan Pengaturan Gaji.`,
+      `Ada dua jenis karyawan. Karyawan Harian digaji mingguan, tiap Sabtu atau Minggu. Karyawan Bulanan digaji tiap tanggal 23, untuk periode tanggal 24 bulan lalu sampai tanggal 23.`,
+      `Premi Kehadiran dan Premi Jabatan dibayar sebulan sekali, ikut gajian tanggal 23, untuk karyawan harian maupun bulanan. Lembur dibayar langsung di hari itu, jadi tidak lewat menu ini.`,
+    ],
+    cara: [
+      {
+        judul: "Mengisi Pengaturan Gaji (cukup sekali, ubah kalau tarif berubah)",
+        langkah: [
+          `Buka Penggajian, isi password akunmu, lalu klik "Buka Penggajian".`,
+          `Buka tab Pengaturan Gaji.`,
+          `Untuk tiap karyawan, pilih Jenis karyawan: Bulanan atau Harian.`,
+          `Isi Gaji pokok. Untuk Bulanan artinya per bulan. Untuk Harian artinya per hari masuk.`,
+          `Isi Premi jabatan kalau karyawan itu memang dapat. Kalau tidak dapat, kosongkan atau isi 0.`,
+          `Isi Premi kehadiran. Karyawan Bulanan juga punya kolom Pembagi hari (bawaannya 30).`,
+          `Klik Simpan pengaturan.`,
+        ],
+      },
+      {
+        judul: "Menyiapkan gaji",
+        langkah: [
+          `Buka tab Siapkan Gaji. Pilih "Gajian mingguan" untuk karyawan harian, atau "Gajian bulanan (tgl 23)" untuk gaji bulanan beserta premi.`,
+          `Mingguan: pilih tanggal gajian (akhir periode). Tanggal mulai terisi otomatis, yaitu sehari setelah gajian mingguan terakhir.`,
+          `Bulanan: pilih "Gaji untuk bulan". Contohnya gaji November berarti 24 Oktober sampai 23 November.`,
+          `Mau periode lain (per bulan kalender, per tanggal, atau per rentang tanggal)? Klik "Opsi lanjutan".`,
+          `Pilih Rekening sumber, yaitu rekening tempat uang gaji keluar. Gaji hanya boleh keluar dari rekening milik perusahaannya sendiri.`,
+          `Klik "Hitung otomatis". Angkanya diambil dari tarif di Pengaturan Gaji dan data Absensi. Isian yang sudah ada di layar (termasuk bonus dan catatan) akan ditimpa, jadi sistem bertanya dulu.`,
+          `Cek angkanya. Boleh diubah manual. Kolom Bonus dan Catatan bisa diisi untuk bonus lain.`,
+          `Klik "Simpan draft".`,
+        ],
+      },
+      {
+        judul: "Cara hitung otomatis",
+        langkah: [
+          `Harian, gajian mingguan: gaji pokok = tarif x jumlah hari masuk. Premi tidak ikut.`,
+          `Harian, gajian tanggal 23: hanya premi jabatan dan premi kehadiran. Gaji pokoknya sudah dibayar tiap minggu.`,
+          `Bulanan: gaji pokok = tarif dikurangi (tarif dibagi pembagi hari, dikali jumlah hari Tanpa Keterangan). Sakit dan izin tidak dipotong.`,
+          `Premi kehadiran hanya dibayar kalau masuk penuh sebulan (24 sampai 23), tidak pernah telat, dan tidak ada Sakit, Izin, atau Tanpa Keterangan. Hari Libur yang dicatat admin tidak mengurangi.`,
+          `Premi jabatan dibayar penuh kalau nilainya diisi, tidak tergantung absensi.`,
+          `Karyawan yang gaji pokoknya belum diisi dilewati. Isi saja manual.`,
+        ],
+      },
+      {
+        judul: "Menyerahkan gaji ke karyawan",
+        langkah: [
+          `Di baris karyawan yang sudah berstatus Draft, klik "Serahkan". QR langsung muncul.`,
+          `Minta karyawan membuka halaman absen di HP-nya lalu memindai QR itu. Jangan kirim QR ke orang lain.`,
+          `QR ada batas waktunya, tertulis di bawah QR. Masa berlakunya bisa diatur di Opsi lanjutan: 30 menit, 2 jam, 24 jam, atau 3 hari.`,
+          `QR bisa diunduh lewat tombol "Unduh QR". Kalau sudah kedaluwarsa, klik "QR baru".`,
+          `Begitu dipindai, status berubah jadi Diterima dan pengeluaran gaji otomatis tercatat di Keuangan.`,
+          `Kalau karyawan tidak bisa memindai, klik "Tandai diterima". Hasilnya sama: tercatat di Keuangan.`,
+        ],
+      },
+      {
+        judul: "Arti status gaji",
+        langkah: [
+          `Draft: baru disimpan, masih boleh diubah.`,
+          `Diserahkan: QR sudah dibuat, menunggu karyawan menerima.`,
+          `Diterima: sudah diterima. Uangnya sudah tercatat keluar di Keuangan.`,
+          `Batal: dibatalkan. QR yang sudah dibuat tidak berlaku lagi.`,
+          `Jangan mencatat gaji pakai tangan di Keuangan. Sudah otomatis, nanti tercatat dua kali.`,
+        ],
+      },
+      {
+        judul: "Riwayat dan salah catat",
+        langkah: [
+          `Buka tab Riwayat. Pilih karyawan untuk menyaring.`,
+          `Di sini terlihat rincian gaji, kapan diterima, dan caranya (scan QR atau oleh admin).`,
+          `Kalau salah, klik "Batal" selama statusnya Draft atau Diserahkan.`,
+          `Hati-hati dengan "Hapus". Menghapus gaji yang sudah Diterima juga menghapus pengeluarannya di Keuangan.`,
+        ],
+      },
+      {
+        judul: "Pengingat gajian",
+        langkah: [
+          `Di bagian atas halaman muncul kotak pengingat pada hari gajian: Sabtu dan Minggu untuk mingguan, tanggal 23 untuk bulanan.`,
+          `Klik "Siapkan gaji" untuk langsung membuka Penggajian dengan periode yang pas.`,
+          `Klik "Sudah dibayar" untuk menyembunyikannya sampai gajian berikutnya. Tombol silang cuma menyembunyikan sementara.`,
+          `Pengingat hanya muncul di akun yang boleh mengelola gaji, dan hanya saat aplikasi dibuka.`,
+        ],
+      },
+    ],
+  },
+  {
+    key: "rekap-perpindahan",
+    label: "Rekap Perpindahan",
+    icon: ArrowRightLeft,
+    ringkasan: "Rekap barang dan uang yang pindah antar tempat, per hari, minggu, atau bulan.",
+    fungsi: [
+      `Menu ini merangkum barang dan uang yang PINDAH antar tempat: dari Gudang ke Toko (dan sebaliknya), antar perusahaan, dan semua transaksi keuangan pada periode yang dipilih.`,
+      `Penjualan, stok opname, dan perubahan stok biasa sengaja tidak ikut.`,
+      `Hasilnya bisa dilihat di layar, disalin sebagai teks, dikirim lewat WhatsApp, atau diunduh sebagai PDF.`,
+    ],
+    cara: [
+      {
+        langkah: [
+          `Buka menu Rekap Perpindahan.`,
+          `Pilih Harian, Mingguan (Senin sampai Minggu), atau Bulanan.`,
+          `Pilih tanggalnya (atau bulannya). Tombol panah kiri dan kanan menggeser periode. Tombol "Hari ini" kembali ke hari ini.`,
+          `Lihat bagian-bagiannya: Barang Gudang ke Toko (ada total pcs ke Toko dan ke Gudang), Barang Antar Entitas (dikirim dan diterima), Uang Antar Entitas, lalu semua transaksi keuangan selama periode itu.`,
+          `Di layar, tiap tabel menampilkan paling banyak 200 baris. PDF selalu memuat semuanya.`,
+          `Klik "Salin teks" untuk menyalin ringkasan, "Kirim WhatsApp" untuk membukanya di WhatsApp, atau "Unduh PDF".`,
+          `Kalau data belum muncul atau baru berubah, klik "Muat ulang".`,
+          `Akun tertentu bisa menghapus satu catatan riwayat Gudang ke Toko lewat ikon tong sampah. Yang terhapus hanya catatannya. Stok tidak berubah.`,
+        ],
+      },
+    ],
+  },
+  {
     key: "absensi",
     label: "Absensi",
     icon: CalendarClock,
@@ -761,6 +977,28 @@ const SECTIONS = [
           `Buka Pengaturan Absensi.`,
           `Atur shift kerja dan lokasi kantor.`,
           `Lokasi kantor dipakai untuk mengecek apakah karyawan absen di tempat yang benar.`,
+        ],
+      },
+    ],
+  },
+  {
+    key: "chat",
+    label: "Chat",
+    icon: MessageCircle,
+    ringkasan: "Mengirim pesan dan foto ke pengguna lain di aplikasi.",
+    fungsi: [
+      `Menu ini untuk chat pribadi dengan pengguna lain di aplikasi. Hanya teks dan foto yang bisa dikirim. File lain tidak bisa.`,
+      `Pesan dihapus otomatis setelah 3 hari, jadi jangan simpan informasi penting di sini. Foto yang sudah terhapus tampil sebagai "Foto sudah dihapus".`,
+      `Super Appa bisa membaca semua percakapan (hanya membaca). Jangan pakai chat ini untuk urusan pribadi yang rahasia.`,
+    ],
+    cara: [
+      {
+        langkah: [
+          `Buka menu Chat. Angka merah di menu berarti ada pesan yang belum dibaca.`,
+          `Cari nama atau role orang yang mau diajak chat di kotak pencarian, lalu klik namanya.`,
+          `Ketik pesan lalu klik tombol kirim.`,
+          `Mau kirim foto? Klik ikon gambar lalu pilih fotonya. Foto muncul kecil sebagai pratinjau. Klik tanda silang untuk membatalkan.`,
+          `Pesan baru muncul sendiri beberapa detik kemudian. Tidak perlu memuat ulang halaman.`,
         ],
       },
     ],
@@ -828,13 +1066,14 @@ const SECTIONS = [
 // dapat SEMUA bagian (lihat visibleSections di bawah), superadmin ditambah
 // bagian "Pengaturan" yang tidak diberikan ke owner biasa.
 const ROLE_SECTIONS = {
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label"],
-  pemotretan: ["foto"],
-  marketplace: ["marketplace"],
-  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi"],
-  keuangan: ["keuangan"],
-  keuangan_pusat: ["holding"],
+  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "chat"],
+  pemotretan: ["foto", "chat"],
+  marketplace: ["marketplace", "chat"],
+  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi", "chat"],
+  keuangan: ["keuangan", "rekap-perpindahan", "chat"],
+  keuangan_pusat: ["holding", "chat"],
   scan_resi: ["scan-resi", "urut-resi"],
+  kasir: ["kasir-pos", "chat"],
 };
 
 function visibleSections(role) {
