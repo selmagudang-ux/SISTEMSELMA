@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus, FileDown, Check } from "lucide-react";
+import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus, FileDown, Check, History } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import { bisa } from "../../lib/constants";
@@ -7,6 +7,7 @@ import { getSession } from "../../lib/auth";
 import ImporBarangToko from "./ImporBarangToko";
 import FotoMassalToko from "./FotoMassalToko";
 import TambahDariMaster from "./TambahDariMaster";
+import RiwayatPemindahan from "./RiwayatPemindahan";
 import { FotoZoom, FotoThumb } from "./FotoZoom";
 
 // =========================================================
@@ -696,6 +697,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const bolehHapusSemua = bisa(getSession()?.role, "kasir.hapus_semua_barang_toko");
   const [impor, setImpor] = useState(false);
   const [fotoMassal, setFotoMassal] = useState(false);
+  const [riwayat, setRiwayat] = useState(false); // riwayat pemindahan toko <-> gudang + PDF (RiwayatPemindahan.jsx)
   const [dariMaster, setDariMaster] = useState(false); // tambah barang toko dari Master Barang (TambahDariMaster.jsx)
   const [filter, setFilter] = useState("semua");
   const [kategori, setKategori] = useState("");
@@ -790,6 +792,13 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
             className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
           >
             <FileUp size={15} /> Import
+          </button>
+          <button
+            onClick={() => setRiwayat(true)}
+            title="Riwayat pemindahan toko ⇄ gudang (bisa unduh PDF)"
+            className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <History size={15} /> Riwayat
           </button>
           <button
             onClick={() => setFotoMassal(true)}
@@ -946,6 +955,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
 
       {impor && <ImporBarangToko barangAda={rows || []} onSelesai={() => { setImpor(false); muat(); }} onClose={() => setImpor(false)} />}
       {fotoMassal && <FotoMassalToko barangAda={rows || []} onSelesai={() => { setFotoMassal(false); muat(); }} onClose={() => setFotoMassal(false)} />}
+      {riwayat && <RiwayatPemindahan onClose={() => setRiwayat(false)} />}
       {dariMaster && <TambahDariMaster onSelesai={() => { setDariMaster(false); muat(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
