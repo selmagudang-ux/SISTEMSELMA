@@ -366,6 +366,10 @@ export default function RiwayatStruk({ session, shift, onClose }) {
                                 {tglJamId(r[T.waktu])}
                                 {semuaKasir && r[T.kasirNama] ? ` · ${r[T.kasirNama]}` : ""}
                               </div>
+                              {/* Pramuniaga yang melayani: ditulis otomatis di catatan transaksi saat kasir mengambil keranjang ("Dilayani: <nama>"). */}
+                              {typeof r[T.catatan] === "string" && r[T.catatan].startsWith("Dilayani: ") && (
+                                <div className="text-[11px] text-sky-300/80 truncate">{r[T.catatan]}</div>
+                              )}
                               {trxGrosirPelanggan(r) && (
                                 <div className="text-[11px] text-violet-300/80">
                                   Grosir · {r.pelanggan_nama || "Pelanggan"}

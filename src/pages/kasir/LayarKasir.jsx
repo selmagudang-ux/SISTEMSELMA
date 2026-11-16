@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users, PencilLine } from "lucide-react";
 import { sb, sbAll, fmtRp, nextKode } from "../../lib/api";
-import { kasirModeMaster, bisa } from "../../lib/constants";
+import { kasirModeMaster, kasirModeOtomatis, bisa } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
 import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
@@ -99,9 +99,10 @@ function bacaSimpan(session) {
       diskonTrx: d?.diskonTrx || { tipe: "rp", nilai: "" },
       kunci: d?.kunci || null,
       pelanggan: d?.pelanggan?.id ? d.pelanggan : null,
+      pramuniaga: d?.pramuniaga?.nama ? d.pramuniaga : null,
     };
   } catch {
-    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null, pelanggan: null };
+    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null, pelanggan: null, pramuniaga: null };
   }
 }
 
@@ -178,8 +179,11 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
 
 // versiData: angka yang dinaikkan induk (mis. setelah Barang Toko ditutup) supaya daftar barang dimuat ulang.
 // pilihMaster: pilihan dari tombol Mode di header KasirApp (Super Appa / role dengan izin kasir.pilih_mode); selain itu mode ikut izin kasir.dari_master.
-export default function LayarKasir({ session, versiData = 0, pilihMaster = null, hanyaKeranjang = false }) {
+// onModeKeranjang(master:boolean): hanya dipakai kasir meja (kasirModeOtomatis) — minta induk memindah mode layar mengikuti keranjang yang diambil.
+export default function LayarKasir({ session, versiData = 0, pilihMaster = null, hanyaKeranjang = false, onModeKeranjang = null }) {
   const modeMaster = kasirModeMaster(session?.role, pilihMaster);
+  const modeOtomatis = !hanyaKeranjang && kasirModeOtomatis(session?.role);
+  const selesaiBayarRef = useRef(false); // true setelah transaksi tersimpan; mode Grosir otomatis dikembalikan ke Toko saat modal bayar ditutup
   const kunciCacheBarang = modeMaster ? "master_barang" : "master_toko";
   const [skuList, setSkuList] = useState([]);
   // Map(sku -> promo yang sedang berjalan). Gagal dimuat (mis. tabel belum dibuat) = tanpa promo, kasir tetap jalan.
@@ -197,6 +201,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [kunci, setKunci] = useState(() => bacaSimpan(session).kunci);
   // Mode Master Barang: pelanggan (dari menu Grosir) menentukan kategori harga, dan transaksinya masuk Pesanan Grosir saat tutup kasir.
   const [pelanggan, setPelanggan] = useState(() => bacaSimpan(session).pelanggan);
+  // Pramuniaga yang membuat keranjang yang diambil kasir (hilang dari database saat diambil, jadi dibawa di sini sampai transaksi tersimpan).
+  const [pramuniaga, setPramuniaga] = useState(() => bacaSimpan(session).pramuniaga);
   const [daftarPelanggan, setDaftarPelanggan] = useState([]);
   const [memuatPelanggan, setMemuatPelanggan] = useState(false);
   const [pilihPelBuka, setPilihPelBuka] = useState(false);
@@ -424,11 +430,15 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // Keranjang bertahan kalau halaman di-refresh (hilang saat tab ditutup / logout).
   useEffect(() => {
     try {
-      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci, pelanggan }));
+      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci, pelanggan, pramuniaga }));
     } catch {
       /* penyimpanan penuh / diblokir — abaikan */
     }
-  }, [items, diskonTrx, kunci, pelanggan, session]);
+  }, [items, diskonTrx, kunci, pelanggan, pramuniaga, session]);
+  // Keranjang kosong (dihapus kasir / selesai) -> catatan pramuniaga ikut dibersihkan.
+  useEffect(() => {
+    if (!items.length) setPramuniaga(null);
+  }, [items.length]);
 
   // Indeks pencarian: dibuat sekali per daftar SKU.
   const indeks = useMemo(() => {
@@ -588,12 +598,36 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       return false;
     }
     if (items.length && !window.confirm("Keranjang yang sedang berisi akan diganti dengan keranjang tersimpan ini. Lanjutkan?")) return false;
+    const pramuniagaR = r.kasir_nama ? { id: r.kasir_id || null, nama: r.kasir_nama } : null;
+    // Kasir meja: keranjang berbeda jenis (Toko <-> Grosir) -> simpan keranjangnya ke sesi lalu pindah mode. Layar baru memulihkannya
+    // dan menyamakan harga/stok dengan data mode itu (sinkronItems), jadi tidak diproses di sini.
+    if (modeOtomatis && onModeKeranjang && (r.diskon_trx?.sumber === "master") !== modeMaster) {
+      const keMaster = r.diskon_trx?.sumber === "master";
+      try {
+        sessionStorage.setItem(
+          kunciSimpan(session),
+          JSON.stringify({
+            items: Array.isArray(r.items) ? r.items : [],
+            diskonTrx: r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" },
+            kunci: null,
+            pelanggan: keMaster && r.diskon_trx?.pelanggan?.id ? r.diskon_trx.pelanggan : null,
+            pramuniaga: pramuniagaR,
+          })
+        );
+      } catch {
+        tampilToast("Gagal memindahkan keranjang ke mode lain (penyimpanan perangkat penuh / diblokir).");
+        return false;
+      }
+      onModeKeranjang(keMaster);
+      return true;
+    }
     const { items: baru, catatan } = sinkronItems(Array.isArray(r.items) ? r.items : [], skuList, promoRef.current);
     if (!baru.length) {
       tampilToast("Semua barang di keranjang ini sudah tidak bisa dijual (habis / dinonaktifkan).");
       return false;
     }
     setItems(baru);
+    setPramuniaga(pramuniagaR);
     if (modeMaster && r.diskon_trx?.pelanggan?.id) setPelanggan(r.diskon_trx.pelanggan);
     setDiskonTrx(r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
@@ -614,7 +648,9 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // Transaksi tersimpan -> keranjang langsung dikosongkan (supaya tidak bisa terbayar dua kali),
   // stok di layar dimuat ulang. Modal tetap terbuka menampilkan kembalian.
   const setelahBayar = () => {
+    selesaiBayarRef.current = true;
     setItems([]);
+    setPramuniaga(null);
     setPelanggan(null);
     setDiskonTrx({ tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
@@ -678,6 +714,27 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           >
             <PencilLine size={16} /> <span className="hidden sm:inline">Item manual</span>
           </button>
+          {modeOtomatis && onModeKeranjang && (
+            <button
+              type="button"
+              onClick={() => {
+                if (items.length && !window.confirm("Keranjang grosir yang sedang berisi akan dikosongkan. Kembali ke mode Toko?")) return;
+                try {
+                  sessionStorage.removeItem(kunciSimpan(session));
+                } catch {
+                  /* diabaikan */
+                }
+                setItems([]);
+                setPramuniaga(null);
+                setPelanggan(null);
+                onModeKeranjang(false);
+              }}
+              title="Keluar dari keranjang grosir, kembali ke penjualan Toko"
+              className="flex items-center gap-2 px-4 rounded-2xl border border-slate-800 bg-slate-900 text-slate-300 hover:border-amber-500/50 hover:text-amber-300 text-sm font-semibold flex-shrink-0 transition-colors"
+            >
+              <span>Ke Toko</span>
+            </button>
+          )}
           </div>
         )}
         <div className="flex items-center gap-2.5">
@@ -1092,7 +1149,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
         />
       )}
 
-      {daftarTersimpanBuka && <KeranjangTersimpan session={session} sumber={modeMaster ? "master" : "toko"} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
+      {daftarTersimpanBuka && <KeranjangTersimpan session={session} sumber={modeOtomatis ? null : modeMaster ? "master" : "toko"} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
 
       {bayarBuka && (
         <ModalBayar
@@ -1103,9 +1160,17 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           kunci={kunci}
           sumber={modeMaster ? "master" : "toko"}
           pelanggan={pelangganAktif}
+          pramuniaga={pramuniaga?.nama || ""}
           onSukses={setelahBayar}
           onMuatUlang={muat}
-          onClose={() => setBayarBuka(false)}
+          onClose={() => {
+            setBayarBuka(false);
+            // Kasir meja: setelah transaksi Grosir selesai, kembali ke mode Toko (penjualan langsung di meja kasir).
+            if (selesaiBayarRef.current) {
+              selesaiBayarRef.current = false;
+              if (modeOtomatis && modeMaster && onModeKeranjang) onModeKeranjang(false);
+            }
+          }}
         />
       )}
 

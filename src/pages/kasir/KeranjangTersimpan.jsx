@@ -10,6 +10,7 @@ import { muatKeranjangTersimpan, hapusKeranjangTersimpan } from "./kasirKeranjan
 
 const tglJam = (v) => new Date(v).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
+// sumber: "toko" | "master" = hanya jenis itu; null = semua jenis (kasir meja).
 export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, onClose }) {
   const semuaKasir = true;
   const [daftar, setDaftar] = useState(null);
@@ -98,10 +99,22 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
               <div key={r.id} className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3.5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold truncate">{r.nama || "Keranjang tanpa nama"}</div>
+                    <div className="text-sm font-semibold truncate">
+                      {!sumber && (
+                        <span
+                          className={`mr-1.5 align-middle text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            r.diskon_trx?.sumber === "master" ? "bg-amber-500/15 text-amber-300" : "bg-sky-500/15 text-sky-300"
+                          }`}
+                        >
+                          {r.diskon_trx?.sumber === "master" ? "Grosir" : "Toko"}
+                        </span>
+                      )}
+                      {r.nama || "Keranjang tanpa nama"}
+                    </div>
                     <div className="text-[11px] text-slate-500 mt-0.5">
                       {tglJam(r.created_at)}
-                      {semuaKasir && r.kasir_nama ? ` · ${r.kasir_nama}` : ""}
+                      {semuaKasir && r.kasir_nama ? ` · Pramuniaga: ${r.kasir_nama}` : ""}
+                      {r.diskon_trx?.pelanggan?.nama ? ` · Pelanggan: ${r.diskon_trx.pelanggan.nama}` : ""}
                     </div>
                   </div>
                   <div className="text-right text-xs flex-shrink-0">

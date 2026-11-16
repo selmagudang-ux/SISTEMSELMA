@@ -658,11 +658,20 @@ export function bolehKasir(role) {
 // (bisa() mengembalikan true untuk Super Appa di semua izin, jadi dia tidak boleh dibaca lewat bisa().)
 export function kasirBisaPilihMode(role) {
   if (!role) return false;
-  return role === "superappa" || bisa(role, "kasir.pilih_mode");
+  if (role === "superappa") return true;
+  if (kasirModeOtomatis(role)) return false; // modenya otomatis mengikuti keranjang yang diambil
+  return bisa(role, "kasir.pilih_mode");
+}
+// Kasir meja (izin "kasir.ambil_semua_keranjang"): tidak punya tombol Mode. Bawaannya Barang Toko; saat mengambil keranjang
+// Grosir dari pramuniaga, layar pindah ke Master Barang otomatis (pilih = true), dan kembali ke Toko setelah transaksi selesai.
+export function kasirModeOtomatis(role) {
+  if (!role || role === "superappa") return false;
+  return bisa(role, "kasir.ambil_semua_keranjang");
 }
 export function kasirModeMaster(role, pilih = null) {
   if (!role) return false;
   if (role === "superappa") return pilih === true;
+  if (kasirModeOtomatis(role)) return pilih === true;
   if (typeof pilih === "boolean" && bisa(role, "kasir.pilih_mode")) return pilih;
   return bisa(role, "kasir.dari_master");
 }
@@ -771,7 +780,8 @@ export const GRUP_AKSI = [
       { key: "kasir.void", label: "Membatalkan seluruh transaksi (void)", bawaan: tak },
       { key: "kasir.hanya_keranjang", label: "Kasir HP: hanya mengisi keranjang lalu Simpan (tanpa buka shift & tanpa tombol Bayar)", bawaan: dari("pramuniaga", "pramuniaga_grosir") },
       { key: "kasir.pilih_mode", label: "Kasir boleh berpindah sendiri antara Barang Toko dan Master Barang (tombol Mode di header)", bawaan: tak },
-      { key: "kasir.dari_master", label: "Kasir mengambil barang dari Master Barang (harga GROSIR & stok Master Barang, bukan Barang Toko)", bawaan: dari("kasir_grosir", "pramuniaga_grosir") },
+      { key: "kasir.dari_master", label: "Kasir mengambil barang dari Master Barang (harga GROSIR & stok Master Barang, bukan Barang Toko)", bawaan: dari("pramuniaga_grosir") },
+      { key: "kasir.ambil_semua_keranjang", label: "Kasir meja: mengambil keranjang tersimpan Toko DAN Grosir dari semua pramuniaga (mode layar otomatis mengikuti keranjang, tanpa tombol Mode)", bawaan: dari("kasir", "kasir_grosir") },
       { key: "kasir.barang_toko", label: "Tombol Barang Toko di aplikasi kasir", bawaan: tak },
       { key: "kasir.promo", label: "Tombol Promo di aplikasi kasir", bawaan: tak },
       { key: "kasir.buka_laci", label: "Tombol Buka Laci di aplikasi kasir", bawaan: tak },
@@ -831,8 +841,8 @@ export const ROLES = [
   { key: "keuangan_pusat", label: "Admin Keuangan Pusat" },
   { key: "scan_resi", label: "Admin Scan Resi" },
   { key: "kasir", label: "Kasir" },
-  // Kasir Grosir: sama seperti Kasir, tapi bawaannya menjual dari Master Barang dengan harga grosir (kasir.dari_master).
-  { key: "kasir_grosir", label: "Kasir Grosir" },
+  // Kasir Grosir (lama): kini sama persis dengan Kasir (satu role kasir meja untuk semua keranjang pramuniaga). Dipertahankan hanya supaya akun lama tetap jalan.
+  { key: "kasir_grosir", label: "Kasir Grosir (lama — sama dengan Kasir, pindahkan akunnya ke Kasir)" },
   // Pramuniaga: petugas keliling yang mengisi keranjang dari HP lalu menyimpannya; kasir di meja mengambil & membayarnya.
   { key: "pramuniaga", label: "Pramuniaga (keranjang HP)" },
   // Sama seperti Pramuniaga, tapi memakai Master Barang & harga grosir: pasangannya Kasir Grosir di meja.

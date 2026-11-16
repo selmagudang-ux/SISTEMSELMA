@@ -38,7 +38,7 @@ const MODE = [
 const inputCls =
   "w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-base outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10";
 
-export default function ModalBayar({ total, items, diskonTransaksi, session, kunci, sumber = "toko", pelanggan = null, onSukses, onMuatUlang, onClose }) {
+export default function ModalBayar({ total, items, diskonTransaksi, session, kunci, sumber = "toko", pelanggan = null, pramuniaga = "", onSukses, onMuatUlang, onClose }) {
   const [master, setMaster] = useState(null);
   const [errMaster, setErrMaster] = useState("");
   const [mode, setMode] = useState("Cash");
@@ -46,6 +46,8 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
   const [transfer, setTransfer] = useState("");
   const [qris, setQris] = useState("");
   const [catatan, setCatatan] = useState("");
+  // Pramuniaga yang melayani (dari keranjang yang diambil) otomatis ditulis di catatan transaksi, jadi muncul di struk, riwayat & riwayat shift.
+  const catatanFinal = [pramuniaga ? `Dilayani: ${pramuniaga}` : "", catatan.trim()].filter(Boolean).join(" · ");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [hasil, setHasil] = useState(null);
@@ -79,7 +81,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
     setError("");
     try {
       const metodeList = hb.pembayaran.map((p) => p.metode);
-      const args = { session, items, diskonTransaksi, hitungBayar: hb, keuangan: null, catatan, kunci, sumber, pelanggan };
+      const args = { session, items, diskonTransaksi, hitungBayar: hb, keuangan: null, catatan: catatanFinal, kunci, sumber, pelanggan };
       // Offline (atau koneksi gagal saat menyimpan): transaksi masuk antrian di perangkat dan dikirim
       // otomatis nanti. Kunci yang sama dipakai jalur online & antrian, jadi tidak bisa tersimpan dobel.
       const antri = (keuangan) =>
@@ -121,7 +123,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
           pembayaran: hb.pembayaran,
           bayar: hb.bayar,
           kembalian: hb.kembalian,
-          catatan,
+          catatan: catatanFinal,
           identitas: identitasStruk(master),
         })
       );
@@ -258,6 +260,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
                 <div className="text-sm text-amber-400">{hb.kurang > 0 ? `Uang kurang ${fmtRp(hb.kurang)}` : hb.pesan}</div>
               )}
 
+              {pramuniaga && <div className="text-xs text-slate-400">Dilayani pramuniaga: <span className="font-semibold text-slate-200">{pramuniaga}</span> (tercatat di transaksi)</div>}
               <input
                 value={catatan}
                 onChange={(e) => setCatatan(e.target.value)}

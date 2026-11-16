@@ -37,6 +37,7 @@ export async function simpanKeranjangTersimpan({ session, items, diskonTrx, nama
 export async function muatKeranjangTersimpan(session, sumber = "toko") {
   const q = [`select=${KOLOM}`, `entitas=eq.${encodeURIComponent(entitasSesi())}`, "order=created_at.desc", `limit=${BATAS_DAFTAR}`];
   const rows = (await sb(`${TABEL}?${q.join("&")}`)) || [];
+  if (!sumber) return rows; // sumber kosong = semua jenis (kasir meja yang mengambil keranjang Toko & Grosir)
   return rows.filter((r) => (r.diskon_trx?.sumber || "toko") === sumber);
 }
 

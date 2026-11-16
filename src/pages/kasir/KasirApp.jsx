@@ -3,7 +3,7 @@ import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Ar
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { getSession, logout } from "../../lib/auth";
-import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang, kasirBisaPilihMode, kasirModeMaster } from "../../lib/constants";
+import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang, kasirBisaPilihMode, kasirModeMaster, kasirModeOtomatis } from "../../lib/constants";
 import { PasangAplikasi, adalahHp } from "./kasirPasang";
 import { useSkalaTampilan, skalaBerikutnya } from "./kasirTampilan";
 import { sb } from "../../lib/api";
@@ -92,7 +92,12 @@ export default function KasirApp() {
       setPilihMaster(null);
     }
   }, [kunciMode]);
-  const modeMasterSekarang = kasirModeMaster(session?.role, pilihMaster);
+  // Kasir meja (izin "kasir.ambil_semua_keranjang"): tanpa tombol Mode. Modenya mengikuti keranjang yang diambil (Toko / Grosir),
+  // disimpan di memori saja (tidak diingat), jadi layar selalu mulai di Barang Toko.
+  const [modeKeranjang, setModeKeranjang] = useState(null);
+  const modeOtomatis = !!session && aksesSiap && kasirModeOtomatis(session.role);
+  const pilihPakai = modeOtomatis ? modeKeranjang : pilihMaster;
+  const modeMasterSekarang = kasirModeMaster(session?.role, pilihPakai);
   const bisaGantiMode = !!session && aksesSiap && kasirBisaPilihMode(session.role);
   const gantiMode = () => {
     if (!window.confirm(`Pindah ke mode ${modeMasterSekarang ? "Barang Toko" : "Master Barang (harga grosir)"}? Keranjang yang sedang berisi akan dikosongkan.`)) return;
@@ -461,7 +466,7 @@ export default function KasirApp() {
           <LayarBukaShift session={session} onBuka={(s) => setShift(s)} onKeluar={keluar} />
         </>
       ) : (
-        <LayarKasir key={modeMasterSekarang ? "m" : "t"} session={sesiKasir} versiData={versiData} pilihMaster={pilihMaster} />
+        <LayarKasir key={modeMasterSekarang ? "m" : "t"} session={sesiKasir} versiData={versiData} pilihMaster={pilihPakai} onModeKeranjang={modeOtomatis ? setModeKeranjang : null} />
       )}
       {riwayatBuka && <RiwayatStruk session={sesiKasir} shift={shift || null} onClose={() => setRiwayatBuka(false)} />}
       {tutupBuka && shift && (
