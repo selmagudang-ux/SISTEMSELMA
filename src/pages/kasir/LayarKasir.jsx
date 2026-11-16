@@ -7,7 +7,7 @@ import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitu
 import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
-import { simpanKeranjangTersimpan, hapusKeranjangTersimpan } from "./kasirKeranjang";
+import { simpanKeranjangTersimpan, hapusKeranjangTersimpan, muatKeranjangTersimpan } from "./kasirKeranjang";
 import KeranjangTersimpan from "./KeranjangTersimpan";
 import ModalItemManual from "./ModalItemManual";
 import PilihPelanggan, { kunciHargaPelanggan, LABEL_KATEGORI_PELANGGAN, warnaKategori } from "./PilihPelanggan";
@@ -216,6 +216,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [asalId, setAsalId] = useState(() => bacaSimpan(session).asalId);
   const asalRef = useRef(asalId);
   asalRef.current = asalId;
+  // Keranjang tersimpan (database) milik kasir/pramuniaga lain: isinya ditahan, jadi stok yang tampil & bisa dijual dikurangi.
+  const tersimpanRef = useRef([]);
   const [daftarPelanggan, setDaftarPelanggan] = useState([]);
   const [memuatPelanggan, setMemuatPelanggan] = useState(false);
   const [pilihPelBuka, setPilihPelBuka] = useState(false);
@@ -263,9 +265,20 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     async (rowsToko, rowsPromo, dataPaket) => {
       rawRef.current = { rowsToko, rowsPromo, dataPaket };
       const antri = await qtyDiAntrian(modeMaster ? "master" : "toko");
+      // Stok yang ditahan keranjang tersimpan (jenis sama, selain keranjang yang sedang dikerjakan di layar ini).
+      const tahan = new Map();
+      for (const k of tersimpanRef.current || []) {
+        if (k.id === asalRef.current) continue;
+        if ((k.diskon_trx?.sumber || "toko") !== (modeMaster ? "master" : "toko")) continue;
+        for (const it of Array.isArray(k.items) ? k.items : []) {
+          if (!it?.sku || it.manual) continue;
+          tahan.set(it.sku, (tahan.get(it.sku) || 0) + (Number(it.qty) || 0));
+        }
+      }
       const rows = (rowsToko || [])
         .map(modeMaster ? (r) => dariMaster(r, kunciHargaRef.current) : dariToko)
-        .map((r) => (antri.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - antri.get(r.sku)) } : r));
+        .map((r) => (antri.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - antri.get(r.sku)) } : r))
+        .map((r) => (tahan.has(r.sku) ? { ...r, stok: Math.max(0, (Number(r.stok) || 0) - tahan.get(r.sku)) } : r));
       setSkuList(rows.filter((s) => !s.nonaktif));
       // Promo paket (diskon) dijadikan baris promo per kategori dan digabung dengan promo lama.
       if (dataPaket) paketRef.current = { paket: dataPaket.paket || [], master: new Map(dataPaket.master || []) };
@@ -313,11 +326,13 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           return;
         }
       }
-      const [rowsToko, rowsPromo, dataPaket] = await Promise.all([
+      const [rowsToko, rowsPromo, dataPaket, rowsTersimpan] = await Promise.all([
         modeMaster ? muatBarangMaster() : muatBarangToko(),
         muatPromoKasir().catch(() => null), // null = promo gagal dimuat, jangan ganggu penjualan
         muatDataPaket().catch(() => null), // null = promo paket gagal dimuat, jangan ganggu penjualan
+        muatKeranjangTersimpan(session, null).catch(() => null), // null = gagal dimuat: pakai daftar terakhir yang berhasil
       ]);
+      if (rowsTersimpan) tersimpanRef.current = rowsTersimpan;
       terakhirMuat.current = Date.now();
       tandaiOnline();
       setDariCache(null);
@@ -343,7 +358,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     } finally {
       if (!diam) setLoading(false);
     }
-  }, [terapkan, modeMaster, kunciCacheBarang]);
+  }, [terapkan, modeMaster, kunciCacheBarang, session]);
   useEffect(() => {
     muat();
   }, [muat, versiData]);
@@ -430,6 +445,15 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     setPelanggan({ id: baru.id, nama: baru.nama, kategori: kat });
     setPilihPelBuka(false);
   }, []);
+
+  // Keranjang yang dikerjakan berganti (diambil / selesai): stok yang ditahan dihitung ulang tanpa memuat dari server.
+  const asalTerakhir = useRef(asalId);
+  useEffect(() => {
+    if (asalTerakhir.current === asalId) return;
+    asalTerakhir.current = asalId;
+    const r = rawRef.current;
+    if (r) terapkan(r.rowsToko, r.rowsPromo, r.dataPaket);
+  }, [asalId, terapkan]);
 
   // Pelanggan berganti kategori (grosir/tengah/ecer) -> harga keranjang dihitung ulang dari data barang yang sudah dimuat.
   const kunciHargaTerakhir = useRef(kunciHarga);
@@ -697,7 +721,9 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     try {
       await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total, sumber: modeMaster ? "master" : "toko", pelanggan: pelangganAktif });
       // Keranjang ini tadinya diambil dari daftar tersimpan: salinan lamanya diganti dengan yang baru disimpan (tidak dobel).
-      if (asalRef.current) hapusKeranjangTersimpan(asalRef.current).catch(() => {});
+      const asalLama = asalRef.current;
+      if (asalLama) tersimpanRef.current = tersimpanRef.current.filter((k) => k.id !== asalLama);
+      (asalLama ? hapusKeranjangTersimpan(asalLama).catch(() => {}) : Promise.resolve()).then(() => muat(true)); // keranjang yang baru disimpan ikut menahan stok
       setAsalId(null);
       setItems([]);
       setPelanggan(null);
@@ -774,7 +800,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     selesaiBayarRef.current = true;
     // Keranjang tersimpan yang tadi diambil: baru sekarang (setelah dibayar) salinannya di database dihapus.
     const asal = asalRef.current;
-    if (asal) hapusKeranjangTersimpan(asal).catch(() => {});
+    if (asal) tersimpanRef.current = tersimpanRef.current.filter((k) => k.id !== asal);
     setAsalId(null);
     setItems([]);
     setPramuniaga(null);
@@ -782,7 +808,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     setDiskonTrx({ tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
-    muat(true);
+    // Hapus salinannya dulu, baru stok dimuat ulang (supaya salinan itu tidak ikut menahan stok yang baru saja dipotong).
+    (asal ? hapusKeranjangTersimpan(asal).catch(() => {}) : Promise.resolve()).then(() => muat(true));
   };
 
   // Promo grosir (bagian dari promo paket): total pcs gabungan SELURUH keranjang >= minimal promo -> barang di kategori
@@ -942,10 +969,11 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5">
               {daftarTampil.map((s) => {
-                const stok = Number(s.stok) || 0;
+                const diKeranjang = qtyDiKeranjang.get(s.sku) || 0;
+                // Stok yang tampil = stok tersedia dikurangi yang sudah ada di keranjang ini (balik lagi kalau dihapus dari keranjang).
+                const stok = Math.max(0, (Number(s.stok) || 0) - diKeranjang);
                 const harga = Number(s.ecer) || 0;
                 const tidakBisa = stok <= 0 || harga <= 0;
-                const diKeranjang = qtyDiKeranjang.get(s.sku) || 0;
                 const promo = promoMap.get(s.sku) || null;
                 const hargaPromo = promo ? hargaSetelahPromo(harga, promo) : 0;
                 return (
@@ -1006,7 +1034,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
                             : "bg-slate-800 text-slate-400"
                         }`}
                       >
-                        {stok <= 0 ? "Stok habis" : stok <= 3 ? `Sisa ${stok}` : `Stok ${stok}`}
+                        {stok <= 0 ? (diKeranjang > 0 ? "Semua di keranjang" : "Stok habis") : stok <= 3 ? `Sisa ${stok}` : `Stok ${stok}`}
                       </span>
                     </div>
                   </button>
