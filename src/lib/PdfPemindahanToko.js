@@ -3,6 +3,7 @@
 // Dipanggil lewat dynamic import dari kasir/PindahKeToko.jsx (tombol "Unduh PDF" di layar hasil) supaya jsPDF
 // tidak ikut di bundle awal.
 // baris: [{ sku, kode, nama, qty }]  (qty = stok gudang yang dipindah ke toko; 0 = hanya didaftarkan)
+// arah: "ke_toko" (default, Master Barang -> Barang Toko) | "ke_gudang" (Barang Toko -> gudang, dipanggil dari kasir/BarangToko.jsx)
 // =========================================================
 import { jsPDF } from "jspdf";
 
@@ -10,7 +11,8 @@ const NAVY = [31, 56, 100];
 const SOFT = [237, 242, 250];
 const GREY = [210, 216, 224];
 
-export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = new Date(), catatan = "", baris = [] }) {
+export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = new Date(), catatan = "", baris = [], arah = "ke_toko" }) {
+  const keGudang = arah === "ke_gudang";
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const W = 210;
   const H = 297;
@@ -40,7 +42,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
 
   // Judul
   doc.setTextColor(20, 20, 20).setFont("helvetica", "bold").setFontSize(14);
-  doc.text("BARANG DIAMBIL DARI MASTER BARANG KE BARANG TOKO", M, y + 5);
+  doc.text(keGudang ? "BARANG DIKEMBALIKAN DARI BARANG TOKO KE GUDANG" : "BARANG DIAMBIL DARI MASTER BARANG KE BARANG TOKO", M, y + 5);
   y += 9;
   doc.setFont("helvetica", "normal").setFontSize(10);
   if (namaUsaha) {
@@ -86,7 +88,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
   doc.setDrawColor(...GREY).line(M, y, W - M, y);
   y += 6;
   doc.setFont("helvetica", "bold").setFontSize(10);
-  doc.text(`Total ${baris.length} barang  |  ${total} pcs dipindah ke toko`, W - M, y, { align: "right" });
+  doc.text(`Total ${baris.length} barang  |  ${total} pcs ${keGudang ? "dikembalikan ke gudang" : "dipindah ke toko"}`, W - M, y, { align: "right" });
 
   const n = doc.getNumberOfPages();
   for (let p = 1; p <= n; p++) {
@@ -97,5 +99,5 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
 
   const d = new Date(waktu);
   const pad = (x) => String(x).padStart(2, "0");
-  doc.save(`barang-diambil-ke-toko_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.pdf`);
+  doc.save(`${keGudang ? "barang-dikembalikan-ke-gudang" : "barang-diambil-ke-toko"}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.pdf`);
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus } from "lucide-react";
+import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus, FileDown, Check } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import { bisa } from "../../lib/constants";
@@ -259,6 +259,8 @@ function FormMutasi({ barang, onSelesai, onClose }) {
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [hasil, setHasil] = useState(null); // { arah, qty, catatan, waktu } — layar hasil + tombol Unduh PDF
+  const [errPdf, setErrPdf] = useState("");
 
   useEffect(() => {
     if (!barang.sku_gudang) return setGudang(-1);
@@ -280,13 +282,56 @@ function FormMutasi({ barang, onSelesai, onClose }) {
         method: "POST",
         body: JSON.stringify({ p: { entitas: entitasSesi(), kode: barang.kode, qty: n, catatan: catatan.trim() || null } }),
       });
-      onSelesai();
+      setHasil({ arah, qty: n, catatan: catatan.trim(), waktu: new Date() });
     } catch (e) {
       setError(pesanError(e));
     } finally {
       setSaving(false);
     }
   };
+
+  const unduhPdf = async () => {
+    setErrPdf("");
+    try {
+      let namaUsaha = String(entitasSesi());
+      try {
+        const e = await sb(`master_data?select=kode,label&tipe=eq.entitas&kode=eq.${encodeURIComponent(entitasSesi())}`);
+        if (e?.[0]?.label) namaUsaha = e[0].label;
+      } catch {
+        /* pakai kode entitas */
+      }
+      const ses = getSession();
+      const { buatPdfPemindahanToko } = await import("../../lib/PdfPemindahanToko");
+      buatPdfPemindahanToko({
+        namaUsaha,
+        petugas: ses?.nama || ses?.username || "",
+        waktu: hasil.waktu,
+        catatan: hasil.catatan,
+        arah: hasil.arah,
+        baris: [{ sku: barang.sku_gudang, kode: barang.kode, nama: barang.nama || barang.kode, qty: hasil.qty }],
+      });
+    } catch (e) {
+      setErrPdf(`Gagal membuat PDF: ${e?.message || e}`);
+    }
+  };
+
+  if (hasil) {
+    const kg = hasil.arah === "ke_gudang";
+    return (
+      <Kerangka judul={kg ? "Hasil pengembalian ke gudang" : "Hasil mutasi ke toko"} onClose={onSelesai}>
+        <div className="flex items-center gap-2 text-sm text-emerald-300">
+          <Check size={15} /> {hasil.qty} pcs {barang.kode} {kg ? "dikembalikan dari toko ke gudang" : "dipindah dari gudang ke toko"}
+        </div>
+        <button onClick={unduhPdf} className="w-full flex items-center justify-center gap-2 border border-amber-500/60 hover:bg-amber-500/10 text-amber-300 font-semibold py-3 rounded-2xl">
+          <FileDown size={16} /> {kg ? "Unduh PDF barang dikembalikan ke gudang" : "Unduh PDF barang dipindah ke toko"}
+        </button>
+        <Galat pesan={errPdf} />
+        <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3.5 rounded-2xl">
+          Selesai
+        </button>
+      </Kerangka>
+    );
+  }
 
   return (
     <Kerangka judul={`${arah === "ke_gudang" ? "Kembalikan ke gudang" : "Mutasi ke toko"} — ${barang.kode}`} onClose={onClose}>
