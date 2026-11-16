@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
+import { bisa } from "../../lib/constants";
+import { getSession } from "../../lib/auth";
 import ImporBarangToko from "./ImporBarangToko";
 import FotoMassalToko from "./FotoMassalToko";
 import { FotoZoom, FotoThumb } from "./FotoZoom";
@@ -17,6 +19,8 @@ import { FotoZoom, FotoThumb } from "./FotoZoom";
 //  - Mutasi dari gudang  : fungsi database toko_mutasi_dari_gudang (atomik)
 //  - Opname              : fungsi database toko_opname (koreksi stok hasil hitung fisik)
 //  - Hapus               : HANYA kalau stok toko 0 (dicek di layar DAN di database lewat filter stok=eq.0)
+//  - Hapus Semua         : izin "kasir.hapus_semua_barang_toko". Hapus massal barang di tampilan (sesuai pencarian/filter) yang stoknya 0,
+//                          aturan stok 0 & penolakan database untuk barang yang pernah dipakai transaksi tetap berlaku.
 // Stok toko TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi,
 // penjualan kasir, atau opname, supaya selalu ada catatannya (toko_stok_mutasi).
 // =========================================================
@@ -421,6 +425,134 @@ function FormHapus({ barang, onSelesai, onClose }) {
   );
 }
 
+
+// Hapus massal. Sasaran = barang yang sedang tampil (ikut pencarian / filter / kategori) dan stoknya 0 — aturan yang sama dengan hapus
+// satu barang. Barang dengan stok > 0 dilewati. Dikirim per potongan; kalau satu potongan ditolak database (ada barang yang pernah dipakai
+// di transaksi, jadi seluruh perintah gagal), potongan itu diulang satu per satu supaya yang lain tetap terhapus.
+const UKURAN_HAPUS = 50;
+function FormHapusSemua({ daftar, totalSemua, onSelesai, onClose }) {
+  const sasaran = useMemo(() => daftar.filter((r) => stokAngka(r) === 0), [daftar]);
+  const adaStok = daftar.length - sasaran.length;
+  const [ketik, setKetik] = useState("");
+  const [jalan, setJalan] = useState(false);
+  const [progres, setProgres] = useState(0);
+  const [hasil, setHasil] = useState(null); // { terhapus, ditolak: [kode], dilewati, dibatalkan }
+  const batalRef = useRef(false);
+
+  const mulai = async () => {
+    setJalan(true);
+    batalRef.current = false;
+    let terhapus = 0;
+    let dilewati = 0; // stok berubah sejak daftar dimuat (filter stok=eq.0 di database)
+    const ditolak = [];
+    try {
+      for (let i = 0; i < sasaran.length; i += UKURAN_HAPUS) {
+        if (batalRef.current) break;
+        const potong = sasaran.slice(i, i + UKURAN_HAPUS);
+        try {
+          const res = await sb(`master_toko?id=in.(${potong.map((r) => r.id).join(",")})&stok=eq.0`, { method: "DELETE" });
+          const n = Array.isArray(res) ? res.length : potong.length;
+          terhapus += n;
+          dilewati += potong.length - n;
+        } catch {
+          for (const r of potong) {
+            if (batalRef.current) break;
+            try {
+              const res = await sb(`master_toko?id=eq.${r.id}&stok=eq.0`, { method: "DELETE" });
+              if (Array.isArray(res) && res.length === 0) dilewati++;
+              else terhapus++;
+            } catch {
+              ditolak.push(r.kode);
+            }
+          }
+        }
+        setProgres(Math.min(i + UKURAN_HAPUS, sasaran.length));
+      }
+    } finally {
+      setJalan(false);
+      setHasil({ terhapus, ditolak, dilewati, dibatalkan: batalRef.current });
+    }
+  };
+
+  const tutup = () => {
+    if (jalan) return;
+    if (hasil) onSelesai();
+    else onClose();
+  };
+
+  return (
+    <Kerangka judul="Hapus Semua Barang Toko" onClose={tutup}>
+      {hasil ? (
+        <>
+          <div className="text-sm text-slate-200">
+            {hasil.dibatalkan ? "Dibatalkan. " : "Selesai. "}
+            <b className="text-emerald-300">{hasil.terhapus.toLocaleString("id-ID")}</b> barang terhapus.
+          </div>
+          {hasil.dilewati > 0 && <div className="text-xs text-slate-400">{hasil.dilewati} barang dilewati karena stoknya sudah tidak 0.</div>}
+          {hasil.ditolak.length > 0 && (
+            <Galat
+              pesan={`${hasil.ditolak.length} barang ditolak database (kemungkinan sudah pernah dipakai di transaksi): ${hasil.ditolak.slice(0, 10).join(", ")}${hasil.ditolak.length > 10 ? ", …" : ""}. Untuk barang ini pakai Nonaktif lewat tombol ubah.`}
+            />
+          )}
+          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3.5 rounded-2xl">
+            Selesai
+          </button>
+        </>
+      ) : jalan ? (
+        <>
+          <div className="text-sm text-slate-300">
+            Menghapus… {progres.toLocaleString("id-ID")} / {sasaran.length.toLocaleString("id-ID")}
+          </div>
+          <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+            <div className="h-full bg-red-500 transition-all" style={{ width: `${sasaran.length ? (progres / sasaran.length) * 100 : 0}%` }} />
+          </div>
+          <button
+            onClick={() => {
+              batalRef.current = true;
+            }}
+            className="w-full border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold py-3 rounded-2xl"
+          >
+            Batalkan (yang sudah terhapus tidak bisa dikembalikan)
+          </button>
+        </>
+      ) : (
+        <>
+          <div className="text-sm text-slate-300">
+            Akan menghapus <b className="text-red-300">{sasaran.length.toLocaleString("id-ID")} barang</b> dari Barang Toko
+            {daftar.length !== totalSemua ? ` (sesuai pencarian/filter yang sedang tampil, dari total ${totalSemua.toLocaleString("id-ID")} barang)` : ""}.
+            Barang tidak muncul lagi di kasir dan <b className="text-slate-100">tidak bisa dikembalikan</b>.
+          </div>
+          {adaStok > 0 && (
+            <div className="text-xs text-amber-300">
+              {adaStok.toLocaleString("id-ID")} barang dengan stok lebih dari 0 tidak ikut dihapus. Nolkan dulu lewat opname atau kembalikan ke gudang.
+            </div>
+          )}
+          <div className="text-xs text-slate-400">
+            Barang yang sudah pernah dipakai di transaksi akan ditolak database dan dilewati. Untuk itu pakai Nonaktif.
+          </div>
+          {sasaran.length === 0 ? (
+            <Galat pesan="Tidak ada barang berstok 0 pada tampilan ini." />
+          ) : (
+            <>
+              <div className="text-xs text-slate-400">
+                Ketik <b className="text-slate-200">HAPUS SEMUA</b> untuk melanjutkan:
+              </div>
+              <input value={ketik} onChange={(e) => setKetik(e.target.value)} placeholder="HAPUS SEMUA" className={inp} autoFocus />
+              <button
+                onClick={mulai}
+                disabled={ketik.trim() !== "HAPUS SEMUA"}
+                className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold py-3.5 rounded-2xl"
+              >
+                <Trash2 size={15} /> Hapus {sasaran.length.toLocaleString("id-ID")} Barang
+              </button>
+            </>
+          )}
+        </>
+      )}
+    </Kerangka>
+  );
+}
+
 // ---------------------------------------------------------
 // DAFTAR BARANG: filter, urutan, dan komponen baris.
 // Layar lebar (lg ke atas) = tabel; layar sempit = kartu rapat. Daftar tampil bertahap (50 per tahap)
@@ -514,6 +646,8 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [mutasi, setMutasi] = useState(null);
   const [opname, setOpname] = useState(null);
   const [hapus, setHapus] = useState(null);
+  const [hapusSemua, setHapusSemua] = useState(false);
+  const bolehHapusSemua = bisa(getSession()?.role, "kasir.hapus_semua_barang_toko");
   const [impor, setImpor] = useState(false);
   const [fotoMassal, setFotoMassal] = useState(false);
   const [filter, setFilter] = useState("semua");
@@ -580,6 +714,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
     setMutasi(null);
     setOpname(null);
     setHapus(null);
+    setHapusSemua(false);
     muat();
   };
 
@@ -616,6 +751,16 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
           >
             <ImagePlus size={15} /> Foto
           </button>
+          {bolehHapusSemua && (
+            <button
+              onClick={() => setHapusSemua(true)}
+              disabled={!rows || tampil.length === 0}
+              title="Hapus massal barang yang sedang tampil (stok harus 0)"
+              className="flex items-center gap-1.5 border border-red-500/50 hover:bg-red-500/10 disabled:opacity-40 text-red-300 font-semibold text-sm px-3 py-2 rounded-lg"
+            >
+              <Trash2 size={15} /> Hapus Semua
+            </button>
+          )}
           <button
             onClick={() => setForm({ barang: {} })}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg"
@@ -750,6 +895,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {hapus && <FormHapus barang={hapus} onSelesai={selesai} onClose={() => setHapus(null)} />}
+      {hapusSemua && bolehHapusSemua && <FormHapusSemua daftar={tampil} totalSemua={(rows || []).length} onSelesai={selesai} onClose={() => setHapusSemua(false)} />}
       {opname && <FormOpname barang={opname} onSelesai={selesai} onClose={() => setOpname(null)} />}
     </div>
   );

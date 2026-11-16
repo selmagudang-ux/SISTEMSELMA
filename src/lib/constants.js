@@ -785,6 +785,7 @@ export const GRUP_AKSI = [
       { key: "kasir.barang_toko", label: "Tombol Barang Toko di aplikasi kasir", bawaan: tak },
       { key: "kasir.promo", label: "Tombol Promo di aplikasi kasir", bawaan: tak },
       { key: "kasir.buka_laci", label: "Tombol Buka Laci di aplikasi kasir", bawaan: tak },
+      { key: "kasir.hapus_semua_barang_toko", label: "Tombol Hapus Semua di Barang Toko (hapus massal barang toko yang stoknya 0)", bawaan: tak },
       { key: "kasir.tambah_pelanggan", label: "Kasir boleh menambah pelanggan baru di layar Pilih Pelanggan (mode Master Barang)", bawaan: tak },
     ],
   },
