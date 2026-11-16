@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users, PencilLine } from "lucide-react";
-import { sbAll, fmtRp } from "../../lib/api";
-import { kasirModeMaster } from "../../lib/constants";
+import { sb, sbAll, fmtRp, nextKode } from "../../lib/api";
+import { kasirModeMaster, bisa } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
 import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
@@ -389,6 +389,28 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   useEffect(() => {
     muatPelangganList();
   }, [muatPelangganList, versiData]);
+
+  // Tambah pelanggan baru dari layar Pilih Pelanggan (butuh izin "kasir.tambah_pelanggan" & koneksi internet).
+  // Kode PLG-xxxx dihitung dari daftar TERBARU di database supaya tidak tabrakan; format sama dengan menu Grosir.
+  const tambahPelanggan = useCallback(async ({ nama, wa, kategori }) => {
+    if (statusSekarang().offline) throw new Error("Tidak ada koneksi internet. Pelanggan baru hanya bisa ditambah saat online.");
+    const terbaru = await sbAll("grosir_pelanggan?select=kode");
+    const kode = nextKode(terbaru, "kode", "PLG-");
+    const kat = kategori === "tengah" || kategori === "ecer" ? kategori : "grosir";
+    const [baru] = await sb("grosir_pelanggan", {
+      method: "POST",
+      body: JSON.stringify({ kode, nama: nama.trim(), wa: (wa || "").trim() || null, kategori: kat }),
+    });
+    const rows = await muatDaftarPelanggan().catch(() => null);
+    if (rows) {
+      setDaftarPelanggan(rows);
+      simpanCacheEnt("pelanggan", rows);
+    } else {
+      setDaftarPelanggan((d) => [...d, baru]);
+    }
+    setPelanggan({ id: baru.id, nama: baru.nama, kategori: kat });
+    setPilihPelBuka(false);
+  }, []);
 
   // Pelanggan berganti kategori (grosir/tengah/ecer) -> harga keranjang dihitung ulang dari data barang yang sudah dimuat.
   const kunciHargaTerakhir = useRef(kunciHarga);
@@ -1060,6 +1082,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           daftar={daftarPelanggan}
           terpilih={pelangganAktif}
           memuat={memuatPelanggan}
+          bolehTambah={bisa(session?.role, "kasir.tambah_pelanggan")}
+          onTambah={tambahPelanggan}
           onPilih={(p) => {
             setPelanggan(p);
             setPilihPelBuka(false);

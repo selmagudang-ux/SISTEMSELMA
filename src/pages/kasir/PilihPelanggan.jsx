@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { X, Search, Loader2, Users, Check } from "lucide-react";
+import { X, Search, Loader2, Users, Check, UserPlus } from "lucide-react";
 
 // =========================================================
 // KASIR (mode Master Barang / grosir) — PILIH PELANGGAN
@@ -16,8 +16,29 @@ export const kunciHargaPelanggan = (p) => (p?.kategori === "tengah" || p?.katego
 export const warnaKategori = (k) =>
   k === "ecer" ? "bg-sky-500/15 text-sky-300" : k === "tengah" ? "bg-violet-500/15 text-violet-300" : "bg-amber-500/15 text-amber-300";
 
-export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPilih, onClose }) {
+export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPilih, onClose, bolehTambah = false, onTambah }) {
   const [q, setQ] = useState("");
+  // Form pelanggan baru (hanya untuk role dengan izin "kasir.tambah_pelanggan").
+  const [formBuka, setFormBuka] = useState(false);
+  const [nama, setNama] = useState("");
+  const [wa, setWa] = useState("");
+  const [kategori, setKategori] = useState("ecer");
+  const [menyimpan, setMenyimpan] = useState(false);
+  const [err, setErr] = useState("");
+  const simpanBaru = async () => {
+    if (!nama.trim()) {
+      setErr("Nama pelanggan wajib diisi.");
+      return;
+    }
+    setMenyimpan(true);
+    setErr("");
+    try {
+      await onTambah({ nama, wa, kategori });
+    } catch (e) {
+      setErr(e?.message || "Gagal menambah pelanggan.");
+      setMenyimpan(false);
+    }
+  };
   const hasil = useMemo(() => {
     const kata = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const rows = daftar || [];
@@ -55,7 +76,75 @@ export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPil
               className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-3 py-2.5 text-sm outline-none focus:border-amber-500"
             />
           </div>
-          <p className="mt-2 text-[11px] text-slate-500">Harga barang mengikuti kategori pelanggan. Pelanggan baru ditambahkan lewat menu Grosir.</p>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Harga barang mengikuti kategori pelanggan.{bolehTambah ? "" : " Pelanggan baru ditambahkan lewat menu Grosir."}
+          </p>
+          {bolehTambah && !formBuka && (
+            <button
+              type="button"
+              onClick={() => {
+                setFormBuka(true);
+                setNama(q.trim());
+              }}
+              className="mt-2 w-full flex items-center justify-center gap-2 text-sm font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15 rounded-xl py-2.5"
+            >
+              <UserPlus size={16} /> Pelanggan baru
+            </button>
+          )}
+          {bolehTambah && formBuka && (
+            <div className="mt-2 space-y-2 border border-slate-800 rounded-xl p-3 bg-slate-950">
+              <input
+                autoFocus
+                value={nama}
+                onChange={(e) => setNama(e.target.value)}
+                placeholder="Nama pelanggan (wajib)"
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500"
+              />
+              <input
+                value={wa}
+                onChange={(e) => setWa(e.target.value)}
+                inputMode="tel"
+                placeholder="No. WA (opsional)"
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-amber-500"
+              />
+              <div className="flex gap-1.5">
+                {Object.entries(LABEL_KATEGORI_PELANGGAN).map(([k, lbl]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setKategori(k)}
+                    className={`flex-1 text-xs font-semibold py-2 rounded-lg border ${
+                      kategori === k ? "border-amber-500 bg-amber-500/15 text-amber-300" : "border-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              {err && <div className="text-xs text-red-300">{err}</div>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={menyimpan}
+                  onClick={() => {
+                    setFormBuka(false);
+                    setErr("");
+                  }}
+                  className="flex-1 text-sm py-2 rounded-lg border border-slate-800 text-slate-300"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={menyimpan}
+                  onClick={simpanBaru}
+                  className="flex-1 text-sm font-semibold py-2 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center gap-1.5 disabled:opacity-60"
+                >
+                  {menyimpan && <Loader2 size={14} className="animate-spin" />} Simpan & pilih
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto px-3 pb-4">
           {memuat && !(daftar || []).length ? (
