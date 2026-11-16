@@ -2,10 +2,10 @@ import { useState } from "react";
 import {
   ChevronDown, Truck, ClipboardList, Tag, BarChart3, MapPin, Printer, Camera,
   ShoppingBag, Store, Home, Globe, Users, Landmark, CalendarClock, Settings,
-  LayoutDashboard, BookOpen, Search, ScanLine, ListOrdered,
+  LayoutDashboard, BookOpen, Search, ScanLine, ListOrdered, Download,
 } from "lucide-react";
 import { PageHeader } from "../components/ui";
-import { isSuperadminLike } from "../lib/constants";
+import { isSuperadminLike, roleLabel } from "../lib/constants";
 
 // =========================================================
 // PANDUAN PENGGUNAAN — ditulis dengan bahasa gampang (bahasa bayi).
@@ -873,6 +873,21 @@ export default function Panduan({ session }) {
       return next;
     });
 
+  const [membuatPdf, setMembuatPdf] = useState(false);
+  const unduhPdf = async () => {
+    if (membuatPdf) return;
+    setMembuatPdf(true);
+    try {
+      // jsPDF dimuat hanya saat tombol diklik (tidak membebani halaman lain).
+      const { generatePanduanPdf } = await import("../lib/PanduanPdf");
+      generatePanduanPdf({ sections, peran: roleLabel ? roleLabel(role) : "" });
+    } catch (e) {
+      alert("Gagal membuat PDF panduan: " + (e?.message || e));
+    } finally {
+      setMembuatPdf(false);
+    }
+  };
+
   const bukaSemua = () => setOpen(new Set(filtered.map((s) => s.key)));
   const tutupSemua = () => setOpen(new Set());
 
@@ -889,22 +904,31 @@ export default function Panduan({ session }) {
             : "Penjelasan menu untuk bagian kerjamu dengan bahasa gampang. Gunanya dulu, lalu cara memakainya."
         }
         action={
-          filtered.length > 1 && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={bukaSemua}
-                className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-              >
-                Buka Semua
-              </button>
-              <button
-                onClick={tutupSemua}
-                className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-              >
-                Tutup Semua
-              </button>
-            </div>
-          )
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={unduhPdf}
+              disabled={membuatPdf}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950"
+            >
+              <Download size={13} /> {membuatPdf ? "Membuat PDF…" : "Download PDF"}
+            </button>
+            {filtered.length > 1 && (
+              <>
+                <button
+                  onClick={bukaSemua}
+                  className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                >
+                  Buka Semua
+                </button>
+                <button
+                  onClick={tutupSemua}
+                  className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                >
+                  Tutup Semua
+                </button>
+              </>
+            )}
+          </div>
         }
       />
 
