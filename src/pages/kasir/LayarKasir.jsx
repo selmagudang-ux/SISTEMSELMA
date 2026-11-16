@@ -685,6 +685,12 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const simpanKeCloud = async () => {
     if (!items.length || menyimpan) return;
     if (statusKoneksi.offline) return tampilToast("Tidak ada internet — keranjang hanya bisa disimpan saat online.");
+    if (!pelangganAktif) {
+      tampilToast("Pilih pelanggan dulu sebelum menyimpan keranjang.");
+      muatPelangganList();
+      setPilihPelBuka(true);
+      return;
+    }
     const nama = window.prompt(hanyaKeranjang ? "Nama / nomor keranjang (mis. nama pelanggan), supaya mudah dicari kasir:" : "Nama keranjang (boleh dikosongkan), mis. nama pelanggan:", "");
     if (nama === null) return; // dibatalkan
     setMenyimpan(true);
