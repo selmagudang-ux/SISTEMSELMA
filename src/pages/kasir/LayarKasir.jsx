@@ -90,6 +90,11 @@ const tglPendekJam = (ms) => new Date(ms).toLocaleString("id-ID", { day: "2-digi
 function kunciSimpan(session) {
   return `kasir_keranjang_${session?.id ?? "x"}`;
 }
+// Kasir meja: barang Master Barang yang dipilih dari hasil cari saat layar masih mode Toko. Disimpan sebentar supaya layar mode Grosir
+// (yang baru dibuka) bisa langsung memasukkannya ke keranjang.
+function kunciTunda(session) {
+  return `kasir_cari_tunda_${session?.id ?? "x"}`;
+}
 function bacaSimpan(session) {
   try {
     const raw = sessionStorage.getItem(kunciSimpan(session));
@@ -183,6 +188,9 @@ function InputDiskon({ tipe, nilai, onTipe, onNilai, kecil = false }) {
 export default function LayarKasir({ session, versiData = 0, pilihMaster = null, hanyaKeranjang = false, onModeKeranjang = null }) {
   const modeMaster = kasirModeMaster(session?.role, pilihMaster);
   const modeOtomatis = !hanyaKeranjang && kasirModeOtomatis(session?.role);
+  // Kasir meja (tanpa tombol Mode): selagi di mode Toko, pencarian JUGA mencari di Master Barang (harga grosir). Memilih barangnya memindah layar ke mode Grosir.
+  const cariMaster = modeOtomatis && !modeMaster && !!onModeKeranjang;
+  const [masterCari, setMasterCari] = useState([]);
   const selesaiBayarRef = useRef(false); // true setelah transaksi tersimpan; mode Grosir otomatis dikembalikan ke Toko saat modal bayar ditutup
   const kunciCacheBarang = modeMaster ? "master_barang" : "master_toko";
   const [skuList, setSkuList] = useState([]);
@@ -440,6 +448,34 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     if (!items.length) setPramuniaga(null);
   }, [items.length]);
 
+  // Daftar Master Barang untuk pencarian kasir meja (tanpa foto supaya ringan). Gagal / offline = pakai salinan di perangkat, atau kosong.
+  useEffect(() => {
+    if (!cariMaster) {
+      setMasterCari([]);
+      return undefined;
+    }
+    let batal = false;
+    const muatMaster = async () => {
+      try {
+        const rows = await sbAll(`sku_master?select=${KOLOM_MASTER}&order=sku`);
+        if (batal) return;
+        setMasterCari(rows || []);
+        simpanCacheEnt("master_cari", rows || []);
+      } catch {
+        const c = await bacaCacheEnt("master_cari").catch(() => null);
+        if (!batal && c?.data) setMasterCari(c.data);
+      }
+    };
+    muatMaster();
+    const tiapMenit = setInterval(() => {
+      if (!document.hidden && !statusSekarang().offline) muatMaster();
+    }, 60000);
+    return () => {
+      batal = true;
+      clearInterval(tiapMenit);
+    };
+  }, [cariMaster, versiData]);
+
   // Indeks pencarian: dibuat sekali per daftar SKU.
   const indeks = useMemo(() => {
     const perKode = new Map();
@@ -469,6 +505,28 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // langsung pilih tanpa mengetik. Ada isi -> tampilkan hasil pencarian.
   const cariKosong = !q.trim();
   const daftarTampil = cariKosong ? skuList.slice(0, MAKS_HASIL) : hasilCari;
+
+  // Hasil dari Master Barang (hanya kasir meja di mode Toko). Barang yang sudah ada di Barang Toko (kode sama atau SKU gudang sama) tidak diulang.
+  const hasilMaster = useMemo(() => {
+    if (!cariMaster || cariKosong || !masterCari.length) return [];
+    const kata = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!kata.length) return [];
+    const sudahAda = new Set();
+    for (const t of skuList) {
+      sudahAda.add(String(t.sku).toLowerCase());
+      if (t.skuGudang) sudahAda.add(String(t.skuGudang).toLowerCase());
+    }
+    const out = [];
+    for (const m of masterCari) {
+      if (m.nonaktif || !m.sku || sudahAda.has(String(m.sku).toLowerCase())) continue;
+      const j = buatJerami(m);
+      if (kata.every((k) => j.includes(k))) {
+        out.push(dariMaster(m, "grosir"));
+        if (out.length >= MAKS_HASIL) break;
+      }
+    }
+    return out;
+  }, [cariMaster, cariKosong, masterCari, skuList, q]);
 
   // Tambah 1 pcs ke keranjang. Mengembalikan { ok, pesan } supaya bisa dipakai
   // oleh klik hasil cari, Enter (scanner USB), dan kamera.
@@ -515,6 +573,14 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     // Kode persis (scanner / ketik SKU lengkap) menang atas hasil pencarian.
     let s = indeks.perKode.get(teks.toLowerCase());
     if (!s && hasilCari.length === 1) s = hasilCari[0];
+    if (!s && hasilMaster.length) {
+      const persis = hasilMaster.find((m) => String(m.sku).toLowerCase() === teks.toLowerCase() || String(m.barcode_supplier || "").toLowerCase() === teks.toLowerCase());
+      const m = persis || (hasilMaster.length === 1 && !hasilCari.length ? hasilMaster[0] : null);
+      if (m) {
+        pilihDariMaster(m);
+        return;
+      }
+    }
     if (!s) {
       tampilToast(hasilCari.length ? "Pilih salah satu dari daftar" : `"${teks}" tidak ditemukan`);
       return;
@@ -533,6 +599,43 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     setQ("");
     inputRef.current?.focus();
   };
+
+  // Barang dari Master Barang dijual sebagai transaksi Grosir (mode Master), jadi tidak bisa dicampur dengan keranjang Toko.
+  function pilihDariMaster(m) {
+    if (items.length) {
+      tampilToast("Keranjang Toko sedang berisi. Selesaikan atau kosongkan dulu, karena barang Master Barang dijual sebagai transaksi Grosir.", "err");
+      return;
+    }
+    try {
+      sessionStorage.setItem(kunciTunda(session), m.sku);
+    } catch {
+      tampilToast("Gagal pindah ke mode Grosir (penyimpanan perangkat penuh / diblokir).", "err");
+      return;
+    }
+    setQ("");
+    onModeKeranjang(true);
+  }
+
+  // Layar mode Grosir yang baru dibuka dari pilihan di atas: masukkan barangnya ke keranjang.
+  useEffect(() => {
+    if (!modeMaster || !skuList.length) return;
+    let sku = null;
+    try {
+      sku = sessionStorage.getItem(kunciTunda(session));
+      if (sku) sessionStorage.removeItem(kunciTunda(session));
+    } catch {
+      /* diabaikan */
+    }
+    if (!sku) return;
+    const s = skuList.find((x) => x.sku === sku);
+    if (!s) {
+      tampilToast(`${sku} tidak ada di Master Barang PT ini (stoknya belum tercatat di PT ini).`, "err");
+      return;
+    }
+    const r = tambah(s);
+    tampilToast(r.ok ? `${sku} masuk keranjang Grosir. Pilih pelanggan, lalu bayar.` : r.pesan, r.ok ? "ok" : "err");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modeMaster, skuList]);
 
   const onDetectKamera = (kode) => {
     const r = tambahDariKode(kode);
@@ -799,7 +902,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           <div className="mt-12 flex items-center justify-center gap-2 text-sm text-slate-500">
             <Loader2 size={15} className="animate-spin" /> Memuat daftar barang…
           </div>
-        ) : daftarTampil.length === 0 ? (
+        ) : daftarTampil.length === 0 && hasilMaster.length === 0 ? (
           cariKosong ? (
             <div className="mt-12 text-center text-sm text-slate-400">
               <Tag size={28} className="mx-auto mb-2 text-slate-600" />
@@ -816,6 +919,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           )
         ) : (
           <>
+            {daftarTampil.length > 0 && (<>
             <div className="mt-4 mb-2.5 flex items-baseline justify-between">
               <h2 className="text-sm font-semibold text-slate-200">{cariKosong ? "Barang toko" : "Hasil pencarian"}</h2>
               <span className="text-xs text-slate-500 tabular-nums">
@@ -895,6 +999,41 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
                 );
               })}
             </div>
+            </>)}
+            {hasilMaster.length > 0 && (
+              <>
+                <div className="mt-5 mb-2.5 flex items-baseline justify-between">
+                  <h2 className="text-sm font-semibold text-slate-200">Dari Master Barang (harga grosir)</h2>
+                  <span className="text-xs text-slate-500 tabular-nums">{hasilMaster.length} barang</span>
+                </div>
+                <div className="text-[11px] text-slate-500 -mt-1.5 mb-2.5">Memilih barang di sini memindah kasir ke transaksi Grosir. Keranjang Toko harus kosong.</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2 sm:gap-2.5">
+                  {hasilMaster.map((s) => {
+                    const stok = Number(s.stok) || 0;
+                    const harga = Number(s.ecer) || 0;
+                    const tidakBisa = stok <= 0 || harga <= 0;
+                    return (
+                      <button
+                        key={`m-${s.id ?? s.sku}`}
+                        onClick={() => pilihDariMaster(s)}
+                        disabled={tidakBisa}
+                        className="relative text-left rounded-2xl p-2.5 sm:p-3.5 border border-slate-800 bg-slate-900/70 hover:border-slate-600 hover:bg-slate-900 transition-all active:scale-[0.99] disabled:opacity-45 disabled:cursor-not-allowed"
+                      >
+                        <span className="inline-flex items-center text-[11px] font-bold bg-sky-500/15 text-sky-300 rounded-full px-2 py-0.5 mb-2">Master Barang · Grosir</span>
+                        <div className="text-sm font-semibold text-slate-100 leading-snug line-clamp-2">{namaTampil(s)}</div>
+                        <div className="text-[11px] text-slate-500 mt-1 font-mono">{s.sku}</div>
+                        <div className="flex items-center justify-between mt-1.5 sm:mt-3 sm:pt-3 sm:border-t border-dashed border-slate-800">
+                          <span className={`text-base font-bold tabular-nums ${harga > 0 ? "text-amber-400" : "text-red-400"}`}>{harga > 0 ? fmtRp(harga) : "Harga grosir kosong"}</span>
+                          <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 tabular-nums ${stok <= 0 ? "bg-red-500/15 text-red-400" : stok <= 3 ? "bg-amber-500/15 text-amber-400" : "bg-slate-800 text-slate-400"}`}>
+                            {stok <= 0 ? "Stok habis" : stok <= 3 ? `Sisa ${stok}` : `Stok ${stok}`}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </>
         )}
         {daftarTampil.length >= MAKS_HASIL && (!cariKosong || skuList.length > MAKS_HASIL) && (
