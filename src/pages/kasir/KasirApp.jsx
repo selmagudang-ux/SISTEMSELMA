@@ -446,7 +446,7 @@ export default function KasirApp() {
 
       <BannerOffline onBuka={() => setAntrianBuka(true)} />
       {hanyaKeranjang ? (
-        <LayarKasir session={sesiKasir} versiData={versiData} hanyaKeranjang />
+        <LayarKasir key={modeMasterSekarang ? "m" : "t"} session={sesiKasir} versiData={versiData} pilihMaster={pilihMaster} hanyaKeranjang />
       ) : shift === undefined ? (
         <div className="flex-1 flex items-center justify-center text-slate-500">
           <Loader2 className="animate-spin" size={22} />
