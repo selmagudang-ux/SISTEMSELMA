@@ -4,7 +4,9 @@ import { sb, entitasSesi } from "../../lib/api";
 // KASIR — KERANJANG TERSIMPAN (lanjutkan di perangkat lain)
 // Keranjang aktif tetap hanya ada di perangkat itu (sessionStorage). Tombol "Simpan" menaruh salinannya di
 // database (tabel kasir_keranjang_simpan, lihat supabase/migrations/20261112_kasir_keranjang_simpan.sql);
-// tombol "Ambil" di perangkat mana pun memuatnya lagi ke keranjang, lalu salinan di database dihapus.
+// tombol "Ambil" di perangkat mana pun memuatnya lagi ke keranjang. Salinan di database TIDAK dihapus saat diambil, tapi baru
+// dihapus setelah transaksinya dibayar (LayarKasir.setelahBayar), supaya keranjang tidak hilang kalau layar/tab tertutup sebelum bayar.
+// Saat diambil, salinannya ditandai "sedang dipegang" (di dalam diskon_trx) supaya kasir lain tahu.
 // Tabel ini TIDAK masuk TABEL_PER_PT di api.js, jadi filter & kolom `entitas` diisi di sini.
 // =========================================================
 
@@ -43,4 +45,12 @@ export async function muatKeranjangTersimpan(session, sumber = "toko") {
 
 export async function hapusKeranjangTersimpan(id) {
   await sb(`${TABEL}?id=eq.${encodeURIComponent(id)}&entitas=eq.${encodeURIComponent(entitasSesi())}`, { method: "DELETE" });
+}
+
+// Tandai keranjang tersimpan sebagai sedang dipegang kasir ini (disimpan di dalam kolom json diskon_trx, tanpa perubahan tabel).
+// Dicoba sebisanya: gagal tidak mengganggu pengambilan keranjang.
+export async function tandaiKeranjangDiambil(r, session) {
+  const nama = session?.nama || session?.username || "kasir";
+  const baru = { ...(r.diskon_trx || {}), diambil_oleh: nama, diambil_id: String(session?.id ?? ""), diambil_pada: new Date().toISOString() };
+  await sb(`${TABEL}?id=eq.${encodeURIComponent(r.id)}&entitas=eq.${encodeURIComponent(entitasSesi())}`, { method: "PATCH", body: JSON.stringify({ diskon_trx: baru }) });
 }

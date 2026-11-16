@@ -7,7 +7,7 @@ import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitu
 import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
-import { simpanKeranjangTersimpan } from "./kasirKeranjang";
+import { simpanKeranjangTersimpan, hapusKeranjangTersimpan } from "./kasirKeranjang";
 import KeranjangTersimpan from "./KeranjangTersimpan";
 import ModalItemManual from "./ModalItemManual";
 import PilihPelanggan, { kunciHargaPelanggan, LABEL_KATEGORI_PELANGGAN, warnaKategori } from "./PilihPelanggan";
@@ -105,9 +105,10 @@ function bacaSimpan(session) {
       kunci: d?.kunci || null,
       pelanggan: d?.pelanggan?.id ? d.pelanggan : null,
       pramuniaga: d?.pramuniaga?.nama ? d.pramuniaga : null,
+      asalId: d?.asalId || null,
     };
   } catch {
-    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null, pelanggan: null, pramuniaga: null };
+    return { items: [], diskonTrx: { tipe: "rp", nilai: "" }, kunci: null, pelanggan: null, pramuniaga: null, asalId: null };
   }
 }
 
@@ -211,6 +212,10 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [pelanggan, setPelanggan] = useState(() => bacaSimpan(session).pelanggan);
   // Pramuniaga yang membuat keranjang yang diambil kasir (hilang dari database saat diambil, jadi dibawa di sini sampai transaksi tersimpan).
   const [pramuniaga, setPramuniaga] = useState(() => bacaSimpan(session).pramuniaga);
+  // id keranjang tersimpan (database) yang sedang dikerjakan di layar ini. Salinannya baru dihapus setelah transaksi dibayar.
+  const [asalId, setAsalId] = useState(() => bacaSimpan(session).asalId);
+  const asalRef = useRef(asalId);
+  asalRef.current = asalId;
   const [daftarPelanggan, setDaftarPelanggan] = useState([]);
   const [memuatPelanggan, setMemuatPelanggan] = useState(false);
   const [pilihPelBuka, setPilihPelBuka] = useState(false);
@@ -438,14 +443,17 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // Keranjang bertahan kalau halaman di-refresh (hilang saat tab ditutup / logout).
   useEffect(() => {
     try {
-      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci, pelanggan, pramuniaga }));
+      sessionStorage.setItem(kunciSimpan(session), JSON.stringify({ items, diskonTrx, kunci, pelanggan, pramuniaga, asalId }));
     } catch {
       /* penyimpanan penuh / diblokir — abaikan */
     }
-  }, [items, diskonTrx, kunci, pelanggan, pramuniaga, session]);
+  }, [items, diskonTrx, kunci, pelanggan, pramuniaga, asalId, session]);
   // Keranjang kosong (dihapus kasir / selesai) -> catatan pramuniaga ikut dibersihkan.
   useEffect(() => {
-    if (!items.length) setPramuniaga(null);
+    if (!items.length) {
+      setPramuniaga(null);
+      setAsalId(null);
+    }
   }, [items.length]);
 
   // Daftar Master Barang untuk pencarian kasir meja (tanpa foto supaya ringan). Gagal / offline = pakai salinan di perangkat, atau kosong.
@@ -682,6 +690,9 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     setMenyimpan(true);
     try {
       await simpanKeranjangTersimpan({ session, items, diskonTrx, nama, jumlahPcs: ringkas.jumlahQty, totalPerkiraan: ringkas.total, sumber: modeMaster ? "master" : "toko", pelanggan: pelangganAktif });
+      // Keranjang ini tadinya diambil dari daftar tersimpan: salinan lamanya diganti dengan yang baru disimpan (tidak dobel).
+      if (asalRef.current) hapusKeranjangTersimpan(asalRef.current).catch(() => {});
+      setAsalId(null);
       setItems([]);
       setPelanggan(null);
       setDiskonTrx({ tipe: "rp", nilai: "" });
@@ -711,6 +722,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             kunci: null,
             pelanggan: r.diskon_trx?.pelanggan?.id ? r.diskon_trx.pelanggan : null,
             pramuniaga: pramuniagaR,
+            asalId: r.id || null,
           })
         );
       } catch {
@@ -732,6 +744,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     }
     setItems(baru);
     setPramuniaga(pramuniagaR);
+    setAsalId(r.id || null);
     setPelanggan(r.diskon_trx?.pelanggan?.id ? r.diskon_trx.pelanggan : null);
     setDiskonTrx(r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
@@ -753,6 +766,10 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   // stok di layar dimuat ulang. Modal tetap terbuka menampilkan kembalian.
   const setelahBayar = () => {
     selesaiBayarRef.current = true;
+    // Keranjang tersimpan yang tadi diambil: baru sekarang (setelah dibayar) salinannya di database dihapus.
+    const asal = asalRef.current;
+    if (asal) hapusKeranjangTersimpan(asal).catch(() => {});
+    setAsalId(null);
     setItems([]);
     setPramuniaga(null);
     setPelanggan(null);

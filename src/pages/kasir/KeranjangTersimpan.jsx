@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { X, Loader2, AlertCircle, CloudDownload, Trash2, ShoppingCart } from "lucide-react";
 import { fmtRp } from "../../lib/api";
-import { muatKeranjangTersimpan, hapusKeranjangTersimpan } from "./kasirKeranjang";
+import { muatKeranjangTersimpan, hapusKeranjangTersimpan, tandaiKeranjangDiambil } from "./kasirKeranjang";
 
 // =========================================================
 // KASIR — daftar keranjang tersimpan. "Ambil" memuat keranjang ke layar kasir ini (onAmbil dari LayarKasir,
-// yang menyamakan harga/stok/promo terbaru), lalu salinan di database dihapus supaya tidak terambil dua kali.
+// yang menyamakan harga/stok/promo terbaru). Salinan di database TIDAK dihapus saat diambil: baru dihapus setelah transaksinya
+// dibayar (LayarKasir). Selama itu salinan ditandai "sedang dipegang" supaya kasir lain tidak mengambilnya dobel.
 // =========================================================
 
 const tglJam = (v) => new Date(v).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -33,15 +34,17 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
 
   const ambil = async (r) => {
     if (sibuk) return;
+    const pemegang = r.diskon_trx?.diambil_oleh;
+    if (pemegang && String(r.diskon_trx?.diambil_id || "") !== String(session?.id ?? "") && !window.confirm(`Keranjang ini sedang dipegang ${pemegang}. Kalau diambil juga, bisa terbayar dua kali. Tetap ambil?`)) return;
     setSibuk(r.id);
     setError("");
     try {
       const ok = await onAmbil(r); // false = dibatalkan (mis. kasir menolak mengganti keranjang yang sedang berisi)
       if (!ok) return;
       try {
-        await hapusKeranjangTersimpan(r.id);
+        await tandaiKeranjangDiambil(r, session);
       } catch {
-        /* keranjang sudah termuat; salinan di database gagal dihapus — bisa dihapus manual dari daftar ini */
+        /* keranjang sudah termuat; penanda "sedang dipegang" gagal dibuat — tidak mengganggu */
       }
       onClose();
     } catch (e) {
@@ -116,6 +119,9 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
                       {semuaKasir && r.kasir_nama ? ` · Pramuniaga: ${r.kasir_nama}` : ""}
                       {r.diskon_trx?.pelanggan?.nama ? ` · Pelanggan: ${r.diskon_trx.pelanggan.nama}` : ""}
                     </div>
+                    {r.diskon_trx?.diambil_oleh && (
+                      <div className="text-[11px] text-amber-300 mt-0.5">Sedang dipegang {r.diskon_trx.diambil_oleh}</div>
+                    )}
                   </div>
                   <div className="text-right text-xs flex-shrink-0">
                     <div className="font-semibold text-slate-200">{r.jumlah_pcs} pcs</div>
