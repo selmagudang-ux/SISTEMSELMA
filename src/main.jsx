@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import ErrorBoundary, { bersihkanFlagReload } from "./components/ErrorBoundary.jsx";
 import "./index.css";
+import { pasangCekVersi } from "./lib/versiBaru";
 
 // Cegah nilai input angka (type="number") berubah kalau kursor lagi di
 // atasnya terus di-scroll pakai mouse — ini perilaku bawaan browser yang
@@ -86,6 +87,9 @@ if (adalahKasir && import.meta.env.PROD && "serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });
 }
+
+// Tab yang lama terbuka otomatis dimuat ulang kalau sudah ada deploy baru (lihat lib/versiBaru.js). Hanya build produksi.
+if (import.meta.env.PROD) pasangCekVersi();
 
 // Aplikasi berhasil tampil -> izinkan reload otomatis lagi untuk update berikutnya.
 setTimeout(bersihkanFlagReload, 10000);

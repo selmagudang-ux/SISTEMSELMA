@@ -1,8 +1,20 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+// Id unik tiap build. Ditanam di kode (__BUILD_ID__) dan ditulis ke /version.json supaya tab yang lama terbuka
+// bisa tahu kalau sudah ada deploy baru (lihat src/lib/versiBaru.js).
+const BUILD_ID = Date.now().toString(36);
+const tulisVersi = () => ({
+  name: "tulis-version-json",
+  apply: "build",
+  generateBundle() {
+    this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ id: BUILD_ID }) });
+  },
+});
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tulisVersi()],
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   build: {
     rollupOptions: {
       output: {
