@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Loader2, Check, AlertCircle } from "lucide-react";
+import { Loader2, Check, AlertCircle, FileDown } from "lucide-react";
 import { sb, sbAll, entitasSesi, fmtRp } from "../../lib/api";
+import { getSession } from "../../lib/auth";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 
 // =========================================================
@@ -13,7 +14,9 @@ import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 // - Kalau SKU sudah ada di Barang Toko (dicek lewat sku_gudang), tidak dibuat dobel (dilewati).
 // - Kalau satu SKU dipilih & jumlah diisi, stok gudang ikut dipindah ke toko
 //   lewat fungsi database toko_mutasi_dari_gudang (atomik, tercatat riwayatnya).
-// Hanya dipanggil dari Master Barang untuk role superappa.
+// - Beberapa SKU sekaligus: jumlah stok yang dipindah DIKETIK per SKU (maksimal stok gudang SKU itu). Kolom kosong / 0 =
+//   barangnya saja yang didaftarkan (stok toko 0).
+// Dipanggil dari Master Barang (role superappa) dan dari Barang Toko > "Dari Master".
 // =========================================================
 
 export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, fotoPerSku, onClose, onSelesai }) {
@@ -21,9 +24,11 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
   const [sudahAda, setSudahAda] = useState(null); // Map sku_gudang -> kode toko yang sudah ada
   const [semuaToko, setSemuaToko] = useState([]); // { kode, nama } seluruh barang toko (untuk nomor urut)
   const [qty, setQty] = useState("");
+  const [qtyMap, setQtyMap] = useState({}); // beberapa SKU: sku -> jumlah (teks) yang dipindah
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [errPdf, setErrPdf] = useState("");
   const [hasil, setHasil] = useState(null); // { dibuat, dilewati, gagal: [], dipindah }
 
   useEffect(() => {
@@ -45,9 +50,19 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
     if (n > 0 && tunggal && n > (Number(tunggal.stok) || 0)) {
       return setError(`Stok gudang ${tunggal.sku} hanya ${Number(tunggal.stok) || 0}.`);
     }
+    if (!tunggal) {
+      for (const s of daftar) {
+        const v = qtyMap[s.sku];
+        if (v === undefined || v === "") continue;
+        const j = parseInt(v, 10);
+        const stokG = Math.floor(Number(s.stok) || 0);
+        if (!(j >= 0)) return setError(`Jumlah ${s.sku} tidak valid.`);
+        if (j > stokG) return setError(`Stok gudang ${s.sku} hanya ${stokG}.`);
+      }
+    }
     setSaving(true);
     setError("");
-    const out = { dibuat: 0, dilewati: 0, gagal: [], dipindah: 0 };
+    const out = { dibuat: 0, dilewati: 0, gagal: [], dipindah: 0, rincian: [], waktu: new Date(), catatan: catatan.trim() };
     const prefix = String(entitasSesi()).toUpperCase();
     // Nomor urut kode toko: lanjut dari nomor terbesar yang sudah ada untuk entitas ini.
     let nomorKode = 0;
@@ -73,6 +88,15 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
     };
     for (const s of daftar) {
       let kodeToko = sudahAda?.get(s.sku) || null;
+      // Rincian untuk PDF "barang yang diambil": dicatat begitu barang toko dibuat / stoknya mau dipindah, qty diisi setelah pemindahan berhasil.
+      const rin = { sku: s.sku, kode: kodeToko, nama: s.nama || s.sku, qty: 0 };
+      let tercatat = false;
+      const catat = () => {
+        if (tercatat) return;
+        tercatat = true;
+        rin.kode = kodeToko;
+        out.rincian.push(rin);
+      };
       try {
         if (kodeToko) {
           out.dilewati += 1;
@@ -98,13 +122,18 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
           });
           nomorKode += 1; // naik hanya kalau berhasil disimpan
           out.dibuat += 1;
+          rin.nama = nama;
+          catat();
         }
-        if (tunggal && n > 0) {
+        const jml = tunggal ? n : parseInt(qtyMap[s.sku] || "0", 10) || 0;
+        if (jml > 0) {
+          catat();
           await sb("rpc/toko_mutasi_dari_gudang", {
             method: "POST",
-            body: JSON.stringify({ p: { entitas: entitasSesi(), kode: kodeToko, qty: n, catatan: catatan.trim() || null } }),
+            body: JSON.stringify({ p: { entitas: entitasSesi(), kode: kodeToko, qty: jml, catatan: catatan.trim() || null } }),
           });
-          out.dipindah = n;
+          out.dipindah += jml;
+          rin.qty = jml;
         }
       } catch (e) {
         out.gagal.push(`${s.sku}: ${pesanError(e)}`);
@@ -112,6 +141,24 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
     }
     setSaving(false);
     setHasil(out);
+  };
+
+  const unduhPdf = async () => {
+    setErrPdf("");
+    try {
+      let namaUsaha = String(entitasSesi());
+      try {
+        const e = await sb(`master_data?select=kode,label&tipe=eq.entitas&kode=eq.${encodeURIComponent(entitasSesi())}`);
+        if (e?.[0]?.label) namaUsaha = e[0].label;
+      } catch {
+        /* pakai kode entitas */
+      }
+      const ses = getSession();
+      const { buatPdfPemindahanToko } = await import("../../lib/PdfPemindahanToko");
+      buatPdfPemindahanToko({ namaUsaha, petugas: ses?.nama || ses?.username || "", waktu: hasil.waktu, catatan: hasil.catatan, baris: hasil.rincian });
+    } catch (e) {
+      setErrPdf(`Gagal membuat PDF: ${e?.message || e}`);
+    }
   };
 
   if (hasil) {
@@ -128,6 +175,12 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
             <div className="space-y-0.5">{hasil.gagal.map((g) => <div key={g}>{g}</div>)}</div>
           </div>
         )}
+        {hasil.rincian.length > 0 && (
+          <button onClick={unduhPdf} className="w-full flex items-center justify-center gap-2 border border-amber-500/60 hover:bg-amber-500/10 text-amber-300 font-semibold py-3 rounded-2xl">
+            <FileDown size={16} /> Unduh PDF barang yang diambil ({hasil.rincian.length} barang)
+          </button>
+        )}
+        <Galat pesan={errPdf} />
         <button onClick={() => onSelesai(hasil)} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3.5 rounded-2xl">
           Selesai
         </button>
@@ -167,9 +220,39 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
         <div className="text-sm text-slate-300 space-y-2">
           <div>
             {daftar.length} SKU akan didaftarkan ke Barang Toko dengan harga jual = Ecer dan HPP dari Master Barang.
-            {sudahAda && sudahAda.size > 0 && ` ${sudahAda.size} di antaranya sudah ada dan akan dilewati.`}
+            {sudahAda && sudahAda.size > 0 && ` ${sudahAda.size} di antaranya sudah ada di Barang Toko (tidak dibuat dobel).`}
           </div>
-          <div className="text-xs text-slate-500">Stok toko mulai dari 0. Untuk memindah stok, buka tiap barang lalu pakai tombol Pindahkan ke Toko, atau tombol Mutasi di Barang Toko.</div>
+          <div className="text-xs text-slate-400">Ketik jumlah stok gudang yang diambil untuk tiap barang. Kosong / 0 = barangnya saja yang didaftarkan (stok toko 0).</div>
+          <div className="max-h-[40vh] overflow-y-auto space-y-1.5 -mx-1 px-1">
+            {daftar.map((s) => {
+              const stokG = Math.floor(Number(s.stok) || 0);
+              return (
+                <div key={s.sku} className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-slate-200 truncate">{s.nama || s.sku}</div>
+                    <div className="text-[11px] text-slate-500 font-mono truncate">
+                      {s.sku} · stok gudang {stokG}
+                      {sudahAda?.has(s.sku) ? " · sudah di Barang Toko (stok ditambah)" : ""}
+                    </div>
+                  </div>
+                  <input
+                    value={qtyMap[s.sku] ?? ""}
+                    onChange={(e) => setQtyMap((m) => ({ ...m, [s.sku]: e.target.value.replace(/\D/g, "") }))}
+                    inputMode="numeric"
+                    disabled={stokG <= 0}
+                    placeholder={stokG <= 0 ? "stok 0" : "0"}
+                    className={`${inp} !w-20 text-right tabular-nums disabled:opacity-40`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs text-slate-400">
+            Total dipindah: <b className="text-slate-200">{daftar.reduce((a, s) => a + (parseInt(qtyMap[s.sku] || "0", 10) || 0), 0)}</b> pcs
+          </div>
+          {daftar.some((s) => (parseInt(qtyMap[s.sku] || "0", 10) || 0) > 0) && (
+            <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={200} placeholder="Catatan (opsional)" className={inp} />
+          )}
         </div>
       )}
       <Galat pesan={error} />
