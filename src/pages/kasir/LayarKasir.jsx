@@ -741,7 +741,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   };
 
   const bukaBayar = () => {
-    if (modeMaster && !pelangganAktif) {
+    if (!pelangganAktif) {
       tampilToast("Pilih pelanggan dulu sebelum bayar.");
       setPilihPelBuka(true);
       return;
@@ -797,29 +797,19 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
               setPilihPelBuka(true);
             }}
             className={`flex-1 min-w-0 flex items-center gap-3 text-left px-4 py-3 rounded-2xl border transition-colors ${
-              pelangganAktif || !modeMaster ? "border-slate-800 bg-slate-900 hover:border-amber-500/50" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
+              pelangganAktif ? "border-slate-800 bg-slate-900 hover:border-amber-500/50" : "border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/15"
             }`}
           >
-            <Users size={18} className={pelangganAktif || !modeMaster ? "text-slate-400" : "text-amber-400"} />
+            <Users size={18} className={pelangganAktif ? "text-slate-400" : "text-amber-400"} />
             <div className="min-w-0 flex-1">
               <div className="text-[11px] text-slate-500">Pelanggan</div>
-              <div className="text-sm font-semibold truncate">{pelangganAktif ? pelangganAktif.nama : modeMaster ? "Pilih pelanggan (wajib)" : "Pilih pelanggan (opsional)"}</div>
+              <div className="text-sm font-semibold truncate">{pelangganAktif ? pelangganAktif.nama : "Pilih pelanggan (wajib)"}</div>
             </div>
             {pelangganAktif && modeMaster && (
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${warnaKategori(kunciHarga)}`}>Harga {LABEL_KATEGORI_PELANGGAN[kunciHarga]}</span>
             )}
             <ChevronDown size={16} className="text-slate-500 flex-shrink-0" />
           </button>
-          {!modeMaster && pelangganAktif && (
-            <button
-              type="button"
-              onClick={() => setPelanggan(null)}
-              title="Hapus pelanggan dari keranjang ini"
-              className="px-3.5 rounded-2xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-red-300 hover:border-red-500/40 text-sm font-semibold flex-shrink-0"
-            >
-              ✕
-            </button>
-          )}
           {modeMaster && (
           <button
             type="button"
@@ -1250,7 +1240,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             disabled={!items.length || ringkas.total <= 0}
             className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-bold text-base py-3.5 rounded-2xl transition-colors"
           >
-            {modeMaster && !pelangganAktif ? "Pilih Pelanggan & Bayar" : "Bayar"}
+            {!pelangganAktif ? "Pilih Pelanggan & Bayar" : "Bayar"}
           </button>
           )}
         </div>
