@@ -26,6 +26,7 @@ const SECTIONS = [
     fungsi: [
       `Menu ini dipakai untuk memesan barang ke supplier. Supplier itu orang atau toko yang menjual barang ke kita.`,
       `Kalau barangnya sudah sampai di gudang, kita buka kardusnya dan hitung barangnya di sini. Jadi kita tahu barang mana yang sudah datang dan yang belum.`,
+      `Di dalam menu ini ada empat tab: Barang Dagang (barang yang dijual), Barang Habis Pakai (lakban, bubble wrap, dan sejenisnya), Barang Aset (belum bisa dipakai), dan Data Supplier.`,
     ],
     cara: [
       {
@@ -37,7 +38,7 @@ const SECTIONS = [
         ],
       },
       {
-        judul: "Membuat pesanan ke supplier",
+        judul: "Membuat pesanan ke supplier (tab Barang Dagang)",
         langkah: [
           `Klik tombol buat pesanan baru.`,
           `Pilih supplier, isi tanggal, dan pilih jenis pesanan.`,
@@ -56,7 +57,7 @@ const SECTIONS = [
         ],
       },
       {
-        judul: "Belanja Habis Pakai (bubble wrap, lakban, alat tulis, dan sejenisnya)",
+        judul: "Tab Barang Habis Pakai (bubble wrap, lakban, alat tulis, dan sejenisnya)",
         langkah: [
           `Catat barang yang dibeli.`,
           `Kalau sudah dibayar, tandai "dibayar" lalu pilih rekening yang dipakai.`,
@@ -654,7 +655,7 @@ const SECTIONS = [
       {
         judul: "ATURAN PALING PENTING: jangan mencatat dua kali",
         langkah: [
-          `Beberapa menu sudah mencatat ke Keuangan sendiri: Toko Offline, Grosir "Langsung Bayar", Belanja Habis Pakai, dan pencairan marketplace.`,
+          `Beberapa menu sudah mencatat ke Keuangan sendiri: Toko Offline, Grosir "Langsung Bayar", Barang Habis Pakai, dan pencairan marketplace.`,
           `Kalau sudah otomatis, jangan dicatat lagi pakai tangan.`,
           `Cek daftar Transaksi dulu supaya tidak terhitung dua kali.`,
         ],

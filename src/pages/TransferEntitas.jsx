@@ -1036,7 +1036,7 @@ function FormBuat({ skuMaster, habisPakai = [], master, entSaya, saving, onClose
         </div>
       </Field>
       {modeHP && habisPakai.length === 0 && (
-        <div className="text-[11px] text-slate-500 mb-3">Belum ada barang habis pakai di gudang ini. Tambahkan dulu di Pengadaan Barang → Belanja Barang Habis Pakai.</div>
+        <div className="text-[11px] text-slate-500 mb-3">Belum ada barang habis pakai di gudang ini. Tambahkan dulu di Pengadaan Barang → Barang Habis Pakai.</div>
       )}
       {hasil.length > 0 && (
         <div className="rounded-lg border border-slate-700 mb-3 overflow-hidden">

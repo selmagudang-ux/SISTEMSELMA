@@ -236,15 +236,18 @@ export const NAV = [
           {
             key: "barang-datang", label: "Pengadaan Barang", icon: Truck,
             children: [
-              { key: "datang", label: "Pesanan Barang" },
+              // Key sub-menu TIDAK berubah (datang / habis-pakai / supplier), hanya label tampilannya.
+              { key: "datang", label: "Barang Dagang" },
+              // Pembelian keperluan usaha non-dagangan (bubble wrap, lakban, ATK, dst)
+              // + pantauan stok perlengkapan. Halaman: pages/BelanjaHabisPakai.jsx.
+              { key: "habis-pakai", label: "Barang Habis Pakai" },
+              // Aset perusahaan (komputer, rak, kendaraan, dst). Halaman: pages/Aset.jsx — masih "segera hadir".
+              { key: "aset", label: "Barang Aset" },
               // Master data Supplier — disimpan di tabel "suppliers" sendiri
               // (bukan cuma teks bebas di kolom pesanan_masuk.supplier lagi),
               // supaya bisa dipilih ulang & tidak beda-beda ejaan tiap kali
               // catat barang datang (sama pola dengan "Toko Pengirim" di Grosir).
               { key: "supplier", label: "Data Supplier" },
-              // Pembelian keperluan usaha non-dagangan (bubble wrap, lakban, ATK, dst)
-              // + pantauan stok perlengkapan. Halaman: pages/BelanjaHabisPakai.jsx.
-              { key: "habis-pakai", label: "Belanja Barang Habis Pakai" },
             ],
           },
           { key: "data-barang", label: "Alur Barang", icon: ClipboardList },

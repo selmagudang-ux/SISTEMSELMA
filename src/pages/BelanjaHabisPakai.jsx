@@ -98,7 +98,7 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
   return (
     <div>
       <PageHeader
-        title="Belanja Barang Habis Pakai"
+        title="Barang Habis Pakai"
         description="Pembelian keperluan usaha (bubble wrap, lakban, ATK, dll) dan pemantauan sisa stoknya. Pembelian yang dibayar otomatis tercatat sebagai pengeluaran di Keuangan."
         action={
           tab === "stok" ? (

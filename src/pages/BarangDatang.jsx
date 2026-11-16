@@ -840,7 +840,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   return (
     <div>
       <PageHeader
-        title="Pesanan Barang"
+        title="Barang Dagang"
         description={`Pesan dulu lewat "Pesan Barang" begitu tahu toko & nominal pembayaran, lalu buka baris itu lagi dan pakai "Konfirmasi Datang" begitu barangnya benar-benar sampai untuk isi rincian model & qty. Riwayatnya tetap satu, nyambung dari pesan sampai datang.`}
         action={
           <div className="flex items-center gap-2">
