@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
+import { BUKTI_ACCEPT, fileAdalahPdf, urlAdalahPdf, daftarBukti } from "../lib/bukti";
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, rekeningEntitasSesi, daftarTujuanPencairan, tujuanPencairanDefault } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
@@ -4794,6 +4795,14 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
   // tetap satu baris seperti biasa supaya tidak ambigu diedit jadi berapa.
   const [keteranganList, setKeteranganList] = useState([transaksi?.keterangan || ""]);
 
+  // Bukti (foto/PDF, boleh banyak). buktiLama = bukti yang sudah tersimpan di
+  // transaksi (saat edit) — bisa dilepas; fotoList = file baru yang belum diunggah
+  // (diunggah di ModalRouter saat Simpan). Opsional.
+  const [buktiLama, setBuktiLama] = useState(() => daftarBukti(transaksi));
+  const [fotoList, setFotoList] = useState([]);
+  const pratinjau = useMemo(() => fotoList.map((f) => URL.createObjectURL(f)), [fotoList]);
+  useEffect(() => () => pratinjau.forEach((u) => URL.revokeObjectURL(u)), [pratinjau]);
+
   const daftarRekening = master?.rekening || [];
   const daftarKategori = tipe === "masuk" ? (master?.kategori_masuk || []) : (master?.kategori_keluar || []);
   // Pilihan rekening dikelompokkan per kas: Bank dulu, baru Kas Kecil.
@@ -5039,6 +5048,66 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
         )}
       </Field>
 
+      <Field label={tipe === "transfer" ? "Bukti Transfer (opsional)" : tipe === "keluar" ? "Bukti Pengeluaran (opsional)" : "Bukti Pemasukan (opsional)"}>
+        <input
+          type="file"
+          accept={BUKTI_ACCEPT}
+          multiple
+          onChange={(e) => {
+            setFotoList((l) => [...l, ...Array.from(e.target.files || [])]);
+            e.target.value = "";
+          }}
+          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
+        />
+        <div className="text-[11px] text-slate-500 mt-1">
+          Foto (JPG/PNG) atau PDF (maks 10 MB per file), boleh lebih dari satu.
+          {keteranganList.length > 1 && " Bukti yang sama dilampirkan ke semua transaksi di atas."}
+        </div>
+        {buktiLama.map((u, i) => (
+          <div key={u} className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+            {urlAdalahPdf(u) ? (
+              <a href={u} target="_blank" rel="noreferrer" className="block text-center text-xs text-emerald-400 hover:text-emerald-300 py-4">
+                📄 PDF tersimpan — klik untuk membuka
+              </a>
+            ) : (
+              <a href={u} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
+                <img src={u} alt={`Bukti tersimpan ${i + 1}`} className="mx-auto max-h-40 w-auto max-w-full rounded-md object-contain" />
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setBuktiLama((l) => l.filter((x) => x !== u))}
+              aria-label="Lepas bukti"
+              className="absolute right-3 top-3 rounded-full bg-slate-900/80 p-1 text-slate-200 hover:bg-red-500/80"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+        {fotoList.map((f, i) => (
+          <div key={`${f.name}-${i}`} className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+            {fileAdalahPdf(f) ? (
+              <a href={pratinjau[i]} target="_blank" rel="noreferrer" className="block text-center text-xs text-emerald-400 hover:text-emerald-300 py-4">
+                📄 PDF — klik untuk membuka
+              </a>
+            ) : (
+              <a href={pratinjau[i]} target="_blank" rel="noreferrer" title="Buka ukuran penuh">
+                <img src={pratinjau[i]} alt={`Pratinjau bukti ${i + 1}`} className="mx-auto max-h-40 w-auto max-w-full rounded-md object-contain" />
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => setFotoList((l) => l.filter((_, k) => k !== i))}
+              aria-label="Hapus file"
+              className="absolute right-3 top-3 rounded-full bg-slate-900/80 p-1 text-slate-200 hover:bg-red-500/80"
+            >
+              <X size={14} />
+            </button>
+            <div className="mt-1 truncate text-center text-[11px] text-slate-500">{f.name}</div>
+          </div>
+        ))}
+      </Field>
+
       <Field label="Jumlah (Rp)">
         <InputRupiah value={jumlah} onChange={setJumlah} />
         <div className="text-[11px] text-slate-500 mt-1">
@@ -5081,6 +5150,8 @@ export function KeuanganTransaksiForm({ transaksi, master, keuanganTransaksi, re
             // Kalau semua baris keterangan kosong, tetap kirim 1 transaksi tanpa
             // keterangan (perilaku lama). Kalau ada isinya, satu transaksi per baris.
             keteranganList: daftarKeterangan.length ? daftarKeterangan : [null],
+            fotoList,
+            buktiLama,
           });
         }}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"

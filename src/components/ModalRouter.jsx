@@ -15,6 +15,7 @@ import {
   MarketplaceTransaksiForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
+import { unggahBuktiBanyak } from "../pages/AlurKas";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 
 // Lazy-load: EditPesananForm/BuatPesanan (pages/Grosir.jsx) dan
@@ -1303,6 +1304,16 @@ export default function ModalRouter({
               kategori,
               jumlah: data.jumlah,
             };
+
+            // Bukti (foto/PDF): file baru diunggah SEKALI lalu URL-nya dipakai semua baris.
+            // Saat edit, bukti lama yang tidak dilepas ikut dipertahankan; kolom bukti_url
+            // (lama) selalu diisi file PERTAMA supaya kode lain yang membacanya tetap jalan.
+            const buktiBaru = data.fotoList?.length ? await unggahBuktiBanyak(data.fotoList, `trx-${data.tipe}`) : [];
+            const buktiSemua = [...(data.buktiLama || []), ...buktiBaru];
+            if (t || buktiSemua.length) {
+              body.bukti_urls = buktiSemua;
+              body.bukti_url = buktiSemua[0] || null;
+            }
 
             if (t) {
               await sb(`keuangan_transaksi?id=eq.${t.id}`, {
