@@ -1,7 +1,8 @@
 {
   "rewrites": [
     { "source": "/tiktok-callback", "destination": "/index.html" },
-    { "source": "/kasir/:path*", "destination": "/index.html" }
+    { "source": "/kasir/:path*", "destination": "/index.html" },
+    { "source": "/m/:path*", "destination": "/index.html" }
   ],
   "headers": [
     {

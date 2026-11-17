@@ -45,6 +45,10 @@ const adalahCallbackTiktok = window.location.pathname.replace(/\/+$/, "") === "/
 // menambah bundle utama.
 const KasirApp = React.lazy(() => import("./pages/kasir/KasirApp.jsx"));
 const adalahKasir = /^\/kasir(\/|$)/.test(window.location.pathname);
+// Versi HP SISTEMSELMA (ERP) — satu kode & satu database, dibuka lewat alamat /m, tanpa sidebar desktop.
+// Dimuat malas supaya tidak menambah bundle utama.
+const MobileApp = React.lazy(() => import("./pages/mobile/MobileApp.jsx"));
+const adalahMobile = /^\/m(\/|$)/.test(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -52,6 +56,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       {adalahKasir ? (
         <React.Suspense fallback={null}>
           <KasirApp />
+        </React.Suspense>
+      ) : adalahMobile ? (
+        <React.Suspense fallback={null}>
+          <MobileApp />
         </React.Suspense>
       ) : adalahCallbackTiktok ? (
         <React.Suspense fallback={null}>
