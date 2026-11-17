@@ -3,6 +3,7 @@ import { sb, sbAll, entitasBacaSaatIni } from "./api";
 import { getSession } from "./auth";
 import { bangunIndeksAwalan, cocokkanItemManual, normKode } from "./hppGrosirCocok";
 import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
+import { hppPenjualanLama } from "../pages/kasir/penjualanLama";
 
 // =========================================================
 // HPP PENJUALAN untuk Laporan Laba Rugi.
@@ -15,6 +16,7 @@ import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
 //                    Item manual dicocokkan lewat nama (= kode SKU tanpa ukuran) ke Master Barang,
 //                    aturannya di lib/hppGrosirCocok.js. Yang tidak ketemu / ambigu -> `tanpaHpp`.
 //   3. Toko/Kasir  : sama dengan Laporan Kasir (olahRekap): void & retur sudah dibuang.
+//                    Ditambah penjualan toko offline LAMA yang diimpor per barang (pages/kasir/penjualanLama.js).
 //
 // Tiap jalur dimuat sendiri-sendiri: kalau satu gagal (mis. tabel belum ada),
 // jalur lain tetap jalan dan galatnya ditampilkan di `galat`.
@@ -183,7 +185,17 @@ export async function hppGrosir(dari, sampai) {
 async function hppToko(dari, sampai) {
   const rekap = await muatRekapKasir({ session: getSession(), dari, sampai, denganItem: true, denganBayar: false });
   const o = olahRekap({ transaksi: rekap.transaksi, items: rekap.items });
-  return { total: Math.round(o.ringkas.hpp || 0), tanpaHpp: o.ringkas.tanpaHpp || 0 };
+  let total = Math.round(o.ringkas.hpp || 0);
+  let tanpaHpp = o.ringkas.tanpaHpp || 0;
+  // Penjualan toko offline lama (diimpor per barang, sebelum kasir). Kalau tabelnya belum dibuat, diabaikan.
+  try {
+    const lama = await hppPenjualanLama(dari, sampai);
+    total += lama.total;
+    tanpaHpp += lama.tanpaHpp;
+  } catch {
+    /* tabel toko_penjualan_lama belum ada -> HPP toko = HPP kasir saja */
+  }
+  return { total, tanpaHpp };
 }
 
 // dari/sampai = "YYYY-MM-DD" (inklusif). Mengembalikan:

@@ -6,6 +6,7 @@ import BarangToko from "./BarangToko";
 import PromoToko from "./PromoToko";
 import LaporanKasir from "./LaporanKasir";
 import CekHppToko from "./CekHppToko";
+import PenjualanLama from "./PenjualanLama";
 import { entitasSesi, lingkupEntitas } from "../../lib/api";
 
 // =========================================================
@@ -20,6 +21,7 @@ const TAB = [
   ["promo", "Promo"],
   ["laporan", "Laporan"],
   ["cek-hpp", "Cek HPP"],
+  ["lama", "Penjualan Lama"],
 ];
 
 export default function PosToko({ reload, master = {}, keuanganTransaksi = [], showToast }) {
@@ -58,6 +60,7 @@ export default function PosToko({ reload, master = {}, keuanganTransaksi = [], s
       {tab === "promo" && <PromoToko inline />}
       {tab === "laporan" && <LaporanKasir master={lingkup.master} keuanganTransaksi={lingkup.transaksi} />}
       {tab === "cek-hpp" && <CekHppToko showToast={showToast} onBerubah={() => reload?.()} />}
+      {tab === "lama" && <PenjualanLama showToast={showToast} onBerubah={() => reload?.()} />}
     </div>
   );
 }
