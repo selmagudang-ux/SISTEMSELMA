@@ -1,9 +1,11 @@
 // =========================================================
 // PENCOCOKAN ITEM MANUAL GROSIR -> MASTER BARANG (untuk HPP)
 //
-// Item manual grosir memakai nama berupa kode SKU YANG TERPOTONG, tanpa bagian ukuran,
-// mis. "TDGL-GJR-92-PER" sedangkan SKU di Master "TDGL-GJR-92-PER-P18CM".
-// Jadi dicari SKU Master yang AWALANNYA (SKU tanpa segmen ukuran terakhir) sama dengan nama itu.
+// Item manual grosir memakai nama berupa kode SKU YANG TERPOTONG, tanpa bagian warna/ukuran,
+// mis. "TDGL-GSR-20" (Bahan+Peruntukan+Kategori - Subkategori - Model) atau "TDGL-GJR-92-PER"
+// (+ Warna), sedangkan SKU di Master "TDGL-GSR-20-PER-P18CM".
+// Jadi dicari SKU Master yang AWALANNYA sama dengan nama itu. Patokan utama = 3 segmen pertama
+// (Bahan+Peruntukan+Kategori, Subkategori, Model); warna & ukuran tidak ikut menentukan.
 //
 // Aturan:
 //   1. Tidak ada SKU dengan awalan itu            -> "tidakKetemu"
@@ -20,14 +22,19 @@ const num = (v) => Number(v) || 0;
 export const normKode = (s) => String(s ?? "").trim().toUpperCase().replace(/\s+/g, "");
 
 // rows = [{ sku, hpp, grosir }] dari sku_master. Mengembalikan Map awalan -> [{ sku, hpp, grosir }].
+// Satu SKU didaftarkan di setiap awalannya yang minimal 3 segmen (Bahan..Kategori-Subkategori-Model,
+// lalu + Warna), di SKU lengkapnya, dan di SKU tanpa segmen terakhir (perilaku lama).
 export function bangunIndeksAwalan(rows) {
   const idx = new Map();
   for (const r of rows || []) {
     const sku = normKode(r.sku);
     if (!sku) continue;
     const baris = { sku, hpp: num(r.hpp), grosir: num(r.grosir) };
-    const awalan = sku.includes("-") ? sku.slice(0, sku.lastIndexOf("-")) : sku;
-    for (const k of new Set([awalan, sku])) {
+    const segmen = sku.split("-");
+    const kunciSku = new Set([sku]);
+    if (segmen.length > 1) kunciSku.add(segmen.slice(0, -1).join("-"));
+    for (let n = 3; n < segmen.length; n++) kunciSku.add(segmen.slice(0, n).join("-"));
+    for (const k of kunciSku) {
       if (!idx.has(k)) idx.set(k, []);
       idx.get(k).push(baris);
     }
