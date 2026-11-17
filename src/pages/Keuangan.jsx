@@ -1541,9 +1541,12 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
   };
 
   return (
-    <div className="mb-5">
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <div className="text-xs text-slate-400">Saldo Awal Bulan (otomatis nyambung dari bulan sebelumnya, bisa diedit manual)</div>
+    <section className="rounded-2xl border border-sky-500/30 bg-sky-500/5 p-4 mb-5">
+      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold text-slate-100">Saldo Awal Bulan</h3>
+          <Badge color="slate">Per 1 {BULAN_LABEL_PANJANG[bulan - 1]} {tahun}</Badge>
+        </div>
         <div className="flex items-center gap-1.5">
           <select
             value={bulan}
@@ -1565,6 +1568,10 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
           </select>
         </div>
       </div>
+      <p className="text-[11px] text-slate-400 mb-3">
+        Saldo tiap rekening pada tanggal 1 {BULAN_LABEL_PANJANG[bulan - 1]} {tahun}, sebelum ada transaksi bulan itu. Otomatis = saldo akhir bulan
+        sebelumnya; bisa dikoreksi manual (lencana "Manual"). Mengedit di sini hanya mengubah angka saldo awal, tidak mengubah Saldo Saat Ini.
+      </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {data.map((r) => (
           <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
@@ -1592,7 +1599,10 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
               </div>
             ) : (
               <div className="flex items-center justify-between gap-1">
-                <div className="text-base font-semibold text-slate-100">{fmtRp(r.jumlah)}</div>
+                <div>
+                  <div className="text-[10px] text-slate-500">Saldo awal</div>
+                  <div className="text-base font-semibold text-slate-100">{fmtRp(r.jumlah)}</div>
+                </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">
                   <button onClick={() => startEdit(r)} className="text-slate-500 hover:text-slate-300 p-1" title="Edit saldo awal">
                     <Pencil size={12} />
@@ -1608,7 +1618,7 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1644,6 +1654,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const saldoRekening = saldoPerRekening(keuanganTransaksi, rekeningList, true);
   const petaKas = petaKasRekening(master.kas_grup);
   const saldoKas = saldoPerKas(saldoRekening, petaKas);
+  const totalSemuaKas = URUTAN_KAS.reduce((a, kk) => a + (saldoKas[kk] || 0), 0);
   const arusKas = arusKasPerPeriode(list);
   const breakdownKeluar = breakdownPengeluaranKategori(list, kategoriKeluarList);
   const breakdownMasuk = breakdownPemasukanKategori(list, kategoriMasukList);
@@ -1732,6 +1743,43 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
 
       {tabLaporan === "saldo-kas" && (
         <>
+          {rekeningList.length > 0 && (
+            <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 mb-5">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                <h3 className="text-sm font-semibold text-slate-100">Saldo Saat Ini</h3>
+                <Badge color="amber">Posisi hari ini</Badge>
+              </div>
+              <p className="text-[11px] text-slate-400 mb-3">
+                Uang yang ada di tiap rekening sekarang (akumulasi seluruh transaksi sejak awal dicatat). Berubah setiap ada transaksi baru dan tidak
+                terpengaruh filter tanggal maupun saldo awal bulan di bawah.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                {URUTAN_KAS.map((k) => (
+                  <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-slate-900/40">
+                    <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
+                    <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(saldoKas[k])}</div>
+                  </div>
+                ))}
+                <div className="rounded-xl border border-amber-500/40 p-3 bg-amber-500/10">
+                  <div className="text-[11px] text-amber-400 font-medium mb-1">Total Semua Kas</div>
+                  <div className={`text-base font-bold ${totalSemuaKas >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(totalSemuaKas)}</div>
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500 mb-2">Saldo per rekening</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {saldoRekening.map((r) => (
+                  <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1 flex-wrap">
+                      <Landmark size={12} /> {r.label}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{LABEL_KAS[kasDariRekening(petaKas, r.kode)]}</span>
+                    </div>
+                    <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(r.saldo)}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           <SaldoAwalBulan
             keuanganTransaksi={keuanganTransaksi}
             rekeningList={rekeningList}
@@ -1740,32 +1788,6 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             showToast={showToast}
           />
 
-          {rekeningList.length > 0 && (
-            <div className="mb-5">
-              <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                {URUTAN_KAS.map((k) => (
-                  <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-amber-500/5">
-                    <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
-                    <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(saldoKas[k])}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {saldoRekening.map((r) => (
-                  <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-                      <Landmark size={12} /> {r.label}
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{LABEL_KAS[kasDariRekening(petaKas, r.kode)]}</span>
-                    </div>
-                    <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>
-                      {fmtRp(r.saldo)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {rekeningList.length === 0 && (
             <div className="rounded-xl border border-slate-800 bg-slate-900/50 text-slate-500 text-xs px-4 py-6 text-center">Belum ada rekening.</div>
           )}
