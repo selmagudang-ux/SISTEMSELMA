@@ -1,5 +1,5 @@
 import { sb, sbAll } from "../../lib/api";
-import { muatTanggalMulaiKasir } from "./kasirLaporan";
+import { muatTanggalMulaiKasir, hariIniWib } from "./kasirLaporan";
 import { bangunIndeksAwalan, cocokkanItemManual, normKode } from "../../lib/hppGrosirCocok";
 import { buatPelengkapHpp } from "../../lib/hppTokoCocok";
 
@@ -125,6 +125,7 @@ export function periksaBaris(baris, { tanggalMulaiKasir = null, master = [], tok
   return baris.map((b) => {
     const hasil = { ...b, status: "ok", pesan: "", hppStatus: "" };
     if (!b.tanggal) return { ...hasil, status: "salah", pesan: `Tanggal tidak terbaca (${b.tanggalMentah || "kosong"})` };
+    if (b.tanggal > hariIniWib()) return { ...hasil, status: "salah", pesan: `Tanggal di masa depan (${b.tanggal}), cek kolom Tanggal` };
     if (!b.sku) return { ...hasil, status: "salah", pesan: "SKU kosong" };
     if (!(b.qty > 0)) return { ...hasil, status: "salah", pesan: "Qty harus lebih dari 0" };
     if (b.harga === null || Number.isNaN(b.harga) || b.harga < 0) return { ...hasil, status: "salah", pesan: "Harga kosong / tidak valid" };
