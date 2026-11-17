@@ -1615,11 +1615,20 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
 // pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
 // narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
 // ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
+// Tab di halaman Laporan Keuangan.
+const TAB_LAPORAN = [
+  { key: "saldo-kas", label: "Saldo Kas" },
+  { key: "arus-kas", label: "Laporan Arus Kas" },
+  { key: "laba-rugi", label: "Laporan Laba Rugi" },
+  { key: "neraca", label: "Neraca" },
+];
+
 function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, entitasKode, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [showLaporanNarasi, setShowLaporanNarasi] = useState(false);
   const [detailKategori, setDetailKategori] = useState(null);
+  const [tabLaporan, setTabLaporan] = useState("saldo-kas");
 
   const rekeningList = master.rekening || [];
   const kategoriMasukList = master.kategori_masuk || [];
@@ -1669,7 +1678,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
       )}
       <PageHeader
         title="Laporan Keuangan"
-        description="Ringkasan, grafik arus kas, dan breakdown pengeluaran mengikuti rentang tanggal yang dipilih di bawah. Untuk mencatat transaksi, buka menu Transaksi."
+        description="Pilih tab: Saldo Kas, Laporan Arus Kas, Laporan Laba Rugi, atau Neraca. Arus Kas dan Laba Rugi mengikuti rentang tanggal yang dipilih. Untuk mencatat transaksi, buka menu Transaksi."
         action={
           <div className="flex items-center gap-2">
             <button
@@ -1709,86 +1718,111 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="flex items-center gap-2">
-          <InputTanggal className={`${inputClass} w-auto`} value={dari} onChange={setDari} />
-          <span className="text-slate-500 text-xs">s/d</span>
-          <InputTanggal className={`${inputClass} w-auto`} value={sampai} onChange={setSampai} />
-        </div>
-      </div>
+      <TabBar tabs={TAB_LAPORAN} aktif={tabLaporan} onPilih={setTabLaporan} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <StatCard label="Kas Masuk" value={fmtRp(masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label="Kas Keluar" value={fmtRp(keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
-        <StatCard
-          label="Saldo (Masuk - Keluar)"
-          value={fmtRp(saldo)}
-          accent={saldo >= 0 ? "text-emerald-400" : "text-red-400"}
-          icon={Wallet}
-          iconColor={saldo >= 0 ? "text-emerald-500" : "text-red-500"}
-        />
-      </div>
-
-      <SaldoAwalBulan
-        keuanganTransaksi={keuanganTransaksi}
-        rekeningList={rekeningList}
-        saldoAwalList={master.saldo_awal || []}
-        reload={reload}
-        showToast={showToast}
-      />
-
-      {rekeningList.length > 0 && (
-        <div className="mb-5">
-          <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            {URUTAN_KAS.map((k) => (
-              <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-amber-500/5">
-                <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
-                <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(saldoKas[k])}</div>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {saldoRekening.map((r) => (
-              <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
-                  <Landmark size={12} /> {r.label}
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{LABEL_KAS[kasDariRekening(petaKas, r.kode)]}</span>
-                </div>
-                <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>
-                  {fmtRp(r.saldo)}
-                </div>
-              </div>
-            ))}
+      {(tabLaporan === "arus-kas" || tabLaporan === "laba-rugi") && (
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <InputTanggal className={`${inputClass} w-auto`} value={dari} onChange={setDari} />
+            <span className="text-slate-500 text-xs">s/d</span>
+            <InputTanggal className={`${inputClass} w-auto`} value={sampai} onChange={setSampai} />
           </div>
         </div>
       )}
 
-      <LaporanLabaRugi
-        pendapatan={labaRugi.pendapatan}
-        beban={labaRugi.beban}
-        labaRugi={labaRugi.labaRugi}
-        marginPersen={labaRugi.marginPersen}
-        subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
-        onKategoriClick={setDetailKategori}
-      />
+      {tabLaporan === "saldo-kas" && (
+        <>
+          <SaldoAwalBulan
+            keuanganTransaksi={keuanganTransaksi}
+            rekeningList={rekeningList}
+            saldoAwalList={master.saldo_awal || []}
+            reload={reload}
+            showToast={showToast}
+          />
 
-      <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+          {rekeningList.length > 0 && (
+            <div className="mb-5">
+              <div className="text-xs text-slate-400 mb-2">Saldo per Rekening (akumulasi seluruh transaksi)</div>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                {URUTAN_KAS.map((k) => (
+                  <div key={k} className="rounded-xl border border-amber-500/20 p-3 bg-amber-500/5">
+                    <div className="text-[11px] text-slate-400 mb-1">Total {LABEL_KAS[k]}</div>
+                    <div className={`text-base font-semibold ${saldoKas[k] >= 0 ? "text-slate-100" : "text-red-400"}`}>{fmtRp(saldoKas[k])}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {saldoRekening.map((r) => (
+                  <div key={r.kode} className="rounded-xl border border-slate-800 p-3 bg-slate-900/50">
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-1">
+                      <Landmark size={12} /> {r.label}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{LABEL_KAS[kasDariRekening(petaKas, r.kode)]}</span>
+                    </div>
+                    <div className={`text-base font-semibold ${r.saldo >= 0 ? "text-slate-100" : "text-red-400"}`}>
+                      {fmtRp(r.saldo)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {rekeningList.length === 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/50 text-slate-500 text-xs px-4 py-6 text-center">Belum ada rekening.</div>
+          )}
+        </>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <BreakdownPemasukan
-          total={breakdownMasuk.total}
-          data={dataMasukGrup}
-          onKategoriClick={(d) => setDetailKategori({ tipe: "masuk", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
-        />
-        <BreakdownPengeluaran
-          total={breakdownKeluar.total}
-          data={dataKeluarGrup}
-          onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
-        />
-      </div>
+      {tabLaporan === "arus-kas" && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <StatCard label="Kas Masuk" value={fmtRp(masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
+            <StatCard label="Kas Keluar" value={fmtRp(keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+            <StatCard
+              label="Saldo (Masuk - Keluar)"
+              value={fmtRp(saldo)}
+              accent={saldo >= 0 ? "text-emerald-400" : "text-red-400"}
+              icon={Wallet}
+              iconColor={saldo >= 0 ? "text-emerald-500" : "text-red-500"}
+            />
+          </div>
 
-      <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} entitasKode={entitasKode} />
+          <GrafikArusKas mode={arusKas.mode} data={arusKas.data} />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <BreakdownPemasukan
+              total={breakdownMasuk.total}
+              data={dataMasukGrup}
+              onKategoriClick={(d) => setDetailKategori({ tipe: "masuk", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
+            />
+            <BreakdownPengeluaran
+              total={breakdownKeluar.total}
+              data={dataKeluarGrup}
+              onKategoriClick={(d) => setDetailKategori({ tipe: "keluar", kode: d.kode, label: d.label, isGrup: d.isGrup, anak: d.anak })}
+            />
+          </div>
+        </>
+      )}
+
+      {tabLaporan === "laba-rugi" && (
+        <>
+          <LaporanLabaRugi
+            pendapatan={labaRugi.pendapatan}
+            beban={labaRugi.beban}
+            labaRugi={labaRugi.labaRugi}
+            marginPersen={labaRugi.marginPersen}
+            subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
+            onKategoriClick={setDetailKategori}
+          />
+
+          <LaporanBulananTahunan keuanganTransaksi={keuanganTransaksi} master={master} entitasKode={entitasKode} />
+        </>
+      )}
+
+      {tabLaporan === "neraca" && (
+        <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/30 text-slate-500 text-xs px-4 py-10 text-center">
+          Neraca belum diisi. Tab ini sengaja dibiarkan kosong dulu.
+        </div>
+      )}
 
       {detailKategori && detailKategori.isGrup && (
         <DetailKelompokModal
