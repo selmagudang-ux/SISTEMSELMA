@@ -7,14 +7,19 @@
 // Jadi dicari SKU Master yang AWALANNYA sama dengan nama itu. Patokan utama = 3 segmen pertama
 // (Bahan+Peruntukan+Kategori, Subkategori, Model); warna & ukuran tidak ikut menentukan.
 //
-// Aturan:
-//   1. Tidak ada SKU dengan awalan itu            -> "tidakKetemu"
-//   2. Kandidat yang HPP-nya kosong / 0 DIABAIKAN (itu "belum diisi", bukan HPP yang berbeda).
-//      Semua kandidat kosong                      -> "tanpaHpp"
-//   3. Kandidat ber-HPP semuanya sama             -> pakai HPP itu (ukuran lain yang kosong ikut)
-//   4. Kandidat ber-HPP berbeda-beda              -> pilih yang Grosir-nya = harga di pesanan,
-//                                                    kalau hasilnya satu HPP saja
-//   5. Selain itu                                 -> "ambigu" (tidak ditebak)
+// Pencarian bertingkat dari yang paling spesifik ke yang lebih umum, berhenti di 3 segmen
+// (Bahan..Kategori-Subkategori-Model). Jadi kalau warna di nama pesanan tidak ada di Master
+// (mis. nama "TDGL-GSR-20-MRH" padahal Master hanya punya warna lain), tetap dicocokkan ke
+// model "TDGL-GSR-20".
+//
+// Aturan per tingkat:
+//   - Kandidat yang HPP-nya kosong / 0 DIABAIKAN (itu "belum diisi", bukan HPP yang berbeda).
+//   - Tidak ada kandidat, atau semua kandidat HPP-nya kosong -> lanjut ke tingkat lebih umum
+//   - Kandidat ber-HPP semuanya sama                         -> "cocok" (pakai HPP itu)
+//   - Kandidat ber-HPP berbeda-beda -> pilih yang Grosir-nya = harga di pesanan, kalau hasilnya
+//     satu HPP saja "cocok", selain itu "ambigu" (tidak ditebak, tidak turun ke tingkat umum)
+// Kalau semua tingkat habis: ada kandidat tapi HPP-nya kosong semua -> "tanpaHpp", selain itu
+// "tidakKetemu".
 // =========================================================
 
 const num = (v) => Number(v) || 0;
@@ -42,22 +47,36 @@ export function bangunIndeksAwalan(rows) {
   return idx;
 }
 
-// Hasil: { status: "cocok" | "ambigu" | "tidakKetemu" | "tanpaHpp", hpp }
+// Hasil: { status: "cocok" | "ambigu" | "tidakKetemu" | "tanpaHpp", hpp, kandidat }
+// kandidat = SKU Master yang jadi dasar keputusan (dipakai untuk menjelaskan item bermasalah).
 export function cocokkanItemManual(indeks, namaProduk, hargaPesanan) {
-  const kandidat = indeks.get(normKode(namaProduk));
-  if (!kandidat || kandidat.length === 0) return { status: "tidakKetemu", hpp: 0 };
+  const nama = normKode(namaProduk);
+  const segmen = nama.split("-");
+  const tingkat = [nama];
+  for (let n = segmen.length - 1; n >= 3; n--) tingkat.push(segmen.slice(0, n).join("-"));
 
-  // HPP kosong / 0 = belum diisi di Master, bukan HPP yang berbeda -> jangan ikut menentukan "ambigu".
-  const berHpp = kandidat.filter((k) => k.hpp > 0);
-  if (berHpp.length === 0) return { status: "tanpaHpp", hpp: 0 };
+  let kandidatKosong = null; // kandidat tingkat terspesifik yang ada tapi HPP-nya kosong semua
+  for (const kunci of tingkat) {
+    const kandidat = indeks.get(kunci);
+    if (!kandidat || kandidat.length === 0) continue;
 
-  let hppUnik = [...new Set(berHpp.map((k) => k.hpp))];
-  if (hppUnik.length > 1) {
-    const sepadan = berHpp.filter((k) => k.grosir === num(hargaPesanan));
-    hppUnik = [...new Set(sepadan.map((k) => k.hpp))];
-    if (hppUnik.length !== 1) return { status: "ambigu", hpp: 0 };
+    // HPP kosong / 0 = belum diisi di Master, bukan HPP yang berbeda.
+    const berHpp = kandidat.filter((k) => k.hpp > 0);
+    if (berHpp.length === 0) {
+      if (!kandidatKosong) kandidatKosong = kandidat;
+      continue; // coba tingkat lebih umum (warna/ukuran lain dari model yang sama)
+    }
+
+    let hppUnik = [...new Set(berHpp.map((k) => k.hpp))];
+    if (hppUnik.length > 1) {
+      const sepadan = berHpp.filter((k) => k.grosir === num(hargaPesanan));
+      hppUnik = [...new Set(sepadan.map((k) => k.hpp))];
+      if (hppUnik.length !== 1) return { status: "ambigu", hpp: 0, kandidat };
+    }
+    return { status: "cocok", hpp: hppUnik[0], kandidat };
   }
-  return { status: "cocok", hpp: hppUnik[0] };
+  if (kandidatKosong) return { status: "tanpaHpp", hpp: 0, kandidat: kandidatKosong };
+  return { status: "tidakKetemu", hpp: 0, kandidat: [] };
 }
 
 // Kandidat SKU Master untuk satu nama item manual (dipakai untuk menjelaskan item "ambigu").

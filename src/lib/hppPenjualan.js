@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { sb, sbAll, entitasBacaSaatIni } from "./api";
 import { getSession } from "./auth";
-import { bangunIndeksAwalan, cocokkanItemManual, kandidatItemManual, normKode } from "./hppGrosirCocok";
+import { bangunIndeksAwalan, cocokkanItemManual, normKode } from "./hppGrosirCocok";
 import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
 
 // =========================================================
@@ -120,11 +120,11 @@ export async function hppGrosir(dari, sampai) {
   let tanpaHpp = 0;
   const hitung = { tidakKetemu: 0, ambigu: 0, tanpaHpp: 0 };
   const masalah = new Map(); // "status|nama" -> baris ringkasan untuk daftar
-  const catat = (status, nama, d, manual) => {
+  const catat = (status, nama, d, manual, kandList) => {
     const kunci = `${status}|${normKode(nama)}`;
     let m = masalah.get(kunci);
     if (!m) {
-      const kandidat = status === "ambigu" || status === "tanpaHpp" ? kandidatItemManual(indeks, nama).map((k) => `${k.sku} (HPP ${k.hpp}, Grosir ${k.grosir})`).join(" ; ") : "";
+      const kandidat = status === "ambigu" || status === "tanpaHpp" ? (kandList || []).map((k) => `${k.sku} (HPP ${k.hpp}, Grosir ${k.grosir})`).join(" ; ") : "";
       m = {
         kunci: normKode(nama),
         status,
@@ -160,7 +160,7 @@ export async function hppGrosir(dari, sampai) {
       if (r.status === "cocok") hpp = r.hpp;
       else {
         const man = hppManual.get(normKode(d.nama_produk));
-        catat(r.status, d.nama_produk, d, man);
+        catat(r.status, d.nama_produk, d, man, r.kandidat);
         if (man) hpp = man.hpp; // isian sementara dipakai, tidak dihitung sebagai masalah
         else hitung[r.status] += 1;
       }
