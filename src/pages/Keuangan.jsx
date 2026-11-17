@@ -1727,8 +1727,11 @@ function NeracaLaporan({ nilai = {} }) {
   return (
     <div>
       <div className="mb-4 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
-        Template Neraca — strukturnya sudah ada, angkanya belum terhubung ke data. Diisi bertahap per pos.
+        {adaIsi
+          ? "Neraca masih diisi bertahap: baru pos yang berangka yang sudah terhubung ke data, jadi Aktiva dan Pasiva belum seimbang."
+          : "Template Neraca — strukturnya sudah ada, angkanya belum terhubung ke data. Diisi bertahap per pos."}
       </div>
+      <div className="mb-3 text-[11px] text-slate-500">Posisi per {formatTanggalID(hariIniIso())}</div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <Sisi sisi="aktiva" judul="AKTIVA" warna="text-emerald-400 bg-emerald-500/5" total={totalAktiva} />
         <Sisi sisi="pasiva" judul="PASIVA" warna="text-sky-300 bg-sky-500/5" total={totalPasiva} />
@@ -1968,7 +1971,15 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
         </>
       )}
 
-      {tabLaporan === "neraca" && <NeracaLaporan />}
+      {tabLaporan === "neraca" && (
+        <NeracaLaporan
+          nilai={{
+            // Sama persis dengan Total Kas Kecil / Total Kas Bank di tab Saldo Kas.
+            kas_kecil: saldoKas.kecil,
+            bank: saldoKas.bank,
+          }}
+        />
+      )}
 
       {detailKategori && detailKategori.isGrup && (
         <DetailKelompokModal
