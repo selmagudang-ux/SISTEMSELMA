@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { sbAll } from "./api";
 import { getSession } from "./auth";
+import { bangunIndeksAwalan, cocokkanItemManual } from "./hppGrosirCocok";
 import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
 
 // =========================================================
@@ -11,7 +12,8 @@ import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
 //   1. Marketplace : marketplace_penjualan (hpp_satuan x (qty - qty_retur)),
 //                    tanggal = tanggal dana dilepas (sama dengan Rincian Penjualan).
 //   2. Grosir      : grosir_detail_pesanan (qty x sku_master.hpp), pesanan "Batal" dibuang.
-//                    Item manual (tanpa SKU) tidak punya HPP -> dihitung di `tanpaHpp`.
+//                    Item manual dicocokkan lewat nama (= kode SKU tanpa ukuran) ke Master Barang,
+//                    aturannya di lib/hppGrosirCocok.js. Yang tidak ketemu / ambigu -> `tanpaHpp`.
 //   3. Toko/Kasir  : sama dengan Laporan Kasir (olahRekap): void & retur sudah dibuang.
 //
 // Tiap jalur dimuat sendiri-sendiri: kalau satu gagal (mis. tabel belum ada),
@@ -52,22 +54,38 @@ async function hppGrosir(dari, sampai) {
   if (ids.length === 0) return { total: 0, tanpaHpp: 0 };
 
   const [detail, master] = await Promise.all([
-    dalamPotongan(ids, 60, (c) => sbAll(`grosir_detail_pesanan?select=sku,qty&pesanan_id=in.(${c.join(",")})`)),
-    sbAll("sku_master?select=sku,hpp"),
+    dalamPotongan(ids, 60, (c) =>
+      sbAll(`grosir_detail_pesanan?select=sku,qty,nama_produk,harga&pesanan_id=in.(${c.join(",")})`)
+    ),
+    sbAll("sku_master?select=sku,hpp,grosir"),
   ]);
   const petaHpp = new Map((master || []).map((m) => [m.sku, m.hpp == null ? null : num(m.hpp)]));
+  const indeks = bangunIndeksAwalan(master);
 
   let total = 0;
   let tanpaHpp = 0;
+  const manual = { cocok: 0, ambigu: 0, tidakKetemu: 0, tanpaHpp: 0 };
   for (const d of detail) {
-    const hpp = d.sku ? petaHpp.get(d.sku) : null;
+    let hpp = null;
+    if (d.sku) {
+      hpp = petaHpp.get(d.sku); // item "Dari Data Barang"
+    } else {
+      const r = cocokkanItemManual(indeks, d.nama_produk, d.harga); // item manual
+      manual[r.status] += 1;
+      hpp = r.status === "cocok" ? r.hpp : null;
+    }
     if (hpp == null || hpp <= 0) {
-      tanpaHpp += 1; // item manual / SKU tidak ada / HPP belum diisi
+      tanpaHpp += 1;
       continue;
     }
     total += hpp * num(d.qty);
   }
-  return { total: Math.round(total), tanpaHpp };
+  const gagal = [
+    manual.tidakKetemu && `${manual.tidakKetemu} item manual tidak ketemu di Master`,
+    manual.ambigu && `${manual.ambigu} item manual ambigu (beberapa ukuran, HPP berbeda)`,
+    manual.tanpaHpp && `${manual.tanpaHpp} item manual HPP Master-nya kosong`,
+  ].filter(Boolean);
+  return { total: Math.round(total), tanpaHpp, catatan: gagal.join(", ") };
 }
 
 async function hppToko(dari, sampai) {
@@ -77,16 +95,17 @@ async function hppToko(dari, sampai) {
 }
 
 // dari/sampai = "YYYY-MM-DD" (inklusif). Mengembalikan:
-// { total, marketplace, grosir, toko, tanpaHpp, galat: { marketplace?, grosir?, toko? } }
+// { total, marketplace, grosir, toko, tanpaHpp, galat: {...}, catatan: { grosir?: "..." } }
 export async function muatHppPenjualan(dari, sampai) {
   const sumber = { marketplace: hppMarketplace, grosir: hppGrosir, toko: hppToko };
-  const hasil = { total: 0, marketplace: 0, grosir: 0, toko: 0, tanpaHpp: 0, galat: {} };
+  const hasil = { total: 0, marketplace: 0, grosir: 0, toko: 0, tanpaHpp: 0, galat: {}, catatan: {} };
   await Promise.all(
     Object.entries(sumber).map(async ([kunci, fn]) => {
       try {
         const r = await fn(dari, sampai);
         hasil[kunci] = r.total;
         hasil.tanpaHpp += r.tanpaHpp || 0;
+        if (r.catatan) hasil.catatan[kunci] = r.catatan;
       } catch (e) {
         hasil.galat[kunci] = e?.message || "gagal dimuat";
       }

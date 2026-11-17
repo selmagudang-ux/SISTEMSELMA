@@ -945,6 +945,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
                   <td className="px-4 py-1.5 pl-8 text-slate-300">
                     {label}
                     {hpp.galat?.[k] && <span className="ml-2 text-[11px] text-amber-400">(gagal dimuat: {hpp.galat[k]})</span>}
+                    {hpp.catatan?.[k] && <span className="ml-2 text-[11px] text-amber-400">({hpp.catatan[k]})</span>}
                   </td>
                   <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(hpp[k] || 0)}</td>
                 </tr>
