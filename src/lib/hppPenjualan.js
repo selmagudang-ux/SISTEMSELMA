@@ -124,7 +124,7 @@ export async function hppGrosir(dari, sampai) {
     const kunci = `${status}|${normKode(nama)}`;
     let m = masalah.get(kunci);
     if (!m) {
-      const kandidat = status === "ambigu" ? kandidatItemManual(indeks, nama).map((k) => `${k.sku} (HPP ${k.hpp}, Grosir ${k.grosir})`).join(" ; ") : "";
+      const kandidat = status === "ambigu" || status === "tanpaHpp" ? kandidatItemManual(indeks, nama).map((k) => `${k.sku} (HPP ${k.hpp}, Grosir ${k.grosir})`).join(" ; ") : "";
       m = {
         kunci: normKode(nama),
         status,

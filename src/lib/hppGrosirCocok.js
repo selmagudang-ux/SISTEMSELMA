@@ -7,11 +7,12 @@
 //
 // Aturan:
 //   1. Tidak ada SKU dengan awalan itu            -> "tidakKetemu"
-//   2. Semua kandidat HPP-nya sama (termasuk 1)   -> pakai HPP itu
-//   3. HPP kandidat berbeda-beda                  -> pilih yang Grosir-nya = harga di pesanan,
+//   2. Kandidat yang HPP-nya kosong / 0 DIABAIKAN (itu "belum diisi", bukan HPP yang berbeda).
+//      Semua kandidat kosong                      -> "tanpaHpp"
+//   3. Kandidat ber-HPP semuanya sama             -> pakai HPP itu (ukuran lain yang kosong ikut)
+//   4. Kandidat ber-HPP berbeda-beda              -> pilih yang Grosir-nya = harga di pesanan,
 //                                                    kalau hasilnya satu HPP saja
-//   4. Selain itu                                 -> "ambigu" (tidak ditebak)
-// HPP kosong / 0 di Master dianggap belum diisi -> "tanpaHpp".
+//   5. Selain itu                                 -> "ambigu" (tidak ditebak)
 // =========================================================
 
 const num = (v) => Number(v) || 0;
@@ -39,15 +40,17 @@ export function cocokkanItemManual(indeks, namaProduk, hargaPesanan) {
   const kandidat = indeks.get(normKode(namaProduk));
   if (!kandidat || kandidat.length === 0) return { status: "tidakKetemu", hpp: 0 };
 
-  let hppUnik = [...new Set(kandidat.map((k) => k.hpp))];
+  // HPP kosong / 0 = belum diisi di Master, bukan HPP yang berbeda -> jangan ikut menentukan "ambigu".
+  const berHpp = kandidat.filter((k) => k.hpp > 0);
+  if (berHpp.length === 0) return { status: "tanpaHpp", hpp: 0 };
+
+  let hppUnik = [...new Set(berHpp.map((k) => k.hpp))];
   if (hppUnik.length > 1) {
-    const sepadan = kandidat.filter((k) => k.grosir === num(hargaPesanan));
+    const sepadan = berHpp.filter((k) => k.grosir === num(hargaPesanan));
     hppUnik = [...new Set(sepadan.map((k) => k.hpp))];
     if (hppUnik.length !== 1) return { status: "ambigu", hpp: 0 };
   }
-  const hpp = hppUnik[0];
-  if (!(hpp > 0)) return { status: "tanpaHpp", hpp: 0 };
-  return { status: "cocok", hpp };
+  return { status: "cocok", hpp: hppUnik[0] };
 }
 
 // Kandidat SKU Master untuk satu nama item manual (dipakai untuk menjelaskan item "ambigu").
