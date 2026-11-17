@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import {
   Search, Plus, Minus, Pencil, Trash2, X, ShoppingCart,
   TrendingUp, Wallet, Download, CalendarRange, BarChart3, Receipt,
@@ -11,12 +11,14 @@ import {
   rekeningEntitasSesi,
 } from "../lib/api";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
+import { hppGrosir, simpanHppManual, hapusHppManual } from "../lib/hppPenjualan";
 
 export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
 }) {
   if (sub === "produk-manual")
     return <ProdukManualList produkManualGrosir={produkManualGrosir} setModal={setModal} />;
+  if (sub === "cek-hpp") return <CekHppGrosir showToast={showToast} />;
   if (sub === "semua-pesanan")
     return (
       <SemuaPesanan
@@ -421,6 +423,210 @@ function SemuaPesanan({ pesananGrosir, pelangganGrosir, pembayaranGrosir, setMod
 // dihitung dari grosir_pesanan (bukan grosir_pembayaran) — jadi "omset" di
 // sini artinya nilai pesanan, bukan uang yang sudah masuk secara kas.
 // =========================================================
+// =========================================================
+// CEK HPP GROSIR — daftar item pesanan grosir yang HPP-nya belum bisa dihitung
+// (item manual tidak ketemu di Master Barang, ambigu antar ukuran, atau HPP Master kosong).
+// HPP boleh diisi SEMENTARA di sini. Tersimpan di master_data tipe "hpp_grosir_manual" dan hanya
+// dipakai selama HPP dari Master belum bisa dipakai (lihat lib/hppPenjualan.js).
+// =========================================================
+function CekHppGrosir({ showToast }) {
+  const [dari, setDari] = useState(awalBulanIniGrosir());
+  const [sampai, setSampai] = useState(hariIniIsoGrosir());
+  const [data, setData] = useState([]);
+  const [memuat, setMemuat] = useState(false);
+  const [galat, setGalat] = useState("");
+  const [filter, setFilter] = useState("belum"); // belum | sudah | semua
+  const [q, setQ] = useState("");
+  const [draft, setDraft] = useState({}); // kunci item -> angka HPP yang sedang diketik
+  const [menyimpan, setMenyimpan] = useState({}); // kunci item -> true
+
+  useEffect(() => {
+    let batal = false;
+    setMemuat(true);
+    setGalat("");
+    hppGrosir(dari, sampai)
+      .then((r) => {
+        if (!batal) setData(r.daftar || []);
+      })
+      .catch((e) => {
+        if (!batal) setGalat(e?.message || "Gagal memuat data");
+      })
+      .finally(() => {
+        if (!batal) setMemuat(false);
+      });
+    return () => {
+      batal = true;
+    };
+  }, [dari, sampai]);
+
+  const belum = data.filter((m) => !(m.hppManual > 0));
+  const sudah = data.filter((m) => m.hppManual > 0);
+  const tampil = (filter === "belum" ? belum : filter === "sudah" ? sudah : data).filter((m) => {
+    const t = q.trim().toLowerCase();
+    return !t || m.nama.toLowerCase().includes(t) || m.masalah.toLowerCase().includes(t);
+  });
+
+  const ubahSatu = (kunci, patch) => setData((d) => d.map((m) => (m.kunci === kunci ? { ...m, ...patch } : m)));
+
+  const simpan = async (m) => {
+    const nilai = Number(draft[m.kunci]);
+    if (!(nilai > 0)) {
+      showToast("Isi HPP lebih dari 0", "err");
+      return;
+    }
+    setMenyimpan((x) => ({ ...x, [m.kunci]: true }));
+    try {
+      const id = await simpanHppManual(m.nama, nilai, m.idManual);
+      ubahSatu(m.kunci, { hppManual: Math.round(nilai), idManual: id });
+      setDraft((x) => {
+        const baru = { ...x };
+        delete baru[m.kunci];
+        return baru;
+      });
+      showToast(`HPP ${m.nama} tersimpan`);
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan HPP", "err");
+    } finally {
+      setMenyimpan((x) => ({ ...x, [m.kunci]: false }));
+    }
+  };
+
+  const hapus = async (m) => {
+    setMenyimpan((x) => ({ ...x, [m.kunci]: true }));
+    try {
+      await hapusHppManual(m.idManual);
+      ubahSatu(m.kunci, { hppManual: 0, idManual: null });
+      showToast(`HPP manual ${m.nama} dihapus`);
+    } catch (e) {
+      showToast(e.message || "Gagal menghapus HPP", "err");
+    } finally {
+      setMenyimpan((x) => ({ ...x, [m.kunci]: false }));
+    }
+  };
+
+  const unduh = () =>
+    downloadCsv(
+      `cek-hpp-grosir-${dari}-${sampai}.csv`,
+      [
+        { key: "masalah", label: "Masalah" },
+        { key: "nama", label: "Nama Item" },
+        { key: "qty", label: "Total Qty" },
+        { key: "harga", label: "Harga di Pesanan" },
+        { key: "hppManual", label: "HPP Manual Sementara" },
+        { key: "pesananTeks", label: "Contoh Pesanan" },
+        { key: "kandidat", label: "Kandidat SKU Master" },
+      ],
+      tampil.map((m) => ({ ...m, pesananTeks: m.pesanan.join(" ; ") }))
+    );
+
+  return (
+    <div>
+      <PageHeader
+        title="Cek HPP Grosir"
+        description="Item pesanan grosir yang HPP-nya belum bisa dihitung. Isi HPP sementara di sini. Kalau Master Barang sudah dibetulkan, HPP Master otomatis dipakai dan isian sementara diabaikan."
+        action={
+          <button onClick={unduh} disabled={tampil.length === 0} className="flex items-center gap-1.5 text-xs font-medium text-sky-400 hover:text-sky-300 disabled:opacity-40">
+            <Download size={14} /> Unduh CSV
+          </button>
+        }
+      />
+
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <label className="text-[11px] text-slate-400">
+          Dari
+          <input type="date" value={dari} onChange={(e) => setDari(e.target.value)} className={`${inputClass} block mt-1`} />
+        </label>
+        <label className="text-[11px] text-slate-400">
+          Sampai
+          <input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className={`${inputClass} block mt-1`} />
+        </label>
+        <div className="flex gap-1">
+          {[
+            ["belum", `Belum diisi (${belum.length})`],
+            ["sudah", `Sudah diisi manual (${sudah.length})`],
+            ["semua", "Semua"],
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setFilter(k)}
+              className={`px-3 py-2 rounded-lg text-xs font-medium border ${filter === k ? "bg-amber-500/10 border-amber-500/40 text-amber-300" : "border-slate-800 text-slate-400 hover:text-slate-200"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="relative flex-1 min-w-[180px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama item…" className={`${inputClass} pl-9 w-full`} />
+        </div>
+      </div>
+
+      {galat && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-red-400 bg-red-500/5 border border-red-500/20">{galat}</div>}
+      {memuat ? (
+        <div className="py-10 text-center text-xs text-slate-500">Memuat dan mencocokkan item…</div>
+      ) : tampil.length === 0 ? (
+        <EmptyState label={filter === "belum" ? "Tidak ada item yang HPP-nya belum terisi pada rentang ini." : "Tidak ada item."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] text-slate-500 border-b border-slate-800">
+                <th className="px-3 py-2 font-medium">Item</th>
+                <th className="px-3 py-2 font-medium">Masalah</th>
+                <th className="px-3 py-2 font-medium text-right">Qty</th>
+                <th className="px-3 py-2 font-medium text-right">Harga di pesanan</th>
+                <th className="px-3 py-2 font-medium">Contoh pesanan</th>
+                <th className="px-3 py-2 font-medium w-56">HPP sementara</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tampil.map((m) => {
+                const sibuk = !!menyimpan[m.kunci];
+                const nilaiInput = draft[m.kunci] ?? "";
+                return (
+                  <tr key={`${m.status}|${m.kunci}`} className="border-b border-slate-800/60 align-top">
+                    <td className="px-3 py-2 font-mono text-slate-200">
+                      {m.nama}
+                      {m.kandidat && <div className="mt-0.5 font-sans text-[10px] text-slate-500">Kandidat: {m.kandidat}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-[12px] text-amber-400">{m.masalah}</td>
+                    <td className="px-3 py-2 text-right text-slate-300">{m.qty}</td>
+                    <td className="px-3 py-2 text-right text-slate-300">{fmtRp(m.harga)}</td>
+                    <td className="px-3 py-2 text-[11px] text-slate-400">{m.pesanan.join(", ")}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <InputRupiah
+                          value={nilaiInput === "" ? (m.hppManual > 0 ? m.hppManual : "") : nilaiInput}
+                          onChange={(v) => setDraft((x) => ({ ...x, [m.kunci]: v }))}
+                          placeholder="HPP per pcs"
+                          className={`${inputClass} w-28`}
+                        />
+                        <button
+                          onClick={() => simpan(m)}
+                          disabled={sibuk || nilaiInput === "" || Number(nilaiInput) === m.hppManual}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 disabled:opacity-40"
+                        >
+                          Simpan
+                        </button>
+                        {m.hppManual > 0 && (
+                          <button onClick={() => hapus(m)} disabled={sibuk} title="Hapus HPP manual" className="p-1.5 text-slate-500 hover:text-red-400 disabled:opacity-40">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                      {m.hppManual > 0 && <div className="mt-1 text-[10px] text-emerald-400">Terpakai di laporan: {fmtRp(m.hppManual)}/pcs</div>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function awalBulanIniGrosir() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;

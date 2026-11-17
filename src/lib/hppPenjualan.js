@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { sbAll } from "./api";
+import { sb, sbAll, entitasBacaSaatIni } from "./api";
 import { getSession } from "./auth";
 import { bangunIndeksAwalan, cocokkanItemManual, kandidatItemManual, normKode } from "./hppGrosirCocok";
 import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
@@ -48,6 +48,50 @@ async function hppMarketplace(dari, sampai) {
   return { total: Math.round(total), tanpaHpp };
 }
 
+// ---------------------------------------------------------
+// HPP MANUAL SEMENTARA (item yang tidak ketemu / ambigu / HPP Master kosong).
+// Disimpan di master_data tipe "hpp_grosir_manual": kode = "<PT>:<NAMA ITEM>", label = angka HPP.
+// Dipakai HANYA kalau HPP dari Master tidak bisa dipakai, jadi begitu Master dibetulkan, HPP Master
+// otomatis menang dan isian sementara ini diabaikan.
+// ---------------------------------------------------------
+export const TIPE_HPP_MANUAL = "hpp_grosir_manual";
+const kodeHppManual = (nama) => `${entitasBacaSaatIni()}:${normKode(nama)}`;
+
+async function muatHppManual() {
+  try {
+    const awalan = `${entitasBacaSaatIni()}:`;
+    const rows = await sbAll(`master_data?select=id,kode,label&tipe=eq.${TIPE_HPP_MANUAL}`);
+    const peta = new Map();
+    for (const r of rows || []) {
+      if (!String(r.kode).startsWith(awalan)) continue;
+      const hpp = num(r.label);
+      if (hpp > 0) peta.set(String(r.kode).slice(awalan.length), { id: r.id, hpp });
+    }
+    return peta;
+  } catch {
+    return new Map(); // master_data belum bisa dibaca -> lanjut tanpa HPP manual
+  }
+}
+
+// idLama = id baris master_data kalau item itu sudah pernah diisi (diubah, bukan dibuat baru).
+export async function simpanHppManual(nama, hpp, idLama) {
+  const nilai = Math.round(num(hpp));
+  if (!(nilai > 0)) throw new Error("HPP harus lebih dari 0");
+  if (idLama) {
+    await sb(`master_data?id=eq.${idLama}`, { method: "PATCH", body: JSON.stringify({ label: String(nilai) }) });
+    return idLama;
+  }
+  const hasil = await sb("master_data", {
+    method: "POST",
+    body: JSON.stringify({ tipe: TIPE_HPP_MANUAL, kode: kodeHppManual(nama), label: String(nilai) }),
+  });
+  return Array.isArray(hasil) ? hasil[0]?.id : hasil?.id;
+}
+
+export async function hapusHppManual(id) {
+  await sb(`master_data?id=eq.${id}`, { method: "DELETE" });
+}
+
 const LABEL_MASALAH = {
   tidakKetemu: "Tidak ketemu di Master",
   ambigu: "Ambigu (beberapa ukuran, HPP berbeda)",
@@ -55,18 +99,19 @@ const LABEL_MASALAH = {
   skuTanpaHpp: "Item dari Data Barang, HPP kosong",
 };
 
-async function hppGrosir(dari, sampai) {
+export async function hppGrosir(dari, sampai) {
   const pesanan = await sbAll(`grosir_pesanan?select=id,status,nomor_pesanan&tanggal=gte.${dari}&tanggal=lte.${sampai}`);
   const aktif = (pesanan || []).filter((p) => p.status !== "Batal");
   const ids = aktif.map((p) => p.id);
   if (ids.length === 0) return { total: 0, tanpaHpp: 0 };
   const nomorPesanan = new Map(aktif.map((p) => [p.id, p.nomor_pesanan]));
 
-  const [detail, master] = await Promise.all([
+  const [detail, master, hppManual] = await Promise.all([
     dalamPotongan(ids, 60, (c) =>
       sbAll(`grosir_detail_pesanan?select=pesanan_id,sku,qty,nama_produk,harga&pesanan_id=in.(${c.join(",")})`)
     ),
     sbAll("sku_master?select=sku,hpp,grosir"),
+    muatHppManual(),
   ]);
   const petaHpp = new Map((master || []).map((m) => [m.sku, m.hpp == null ? null : num(m.hpp)]));
   const indeks = bangunIndeksAwalan(master);
@@ -75,12 +120,24 @@ async function hppGrosir(dari, sampai) {
   let tanpaHpp = 0;
   const hitung = { tidakKetemu: 0, ambigu: 0, tanpaHpp: 0 };
   const masalah = new Map(); // "status|nama" -> baris ringkasan untuk daftar
-  const catat = (status, nama, d) => {
+  const catat = (status, nama, d, manual) => {
     const kunci = `${status}|${normKode(nama)}`;
     let m = masalah.get(kunci);
     if (!m) {
       const kandidat = status === "ambigu" ? kandidatItemManual(indeks, nama).map((k) => `${k.sku} (HPP ${k.hpp}, Grosir ${k.grosir})`).join(" ; ") : "";
-      m = { masalah: LABEL_MASALAH[status], nama: String(nama || "").trim(), jumlahBaris: 0, qty: 0, harga: num(d.harga), pesanan: [], kandidat };
+      m = {
+        kunci: normKode(nama),
+        status,
+        masalah: LABEL_MASALAH[status],
+        nama: String(nama || "").trim(),
+        jumlahBaris: 0,
+        qty: 0,
+        harga: num(d.harga),
+        pesanan: [],
+        kandidat,
+        hppManual: manual ? manual.hpp : 0, // > 0 = sudah diisi sementara
+        idManual: manual ? manual.id : null,
+      };
       masalah.set(kunci, m);
     }
     m.jumlahBaris += 1;
@@ -93,13 +150,19 @@ async function hppGrosir(dari, sampai) {
     let hpp = null;
     if (d.sku) {
       hpp = petaHpp.get(d.sku); // item "Dari Data Barang"
-      if (hpp == null || hpp <= 0) catat("skuTanpaHpp", d.sku, d);
+      if (hpp == null || hpp <= 0) {
+        const man = hppManual.get(normKode(d.sku));
+        catat("skuTanpaHpp", d.sku, d, man);
+        if (man) hpp = man.hpp;
+      }
     } else {
       const r = cocokkanItemManual(indeks, d.nama_produk, d.harga); // item manual
       if (r.status === "cocok") hpp = r.hpp;
       else {
-        hitung[r.status] += 1;
-        catat(r.status, d.nama_produk, d);
+        const man = hppManual.get(normKode(d.nama_produk));
+        catat(r.status, d.nama_produk, d, man);
+        if (man) hpp = man.hpp; // isian sementara dipakai, tidak dihitung sebagai masalah
+        else hitung[r.status] += 1;
       }
     }
     if (hpp == null || hpp <= 0) {

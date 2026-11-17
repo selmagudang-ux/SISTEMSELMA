@@ -334,6 +334,7 @@ export const NAV = [
             children: [
               { key: "semua-pesanan", label: "Semua Pesanan" },
               { key: "produk-manual", label: "Produk Manual" },
+              { key: "cek-hpp", label: "Cek HPP" },
               { key: "laporan", label: "Laporan Grosir" },
             ],
           },
@@ -1108,7 +1109,7 @@ export const ROLE_SUBMENUS = {
     // "pelanggan" dan "toko" (Toko Pengirim) sudah tidak di sini lagi —
     // sekarang masing-masing jadi menu sendiri (lihat ROLE_MENUS.grosir),
     // bukan sub dari "grosir".
-    grosir: ["pesanan", "semua-pesanan", "produk-manual", "laporan"],
+    grosir: ["pesanan", "semua-pesanan", "produk-manual", "cek-hpp", "laporan"],
   },
 };
 
