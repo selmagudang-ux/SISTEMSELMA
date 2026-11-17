@@ -1628,6 +1628,129 @@ function SaldoAwalBulan({ keuanganTransaksi, rekeningList, saldoAwalList, reload
 // pengeluaran per kategori, saldo per rekening, dan unduh laporan (CSV /
 // narasi WhatsApp). Dipisah dari halaman Transaksi supaya Transaksi tetap
 // ringkas (cuma daftar catatan), sementara semua "angka besar" ada di sini.
+// Neraca (Aktiva = Pasiva). MASIH TEMPLATE: strukturnya sudah ada, angkanya
+// belum terhubung ke data — diisi bertahap per pos. Cara mengisi pos: kirim
+// peta { [kunci]: angka } lewat prop `nilai` (kunci = lihat NERACA_STRUKTUR).
+// Pos bertanda `pengurang` mengurangi total kelompoknya (mis. prive, penyusutan).
+const NERACA_STRUKTUR = {
+  aktiva: [
+    {
+      kunci: "lancar",
+      judul: "Aktiva Lancar",
+      baris: [
+        { kunci: "kas_kecil", label: "Kas Kecil" },
+        { kunci: "bank", label: "Bank" },
+        { kunci: "saldo_marketplace", label: "Saldo Marketplace" },
+        { kunci: "piutang_grosir", label: "Piutang Grosir" },
+        { kunci: "piutang_pemilik", label: "Piutang Pemilik" },
+        { kunci: "piutang_antar_entitas", label: "Piutang Antar Entitas" },
+        { kunci: "persediaan", label: "Persediaan Barang" },
+        { kunci: "uang_muka", label: "Uang Muka" },
+      ],
+    },
+    {
+      kunci: "tetap",
+      judul: "Aktiva Tetap",
+      baris: [
+        { kunci: "peralatan", label: "Peralatan & Perlengkapan" },
+        { kunci: "kendaraan", label: "Kendaraan" },
+        { kunci: "akum_penyusutan", label: "Akumulasi Penyusutan", pengurang: true },
+      ],
+    },
+  ],
+  pasiva: [
+    {
+      kunci: "kewajiban",
+      judul: "Kewajiban (Utang)",
+      baris: [
+        { kunci: "titipan_deposit", label: "Titipan Deposit Reseller / Mitra" },
+        { kunci: "utang_supplier", label: "Utang ke Supplier" },
+        { kunci: "utang_pusat", label: "Utang Pusat" },
+        { kunci: "utang_lain", label: "Utang Lain" },
+      ],
+    },
+    {
+      kunci: "modal",
+      judul: "Modal (Ekuitas)",
+      baris: [
+        { kunci: "modal_disetor", label: "Modal Disetor Pemilik" },
+        { kunci: "prive", label: "Prive / Dividen", pengurang: true },
+        { kunci: "laba_ditahan", label: "Laba Ditahan" },
+        { kunci: "laba_berjalan", label: "Laba (Rugi) Tahun Berjalan" },
+      ],
+    },
+  ],
+};
+
+function NeracaLaporan({ nilai = {} }) {
+  const angka = (kunci) => (nilai[kunci] === undefined || nilai[kunci] === null ? null : Number(nilai[kunci]) || 0);
+  const totalKelompok = (g) => g.baris.reduce((a, b) => a + (b.pengurang ? -1 : 1) * (angka(b.kunci) || 0), 0);
+  const totalSisi = (sisi) => NERACA_STRUKTUR[sisi].reduce((a, g) => a + totalKelompok(g), 0);
+  const totalAktiva = totalSisi("aktiva");
+  const totalPasiva = totalSisi("pasiva");
+  const selisih = totalAktiva - totalPasiva;
+  const adaIsi = Object.values(nilai).some((v) => v !== undefined && v !== null);
+
+  const tampil = (v, pengurang) => (v === null ? "-" : pengurang ? `(${fmtRp(v)})` : fmtRp(v));
+
+  const Sisi = ({ sisi, judul, warna, total }) => (
+    <div className="rounded-xl border border-slate-800 overflow-hidden">
+      <div className={`px-4 py-2.5 text-sm font-semibold border-b border-slate-800 ${warna}`}>{judul}</div>
+      {NERACA_STRUKTUR[sisi].map((g) => (
+        <div key={g.kunci}>
+          <div className="px-4 py-1.5 text-[11px] uppercase tracking-wide text-slate-500 bg-slate-900/60 border-b border-slate-800/60">{g.judul}</div>
+          {g.baris.map((b) => {
+            const v = angka(b.kunci);
+            return (
+              <div key={b.kunci} className="flex items-center justify-between gap-3 px-4 py-1.5 text-xs border-b border-slate-800/40">
+                <span className="text-slate-300">
+                  {b.label}
+                  {b.pengurang && <span className="text-slate-600"> (pengurang)</span>}
+                </span>
+                <span className={v === null ? "text-slate-600" : "text-slate-100"}>{tampil(v, b.pengurang)}</span>
+              </div>
+            );
+          })}
+          <div className="flex items-center justify-between gap-3 px-4 py-1.5 text-xs font-medium bg-slate-900/40 border-b border-slate-800">
+            <span className="text-slate-400">Total {g.judul}</span>
+            <span className="text-slate-200">{adaIsi ? fmtRp(totalKelompok(g)) : "-"}</span>
+          </div>
+        </div>
+      ))}
+      <div className={`flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-semibold ${warna}`}>
+        <span>Total {judul}</span>
+        <span>{adaIsi ? fmtRp(total) : "-"}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="mb-4 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
+        Template Neraca — strukturnya sudah ada, angkanya belum terhubung ke data. Diisi bertahap per pos.
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Sisi sisi="aktiva" judul="AKTIVA" warna="text-emerald-400 bg-emerald-500/5" total={totalAktiva} />
+        <Sisi sisi="pasiva" judul="PASIVA" warna="text-sky-300 bg-sky-500/5" total={totalPasiva} />
+      </div>
+      <div
+        className={`rounded-xl border px-4 py-3 text-xs flex flex-wrap items-center justify-between gap-2 ${
+          !adaIsi
+            ? "border-slate-800 bg-slate-900/50 text-slate-500"
+            : Math.round(selisih) === 0
+              ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
+              : "border-red-500/30 bg-red-500/5 text-red-400"
+        }`}
+      >
+        <span>Aktiva = Pasiva</span>
+        <span className="font-semibold">
+          {!adaIsi ? "Belum diisi" : Math.round(selisih) === 0 ? "Seimbang" : `Belum seimbang — selisih ${fmtRp(Math.abs(selisih))}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Tab di halaman Laporan Keuangan.
 const TAB_LAPORAN = [
   { key: "saldo-kas", label: "Saldo Kas" },
@@ -1845,11 +1968,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
         </>
       )}
 
-      {tabLaporan === "neraca" && (
-        <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/30 text-slate-500 text-xs px-4 py-10 text-center">
-          Neraca belum diisi. Tab ini sengaja dibiarkan kosong dulu.
-        </div>
-      )}
+      {tabLaporan === "neraca" && <NeracaLaporan />}
 
       {detailKategori && detailKategori.isGrup && (
         <DetailKelompokModal
