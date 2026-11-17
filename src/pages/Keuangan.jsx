@@ -34,6 +34,10 @@ import {
   rekapTahunanData,
   laporanLabaRugi,
   setoranSebagaiPemasukan,
+  saringLabaRugi,
+  dikecualikanLabaRugi,
+  saranPendapatanLabaRugi,
+  tujuanKategori,
   renameRekeningKode,
   renameKategoriKode,
   sb,
@@ -1662,8 +1666,11 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   // yang dipetakan ke kelompok yang sama digabung jadi satu baris di grafik.
   const dataMasukGrup = kelompokkanBreakdown(breakdownMasuk.data, master.kelompok_masuk, breakdownMasuk.total);
   const dataKeluarGrup = kelompokkanBreakdown(breakdownKeluar.data, master.kelompok_keluar, breakdownKeluar.total);
+  // Laba Rugi: kategori yang tujuannya Neraca (Pengaturan > Rekening & Kategori > Masuk ke Laporan) tidak dihitung.
+  const dataLabaRugi = saringLabaRugi(dataRentang, master);
+  const dikecualikan = dikecualikanLabaRugi(list, master);
   const labaRugi = laporanLabaRugi(
-    dataRentang,
+    dataLabaRugi,
     kategoriMasukList,
     kategoriKeluarList,
     dari || null,
@@ -1827,6 +1834,27 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
 
       {tabLaporan === "laba-rugi" && (
         <>
+          {(dikecualikan.masuk.total > 0 || dikecualikan.keluar.total > 0) && (
+            <div className="mb-4 px-3 py-2.5 rounded-lg text-[11px] text-sky-300 bg-sky-500/5 border border-sky-500/20">
+              <div className="font-medium mb-1">Tidak dihitung di Laba Rugi (diarahkan ke Neraca)</div>
+              <div className="text-slate-400 mb-1.5">
+                Diatur di Keuangan → Pengaturan → Rekening &amp; Kategori → Masuk ke Laporan. Saldo kas dan Laporan Arus Kas tidak terpengaruh.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {dikecualikan.masuk.data.map((d) => (
+                  <span key={`m-${d.kode}`} className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    Pemasukan: {d.label} · {fmtRp(d.jumlah)}
+                  </span>
+                ))}
+                {dikecualikan.keluar.data.map((d) => (
+                  <span key={`k-${d.kode}`} className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                    Pengeluaran: {d.label} · {fmtRp(d.jumlah)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <LaporanLabaRugi
             pendapatan={labaRugi.pendapatan}
             beban={labaRugi.beban}
@@ -1962,7 +1990,7 @@ function LaporanBulananTahunan({ keuanganTransaksi: keuanganDimuat, master, enti
   // App.jsx hanya memuat bulan berjalan + 1 bulan sebelumnya; laporan
   // bulanan/tahunan butuh seluruh histori, jadi data lamanya ditarik sendiri.
   const { data: dataSemuaAsli, status: errLama } = useKeuanganRentang(keuanganDimuat, null);
-  const keuanganTransaksi = setoranSebagaiPemasukan(dataSemuaAsli, master, entitasKode);
+  const keuanganTransaksi = saringLabaRugi(setoranSebagaiPemasukan(dataSemuaAsli, master, entitasKode), master);
   const [mode, setMode] = useState("bulanan"); // "bulanan" | "tahunan"
   const [terbuka, setTerbuka] = useState(() => new Set());
   const toggle = (k) =>
@@ -2372,6 +2400,172 @@ function PengelompokanKategori({ master, reload, showToast, draft, setDraft }) {
   );
 }
 
+// Tab "Masuk ke Laporan": tiap kategori (pemasukan / pengeluaran) dipilih masuk
+// ke Laporan Laba Rugi atau ke Neraca. Contoh: modal dari owner, titipan deposit,
+// dan penggantian kontrakan BUKAN omzet -> Neraca; penjualan -> Laba Rugi.
+// Disimpan di master_data tipe "laporan_masuk" / "laporan_keluar" (kode = kode
+// kategori, label = "neraca"); kategori tanpa baris = Laba Rugi. Pola simpan
+// sama seperti PengelompokanKategori: ubah banyak, lalu satu kali Simpan.
+// draft = { masuk: { [kode]: "laba_rugi"|"neraca" }, keluar: {...} } (belum disimpan).
+function TujuanLaporanKategori({ master, reload, showToast, draft, setDraft }) {
+  const [tipe, setTipe] = useState("masuk");
+  const [menyimpan, setMenyimpan] = useState(false);
+
+  const info = {
+    masuk: { kategori: "kategori_masuk", tujuan: "laporan_masuk", labelLR: "Pendapatan" },
+    keluar: { kategori: "kategori_keluar", tujuan: "laporan_keluar", labelLR: "Beban" },
+  };
+  const kategoriList = master[info[tipe].kategori] || [];
+  const sekarang = (t, kode) => draft[t]?.[kode] ?? tujuanKategori(master, t, kode);
+  const pilih = (t, kode, nilai) => setDraft((d) => ({ ...d, [t]: { ...(d[t] || {}), [kode]: nilai } }));
+
+  const perubahan = [];
+  ["masuk", "keluar"].forEach((t) => {
+    Object.entries(draft[t] || {}).forEach(([kode, nilai]) => {
+      if (nilai !== tujuanKategori(master, t, kode)) perubahan.push({ t, kode, nilai });
+    });
+  });
+  const berubahIni = new Set(perubahan.filter((x) => x.t === tipe).map((x) => x.kode));
+
+  const jumlahNeraca = kategoriList.filter((m) => sekarang(tipe, m.kode) === "neraca").length;
+
+  // Isi otomatis (hanya mengisi draft, belum disimpan): kode penjualan -> Laba Rugi, sisanya -> Neraca.
+  const isiSaran = () =>
+    setDraft((d) => ({
+      ...d,
+      masuk: {
+        ...(d.masuk || {}),
+        ...Object.fromEntries((master.kategori_masuk || []).map((m) => [m.kode, saranPendapatanLabaRugi(m.kode) ? "laba_rugi" : "neraca"])),
+      },
+    }));
+
+  const simpanSemua = async () => {
+    setMenyimpan(true);
+    let gagal = 0;
+    for (const x of perubahan) {
+      try {
+        const ada = (master[info[x.t].tujuan] || []).find((m) => m.kode === x.kode);
+        if (x.nilai === "neraca") {
+          if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: "neraca" }) });
+          else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: info[x.t].tujuan, kode: x.kode, label: "neraca" }) });
+        } else if (ada) {
+          await sb(`master_data?id=eq.${ada.id}`, { method: "DELETE" });
+        }
+      } catch (e) {
+        gagal += 1;
+      }
+    }
+    try {
+      await reload();
+    } catch (e) {
+      /* abaikan — data ikut termuat saat refresh berikutnya */
+    }
+    setMenyimpan(false);
+    if (gagal > 0) showToast(`${gagal} perubahan gagal disimpan — coba simpan lagi`, "err");
+    else {
+      setDraft({});
+      showToast(`${perubahan.length} perubahan disimpan`);
+    }
+  };
+
+  const tombol = (aktif, warna) =>
+    `px-3 py-1.5 rounded-md text-[11px] font-medium transition border ${
+      aktif ? warna : "border-transparent text-slate-500 hover:text-slate-300"
+    }`;
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex flex-wrap gap-1.5 mb-3 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {[
+          { key: "masuk", label: "Pemasukan" },
+          { key: "keluar", label: "Pengeluaran" },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTipe(t.key)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${tipe === t.key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="text-[11px] text-slate-500 mb-3">
+        Pilih tiap kategori masuk ke <span className="text-slate-300">Laba Rugi</span> ({info[tipe].labelLR.toLowerCase()} usaha) atau{" "}
+        <span className="text-slate-300">Neraca</span> (modal, utang/titipan, piutang — bukan omzet atau biaya). Kategori yang dipilih Neraca tidak
+        dihitung di Laporan Laba Rugi; saldo kas dan Laporan Arus Kas tidak berubah. Ubah sebanyak yang Anda mau, lalu klik{" "}
+        <span className="text-slate-300">Simpan Perubahan</span> sekali saja.
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="text-[11px] text-slate-400">
+          {kategoriList.length - jumlahNeraca} ke Laba Rugi · {jumlahNeraca} ke Neraca
+        </div>
+        {tipe === "masuk" && (
+          <button
+            onClick={isiSaran}
+            className="text-[11px] font-medium text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded-lg px-3 py-1.5"
+            title="Kode penjualan (GROSIR, OFFLINE, CAIR, PLL, dst) ke Laba Rugi, kategori pemasukan lain ke Neraca. Belum tersimpan sebelum Anda klik Simpan Perubahan."
+          >
+            Isi otomatis dari daftar penjualan
+          </button>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-slate-800 overflow-hidden">
+        <div className="grid grid-cols-[1.4fr_auto] gap-2 px-4 py-2 text-[11px] uppercase text-slate-500 border-b border-slate-800">
+          <div>Kategori</div>
+          <div>Masuk ke</div>
+        </div>
+        {kategoriList.length === 0 ? (
+          <div className="px-4 py-8 text-center text-slate-500 text-sm">Belum ada kategori.</div>
+        ) : (
+          kategoriList.map((m, i) => {
+            const v = sekarang(tipe, m.kode);
+            return (
+              <div
+                key={`${tipe}-${m.id}`}
+                className={`grid grid-cols-[1.4fr_auto] gap-2 items-center px-4 py-2 ${i % 2 ? "bg-slate-950" : "bg-slate-900"} ${berubahIni.has(m.kode) ? "ring-1 ring-inset ring-amber-500/40" : ""}`}
+              >
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-200 truncate">{m.label}</div>
+                  <div className="font-mono text-[10px] text-amber-400/80">{m.kode}</div>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5">
+                  <button onClick={() => pilih(tipe, m.kode, "laba_rugi")} className={tombol(v === "laba_rugi", "bg-emerald-500/15 border-emerald-500/40 text-emerald-400")}>
+                    Laba Rugi
+                  </button>
+                  <button onClick={() => pilih(tipe, m.kode, "neraca")} className={tombol(v === "neraca", "bg-sky-500/15 border-sky-500/40 text-sky-300")}>
+                    Neraca
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {perubahan.length > 0 && (
+        <div className="sticky bottom-3 mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-slate-900 px-4 py-3 shadow-lg">
+          <span className="text-xs text-amber-300">{perubahan.length} perubahan belum disimpan</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setDraft({})} disabled={menyimpan} className="text-xs text-slate-400 hover:text-slate-200 px-3 py-2 rounded-lg disabled:opacity-40">
+              Batalkan
+            </button>
+            <button
+              onClick={simpanSemua}
+              disabled={menyimpan}
+              className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-4 py-2 rounded-lg"
+            >
+              {menyimpan ? "Menyimpan…" : "Simpan Perubahan"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Halaman kelola daftar Rekening & Kategori yang didaftarkan user sendiri.
 // Disimpan di tabel master_data yang sama dipakai untuk kode SKU (bahan,
 // warna, dst), tapi dengan tipe berbeda supaya tidak tercampur:
@@ -2386,6 +2580,8 @@ const TAB_KEUANGAN = [
   { key: "kategori_keluar", label: "Kategori Pengeluaran", placeholderKode: "GAJI", placeholderLabel: "Gaji Karyawan" },
   // Tab khusus (bukan daftar kode/nama biasa) — lihat PengelompokanKategori.
   { key: "pengelompokan", label: "Kategori & Sub Kategori" },
+  // Tujuan laporan tiap kategori (Laba Rugi / Neraca) — lihat TujuanLaporanKategori.
+  { key: "tujuan", label: "Masuk ke Laporan" },
 ];
 
 
@@ -2668,6 +2864,8 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
   const [activeTab, setActiveTab] = useState("rekening");
   // Isian tab "Kategori & Sub Kategori" yang belum disimpan (lihat PengelompokanKategori).
   const [draftKelompok, setDraftKelompok] = useState({});
+  // Isian tab "Masuk ke Laporan" yang belum disimpan (lihat TujuanLaporanKategori).
+  const [draftTujuan, setDraftTujuan] = useState({});
   const [kode, setKode] = useState("");
   const [label, setLabel] = useState("");
   const [kodeTouched, setKodeTouched] = useState(false);
@@ -2850,6 +3048,19 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
         ))}
       </div>
   );
+
+  if (activeTab === "tujuan") {
+    return (
+      <div>
+        <PageHeader
+          title="Rekening & Kategori"
+          description="Tentukan tiap kategori masuk ke Laporan Laba Rugi atau ke Neraca."
+        />
+        {tabBar}
+        <TujuanLaporanKategori master={master} reload={reload} showToast={showToast} draft={draftTujuan} setDraft={setDraftTujuan} />
+      </div>
+    );
+  }
 
   if (activeTab === "pengelompokan") {
     return (

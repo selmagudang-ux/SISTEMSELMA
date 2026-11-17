@@ -992,7 +992,8 @@ export async function renameKategoriKode({ masterDataId, tipe, oldKode, newKode,
 
   const jumlahTransaksi = await gantiKolomKode("keuangan_transaksi", "kategori", oldKode, newKode, `&tipe=eq.${jenis}`);
 
-  const kelompok = (await sbAll(`master_data?select=id&tipe=eq.${tipeKelompok}&kode=eq.${encKode(oldKode)}`)) || [];
+  const tipeTujuan = tipe === "kategori_masuk" ? "laporan_masuk" : "laporan_keluar";
+  const kelompok = (await sbAll(`master_data?select=id&tipe=in.(${tipeKelompok},${tipeTujuan})&kode=eq.${encKode(oldKode)}`)) || [];
   for (const m of kelompok) {
     await sb(`master_data?id=eq.${m.id}`, { method: "PATCH", body: JSON.stringify({ kode: newKode }) });
   }
@@ -2502,6 +2503,79 @@ export function bukanLabaRugi(t) {
   if (t.tipe === "keluar") return t.penanda === "prive_dividen" || t.penanda === "pinjaman_pemilik";
   if (t.tipe === "masuk") return t.penanda === "pelunasan_pemilik" || t.penanda === "setoran_modal";
   return false;
+}
+
+// =========================================================
+// TUJUAN LAPORAN PER KATEGORI (Laba Rugi atau Neraca)
+// Diatur user di Keuangan > Pengaturan > Rekening & Kategori > "Masuk ke Laporan".
+// Disimpan di master_data tipe "laporan_masuk" / "laporan_keluar":
+//   kode = kode kategori, label = "neraca".
+// Kategori TANPA baris = Laba Rugi (perilaku lama, jadi tidak ada yang hilang
+// diam-diam). Kategori bertujuan "neraca" (mis. modal owner, titipan deposit,
+// penggantian kontrakan) tidak dihitung sebagai pendapatan/beban di Laporan
+// Laba Rugi. Saldo kas & laporan arus kas TIDAK terpengaruh.
+// =========================================================
+export const TUJUAN_LAPORAN = { laba_rugi: "Laba Rugi", neraca: "Neraca" };
+
+// Kode pemasukan yang dianggap pendapatan penjualan — dipakai HANYA sebagai
+// saran isian otomatis di halaman pengaturan (user tetap bisa mengubahnya).
+export const PENDAPATAN_LABA_RUGI = {
+  "Penjualan Grosir & Reseller": ["GROSIR", "GROSIR TF", "RT"],
+  "Penjualan Store Offline": ["OFFLINE", "OFFLINE QRIS", "OFFLINE TF"],
+  "Penjualan Marketplace": ["CAIR", "LSA", "SA", "SGJ", "SMJ", "SSA", "RCTG", "TA", "TGJ", "TMJ", "TSA"],
+  "Pendapatan Lain-Lain": ["PLL"],
+};
+// Pencocokan tidak peka huruf besar/kecil dan abaikan spasi, "_" dan "-".
+function kunciKategori(k) {
+  return String(k ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+const KUNCI_SARAN_PENDAPATAN = new Set(Object.values(PENDAPATAN_LABA_RUGI).flat().map(kunciKategori));
+export function saranPendapatanLabaRugi(kode) {
+  return KUNCI_SARAN_PENDAPATAN.has(kunciKategori(kode));
+}
+
+// "laba_rugi" | "neraca" untuk satu kategori. tipe = "masuk" | "keluar".
+export function tujuanKategori(master, tipe, kode) {
+  const list = (master && master[tipe === "masuk" ? "laporan_masuk" : "laporan_keluar"]) || [];
+  const m = list.find((x) => x.kode === kode);
+  return m && m.label === "neraca" ? "neraca" : "laba_rugi";
+}
+
+function kodeKeNeraca(master) {
+  const kumpul = (key) => new Set(((master && master[key]) || []).filter((m) => m.label === "neraca").map((m) => m.kode));
+  return { masuk: kumpul("laporan_masuk"), keluar: kumpul("laporan_keluar") };
+}
+
+// Buang transaksi kategori bertujuan Neraca dari daftar untuk Laporan Laba Rugi.
+export function saringLabaRugi(transaksi, master) {
+  const n = kodeKeNeraca(master);
+  if (n.masuk.size === 0 && n.keluar.size === 0) return transaksi;
+  return (transaksi || []).filter((t) => {
+    if (t.tipe === "masuk") return !n.masuk.has(t.kategori || "");
+    if (t.tipe === "keluar") return !n.keluar.has(t.kategori || "");
+    return true;
+  });
+}
+
+// Yang disaring di atas, dikelompokkan per kategori — buat catatan di layar.
+export function dikecualikanLabaRugi(transaksi, master) {
+  const n = kodeKeNeraca(master);
+  const hasil = { masuk: { total: 0, data: [] }, keluar: { total: 0, data: [] } };
+  [["masuk", "kategori_masuk"], ["keluar", "kategori_keluar"]].forEach(([tipe, keyKategori]) => {
+    const map = new Map();
+    (transaksi || []).forEach((t) => {
+      if (t.tipe !== tipe || bukanLabaRugi(t) || !n[tipe].has(t.kategori || "")) return;
+      const kode = t.kategori || "";
+      if (!map.has(kode)) {
+        const found = ((master && master[keyKategori]) || []).find((k) => k.kode === kode);
+        map.set(kode, { kode, label: found ? found.label : kode, jumlah: 0 });
+      }
+      map.get(kode).jumlah += Number(t.jumlah) || 0;
+    });
+    const data = Array.from(map.values()).sort((x, y) => y.jumlah - x.jumlah);
+    hasil[tipe] = { total: data.reduce((acc, d) => acc + d.jumlah, 0), data };
+  });
+  return hasil;
 }
 
 export function petaEntitasRekening(list) {

@@ -28,6 +28,7 @@ import {
   breakdownPengeluaranKategori,
   breakdownPemasukanKategori,
   laporanLabaRugi,
+  saringLabaRugi,
   arusKasPerPeriode,
   kelompokkanBreakdown,
   ringkasanGrosir,
@@ -438,7 +439,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   const dataKeluarGrup = kelompokkanBreakdown(breakdown.data, master.kelompok_keluar, breakdown.total);
 
   const labaRugiBulanIni = laporanLabaRugi(
-    keuanganTransaksi,
+    saringLabaRugi(keuanganTransaksi, master),
     master.kategori_masuk || [],
     master.kategori_keluar || [],
     dari,
