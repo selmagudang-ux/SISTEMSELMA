@@ -16,6 +16,8 @@
 export const LAYAR_HP = {
   "stok/barang": { muat: () => import("./StokHp.jsx") },
   "stok/menipis": { muat: () => import("./StokHp.jsx") },
+  // Pengadaan Barang: satu layar menangani 4 sub-menu (datang / habis-pakai / aset / supplier).
+  "barang-datang": { muat: () => import("./PengadaanHp.jsx") },
 };
 
 export const kunciLayar = (menuKey, subKey) => (subKey ? `${menuKey}/${subKey}` : menuKey);
