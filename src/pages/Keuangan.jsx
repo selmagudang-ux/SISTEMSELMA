@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
+import { usePersediaanToko } from "./kasir/persediaanToko";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -1876,6 +1877,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
+  // Persediaan Barang di Neraca = stok Barang Toko x HPP; dimuat hanya saat tab Neraca dibuka.
+  const persediaanToko = usePersediaanToko(tabLaporan === "neraca");
   const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
   const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
@@ -2085,6 +2088,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             // Sama persis dengan Total Kas Kecil / Total Kas Bank di tab Saldo Kas.
             kas_kecil: saldoKas.kecil,
             bank: saldoKas.bank,
+            // Stok Barang Toko x HPP (stok gudang belum ikut).
+            persediaan: persediaanToko.data ? persediaanToko.data.nilai : undefined,
           }}
         />
       )}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { usePersediaanToko } from "./persediaanToko";
 import { Wallet, Landmark, TrendingUp, Receipt, Package, Undo2, Ban, Download, RefreshCw, CheckCircle2, AlertTriangle, Loader2, Search, PiggyBank, Percent, Boxes } from "lucide-react";
 import { StatCard, EmptyState, Badge, InputTanggal, formatTanggalID } from "../../components/ui";
 import { fmtRp } from "../../lib/api";
@@ -117,6 +118,9 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
 
   const { memuat, error, data } = useRekapKasir({ session, dari: rentangValid ? dari : "", sampai, denganItem: barangBoleh, denganShift: true, versi });
   const mulai = useTanggalMulaiKasir(true);
+  // Nilai persediaan toko = stok sekarang x HPP (tidak tergantung rentang tanggal). Hanya untuk role yang boleh lihat modal.
+  const bolehModal = bisa(session?.role, "kasir.lihat_semua");
+  const persediaan = usePersediaanToko(bolehModal, versi);
   const { data: keuangan } = useKeuanganRentang(keuanganTransaksi, dari);
 
   const pilihPreset = (kunci, d, s) => {
@@ -263,6 +267,19 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
             <StatCard label={`Retur (${r.returCount} transaksi)`} value={fmtRp(r.retur)} icon={Undo2} iconColor="text-amber-400" />
             <StatCard label="Void" value={r.voidCount} icon={Ban} iconColor="text-red-400" />
           </div>
+          {bolehModal && persediaan.data && (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                <StatCard label="Nilai Persediaan Toko (stok × HPP)" value={fmtRp(persediaan.data.nilai)} icon={Boxes} iconColor="text-violet-400" />
+                <StatCard label="Jumlah Barang di Toko" value={`${persediaan.data.pcs} pcs`} icon={Package} />
+                <StatCard label="Jenis Barang Ber-stok" value={persediaan.data.jenis} icon={Package} />
+                <StatCard label="Stok Tanpa HPP" value={persediaan.data.tanpaHpp} icon={AlertTriangle} iconColor={persediaan.data.tanpaHpp ? "text-amber-400" : "text-md-on-surface-variant"} />
+              </div>
+              <div className="text-[11px] text-md-on-surface-variant mb-5">
+                Posisi stok saat ini (bukan per rentang tanggal), masuk ke pos Persediaan Barang di Neraca. Barang tanpa HPP dihitung Rp 0.
+              </div>
+            </>
+          )}
           {bolehLaba && r.laba !== null && (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
