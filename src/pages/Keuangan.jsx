@@ -35,7 +35,6 @@ import {
   laporanLabaRugi,
   setoranSebagaiPemasukan,
   saringLabaRugi,
-  dikecualikanLabaRugi,
   saranPendapatanLabaRugi,
   tujuanKategori,
   renameRekeningKode,
@@ -1668,7 +1667,6 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const dataKeluarGrup = kelompokkanBreakdown(breakdownKeluar.data, master.kelompok_keluar, breakdownKeluar.total);
   // Laba Rugi: kategori yang tujuannya Neraca (Pengaturan > Rekening & Kategori > Masuk ke Laporan) tidak dihitung.
   const dataLabaRugi = saringLabaRugi(dataRentang, master);
-  const dikecualikan = dikecualikanLabaRugi(list, master);
   const labaRugi = laporanLabaRugi(
     dataLabaRugi,
     kategoriMasukList,
@@ -1834,27 +1832,6 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
 
       {tabLaporan === "laba-rugi" && (
         <>
-          {(dikecualikan.masuk.total > 0 || dikecualikan.keluar.total > 0) && (
-            <div className="mb-4 px-3 py-2.5 rounded-lg text-[11px] text-sky-300 bg-sky-500/5 border border-sky-500/20">
-              <div className="font-medium mb-1">Tidak dihitung di Laba Rugi (diarahkan ke Neraca)</div>
-              <div className="text-slate-400 mb-1.5">
-                Diatur di Keuangan → Pengaturan → Rekening &amp; Kategori → Masuk ke Laporan. Saldo kas dan Laporan Arus Kas tidak terpengaruh.
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {dikecualikan.masuk.data.map((d) => (
-                  <span key={`m-${d.kode}`} className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                    Pemasukan: {d.label} · {fmtRp(d.jumlah)}
-                  </span>
-                ))}
-                {dikecualikan.keluar.data.map((d) => (
-                  <span key={`k-${d.kode}`} className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                    Pengeluaran: {d.label} · {fmtRp(d.jumlah)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           <LaporanLabaRugi
             pendapatan={labaRugi.pendapatan}
             beban={labaRugi.beban}
