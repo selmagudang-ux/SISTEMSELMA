@@ -49,3 +49,8 @@ export function cocokkanItemManual(indeks, namaProduk, hargaPesanan) {
   if (!(hpp > 0)) return { status: "tanpaHpp", hpp: 0 };
   return { status: "cocok", hpp };
 }
+
+// Kandidat SKU Master untuk satu nama item manual (dipakai untuk menjelaskan item "ambigu").
+export function kandidatItemManual(indeks, namaProduk) {
+  return indeks.get(normKode(namaProduk)) || [];
+}

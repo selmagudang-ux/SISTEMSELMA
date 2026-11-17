@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
@@ -42,6 +42,7 @@ import {
   sb,
 } from "../lib/api";
 import { useHppPenjualan } from "../lib/hppPenjualan";
+import { downloadCsv } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING, bisa, roleHanyaLihat } from "../lib/constants";
@@ -882,6 +883,7 @@ function kunciSemuaKelompok(data, seksi) {
 
 export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, onKategoriClick, hpp = null, labaKotor = null }) {
   const untung = labaRugi >= 0;
+  const [lihatMasalahHpp, setLihatMasalahHpp] = useState(false);
   const [terbuka, setTerbuka] = useState(() => new Set());
   const toggle = (k) =>
     setTerbuka((s) => {
@@ -941,14 +943,78 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
                 ["grosir", "HPP Penjualan Grosir"],
                 ["toko", "HPP Penjualan Toko"],
               ].map(([k, label]) => (
-                <tr key={k}>
-                  <td className="px-4 py-1.5 pl-8 text-slate-300">
-                    {label}
-                    {hpp.galat?.[k] && <span className="ml-2 text-[11px] text-amber-400">(gagal dimuat: {hpp.galat[k]})</span>}
-                    {hpp.catatan?.[k] && <span className="ml-2 text-[11px] text-amber-400">({hpp.catatan[k]})</span>}
-                  </td>
-                  <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(hpp[k] || 0)}</td>
-                </tr>
+                <Fragment key={k}>
+                  <tr>
+                    <td className="px-4 py-1.5 pl-8 text-slate-300">
+                      {label}
+                      {hpp.galat?.[k] && <span className="ml-2 text-[11px] text-amber-400">(gagal dimuat: {hpp.galat[k]})</span>}
+                      {hpp.catatan?.[k] && <span className="ml-2 text-[11px] text-amber-400">({hpp.catatan[k]})</span>}
+                      {hpp.daftar?.[k]?.length > 0 && (
+                        <button onClick={() => setLihatMasalahHpp((v) => !v)} className="ml-2 text-[11px] font-medium text-sky-400 hover:text-sky-300">
+                          {lihatMasalahHpp ? "Sembunyikan daftar" : `Lihat daftar (${hpp.daftar[k].length} item)`}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(hpp[k] || 0)}</td>
+                  </tr>
+                  {lihatMasalahHpp && hpp.daftar?.[k]?.length > 0 && (
+                    <tr>
+                      <td colSpan={2} className="px-4 py-2 bg-slate-900/40">
+                        <div className="flex items-center justify-between mb-2 gap-3">
+                          <div className="text-[11px] text-slate-400">Item yang HPP-nya belum bisa dihitung (urut dari qty terbanyak). Perbaiki di Master Barang atau di pesanannya.</div>
+                          <button
+                            onClick={() =>
+                              downloadCsv(
+                                `hpp-${k}-bermasalah.csv`,
+                                [
+                                  { key: "masalah", label: "Masalah" },
+                                  { key: "nama", label: "Nama Item" },
+                                  { key: "qty", label: "Total Qty" },
+                                  { key: "jumlahBaris", label: "Jumlah Baris" },
+                                  { key: "harga", label: "Harga di Pesanan" },
+                                  { key: "pesananTeks", label: "Contoh Pesanan" },
+                                  { key: "kandidat", label: "Kandidat SKU Master" },
+                                ],
+                                hpp.daftar[k].map((m) => ({ ...m, pesananTeks: m.pesanan.join(" ; ") }))
+                              )
+                            }
+                            className="text-[11px] font-medium text-sky-400 hover:text-sky-300 whitespace-nowrap"
+                          >
+                            Unduh CSV
+                          </button>
+                        </div>
+                        <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                          <table className="w-full text-[11px]">
+                            <thead>
+                              <tr className="text-left text-slate-500">
+                                <th className="py-1 pr-3 font-medium">Item</th>
+                                <th className="py-1 pr-3 font-medium">Masalah</th>
+                                <th className="py-1 pr-3 font-medium text-right">Qty</th>
+                                <th className="py-1 pr-3 font-medium text-right">Harga</th>
+                                <th className="py-1 font-medium">Contoh pesanan</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {hpp.daftar[k].slice(0, 100).map((m) => (
+                                <tr key={m.masalah + m.nama} className="border-t border-slate-800/60 align-top">
+                                  <td className="py-1 pr-3 text-slate-200 font-mono">
+                                    {m.nama}
+                                    {m.kandidat && <div className="text-[10px] text-slate-500 font-sans">{m.kandidat}</div>}
+                                  </td>
+                                  <td className="py-1 pr-3 text-amber-400">{m.masalah}</td>
+                                  <td className="py-1 pr-3 text-right text-slate-300">{m.qty}</td>
+                                  <td className="py-1 pr-3 text-right text-slate-300">{fmtRp(m.harga)}</td>
+                                  <td className="py-1 text-slate-400">{m.pesanan.join(", ")}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {hpp.daftar[k].length > 100 && <div className="pt-2 text-[11px] text-slate-500">Menampilkan 100 teratas dari {hpp.daftar[k].length}. Unduh CSV untuk daftar lengkap.</div>}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               <tr className="bg-slate-900/60">
                 <td className="px-4 py-2 font-semibold text-slate-100">Total HPP</td>

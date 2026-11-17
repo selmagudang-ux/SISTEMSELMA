@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { sbAll } from "./api";
 import { getSession } from "./auth";
-import { bangunIndeksAwalan, cocokkanItemManual } from "./hppGrosirCocok";
+import { bangunIndeksAwalan, cocokkanItemManual, kandidatItemManual, normKode } from "./hppGrosirCocok";
 import { muatRekapKasir, olahRekap } from "../pages/kasir/kasirLaporan";
 
 // =========================================================
@@ -48,14 +48,23 @@ async function hppMarketplace(dari, sampai) {
   return { total: Math.round(total), tanpaHpp };
 }
 
+const LABEL_MASALAH = {
+  tidakKetemu: "Tidak ketemu di Master",
+  ambigu: "Ambigu (beberapa ukuran, HPP berbeda)",
+  tanpaHpp: "HPP Master kosong",
+  skuTanpaHpp: "Item dari Data Barang, HPP kosong",
+};
+
 async function hppGrosir(dari, sampai) {
-  const pesanan = await sbAll(`grosir_pesanan?select=id,status&tanggal=gte.${dari}&tanggal=lte.${sampai}`);
-  const ids = (pesanan || []).filter((p) => p.status !== "Batal").map((p) => p.id);
+  const pesanan = await sbAll(`grosir_pesanan?select=id,status,nomor_pesanan&tanggal=gte.${dari}&tanggal=lte.${sampai}`);
+  const aktif = (pesanan || []).filter((p) => p.status !== "Batal");
+  const ids = aktif.map((p) => p.id);
   if (ids.length === 0) return { total: 0, tanpaHpp: 0 };
+  const nomorPesanan = new Map(aktif.map((p) => [p.id, p.nomor_pesanan]));
 
   const [detail, master] = await Promise.all([
     dalamPotongan(ids, 60, (c) =>
-      sbAll(`grosir_detail_pesanan?select=sku,qty,nama_produk,harga&pesanan_id=in.(${c.join(",")})`)
+      sbAll(`grosir_detail_pesanan?select=pesanan_id,sku,qty,nama_produk,harga&pesanan_id=in.(${c.join(",")})`)
     ),
     sbAll("sku_master?select=sku,hpp,grosir"),
   ]);
@@ -64,15 +73,34 @@ async function hppGrosir(dari, sampai) {
 
   let total = 0;
   let tanpaHpp = 0;
-  const manual = { cocok: 0, ambigu: 0, tidakKetemu: 0, tanpaHpp: 0 };
+  const hitung = { tidakKetemu: 0, ambigu: 0, tanpaHpp: 0 };
+  const masalah = new Map(); // "status|nama" -> baris ringkasan untuk daftar
+  const catat = (status, nama, d) => {
+    const kunci = `${status}|${normKode(nama)}`;
+    let m = masalah.get(kunci);
+    if (!m) {
+      const kandidat = status === "ambigu" ? kandidatItemManual(indeks, nama).map((k) => `${k.sku} (HPP ${k.hpp}, Grosir ${k.grosir})`).join(" ; ") : "";
+      m = { masalah: LABEL_MASALAH[status], nama: String(nama || "").trim(), jumlahBaris: 0, qty: 0, harga: num(d.harga), pesanan: [], kandidat };
+      masalah.set(kunci, m);
+    }
+    m.jumlahBaris += 1;
+    m.qty += num(d.qty);
+    const no = nomorPesanan.get(d.pesanan_id);
+    if (no && m.pesanan.length < 3 && !m.pesanan.includes(no)) m.pesanan.push(no);
+  };
+
   for (const d of detail) {
     let hpp = null;
     if (d.sku) {
       hpp = petaHpp.get(d.sku); // item "Dari Data Barang"
+      if (hpp == null || hpp <= 0) catat("skuTanpaHpp", d.sku, d);
     } else {
       const r = cocokkanItemManual(indeks, d.nama_produk, d.harga); // item manual
-      manual[r.status] += 1;
-      hpp = r.status === "cocok" ? r.hpp : null;
+      if (r.status === "cocok") hpp = r.hpp;
+      else {
+        hitung[r.status] += 1;
+        catat(r.status, d.nama_produk, d);
+      }
     }
     if (hpp == null || hpp <= 0) {
       tanpaHpp += 1;
@@ -81,11 +109,12 @@ async function hppGrosir(dari, sampai) {
     total += hpp * num(d.qty);
   }
   const gagal = [
-    manual.tidakKetemu && `${manual.tidakKetemu} item manual tidak ketemu di Master`,
-    manual.ambigu && `${manual.ambigu} item manual ambigu (beberapa ukuran, HPP berbeda)`,
-    manual.tanpaHpp && `${manual.tanpaHpp} item manual HPP Master-nya kosong`,
+    hitung.tidakKetemu && `${hitung.tidakKetemu} item manual tidak ketemu di Master`,
+    hitung.ambigu && `${hitung.ambigu} item manual ambigu (beberapa ukuran, HPP berbeda)`,
+    hitung.tanpaHpp && `${hitung.tanpaHpp} item manual HPP Master-nya kosong`,
   ].filter(Boolean);
-  return { total: Math.round(total), tanpaHpp, catatan: gagal.join(", ") };
+  const daftar = [...masalah.values()].sort((x, y) => y.qty - x.qty);
+  return { total: Math.round(total), tanpaHpp, catatan: gagal.join(", "), daftar };
 }
 
 async function hppToko(dari, sampai) {
@@ -95,10 +124,10 @@ async function hppToko(dari, sampai) {
 }
 
 // dari/sampai = "YYYY-MM-DD" (inklusif). Mengembalikan:
-// { total, marketplace, grosir, toko, tanpaHpp, galat: {...}, catatan: { grosir?: "..." } }
+// { total, marketplace, grosir, toko, tanpaHpp, galat: {...}, catatan: { grosir?: "..." }, daftar: { grosir?: [...] } }
 export async function muatHppPenjualan(dari, sampai) {
   const sumber = { marketplace: hppMarketplace, grosir: hppGrosir, toko: hppToko };
-  const hasil = { total: 0, marketplace: 0, grosir: 0, toko: 0, tanpaHpp: 0, galat: {}, catatan: {} };
+  const hasil = { total: 0, marketplace: 0, grosir: 0, toko: 0, tanpaHpp: 0, galat: {}, catatan: {}, daftar: {} };
   await Promise.all(
     Object.entries(sumber).map(async ([kunci, fn]) => {
       try {
@@ -106,6 +135,7 @@ export async function muatHppPenjualan(dari, sampai) {
         hasil[kunci] = r.total;
         hasil.tanpaHpp += r.tanpaHpp || 0;
         if (r.catatan) hasil.catatan[kunci] = r.catatan;
+        if (r.daftar?.length) hasil.daftar[kunci] = r.daftar;
       } catch (e) {
         hasil.galat[kunci] = e?.message || "gagal dimuat";
       }
