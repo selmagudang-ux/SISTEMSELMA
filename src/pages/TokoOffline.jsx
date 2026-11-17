@@ -416,6 +416,6 @@ function TransaksiOffline({ master = {}, keuanganTransaksi = [], reload, showToa
 // Pintu masuk menu Toko Offline. Sub-menu "pos" (Barang Toko + Promo) dipisah ke komponen sendiri
 // supaya hook milik Transaksi Offline tidak ikut berpindah-pindah saat sub-menu berganti.
 export default function TokoOffline({ sub, ...props }) {
-  if (sub === "pos") return <PosToko reload={props.reload} master={props.master} keuanganTransaksi={props.keuanganTransaksi} />;
+  if (sub === "pos") return <PosToko reload={props.reload} master={props.master} keuanganTransaksi={props.keuanganTransaksi} showToast={props.showToast} />;
   return <TransaksiOffline {...props} />;
 }

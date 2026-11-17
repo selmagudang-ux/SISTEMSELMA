@@ -5,6 +5,7 @@ import { getSession } from "../../lib/auth";
 import BarangToko from "./BarangToko";
 import PromoToko from "./PromoToko";
 import LaporanKasir from "./LaporanKasir";
+import CekHppToko from "./CekHppToko";
 import { entitasSesi, lingkupEntitas } from "../../lib/api";
 
 // =========================================================
@@ -18,9 +19,10 @@ const TAB = [
   ["barang", "Barang Toko"],
   ["promo", "Promo"],
   ["laporan", "Laporan"],
+  ["cek-hpp", "Cek HPP"],
 ];
 
-export default function PosToko({ reload, master = {}, keuanganTransaksi = [] }) {
+export default function PosToko({ reload, master = {}, keuanganTransaksi = [], showToast }) {
   const [tab, setTab] = useState("barang");
   const role = getSession()?.role;
   if (!bolehSub(role, "toko-offline", "pos")) return <EmptyState label="Halaman ini belum dibuka untuk role Anda." />;
@@ -55,6 +57,7 @@ export default function PosToko({ reload, master = {}, keuanganTransaksi = [] })
       {tab === "barang" && <BarangToko inline onBerubah={() => reload?.()} />}
       {tab === "promo" && <PromoToko inline />}
       {tab === "laporan" && <LaporanKasir master={lingkup.master} keuanganTransaksi={lingkup.transaksi} />}
+      {tab === "cek-hpp" && <CekHppToko showToast={showToast} onBerubah={() => reload?.()} />}
     </div>
   );
 }

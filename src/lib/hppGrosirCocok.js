@@ -34,7 +34,7 @@ export function bangunIndeksAwalan(rows) {
   for (const r of rows || []) {
     const sku = normKode(r.sku);
     if (!sku) continue;
-    const baris = { sku, hpp: num(r.hpp), grosir: num(r.grosir) };
+    const baris = { sku, hpp: num(r.hpp), grosir: num(r.grosir), ecer: num(r.ecer) };
     const segmen = sku.split("-");
     const kunciSku = new Set([sku]);
     if (segmen.length > 1) kunciSku.add(segmen.slice(0, -1).join("-"));
@@ -49,7 +49,8 @@ export function bangunIndeksAwalan(rows) {
 
 // Hasil: { status: "cocok" | "ambigu" | "tidakKetemu" | "tanpaHpp", hpp, kandidat }
 // kandidat = SKU Master yang jadi dasar keputusan (dipakai untuk menjelaskan item bermasalah).
-export function cocokkanItemManual(indeks, namaProduk, hargaPesanan) {
+// kolomHarga = kolom Master yang dibandingkan dengan harga di transaksi (grosir = pesanan grosir, ecer = toko).
+export function cocokkanItemManual(indeks, namaProduk, hargaPesanan, kolomHarga = ["grosir"]) {
   const nama = normKode(namaProduk);
   const segmen = nama.split("-");
   const tingkat = [nama];
@@ -69,7 +70,7 @@ export function cocokkanItemManual(indeks, namaProduk, hargaPesanan) {
 
     let hppUnik = [...new Set(berHpp.map((k) => k.hpp))];
     if (hppUnik.length > 1) {
-      const sepadan = berHpp.filter((k) => k.grosir === num(hargaPesanan));
+      const sepadan = berHpp.filter((k) => kolomHarga.some((c) => k[c] === num(hargaPesanan)));
       hppUnik = [...new Set(sepadan.map((k) => k.hpp))];
       if (hppUnik.length !== 1) return { status: "ambigu", hpp: 0, kandidat };
     }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { sb, sbAll, entitasBacaSaatIni } from "../../lib/api";
 import { bisa } from "../../lib/constants";
 import { SKEMA, HARI_WIB, tanggalWib } from "./kasirApi";
+import { buatPelengkapHpp } from "../../lib/hppTokoCocok";
 
 // =========================================================
 // KASIR — FASE 6: laporan & integrasi
@@ -86,17 +87,24 @@ async function dalamPotongan(ids, ukuran, kerja, serentak = 4) {
 // Hanya tampilan laporan: data transaksi di database tidak diubah. Peta kode -> { sku_gudang, hpp } disimpan 5 menit.
 // HPP ikut diambil dari sini untuk menghitung profit.
 let cacheBarangToko = { waktu: 0, janji: null };
+// Dipanggil setelah HPP Barang Toko diubah (halaman Cek HPP) supaya laporan langsung memakai angka baru.
+export function kosongkanCacheBarangToko() {
+  cacheBarangToko = { waktu: 0, janji: null };
+}
 function petaBarangToko() {
   if (cacheBarangToko.janji && Date.now() - cacheBarangToko.waktu < 5 * 60 * 1000) return cacheBarangToko.janji;
   const janji = Promise.all([
-    sbAll("master_toko?select=kode,sku_gudang,hpp"),
+    sbAll("master_toko?select=kode,nama,barcode,sku_gudang,hpp,harga_jual"),
     // Transaksi kasir mode Master Barang menyimpan SKU Master Barang langsung -> HPP-nya dari sku_master.
-    sbAll("sku_master?select=sku,hpp").catch(() => []),
+    sbAll("sku_master?select=sku,hpp,ecer,grosir").catch(() => []),
   ])
     .then(([rows, master]) => {
-      const m = new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, hpp: num(r.hpp) }]));
+      // HPP yang kosong dilengkapi dari barang yang mirip (lib/hppTokoCocok.js); yang sudah terisi tidak diubah.
+      const lengkapi = buatPelengkapHpp(rows, master);
+      // hppAsli = isi di Barang Toko / Master apa adanya (dipakai halaman Cek HPP); toko = baris master_toko.
+      const m = new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, hpp: lengkapi.hppToko(r), hppAsli: num(r.hpp), toko: true }]));
       (master || []).forEach((r) => {
-        if (!m.has(r.sku)) m.set(r.sku, { sku_gudang: null, hpp: num(r.hpp) });
+        if (!m.has(r.sku)) m.set(r.sku, { sku_gudang: null, hpp: lengkapi.hppSkuMaster(r.sku, r.hpp, r.ecer), hppAsli: num(r.hpp), toko: false });
       });
       return m;
     })
@@ -147,6 +155,8 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
     for (const it of items) {
       const b = peta.get(it[I.sku]);
       it.hpp_satuan = b ? b.hpp : 0; // HPP per pcs saat ini (0 = belum diisi / barang tidak ditemukan)
+      it.hpp_asli = b ? b.hppAsli : 0; // isi apa adanya (tanpa dilengkapi dari barang mirip)
+      it.dari_toko = !!b?.toko;
       if (b?.sku_gudang) {
         it.kode_toko = it[I.sku];
         it[I.sku] = b.sku_gudang;
