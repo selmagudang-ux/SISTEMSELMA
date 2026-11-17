@@ -1,6 +1,7 @@
 import { sb, sbAll } from "../../lib/api";
 import { muatTanggalMulaiKasir } from "./kasirLaporan";
 import { bangunIndeksAwalan, cocokkanItemManual, normKode } from "../../lib/hppGrosirCocok";
+import { buatPelengkapHpp } from "../../lib/hppTokoCocok";
 
 // =========================================================
 // PENJUALAN TOKO OFFLINE LAMA (sebelum kasir dipakai) — per barang.
@@ -19,6 +20,27 @@ import { bangunIndeksAwalan, cocokkanItemManual, normKode } from "../../lib/hppG
 export const TABEL_LAMA = "toko_penjualan_lama";
 const KOLOM_HARGA = ["ecer", "grosir"];
 const num = (v) => Number(v) || 0;
+
+// SKU di file lama sering = kode / barcode / SKU gudang di Barang Toko (master_toko), bukan SKU Master Barang.
+// Dicari ke Barang Toko dulu (HPP-nya = HPP Barang Toko, dilengkapi dari barang mirip), baru ke Master Barang.
+const SELECT_TOKO = "master_toko?select=kode,nama,barcode,sku_gudang,hpp,harga_jual";
+export function bangunPetaToko(rowsToko, rowsMaster) {
+  const lengkapi = buatPelengkapHpp(rowsToko, rowsMaster);
+  const peta = new Map();
+  for (const r of rowsToko || []) {
+    const hpp = lengkapi.hppToko(r);
+    for (const k of [r.kode, r.barcode, r.sku_gudang]) {
+      const n = normKode(k);
+      if (n && !peta.has(n)) peta.set(n, { hpp });
+    }
+  }
+  return peta;
+}
+function cocokkanSku(peta, indeks, sku, harga) {
+  const t = peta.get(normKode(sku));
+  if (t) return t.hpp > 0 ? { status: "cocok", hpp: t.hpp } : { status: "tanpaHpp", hpp: 0 };
+  return cocokkanItemManual(indeks, sku, harga, KOLOM_HARGA);
+}
 const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const ALIAS = {
@@ -92,8 +114,9 @@ export async function bacaFilePenjualanLama(file) {
 // ---------- periksa baris (murni, bisa dites tanpa database) ----------
 // status: ok | salah | kasir (sudah ada data kasir) | dobel (sudah pernah diimpor)
 // hppStatus (hanya untuk info di pratinjau): cocok | ambigu | tidakKetemu | tanpaHpp
-export function periksaBaris(baris, { tanggalMulaiKasir = null, master = [], sudahAda = [] } = {}) {
+export function periksaBaris(baris, { tanggalMulaiKasir = null, master = [], toko = [], sudahAda = [] } = {}) {
   const indeks = bangunIndeksAwalan(master);
+  const petaToko = bangunPetaToko(toko, master);
   const sisa = new Map();
   for (const e of sudahAda) {
     const k = `${e.tanggal}|${normKode(e.sku)}|${num(e.qty)}|${num(e.harga_satuan)}`;
@@ -113,7 +136,7 @@ export function periksaBaris(baris, { tanggalMulaiKasir = null, master = [], sud
       sisa.set(k, sisa.get(k) - 1);
       return { ...hasil, status: "dobel", pesan: "Sudah pernah diimpor" };
     }
-    hasil.hppStatus = cocokkanItemManual(indeks, b.sku, b.harga, KOLOM_HARGA).status;
+    hasil.hppStatus = cocokkanSku(petaToko, indeks, b.sku, b.harga).status;
     return hasil;
   });
 }
@@ -121,14 +144,15 @@ export function periksaBaris(baris, { tanggalMulaiKasir = null, master = [], sud
 // Muat pembanding dari database lalu periksa.
 export async function periksaFile(baris) {
   const tanggal = baris.map((b) => b.tanggal).filter(Boolean).sort();
-  const [tanggalMulaiKasir, master, sudahAda] = await Promise.all([
+  const [tanggalMulaiKasir, master, toko, sudahAda] = await Promise.all([
     muatTanggalMulaiKasir().catch(() => null),
     sbAll("sku_master?select=sku,hpp,ecer,grosir").catch(() => []),
+    sbAll(SELECT_TOKO).catch(() => []),
     tanggal.length
       ? sbAll(`${TABEL_LAMA}?select=tanggal,sku,qty,harga_satuan&tanggal=gte.${tanggal[0]}&tanggal=lte.${tanggal[tanggal.length - 1]}`)
       : [],
   ]);
-  return periksaBaris(baris, { tanggalMulaiKasir, master: master || [], sudahAda: sudahAda || [] });
+  return periksaBaris(baris, { tanggalMulaiKasir, master: master || [], toko: toko || [], sudahAda: sudahAda || [] });
 }
 
 // Simpan baris berstatus "ok" sebagai satu batch. Mengembalikan { batch, jumlah }.
@@ -172,13 +196,14 @@ export async function muatBatchLama() {
 }
 
 // ---------- ringkasan per produk + HPP (murni) ----------
-export function hitungRingkasLama(rows, master) {
+export function hitungRingkasLama(rows, master, toko = []) {
   const indeks = bangunIndeksAwalan(master);
+  const petaToko = bangunPetaToko(toko, master);
   const peta = new Map();
   for (const r of rows || []) {
     const qty = num(r.qty);
     const harga = num(r.harga_satuan);
-    const cocok = cocokkanItemManual(indeks, r.sku, harga, KOLOM_HARGA);
+    const cocok = cocokkanSku(petaToko, indeks, r.sku, harga);
     const hppSatuan = cocok.status === "cocok" ? cocok.hpp : 0;
     const kunci = normKode(r.sku);
     let p = peta.get(kunci);
@@ -204,13 +229,14 @@ export function hitungRingkasLama(rows, master) {
 
 // Baris lama dalam rentang, tanpa tanggal yang sudah tercakup kasir (anti dobel hitung dengan HPP kasir).
 export async function muatPenjualanLama(dari, sampai) {
-  const [rows, master, mulai] = await Promise.all([
+  const [rows, master, toko, mulai] = await Promise.all([
     sbAll(`${TABEL_LAMA}?select=tanggal,sku,nama_produk,qty,harga_satuan&tanggal=gte.${dari}&tanggal=lte.${sampai}`),
     sbAll("sku_master?select=sku,hpp,ecer,grosir").catch(() => []),
+    sbAll(SELECT_TOKO).catch(() => []),
     muatTanggalMulaiKasir().catch(() => null),
   ]);
   const dipakai = (rows || []).filter((r) => !mulai || r.tanggal < mulai);
-  return hitungRingkasLama(dipakai, master || []);
+  return hitungRingkasLama(dipakai, master || [], toko || []);
 }
 
 // Dipakai Laporan Laba Rugi (lib/hppPenjualan.js): HPP penjualan lama dalam rentang.
