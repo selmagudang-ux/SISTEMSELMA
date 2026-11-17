@@ -20,7 +20,7 @@ import { Home, ScanLine, Boxes, Truck, Wallet, ClipboardList, MoreHorizontal } f
 export const MENU_HP = [
   { key: "beranda", label: "Beranda", Ikon: Home, pin: true, muat: () => import("./Beranda.jsx") },
   { key: "scan-resi", label: "Scan Resi", Ikon: ScanLine, menuKey: "scan-resi", pin: true, muat: null },
-  { key: "stok", label: "Stok", Ikon: Boxes, menuKey: "stok", pin: true, muat: () => import("./Stok.jsx") },
+  { key: "stok", label: "Stok", Ikon: Boxes, menuKey: "stok", pin: true, muat: () => import("./StokHp.jsx") },
   { key: "barang-datang", label: "Barang Datang", Ikon: Truck, menuKey: "barang-datang", muat: null },
   { key: "keuangan", label: "Keuangan", Ikon: Wallet, menuKey: "keuangan", muat: null },
   { key: "persetujuan-restock", label: "Persetujuan Restok", Ikon: ClipboardList, menuKey: "persetujuan-restock", muat: null },

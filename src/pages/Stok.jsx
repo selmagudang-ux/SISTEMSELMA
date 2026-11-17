@@ -1,408 +1,776 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, RefreshCw, Loader2, AlertCircle, X, MapPin, Send, CheckCircle2, Clock } from "lucide-react";
-import { sb, sbAll } from "../../lib/api";
-import { bisa, allowedSubMenus, AMBANG_MENIPIS_RESTOCK } from "../../lib/constants";
-import { cariSkuDariBarcode } from "../../lib/code128";
-import { TombolScanKamera } from "../../components/ScanKamera";
+import { useState, useEffect, useRef } from "react";
+import { bisa } from "../lib/constants";
+import { Search, AlertTriangle, CheckCircle2, MinusCircle, Download, Package, PackageX, PackageSearch, ArrowDownUp, ChevronLeft, ChevronRight } from "lucide-react";
+import { PageHeader, EmptyState, Badge, StatCard } from "../components/ui";
+import { fmtTgl, downloadCsv } from "../lib/api";
+import { AMBANG_MENIPIS_RESTOCK } from "../lib/constants";
+import { cariSkuDariBarcode } from "../lib/code128";
+import { TombolScanKamera } from "../components/ScanKamera";
 
-// =========================================================
-// VERSI HP — STOK (gudang)
-// Isi: Stok Barang (cari / scan barcode / urut) dan Stok Menipis (+ ajukan restok ke owner).
-// Sumber data SAMA dengan SELMA desktop: sku_master (stok per PT lewat lib/api.js), penempatan (lokasi rak)
-// dan pengajuan_restock. Tampilan kartu, bukan tabel. Sub-menu mengikuti hak akses role (allowedSubMenus).
-// Yang belum ada di HP: Barang Keluar, Stok Opname, Riwayat Stok (masih di versi komputer).
-// =========================================================
+// Ambang batas "Stok Menipis" khusus tampilan badge per-baris di Stok Barang —
+// beda dari AMBANG_MENIPIS_RESTOCK (yang dipakai buat halaman "Stok Menipis" /
+// pengajuan restock). Sengaja dibiarkan terpisah supaya threshold badge di sini
+// tetap seperti semula, tidak ikut berubah kalau AMBANG_MENIPIS_RESTOCK diubah.
+const AMBANG_MENIPIS_BADGE = 5;
 
-const AMBANG_MENIPIS_BADGE = 5; // sama dengan badge per baris di Stok Barang desktop
-const PER_TAMPIL = 40;
+// SKU dibentuk sebagai {bahan}{peruntukan}{kategori}-{subkategori}-{model}-{warna}-{ukuran}
+// (lihat pembuatan SKU baru di ModalRouter.jsx & pola yang sama di SkuHarga.jsx)
+// — jadi segmen "model" adalah bagian ke-3 kalau SKU dipecah per tanda "-".
+// Dipakai supaya sortir "Model A-Z/Z-A" di Stok Barang urut berdasarkan nomor
+// model (numerik natural — 1, 2, 3, ..., 10, bukan 1, 10, 2, 3, ...), bukan
+// alfabetis dari SKU penuh.
+const modelFromSku = (sku) => (sku || "").split("-")[2] || "";
 
-const URUTAN = [
-  { k: "tertinggi", label: "Stok tertinggi" },
-  { k: "terendah", label: "Stok terendah" },
-  { k: "az", label: "Model A-Z" },
-  { k: "za", label: "Model Z-A" },
-];
-
-// SKU: {bahan}{peruntukan}{kategori}-{subkategori}-{model}-{warna}-{ukuran} -> model = segmen ke-3.
-const modelDariSku = (sku) => (sku || "").split("-")[2] || "";
-const bandingModel = (a, b, arah) => {
-  const ma = modelDariSku(a.sku);
-  const mb = modelDariSku(b.sku);
+// Perbandingan dua SKU berdasarkan nomor model — SKU tanpa model selalu
+// ditaruh di akhir. `arah` -1 untuk Z-A (dibalik), 1 untuk A-Z.
+const compareModel = (a, b, arah = 1) => {
+  const ma = modelFromSku(a.sku);
+  const mb = modelFromSku(b.sku);
   if (!ma && !mb) return 0;
   if (!ma) return 1;
   if (!mb) return -1;
   return arah * ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
 };
 
-function LencanaStok({ stok }) {
-  if (stok <= 0) return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-md-error-container text-md-on-error-container">Habis</span>;
-  if (stok < AMBANG_MENIPIS_BADGE)
-    return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-500">Menipis · {stok}</span>;
-  return <span className="text-base font-bold text-md-on-surface">{stok.toLocaleString("id-ID")}</span>;
+export default function Stok({ sub, skuMaster, penempatan, stockHistory, pengajuanRestock, session, setModal, master, reload, showToast }) {
+  if (sub === "menipis") return <StokMenipis skuMaster={skuMaster} pengajuanRestock={pengajuanRestock} session={session} setModal={setModal} />;
+  if (sub === "keluar") return <BarangKeluar skuMaster={skuMaster} setModal={setModal} />;
+  if (sub === "hitung") return <StokOpname skuMaster={skuMaster} setModal={setModal} />;
+  if (sub === "riwayat") return <RiwayatStok stockHistory={stockHistory} />;
+  return <StokBarang skuMaster={skuMaster} setModal={setModal} />;
 }
 
-export default function Stok({ session }) {
-  // allowedSubMenus mengembalikan null kalau role tidak dibatasi (artinya semua sub boleh).
-  const subBoleh = allowedSubMenus(session.role, "stok");
-  const adaSub = (k) => !Array.isArray(subBoleh) || subBoleh.includes(k);
-  const adaMenipis = adaSub("menipis");
-  const adaBarang = adaSub("barang");
-  const [tab, setTab] = useState(adaBarang ? "barang" : "menipis");
-
-  const [data, setData] = useState(null); // null = belum dimuat
-  const [diajukan, setDiajukan] = useState(new Map()); // sku -> pengajuan menunggu
-  const [memuat, setMemuat] = useState(false);
-  const [err, setErr] = useState("");
+// Sub-menu "Stok Menipis" — pindahan dari tab Dashboard (dulu "Barang
+// Menipis"), sekarang jadi bagian dari menu Stok supaya gudang mengajukan
+// restock dari tempat yang sama dengan kerja stok sehari-hari. Sisi
+// approve-nya ada di menu sidebar tersendiri "Persetujuan Restok"
+// (owner/superadmin saja — lihat pages/PersetujuanRestock.jsx).
+function StokMenipis({ skuMaster, pengajuanRestock, session, setModal }) {
+  const bisaAjukan = bisa(session?.role, "stok.ajukan_restock");
   const [q, setQ] = useState("");
-  const [urut, setUrut] = useState("tertinggi");
-  const [tampil, setTampil] = useState(PER_TAMPIL);
-  const [dipilih, setDipilih] = useState(null);
+  const [halaman, setHalaman] = useState(1);
 
-  const muat = useCallback(async () => {
-    setMemuat(true);
-    setErr("");
-    try {
-      const [sku, ajuan] = await Promise.all([
-        sbAll("sku_master?select=id,sku,barcode_supplier,nonaktif&order=sku"),
-        sbAll("pengajuan_restock?select=sku,status,created_at&status=eq.menunggu").catch(() => []),
-      ]);
-      setData(Array.isArray(sku) ? sku : []);
-      const m = new Map();
-      (ajuan || []).forEach((p) => p.sku && m.set(p.sku, p));
-      setDiajukan(m);
-    } catch (e) {
-      setErr(e.message || "Gagal memuat stok");
-    } finally {
-      setMemuat(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    muat();
-  }, [muat]);
-
-  const ubahCari = (v) => {
-    setQ(v);
-    setTampil(PER_TAMPIL);
+  const ubahCari = (val) => {
+    setQ(val);
+    setHalaman(1);
   };
 
-  const semua = data || [];
-  const ringkas = useMemo(() => {
-    let total = 0;
-    let habis = 0;
-    let menipis = 0;
-    semua.forEach((s) => {
-      const st = Number(s.stok) || 0;
-      total += st;
-      if (st <= 0) habis += 1;
-      else if (st < AMBANG_MENIPIS_BADGE) menipis += 1;
-    });
-    return { total, habis, menipis };
-  }, [semua]);
+  const menipis = (skuMaster || [])
+    .filter((s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK)
+    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => (a.stok || 0) - (b.stok || 0));
 
-  const daftar = useMemo(() => {
-    const kata = q.trim().toLowerCase();
-    let hasil = semua.filter((s) => !kata || (s.sku || "").toLowerCase().includes(kata));
-    if (tab === "menipis") {
-      hasil = hasil.filter((s) => !s.nonaktif && (Number(s.stok) || 0) <= AMBANG_MENIPIS_RESTOCK).sort((a, b) => (a.stok || 0) - (b.stok || 0));
-    } else {
-      hasil = [...hasil].sort((a, b) => {
-        if (urut === "az") return bandingModel(a, b, 1);
-        if (urut === "za") return bandingModel(a, b, -1);
-        if (urut === "terendah") return (a.stok || 0) - (b.stok || 0);
-        return (b.stok || 0) - (a.stok || 0);
-      });
-    }
-    return hasil;
-  }, [semua, q, tab, urut]);
+  // Pagination — sama seperti Stok Barang: di-clamp biar nggak nyangkut di
+  // halaman kosong kalau jumlah hasil berkurang (mis. abis diajukan restock).
+  const totalHalaman = Math.max(1, Math.ceil(menipis.length / STOK_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const mulai = (halamanAktif - 1) * STOK_PER_HALAMAN;
+  const ditampilkan = menipis.slice(mulai, mulai + STOK_PER_HALAMAN);
 
-  if (!adaBarang && !adaMenipis) {
-    return <div className="p-6 text-center text-sm text-md-on-surface-variant">Akun ini tidak punya akses ke sub-menu Stok yang tersedia di HP.</div>;
-  }
+  // Pengajuan TERBARU per SKU (apapun statusnya) — supaya tiap baris bisa
+  // langsung nunjukin balasan owner: masih menunggu, sudah disetujui, atau
+  // ditolak. Kalau sudah "disetujui"/"ditolak" (bukan "menunggu"), pengajuan
+  // itu dianggap selesai jadi SKU boleh diajukan ulang kalau stoknya masih
+  // menipis.
+  const pengajuanTerbaruPerSku = new Map();
+  [...(pengajuanRestock || [])]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .forEach((p) => pengajuanTerbaruPerSku.set(p.sku, p));
 
   return (
-    <div className="flex flex-col min-h-full">
-      <div className="sticky top-0 z-10 bg-md-surface px-4 pt-3 pb-2 space-y-2 border-b border-md-outline-variant">
-        {adaBarang && adaMenipis && (
-          <div className="flex gap-1 p-1 rounded-full bg-md-container">
-            {[
-              { k: "barang", label: "Stok Barang" },
-              { k: "menipis", label: "Stok Menipis" },
-            ].map((t) => (
-              <button
-                key={t.k}
-                onClick={() => {
-                  setTab(t.k);
-                  setTampil(PER_TAMPIL);
-                }}
-                className={`flex-1 text-xs font-semibold py-1.5 rounded-full transition ${
-                  tab === t.k ? "bg-md-primary-container text-md-on-primary-container" : "text-md-on-surface-variant"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2">
-          <div className="flex-1 flex items-center gap-2 bg-md-container rounded-full px-3 py-2 border border-md-outline-variant">
-            <Search size={15} className="text-md-on-surface-variant flex-shrink-0" />
-            <input
-              value={q}
-              onChange={(e) => ubahCari(e.target.value)}
-              placeholder="Cari SKU atau scan…"
-              className="bg-transparent outline-none text-sm flex-1 min-w-0 placeholder:text-md-on-surface-variant"
-            />
-            {q && (
-              <button onClick={() => ubahCari("")} className="text-md-on-surface-variant">
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          <TombolScanKamera
-            label="Scan"
-            judul="Scan Barcode — Cek Stok"
-            onDetect={(kode) => {
-              const cocok = cariSkuDariBarcode(semua, kode);
-              ubahCari(cocok ? cocok.sku : kode);
-              if (cocok) setDipilih(cocok);
-            }}
+    <div>
+      <PageHeader
+        title="Stok Menipis"
+        description={`SKU yang stoknya sudah turun (≤ ${AMBANG_MENIPIS_RESTOCK}pcs) dan siap diajukan restock ke owner.`}
+      />
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => ubahCari(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
           />
-          <button
-            onClick={muat}
-            disabled={memuat}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-md-on-surface-variant hover:bg-md-on-surface/10 disabled:opacity-50 flex-shrink-0"
-            title="Muat ulang"
-          >
-            <RefreshCw size={16} className={memuat ? "animate-spin" : ""} />
-          </button>
         </div>
-        {tab === "barang" && (
-          <select
-            value={urut}
-            onChange={(e) => {
-              setUrut(e.target.value);
-              setTampil(PER_TAMPIL);
-            }}
-            className="w-full bg-md-container border border-md-outline-variant rounded-full px-3 py-1.5 text-xs text-md-on-surface-variant outline-none"
-          >
-            {URUTAN.map((o) => (
-              <option key={o.k} value={o.k}>
-                Urut: {o.label}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
-
-      <div className="p-4 space-y-3">
-        {tab === "barang" && data && (
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-2xl bg-md-container p-2.5">
-              <div className="text-[10px] text-md-on-surface-variant">Total SKU</div>
-              <div className="text-base font-bold">{semua.length.toLocaleString("id-ID")}</div>
-            </div>
-            <div className="rounded-2xl bg-md-container p-2.5">
-              <div className="text-[10px] text-md-on-surface-variant">Menipis</div>
-              <div className={`text-base font-bold ${ringkas.menipis ? "text-amber-500" : ""}`}>{ringkas.menipis}</div>
-            </div>
-            <div className="rounded-2xl bg-md-container p-2.5">
-              <div className="text-[10px] text-md-on-surface-variant">Habis</div>
-              <div className={`text-base font-bold ${ringkas.habis ? "text-md-error" : ""}`}>{ringkas.habis}</div>
-            </div>
-          </div>
-        )}
-        {tab === "menipis" && (
-          <p className="text-xs text-md-on-surface-variant">SKU dengan stok ≤ {AMBANG_MENIPIS_RESTOCK} pcs. Ketuk SKU untuk mengajukan restok ke owner.</p>
-        )}
-
-        {err && (
-          <div className="rounded-2xl bg-md-error-container text-md-on-error-container p-3 text-sm flex items-start gap-2">
-            <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
-            <span>{err}</span>
-          </div>
-        )}
-
-        {!data && memuat && (
-          <div className="py-10 flex justify-center text-md-on-surface-variant">
-            <Loader2 size={20} className="animate-spin" />
-          </div>
-        )}
-
-        {data && daftar.length === 0 && (
-          <div className="py-10 text-center text-sm text-md-on-surface-variant">
-            {q ? "Tidak ada SKU yang cocok dengan pencarian." : tab === "menipis" ? "Tidak ada SKU dengan stok menipis." : "Belum ada data stok."}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          {daftar.slice(0, tampil).map((s) => {
-            const stok = Number(s.stok) || 0;
-            const ajuan = diajukan.get(s.sku);
+      {menipis.length === 0 ? (
+        <EmptyState label={q ? "Tidak ada SKU menipis yang cocok dengan pencarian." : "Tidak ada SKU dengan stok menipis."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {ditampilkan.map((s, i) => {
+            const pengajuan = pengajuanTerbaruPerSku.get(s.sku);
+            const sudahDiajukan = pengajuan?.status === "menunggu";
             return (
-              <button
+              <div
                 key={s.id}
-                onClick={() => setDipilih(s)}
-                className="w-full text-left rounded-2xl bg-md-container border border-md-outline-variant px-4 py-3 flex items-center justify-between gap-3 active:scale-[0.99] transition"
+                className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
               >
                 <div className="min-w-0">
-                  <div className="font-mono text-xs text-md-on-surface break-all">{s.sku}</div>
-                  {s.nonaktif && <div className="text-[10px] text-md-on-surface-variant mt-0.5">Nonaktif</div>}
-                  {ajuan && (
-                    <div className="text-[10px] text-amber-500 mt-0.5 flex items-center gap-1">
-                      <Clock size={10} /> Restok menunggu persetujuan
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setModal({ type: "detail-sku", item: s })}
+                    title="Lihat detail SKU"
+                    className="font-mono text-xs text-slate-200 truncate hover:underline hover:text-amber-300 text-left"
+                  >
+                    {s.sku}
+                  </button>
+                  <div className="text-[11px] mt-0.5 flex items-center gap-2 flex-wrap">
+                    {s.stok <= 0 ? (
+                      <span className="text-red-400 font-medium">Habis</span>
+                    ) : (
+                      <span className="text-amber-400 font-medium">Sisa {s.stok}</span>
+                    )}
+                    {pengajuan?.status === "menunggu" && <Badge color="amber">Menunggu Respon</Badge>}
+                    {pengajuan?.status === "disetujui" && <Badge color="emerald">Disetujui Owner</Badge>}
+                    {pengajuan?.status === "ditolak" && <Badge color="red">Ditolak Owner</Badge>}
+                    {pengajuan?.status && pengajuan.status !== "menunggu" && pengajuan.catatan_owner && (
+                      <span className="text-slate-500 truncate">"{pengajuan.catatan_owner}"</span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex-shrink-0">
-                  <LencanaStok stok={stok} />
-                </div>
-              </button>
+                {bisaAjukan && (
+                  <button
+                    disabled={sudahDiajukan}
+                    onClick={() => setModal({ type: "ajukan-restock", item: s })}
+                    className="shrink-0 text-[11px] font-medium px-3 py-1.5 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    {sudahDiajukan ? "Sudah diajukan" : "Ajukan Order →"}
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
+      )}
 
-        {daftar.length > tampil && (
-          <button onClick={() => setTampil((n) => n + PER_TAMPIL)} className="w-full py-2.5 rounded-full border border-md-outline-variant text-xs font-medium text-md-primary">
-            Tampilkan lebih banyak ({daftar.length - tampil} lagi)
-          </button>
-        )}
-      </div>
-
-      {dipilih && (
-        <DetailSku
-          sku={dipilih}
-          session={session}
-          sudahDiajukan={diajukan.has(dipilih.sku)}
-          onTutup={() => setDipilih(null)}
-          onTerkirim={() => {
-            setDipilih(null);
-            muat();
-          }}
-        />
+      {menipis.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-xs text-slate-400">
+          <div>
+            Menampilkan {mulai + 1}–{Math.min(mulai + STOK_PER_HALAMAN, menipis.length)} dari {menipis.length} SKU
+          </div>
+          {totalHalaman > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.max(1, p - 1))}
+                disabled={halamanAktif <= 1}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2 font-medium text-slate-300 whitespace-nowrap">
+                Hal {halamanAktif} / {totalHalaman}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.min(totalHalaman, p + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-// Lembar dari bawah: stok, lokasi rak (tabel penempatan), dan ajukan restok.
-function DetailSku({ sku, session, sudahDiajukan, onTutup, onTerkirim }) {
-  const stok = Number(sku.stok) || 0;
-  const bolehAjukan = bisa(session.role, "stok.ajukan_restock");
-  const [rak, setRak] = useState(null); // null = memuat
-  const [catatan, setCatatan] = useState("");
-  const [kirim, setKirim] = useState(false);
-  const [err, setErr] = useState("");
-  const [sukses, setSukses] = useState(false);
+const STOK_SORT_OPTIONS = [
+  { key: "tertinggi", label: "Stok Tertinggi" },
+  { key: "terendah", label: "Stok Terendah" },
+  { key: "az", label: "Model A-Z" },
+  { key: "za", label: "Model Z-A" },
+];
 
-  useEffect(() => {
-    let batal = false;
-    sb(`penempatan?sku=eq.${encodeURIComponent(sku.sku)}&select=rak_code,qty&order=rak_code`)
-      .then((rows) => !batal && setRak((Array.isArray(rows) ? rows : []).filter((r) => Number(r.qty) > 0)))
-      .catch(() => !batal && setRak([]));
-    return () => {
-      batal = true;
-    };
-  }, [sku.sku]);
+// Jumlah baris per halaman di Stok Barang — dipisah jadi konstanta karena
+// dipakai buat hitung total halaman & slice data.
+const STOK_PER_HALAMAN = 50;
 
-  const ajukan = async () => {
-    setKirim(true);
-    setErr("");
-    try {
-      await sb("pengajuan_restock", {
-        method: "POST",
-        body: JSON.stringify({
-          jenis: "sku",
-          sku: sku.sku,
-          stok_saat_ajuan: stok,
-          catatan: catatan.trim() || null,
-          status: "menunggu",
-          dibuat_oleh_id: session?.id || null,
-          dibuat_oleh_nama: session?.nama || session?.username || null,
-        }),
-      });
-      setSukses(true);
-      setTimeout(onTerkirim, 900);
-    } catch (e) {
-      setErr(e.message || "Gagal mengirim pengajuan");
-      setKirim(false);
-    }
+function StokBarang({ skuMaster, setModal }) {
+  const [q, setQ] = useState("");
+  const [sortBy, setSortBy] = useState("tertinggi");
+  const [halaman, setHalaman] = useState(1);
+
+  // Reset ke halaman 1 tiap kali pencarian atau urutan berubah, biar nggak
+  // nyangkut di halaman kosong (mis. lagi di halaman 5 terus hasil cari cuma 1 halaman).
+  const ubahCari = (val) => {
+    setQ(val);
+    setHalaman(1);
+  };
+  const ubahSort = (val) => {
+    setSortBy(val);
+    setHalaman(1);
+  };
+
+  // Sengaja TIDAK menyaring SKU nonaktif di sini — perilaku data sama seperti
+  // sebelumnya (halaman ini dulu menampilkan semua skuMaster apa adanya),
+  // cuma tampilannya yang dirapikan.
+  const semua = skuMaster || [];
+  const totalStok = semua.reduce((sum, s) => sum + (Number(s.stok) || 0), 0);
+  const habisCount = semua.filter((s) => (s.stok || 0) <= 0).length;
+  const menipisCount = semua.filter((s) => (s.stok || 0) > 0 && s.stok < AMBANG_MENIPIS_BADGE).length;
+
+  const filtered = semua.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()));
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === "az") return compareModel(a, b, 1);
+    if (sortBy === "za") return compareModel(a, b, -1);
+    if (sortBy === "terendah") return (a.stok || 0) - (b.stok || 0);
+    return (b.stok || 0) - (a.stok || 0);
+  });
+
+  // Stok tertinggi di antara SEMUA hasil yang cocok filter (bukan cuma
+  // halaman yang lagi tampil) — supaya proporsi bar visual per baris tetap
+  // konsisten walau pindah halaman.
+  const maxStok = Math.max(1, ...sorted.map((s) => Number(s.stok) || 0));
+
+  // Pagination — dihitung dari `sorted` (hasil filter+sort penuh), lalu
+  // di-clamp biar nggak nyangkut di halaman kosong kalau jumlah hasil berkurang.
+  const totalHalaman = Math.max(1, Math.ceil(sorted.length / STOK_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const mulai = (halamanAktif - 1) * STOK_PER_HALAMAN;
+  const ditampilkan = sorted.slice(mulai, mulai + STOK_PER_HALAMAN);
+
+  const handleDownload = () => {
+    downloadCsv(
+      `stok-barang-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "sku", label: "SKU" },
+        { key: "stok", label: "Stok" },
+      ],
+      sorted
+    );
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/60" onClick={onTutup}>
-      <div
-        className="w-full max-h-[85dvh] overflow-y-auto bg-md-container-low rounded-t-3xl p-4 space-y-4"
-        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[11px] text-md-on-surface-variant">Detail SKU</div>
-            <div className="font-mono text-sm font-semibold break-all">{sku.sku}</div>
-          </div>
-          <button onClick={onTutup} className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-full hover:bg-md-on-surface/10">
-            <X size={18} />
+    <div>
+      <PageHeader
+        title="Stok Barang"
+        description="Level stok terkini untuk setiap SKU."
+        action={
+          <button
+            onClick={handleDownload}
+            disabled={sorted.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Download CSV
           </button>
-        </div>
+        }
+      />
 
-        <div className="rounded-2xl bg-md-container p-4 flex items-center justify-between">
-          <span className="text-sm text-md-on-surface-variant">Stok sekarang</span>
-          <span className={`text-2xl font-bold ${stok <= 0 ? "text-md-error" : stok < AMBANG_MENIPIS_BADGE ? "text-amber-500" : ""}`}>{stok.toLocaleString("id-ID")}</span>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <StatCard label="Total SKU" value={semua.length} icon={Package} iconColor="text-slate-400" />
+        <StatCard label="Total Stok" value={totalStok.toLocaleString("id-ID")} icon={PackageSearch} iconColor="text-amber-400" accent="text-amber-400" />
+        <StatCard label="Stok Menipis" value={menipisCount} icon={AlertTriangle} iconColor="text-amber-400" accent={menipisCount > 0 ? "text-amber-400" : ""} />
+        <StatCard label="Stok Habis" value={habisCount} icon={PackageX} iconColor="text-red-400" accent={habisCount > 0 ? "text-red-400" : ""} />
+      </div>
 
-        <div>
-          <div className="text-xs font-semibold text-md-on-surface-variant mb-1.5 flex items-center gap-1">
-            <MapPin size={12} /> Lokasi rak
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1">
+            <Search size={14} className="text-slate-500" />
+            <input
+              value={q}
+              onChange={(e) => ubahCari(e.target.value)}
+              placeholder="Cari SKU atau scan barcode…"
+              className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+            />
           </div>
-          {rak === null ? (
-            <Loader2 size={16} className="animate-spin text-md-on-surface-variant" />
-          ) : rak.length === 0 ? (
-            <div className="text-sm text-md-on-surface-variant">Belum ditempatkan di rak.</div>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {rak.map((r) => (
-                <span key={r.rak_code} className="px-3 py-1.5 rounded-full bg-md-container border border-md-outline-variant text-xs">
-                  <b className="font-mono">{r.rak_code}</b> · {Number(r.qty)} pcs
-                </span>
+          <TombolScanKamera
+            label="Scan Kamera"
+            judul="Scan Barcode — Cek Stok"
+            onDetect={(kode) => {
+              const cocok = cariSkuDariBarcode(semua, kode);
+              ubahCari(cocok ? cocok.sku : kode);
+            }}
+          />
+          <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:w-56">
+            <ArrowDownUp size={14} className="text-slate-500 flex-shrink-0" />
+            <select
+              value={sortBy}
+              onChange={(e) => ubahSort(e.target.value)}
+              className="bg-transparent outline-none text-sm flex-1 text-slate-300"
+            >
+              {STOK_SORT_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key} className="bg-slate-900">
+                  {o.label}
+                </option>
               ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {sorted.length === 0 ? (
+        <EmptyState label={q ? "Tidak ada SKU yang cocok dengan pencarian." : "Belum ada data stok."} />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {ditampilkan.map((s, i) => {
+            const stok = Number(s.stok) || 0;
+            const habis = stok <= 0;
+            const menipis = !habis && stok < AMBANG_MENIPIS_BADGE;
+            const barColor = habis ? "bg-red-500/60" : menipis ? "bg-amber-500" : "bg-emerald-500/70";
+            const barWidth = habis ? 3 : Math.max(4, Math.round((stok / maxStok) * 100));
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center gap-4 px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+              >
+                <span className="flex-shrink-0 flex items-center gap-2 w-40 sm:w-56">
+                  <button
+                    type="button"
+                    onClick={() => setModal({ type: "detail-sku", item: s })}
+                    title="Lihat detail SKU"
+                    className="font-mono text-xs text-slate-300 truncate hover:underline hover:text-amber-300 text-left"
+                  >
+                    {s.sku}
+                  </button>
+                </span>
+                <div className="flex-1 hidden sm:block h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barWidth}%` }} />
+                </div>
+                <div className="flex items-center justify-end gap-2 w-28 flex-shrink-0">
+                  {habis ? (
+                    <Badge color="red">Habis</Badge>
+                  ) : menipis ? (
+                    <Badge color="amber">Menipis · {stok}</Badge>
+                  ) : (
+                    <span className="text-sm font-semibold text-slate-200">{stok}</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-xs text-slate-400">
+          <div>
+            Menampilkan {mulai + 1}–{Math.min(mulai + STOK_PER_HALAMAN, sorted.length)} dari {sorted.length} SKU
+          </div>
+          {totalHalaman > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.max(1, p - 1))}
+                disabled={halamanAktif <= 1}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2 font-medium text-slate-300 whitespace-nowrap">
+                Hal {halamanAktif} / {totalHalaman}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.min(totalHalaman, p + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
 
-        {bolehAjukan && (
-          <div className="space-y-2">
-            <div className="text-xs font-semibold text-md-on-surface-variant">Ajukan restok ke owner</div>
-            {sudahDiajukan ? (
-              <div className="rounded-2xl bg-amber-500/15 text-amber-500 text-sm p-3 flex items-center gap-2">
-                <Clock size={16} /> Pengajuan SKU ini masih menunggu persetujuan.
-              </div>
-            ) : sukses ? (
-              <div className="rounded-2xl bg-emerald-500/15 text-emerald-500 text-sm p-3 flex items-center gap-2">
-                <CheckCircle2 size={16} /> Pengajuan restok terkirim ke owner.
-              </div>
-            ) : (
-              <>
-                <textarea
-                  value={catatan}
-                  onChange={(e) => setCatatan(e.target.value)}
-                  rows={2}
-                  placeholder="Catatan (opsional), mis. jumlah yang diminta"
-                  className="w-full bg-md-container border border-md-outline-variant rounded-2xl px-3 py-2 text-sm outline-none placeholder:text-md-on-surface-variant"
-                />
-                {err && <div className="text-xs text-md-error">{err}</div>}
-                <button
-                  onClick={ajukan}
-                  disabled={kirim}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-full bg-md-primary text-md-on-primary text-sm font-semibold disabled:opacity-50"
-                >
-                  {kirim ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Ajukan Restok
-                </button>
-              </>
-            )}
-          </div>
-        )}
+function BarangKeluar({ skuMaster, setModal }) {
+  const [q, setQ] = useState("");
+  const [halaman, setHalaman] = useState(1);
+
+  const ubahCari = (val) => {
+    setQ(val);
+    setHalaman(1);
+  };
+
+  const sorted = [...skuMaster]
+    .filter((s) => s.sku.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => (b.stok || 0) - (a.stok || 0));
+
+  const totalHalaman = Math.max(1, Math.ceil(sorted.length / STOK_PER_HALAMAN));
+  const halamanAktif = Math.min(halaman, totalHalaman);
+  const mulai = (halamanAktif - 1) * STOK_PER_HALAMAN;
+  const ditampilkan = sorted.slice(mulai, mulai + STOK_PER_HALAMAN);
+
+  return (
+    <div>
+      <PageHeader
+        title="Barang Keluar"
+        description="Catat pengurangan stok di luar alur Marketplace — misalnya terjual langsung, rusak, hilang, atau retur ke supplier."
+      />
+      <div className="sticky top-[53px] z-10 bg-slate-950 py-3 -mt-3 mb-1">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm">
+          <Search size={14} className="text-slate-500" />
+          <input
+            value={q}
+            onChange={(e) => ubahCari(e.target.value)}
+            placeholder="Cari SKU…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
       </div>
+      {sorted.length === 0 ? (
+        <EmptyState label="Belum ada data stok." />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+          {ditampilkan.map((s, i) => (
+            <div
+              key={s.id}
+              className={`flex items-center justify-between px-4 py-2.5 ${i % 2 ? "bg-slate-950" : "bg-slate-900"}`}
+            >
+              <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setModal({ type: "detail-sku", item: s })}
+                  title="Lihat detail SKU"
+                  className="font-mono text-xs text-slate-300 truncate hover:underline hover:text-amber-300 text-left"
+                >
+                  {s.sku}
+                </button>
+                <div className="text-[11px] text-slate-500 mt-0.5">Stok: {s.stok || 0}</div>
+              </div>
+              <button
+                disabled={!s.stok || s.stok <= 0}
+                onClick={() => setModal({ type: "barang-keluar", item: s })}
+                className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <MinusCircle size={13} /> Catat Keluar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between gap-3 mt-3 text-xs text-slate-400">
+          <div>
+            Menampilkan {mulai + 1}–{Math.min(mulai + STOK_PER_HALAMAN, sorted.length)} dari {sorted.length} SKU
+          </div>
+          {totalHalaman > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.max(1, p - 1))}
+                disabled={halamanAktif <= 1}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2 font-medium text-slate-300 whitespace-nowrap">
+                Hal {halamanAktif} / {totalHalaman}
+              </span>
+              <button
+                type="button"
+                onClick={() => setHalaman((p) => Math.min(totalHalaman, p + 1))}
+                disabled={halamanAktif >= totalHalaman}
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-slate-800 hover:border-amber-500/50 disabled:opacity-30 disabled:hover:border-slate-800"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StokOpname({ skuMaster, setModal }) {
+  const [q, setQ] = useState("");
+  // Qty hasil hitung fisik (stok opname) yang baru saja diketik user — { [sku_master.id]: string }.
+  // Belum tersimpan ke sistem sampai user klik "Sesuaikan Stok" (lewat modal konfirmasi).
+  const [fisik, setFisik] = useState({});
+
+  const setQtyFisik = (id, val) => {
+    setFisik((prev) => ({ ...prev, [id]: val }));
+  };
+
+  const hitungBaris = (s) => {
+    const raw = fisik[s.id];
+    const ada = raw !== undefined && raw !== "";
+    const qtyFisik = ada ? Number(raw) : null;
+    const selisih = ada ? qtyFisik - (s.stok || 0) : null;
+    return { ...s, raw: raw ?? "", ada, qtyFisik, selisih };
+  };
+
+  const rows = skuMaster.filter((s) => s.sku.toLowerCase().includes(q.toLowerCase())).map(hitungBaris);
+
+  // ---- Scan barcode (scanner USB/Bluetooth = ketik + Enter di kotak cari; kamera = tombol Scan Kamera) ----
+  // Mode default: scan -> SKU muncul di panel "Terakhir di-scan" & kursor pindah
+  // ke Qty Fisik untuk diketik. Mode "Tambah 1 tiap scan": tiap scan menambah
+  // Qty Fisik SKU itu sebanyak 1 (hitung per pcs).
+  const [tambahSatu, setTambahSatu] = useState(false);
+  const [terakhirId, setTerakhirId] = useState(null);
+  const [pesanScan, setPesanScan] = useState("");
+  const [scanTick, setScanTick] = useState(0);
+  const cariRef = useRef(null);
+  const qtyPanelRef = useRef(null);
+
+  const prosesScan = (kode) => {
+    const sku = cariSkuDariBarcode(skuMaster, kode);
+    if (!sku) {
+      setPesanScan(`Barcode "${kode}" tidak ditemukan di Master Barang.`);
+      return;
+    }
+    setPesanScan("");
+    setTerakhirId(sku.id);
+    setScanTick((n) => n + 1);
+    if (tambahSatu) {
+      setFisik((prev) => {
+        const cur = prev[sku.id];
+        const n = cur === undefined || cur === "" ? 0 : Number(cur) || 0;
+        return { ...prev, [sku.id]: String(n + 1) };
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!scanTick || tambahSatu) return;
+    const t = setTimeout(() => {
+      qtyPanelRef.current?.focus();
+      qtyPanelRef.current?.select();
+    }, 80);
+    return () => clearTimeout(t);
+  }, [scanTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const terakhirBaris = terakhirId ? skuMaster.find((x) => x.id === terakhirId) : null;
+  const terakhir = terakhirBaris ? hitungBaris(terakhirBaris) : null;
+
+  return (
+    <div>
+      <PageHeader
+        title="Stok Opname"
+        description="Hitung fisik stok di gudang, lalu bandingkan dengan Stok Sistem untuk mengecek selisih."
+      />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1">
+          <Search size={14} className="text-slate-500" />
+          <input
+            ref={cariRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              // Scanner USB/Bluetooth mengetik isi barcode lalu menekan Enter.
+              if (e.key !== "Enter") return;
+              const kode = q.trim();
+              if (!kode) return;
+              e.preventDefault();
+              if (cariSkuDariBarcode(skuMaster, kode)) {
+                prosesScan(kode);
+                setQ("");
+              } else {
+                setPesanScan(`Barcode "${kode}" tidak ditemukan di Master Barang.`);
+              }
+            }}
+            placeholder="Cari SKU atau scan barcode…"
+            className="bg-transparent outline-none text-sm flex-1 placeholder:text-slate-600"
+          />
+        </div>
+        <TombolScanKamera
+          label="Scan Kamera"
+          judul="Scan Barcode — Stok Opname"
+          continuous={tambahSatu}
+          onDetect={prosesScan}
+        />
+        <label className="flex items-center gap-2 text-xs text-slate-300 whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={tambahSatu}
+            onChange={(e) => setTambahSatu(e.target.checked)}
+            className="accent-amber-500"
+          />
+          Tambah 1 tiap scan
+        </label>
+      </div>
+      {pesanScan && <div className="mb-3 text-xs text-red-400">{pesanScan}</div>}
+      {terakhir && (
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-slate-900/70 p-4">
+          <div className="text-[11px] text-slate-500 mb-1">Terakhir di-scan</div>
+          <div className="font-mono text-sm text-amber-300 mb-3 break-all">{terakhir.sku}</div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <div className="text-slate-400">
+              Stok sistem <span className="text-slate-100 font-semibold ml-1">{terakhir.stok}</span>
+            </div>
+            <label className="flex items-center gap-2 text-slate-400">
+              Qty fisik
+              <input
+                ref={qtyPanelRef}
+                type="number"
+                value={terakhir.raw}
+                onChange={(e) => setQtyFisik(terakhir.id, e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter = selesai isi qty, kursor balik ke kotak scan untuk barcode berikutnya.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    cariRef.current?.focus();
+                  }
+                }}
+                placeholder="Hasil hitung…"
+                className="w-28 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-amber-500"
+              />
+            </label>
+            <div>
+              {!terakhir.ada ? (
+                <span className="text-slate-600 text-xs">—</span>
+              ) : terakhir.selisih === 0 ? (
+                <span className="flex items-center gap-1 text-emerald-400 text-xs">
+                  <CheckCircle2 size={13} /> Cocok
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-amber-400 text-xs">
+                  <AlertTriangle size={13} /> {terakhir.selisih > 0 ? `+${terakhir.selisih}` : terakhir.selisih}
+                </span>
+              )}
+            </div>
+            <button
+              disabled={!terakhir.ada || terakhir.selisih === 0}
+              onClick={() => setModal({ type: "stok-opname", item: terakhir, qtyFisik: terakhir.qtyFisik })}
+              className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              Sesuaikan Stok
+            </button>
+          </div>
+        </div>
+      )}
+      {rows.length === 0 ? (
+        <EmptyState label="Belum ada data untuk dihitung." />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
+                <th className="px-4 py-2.5">SKU</th>
+                <th className="px-4 py-2.5">Stok Sistem</th>
+                <th className="px-4 py-2.5">Qty Fisik (Stok Opname)</th>
+                <th className="px-4 py-2.5">Selisih</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 font-mono text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setModal({ type: "detail-sku", item: r })}
+                      title="Lihat detail SKU"
+                      className="hover:underline hover:text-amber-300 text-left"
+                    >
+                      {r.sku}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5">{r.stok}</td>
+                  <td className="px-4 py-2.5">
+                    <input
+                      type="number"
+                      value={r.raw}
+                      onChange={(e) => setQtyFisik(r.id, e.target.value)}
+                      placeholder="Hasil hitung…"
+                      className="w-28 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-amber-500"
+                    />
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {!r.ada ? (
+                      <span className="text-slate-600 text-xs">—</span>
+                    ) : r.selisih === 0 ? (
+                      <span className="flex items-center gap-1 text-emerald-400 text-xs">
+                        <CheckCircle2 size={13} /> Cocok
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-amber-400 text-xs">
+                        <AlertTriangle size={13} /> {r.selisih > 0 ? `+${r.selisih}` : r.selisih}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button
+                      disabled={!r.ada || r.selisih === 0}
+                      onClick={() => setModal({ type: "stok-opname", item: r, qtyFisik: r.qtyFisik })}
+                      className="text-[11px] font-medium px-2.5 py-1.5 rounded-md border border-amber-500/30 text-amber-300 hover:bg-amber-500/10 disabled:opacity-30 disabled:hover:bg-transparent"
+                    >
+                      Sesuaikan Stok
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiwayatStok({ stockHistory }) {
+  const handleDownload = () => {
+    downloadCsv(
+      `riwayat-stok-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        { key: "waktu", label: "Waktu" },
+        { key: "sku", label: "SKU" },
+        { key: "type", label: "Tipe" },
+        { key: "qty_before", label: "Sebelum" },
+        { key: "qty_change", label: "Perubahan" },
+        { key: "qty_after", label: "Sesudah" },
+        { key: "note", label: "Catatan" },
+      ],
+      stockHistory.map((h) => ({ ...h, waktu: fmtTgl(h.created_at) }))
+    );
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Riwayat Stok"
+        description="Catatan setiap perubahan stok — masuk, keluar, atau penyesuaian."
+        action={
+          <button
+            onClick={handleDownload}
+            disabled={stockHistory.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+          >
+            <Download size={14} /> Download CSV
+          </button>
+        }
+      />
+      {stockHistory.length === 0 ? (
+        <EmptyState label="Belum ada riwayat stok." />
+      ) : (
+        <div className="rounded-xl border border-slate-800 overflow-x-auto">
+          <table className="w-full text-sm min-w-[680px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
+                <th className="px-4 py-2.5">Waktu</th>
+                <th className="px-4 py-2.5">SKU</th>
+                <th className="px-4 py-2.5">Tipe</th>
+                <th className="px-4 py-2.5">Sebelum</th>
+                <th className="px-4 py-2.5">Perubahan</th>
+                <th className="px-4 py-2.5">Sesudah</th>
+                <th className="px-4 py-2.5">Catatan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockHistory.map((h) => (
+                <tr key={h.id} className="border-b border-slate-800/60 last:border-0">
+                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-400 text-xs">{fmtTgl(h.created_at)}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs">{h.sku}</td>
+                  <td className="px-4 py-2.5 capitalize">{h.type}</td>
+                  <td className="px-4 py-2.5 text-slate-400">{h.qty_before}</td>
+                  <td className="px-4 py-2.5">{h.qty_change > 0 ? `+${h.qty_change}` : h.qty_change}</td>
+                  <td className="px-4 py-2.5 font-semibold">{h.qty_after}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{h.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
