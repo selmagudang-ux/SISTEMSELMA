@@ -1,29 +1,42 @@
-import { Home, ScanLine, Boxes, Truck, Wallet, ClipboardList, MoreHorizontal } from "lucide-react";
-
 // =========================================================
-// VERSI HP SISTEMSELMA (/m) — DAFTAR MENU
-// Satu tempat untuk mendaftarkan menu versi HP. Menu baru cukup ditambah di sini
-// (plus file layarnya), tanpa menyentuh MobileApp.jsx.
+// VERSI HP SISTEMSELMA (/m) — PETA LAYAR
+// Susunan menu HP DIAMBIL LANGSUNG dari NAV (lib/constants.js), jadi sama dengan sidebar versi web
+// (OPERASIONAL > ADMIN GUDANG > Stok > Stok Barang, dst) dan ikut hak akses role + fitur yang dimatikan per PT.
+// File ini hanya mencatat menu mana yang SUDAH punya layar HP. Menu yang belum tercatat di sini tetap tampil,
+// tapi redup dengan tulisan "Segera hadir".
 //
-//  key      : id menu di versi HP (dipakai di alamat, mis. /m#stok)
-//  label    : nama di navigasi
-//  Ikon     : ikon lucide
-//  menuKey  : key menu ERP (lib/constants.js NAV) yang harus boleh diakses role-nya.
-//             Kosong = semua yang sudah login boleh.
-//  pin      : true = tampil di navigasi bawah (maksimal 4 yang dipakai), lainnya masuk "Lainnya"
-//  muat     : fungsi import() layar menu (dimuat malas); kosong = layar "segera hadir"
-//
-// TAHAP 1: kerangka. TAHAP 2: menu Stok (Stok Barang + Stok Menipis) sudah jadi; menu lain masih "segera hadir".
-// Menu yang mau diaktifkan nanti diisi di `muat`.
+// Cara menambah layar HP baru:
+//   1. Buat file layarnya di pages/mobile/ (menerima props { session, sub }).
+//   2. Daftarkan di LAYAR_HP di bawah:
+//        "menuKey/subKey" -> khusus satu sub-menu, mis. "stok/barang"
+//        "menuKey"        -> menu tanpa sub, atau satu layar yang menangani semua sub-nya
+//      menuKey/subKey = key di NAV (lib/constants.js).
 // =========================================================
 
-export const MENU_HP = [
-  { key: "beranda", label: "Beranda", Ikon: Home, pin: true, muat: () => import("./Beranda.jsx") },
-  { key: "scan-resi", label: "Scan Resi", Ikon: ScanLine, menuKey: "scan-resi", pin: true, muat: null },
-  { key: "stok", label: "Stok", Ikon: Boxes, menuKey: "stok", pin: true, muat: () => import("./StokHp.jsx") },
-  { key: "barang-datang", label: "Barang Datang", Ikon: Truck, menuKey: "barang-datang", muat: null },
-  { key: "keuangan", label: "Keuangan", Ikon: Wallet, menuKey: "keuangan", muat: null },
-  { key: "persetujuan-restock", label: "Persetujuan Restok", Ikon: ClipboardList, menuKey: "persetujuan-restock", muat: null },
-];
+export const LAYAR_HP = {
+  "stok/barang": { muat: () => import("./StokHp.jsx") },
+  "stok/menipis": { muat: () => import("./StokHp.jsx") },
+};
 
-export const IKON_LAINNYA = MoreHorizontal;
+export const kunciLayar = (menuKey, subKey) => (subKey ? `${menuKey}/${subKey}` : menuKey);
+
+export const cariLayar = (menuKey, subKey) => LAYAR_HP[kunciLayar(menuKey, subKey)] || (subKey ? LAYAR_HP[menuKey] : null) || null;
+
+// Node NAV ini (atau salah satu isinya) sudah punya layar HP? `induk` = node pembungkusnya.
+export function punyaLayar(node, induk) {
+  if (node.group) return (node.children || []).some((c) => punyaLayar(c, node));
+  if (node.children?.length) return node.children.some((s) => !!cariLayar(node.key, s.key)) || !!cariLayar(node.key);
+  if (induk && !induk.group && induk.children?.length) return !!cariLayar(induk.key, node.key);
+  return !!cariLayar(node.key);
+}
+
+// Label NAV banyak yang HURUF BESAR SEMUA ("OPERASIONAL") — di HP dirapikan jadi "Operasional".
+export function rapikanLabel(label) {
+  const s = String(label || "");
+  if (s !== s.toUpperCase() || s === s.toLowerCase()) return s;
+  return s
+    .toLowerCase()
+    .split(" ")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}

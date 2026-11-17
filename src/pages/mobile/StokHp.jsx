@@ -41,12 +41,13 @@ function LencanaStok({ stok }) {
   return <span className="text-base font-bold text-md-on-surface">{stok.toLocaleString("id-ID")}</span>;
 }
 
-export default function Stok({ session }) {
+export default function Stok({ session, sub }) {
   // allowedSubMenus mengembalikan null kalau role tidak dibatasi (artinya semua sub boleh).
   const subBoleh = allowedSubMenus(session.role, "stok");
   const adaSub = (k) => !Array.isArray(subBoleh) || subBoleh.includes(k);
-  const adaMenipis = adaSub("menipis");
-  const adaBarang = adaSub("barang");
+  // `sub` diisi kalau layar dibuka dari satu sub-menu tertentu (Stok Barang / Stok Menipis) -> tampilkan itu saja.
+  const adaMenipis = sub ? sub === "menipis" : adaSub("menipis");
+  const adaBarang = sub ? sub === "barang" : adaSub("barang");
   const [tab, setTab] = useState(adaBarang ? "barang" : "menipis");
 
   const [data, setData] = useState(null); // null = belum dimuat
