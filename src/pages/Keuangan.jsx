@@ -41,6 +41,7 @@ import {
   renameKategoriKode,
   sb,
 } from "../lib/api";
+import { useHppPenjualan } from "../lib/hppPenjualan";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/DetailPesananKeuangan";
 import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING, bisa, roleHanyaLihat } from "../lib/constants";
@@ -879,7 +880,7 @@ function kunciSemuaKelompok(data, seksi) {
   return (data || []).flatMap((d) => (d.isGrup ? [`${seksi}:${d.kode}`, ...kunciSemuaKelompok(d.anak, seksi)] : []));
 }
 
-export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, onKategoriClick }) {
+export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, onKategoriClick, hpp = null, labaKotor = null }) {
   const untung = labaRugi >= 0;
   const [terbuka, setTerbuka] = useState(() => new Set());
   const toggle = (k) =>
@@ -929,6 +930,46 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
             <td className="px-4 py-2 font-semibold text-slate-100">Total Pendapatan</td>
             <td className="px-4 py-2 text-right font-semibold text-emerald-400">{fmtRp(pendapatan.total)}</td>
           </tr>
+
+          {hpp && (
+            <>
+              <tr>
+                <td colSpan={2} className="px-4 py-2 font-semibold text-orange-400 bg-orange-500/5">HARGA POKOK PENJUALAN (HPP)</td>
+              </tr>
+              {[
+                ["marketplace", "HPP Penjualan Marketplace"],
+                ["grosir", "HPP Penjualan Grosir"],
+                ["toko", "HPP Penjualan Toko"],
+              ].map(([k, label]) => (
+                <tr key={k}>
+                  <td className="px-4 py-1.5 pl-8 text-slate-300">
+                    {label}
+                    {hpp.galat?.[k] && <span className="ml-2 text-[11px] text-amber-400">(gagal dimuat: {hpp.galat[k]})</span>}
+                  </td>
+                  <td className="px-4 py-1.5 text-right text-slate-300">{fmtRp(hpp[k] || 0)}</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-900/60">
+                <td className="px-4 py-2 font-semibold text-slate-100">Total HPP</td>
+                <td className="px-4 py-2 text-right font-semibold text-orange-400">{fmtRp(hpp.total)}</td>
+              </tr>
+              {hpp.tanpaHpp > 0 && (
+                <tr>
+                  <td colSpan={2} className="px-4 py-1.5 text-[11px] text-amber-400">
+                    {hpp.tanpaHpp} baris/SKU terjual belum punya HPP, dihitung Rp 0. Lengkapi HPP-nya di Master Barang supaya laba tidak terlihat terlalu besar.
+                  </td>
+                </tr>
+              )}
+              <tr className="bg-slate-900/60">
+                <td className="px-4 py-2 font-semibold text-slate-100">Laba Kotor</td>
+                <td className="px-4 py-2 text-right font-semibold text-slate-100">
+                  {(labaKotor ?? pendapatan.total - hpp.total) < 0
+                    ? `(${fmtRp(Math.abs(labaKotor ?? pendapatan.total - hpp.total)).replace("Rp ", "")})`
+                    : fmtRp(labaKotor ?? pendapatan.total - hpp.total)}
+                </td>
+              </tr>
+            </>
+          )}
 
           <tr>
             <td colSpan={2} className="px-4 py-2 font-semibold text-red-400 bg-red-500/5">BEBAN (PENGELUARAN)</td>
@@ -1788,6 +1829,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const dataKeluarGrup = kelompokkanBreakdown(breakdownKeluar.data, master.kelompok_keluar, breakdownKeluar.total);
   // Laba Rugi: kategori yang tujuannya Neraca (Pengaturan > Rekening & Kategori > Masuk ke Laporan) tidak dihitung.
   const dataLabaRugi = saringLabaRugi(dataRentang, master);
+  // HPP penjualan (marketplace + grosir + toko) untuk rentang yang dipilih, lihat lib/hppPenjualan.js.
+  const { hpp: hppPenjualan } = useHppPenjualan(dari || null, sampai || null);
   const labaRugi = laporanLabaRugi(
     dataLabaRugi,
     kategoriMasukList,
@@ -1795,7 +1838,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
     dari || null,
     sampai || null,
     master.kelompok_masuk,
-    master.kelompok_keluar
+    master.kelompok_keluar,
+    hppPenjualan?.total || 0
   );
 
   const sorted = [...list].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
@@ -1958,6 +2002,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             beban={labaRugi.beban}
             labaRugi={labaRugi.labaRugi}
             marginPersen={labaRugi.marginPersen}
+            hpp={hppPenjualan}
+            labaKotor={labaRugi.labaKotor}
             subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
             onKategoriClick={setDetailKategori}
           />

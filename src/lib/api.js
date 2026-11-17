@@ -1996,15 +1996,22 @@ export function breakdownPemasukanKategori(transaksi, kategoriList) {
 // pemetaanMasuk / pemetaanKeluar (opsional) = master.kelompok_masuk /
 // master.kelompok_keluar — kalau diisi, `data` pendapatan/beban dikelompokkan
 // bertingkat (Kategori > Sub Kategori > Rincian), lihat kelompokkanBreakdown.
-export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai, pemetaanMasuk, pemetaanKeluar) {
+//
+// hppTotal (opsional, default 0) = Harga Pokok Penjualan periode itu (lihat lib/hppPenjualan.js).
+// Kalau diisi: Laba Kotor = Pendapatan - HPP, dan Laba Bersih = Laba Kotor - Beban.
+// Kategori pembelian barang (mis. "Pembayaran Barang Supplier") sebaiknya diarahkan ke Neraca di
+// Pengaturan > Rekening & Kategori > Masuk ke Laporan supaya tidak terhitung dobel dengan HPP.
+export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai, pemetaanMasuk, pemetaanKeluar, hppTotal = 0) {
   const { list } = ringkasanKeuangan(transaksi, dari, sampai);
   const pendapatan = breakdownPemasukanKategori(list, kategoriMasukList);
   const beban = breakdownPengeluaranKategori(list, kategoriKeluarList);
   pendapatan.data = kelompokkanBreakdown(pendapatan.data, pemetaanMasuk, pendapatan.total);
   beban.data = kelompokkanBreakdown(beban.data, pemetaanKeluar, beban.total);
-  const labaRugi = pendapatan.total - beban.total;
+  const hpp = Number(hppTotal) || 0;
+  const labaKotor = pendapatan.total - hpp;
+  const labaRugi = labaKotor - beban.total;
   const marginPersen = pendapatan.total > 0 ? (labaRugi / pendapatan.total) * 100 : 0;
-  return { pendapatan, beban, labaRugi, marginPersen };
+  return { pendapatan, beban, hpp, labaKotor, labaRugi, marginPersen };
 }
 
 // Susun data "Laporan Bulanan" untuk satu tahun: tiap kategori pemasukan &
