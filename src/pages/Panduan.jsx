@@ -6,7 +6,7 @@ import {
   Banknote, MessageCircle, ArrowRightLeft, Receipt,
 } from "lucide-react";
 import { PageHeader } from "../components/ui";
-import { isSuperadminLike, roleLabel } from "../lib/constants";
+import { roleLabel } from "../lib/constants";
 
 // =========================================================
 // PANDUAN PENGGUNAAN — ditulis dengan bahasa gampang (bahasa bayi).
@@ -14,7 +14,7 @@ import { isSuperadminLike, roleLabel } from "../lib/constants";
 //   1. fungsi : menu ini gunanya apa (kalimat pendek)
 //   2. cara   : cara memakainya, berupa kelompok langkah bernomor
 //               [{ judul?: "Nama kegiatan", langkah: ["langkah 1", "langkah 2"] }]
-// Ditampilkan/disembunyikan tergantung role yang login (lihat ROLE_SECTIONS).
+// Semua bagian ditampilkan ke semua role yang login.
 // Kalau ada fitur baru atau alur berubah, sesuaikan juga di sini supaya tetap benar.
 // =========================================================
 const SECTIONS = [
@@ -433,7 +433,7 @@ const SECTIONS = [
     fungsi: [
       `Aplikasi kasir dipakai untuk berjualan langsung di toko offline. Alamatnya /kasir. Tampilannya berdiri sendiri, tanpa menu SELMA.`,
       `Akun kasir dibuat di Pengaturan, Kelola User, dengan role Kasir.`,
-      `Menu POS di Penjualan, Toko Offline, dipakai untuk mengatur barang toko, promo, dan melihat laporan kasir. Menu POS ini khusus Super Appa.`,
+      `Menu POS di Penjualan, Toko Offline, dipakai untuk mengatur barang toko, promo, dan melihat laporan kasir. Menu POS ini hanya muncul untuk akun yang sudah diberi akses.`,
       `Satu transaksi kasir menyimpan stok, riwayat stok, dan Keuangan sekaligus. Kalau gagal, semuanya batal. Jadi tidak ada yang setengah tercatat.`,
     ],
     cara: [
@@ -483,17 +483,27 @@ const SECTIONS = [
         ],
       },
       {
-        judul: "POS: Barang Toko (khusus Super Appa)",
+        judul: "POS: Barang Toko",
         langkah: [
           `Buka Penjualan, Toko Offline, POS, tab Barang Toko.`,
           `Di sini ada harga jual, HPP, foto, dan stok toko tiap barang.`,
           `Stok toko tidak bisa diketik langsung. Stok hanya berubah lewat pindah dari gudang, penjualan kasir, atau opname, supaya selalu ada catatannya.`,
           `Barang baru bisa diambil dari Master Barang gudang lewat "Dari Master". Kode toko dibuat otomatis, harga jual diambil dari harga Ecer, HPP ikut, dan barcode memakai SKU gudang. Kalau jumlah diisi, stok gudang ikut pindah ke toko. SKU yang sudah ada di Barang Toko dilewati.`,
           `Barang hanya bisa dihapus kalau stok tokonya 0.`,
+          `Foto barang bisa diperbesar (zoom) di daftar maupun di form ubah.`,
         ],
       },
       {
-        judul: "POS: Promo (khusus Super Appa)",
+        judul: "POS: Riwayat Pemindahan (di Barang Toko)",
+        langkah: [
+          `Di tab Barang Toko, klik Riwayat.`,
+          `Isi daftar perpindahan barang antara gudang dan toko. Pilih rentang tanggal dan arahnya (gudang ke toko, atau toko ke gudang).`,
+          `Klik PDF di satu baris untuk mencetak bukti pemindahan itu.`,
+          `Atau centang beberapa baris lalu satukan dalam satu PDF.`,
+        ],
+      },
+      {
+        judul: "POS: Promo",
         langkah: [
           `Buka tab Promo.`,
           `Promo bisa untuk satu barang atau satu kategori. Diskonnya persen atau rupiah per pcs.`,
@@ -502,11 +512,30 @@ const SECTIONS = [
         ],
       },
       {
-        judul: "POS: Laporan (khusus Super Appa)",
+        judul: "POS: Laporan",
         langkah: [
           `Buka tab Laporan.`,
           `Pilih rentang tanggal, lalu lihat tab Harian, Per Kasir, Per Produk, atau Barang Terlaris.`,
           `Di sini terlihat omzet, retur, void, pembayaran cash dan cashless, serta selisih kas tiap kasir.`,
+        ],
+      },
+      {
+        judul: "POS: Cek HPP",
+        langkah: [
+          `Buka tab Cek HPP.`,
+          `Di sini muncul barang yang sudah terjual tetapi HPP-nya di Barang Toko masih kosong. Barang itu dihitung HPP Rp 0, jadi laba kelihatan terlalu besar.`,
+          `Isi HPP-nya. Hasilnya langsung tersimpan di Barang Toko, jadi permanen dan ikut dipakai Laporan Kasir dan Laba Rugi.`,
+          `Barang yang ditandai "dugaan" artinya laporan sudah memakai HPP barang yang mirip. Klik "Pakai ini" untuk menjadikannya HPP tetap.`,
+        ],
+      },
+      {
+        judul: "POS: Penjualan Lama",
+        langkah: [
+          `Buka tab Penjualan Lama. Tab ini untuk memasukkan penjualan toko offline dari SEBELUM kasir dipakai.`,
+          `Pilih file hasil ekspor dari kasir lama, lalu periksa hasil bacaannya. Tiap baris diberi status: Diimpor, Tidak valid, Sudah ada data kasir, atau Sudah pernah diimpor.`,
+          `Klik simpan. Impor ini TIDAK menulis ke Keuangan dan TIDAK mengubah stok, karena omzetnya sudah ada di Keuangan lewat Toko Offline.`,
+          `Gunanya untuk melihat rincian barang terjual serta HPP dan laba periode lama. Datanya ikut masuk HPP di Laba Rugi.`,
+          `Salah impor? Satu batch impor bisa dihapus dari daftar batch.`,
         ],
       },
     ],
@@ -527,6 +556,34 @@ const SECTIONS = [
           `Catat pemasukan dan biaya iklan toko itu. Saldo tiap toko dihitung sendiri-sendiri, termasuk pencairan.`,
           `Pemasukan dan biaya iklan yang dicatat di sini BELUM masuk ke Keuangan.`,
           `Saat saldo dicairkan, barulah tercatat sebagai pemasukan di menu Keuangan.`,
+        ],
+      },
+      {
+        judul: "Tab Rincian Penjualan (Shopee)",
+        langkah: [
+          `Buka tab Rincian Penjualan pada platform Shopee.`,
+          `Upload laporan Shopee: Laporan Penghasilan, export pesanan, laporan iklan (CSV), dan Mass Update untuk memetakan kode produk ke SKU.`,
+          `Lihat hasilnya di tab Per Pesanan, Per SKU, Per Etalase, dan Rincian Biaya. Kolom tabel bisa diurutkan.`,
+          `Laba bersih = dana yang dilepas Shopee dikurangi HPP. Biaya iklan dikurangkan sekali di total periode.`,
+          `Pesanan yang SKU-nya belum cocok dengan Master Barang tidak ikut dihitung ke laba dan HPP, supaya laba tidak kelihatan terlalu besar. Jumlahnya ditampilkan.`,
+          `Menu ini tidak mengubah saldo toko maupun Keuangan.`,
+        ],
+      },
+      {
+        judul: "Tab Rencana Iklan (Shopee)",
+        langkah: [
+          `Buka tab Rencana Iklan di dalam Rincian Penjualan.`,
+          `Pilih cara: Per Etalase (isi anggaran tiap etalase) atau Anggaran Total (misalnya untuk momen 11.11, sistem membagi ke etalase yang layak).`,
+          `Pilih skenario, lalu lihat batas aman dan proyeksinya. Rencana bisa disimpan.`,
+          `Setelah periodenya selesai dan laporan iklan diimpor, rencana dibandingkan dengan hasil sebenarnya.`,
+        ],
+      },
+      {
+        judul: "Pesanan TikTok (dari API TikTok Shop)",
+        langkah: [
+          `Buka platform TikTok lalu tab Pesanan (API).`,
+          `Satu toko SELMA terhubung ke satu toko TikTok yang namanya sama.`,
+          `Data pesanan ditarik dari TikTok Shop dan hanya ditampilkan untuk diperiksa. Belum menghitung HPP dan laba, dan tidak mengubah saldo toko atau Keuangan.`,
         ],
       },
     ],
@@ -598,7 +655,7 @@ const SECTIONS = [
       {
         judul: "Retur Resi (paket yang balik ke gudang)",
         langkah: [
-          `Tab ini sementara hanya untuk Super Appa. Role lain baru bisa memakainya kalau Super Appa memberi akses di Pengaturan, Hak Akses.`,
+          `Tab ini hanya muncul untuk akun yang sudah diberi akses di Pengaturan, Hak Akses.`,
           `Buka tab Retur Resi.`,
           `Scan atau ketik resi paket yang balik ke gudang, lalu tekan Enter.`,
           `Sistem menentukan jenisnya sendiri. "Cancel" kalau resinya ada di Daftar Cancel. "Gagal kirim" kalau paketnya pernah di-scan kirim tapi bukan cancel (ditolak atau alamat salah).`,
@@ -648,7 +705,7 @@ const SECTIONS = [
     ringkasan: "Mencatat uang masuk dan keluar, mengecek saldo, dan melihat laporan.",
     fungsi: [
       `Menu ini seperti buku catatan uang. Semua uang yang masuk, keluar, dan pindah dicatat di sini.`,
-      `Isinya: Transaksi, Kas (rekening dan saldo), Laporan Keuangan, dan Pengaturan.`,
+      `Isinya: Transaksi, Kas (rekening dan saldo), Laporan Keuangan (Saldo Kas, Laporan Arus Kas, Laporan Laba Rugi, dan Neraca), dan Pengaturan.`,
       `Ada dua jenis kas. Saldo Bank adalah uang yang ada di bank. Uang Cash adalah uang tunai yang dipegang.`,
     ],
     cara: [
@@ -704,8 +761,12 @@ const SECTIONS = [
       {
         judul: "Laporan Keuangan",
         langkah: [
-          `Pilih rentang tanggal.`,
-          `Lihat ringkasan, grafik arus kas, dan rincian pengeluaran.`,
+          `Buka Laporan Keuangan lalu pilih tab yang mau dilihat: Saldo Kas, Laporan Arus Kas, Laporan Laba Rugi, atau Neraca.`,
+          `Arus Kas dan Laba Rugi mengikuti rentang tanggal yang dipilih. Pilih tanggal dulu.`,
+          `Saldo Kas: saldo tiap akun kas (kas kecil dan bank) saat ini.`,
+          `Laporan Arus Kas: grafik uang masuk dan uang keluar per hari atau per minggu.`,
+          `Laporan Laba Rugi: pendapatan dikurangi biaya, per kategori. Klik kategori untuk melihat rinciannya. Kategori yang tujuannya Neraca (misalnya modal dari pemilik) tidak dihitung sebagai pendapatan.`,
+          `Neraca: gambaran harta (kas, bank, saldo marketplace, piutang, persediaan barang) dan kewajiban. Persediaan Barang dihitung dari stok Barang Toko dikali HPP.`,
           `Laporan bisa dibuat PDF bulanan dan tahunan.`,
           `Ada juga ringkasan tulisan untuk dikirim lewat WhatsApp.`,
         ],
@@ -716,6 +777,7 @@ const SECTIONS = [
           `Log Keterangan: daftar keterangan yang pernah dipakai. Nanti muncul sebagai saran saat mengisi keterangan transaksi baru. Kalau dihapus di sini, cuma disembunyikan dari saran. Transaksi aslinya tidak ikut terhapus.`,
           `Rekening & Kategori: kelola daftar rekening dan kategori pemasukan serta pengeluaran yang muncul di form Transaksi. Kalau kode rekening atau kategori diganti, semua transaksi yang memakai kode itu ikut berganti ke kode baru.`,
           `Tiap rekening bisa ditandai Saldo Bank atau Uang Cash. Rekening yang belum ditandai otomatis masuk Uang Cash.`,
+          `Tiap kategori bisa dipilih masuk ke Laporan Laba Rugi atau ke Neraca. Contoh: modal dari pemilik masuk Neraca, penjualan masuk Laba Rugi.`,
         ],
       },
       {
@@ -1002,7 +1064,7 @@ const SECTIONS = [
     fungsi: [
       `Menu ini untuk chat pribadi dengan pengguna lain di aplikasi. Hanya teks dan foto yang bisa dikirim. File lain tidak bisa.`,
       `Pesan dihapus otomatis setelah 3 hari, jadi jangan simpan informasi penting di sini. Foto yang sudah terhapus tampil sebagai "Foto sudah dihapus".`,
-      `Super Appa bisa membaca semua percakapan (hanya membaca). Jangan pakai chat ini untuk urusan pribadi yang rahasia.`,
+      `Jangan pakai chat ini untuk urusan pribadi yang rahasia.`,
     ],
     cara: [
       {
@@ -1074,27 +1136,11 @@ const SECTIONS = [
   },
 ];
 
-// Bagian mana saja yang ditampilkan untuk tiap role. Owner & superadmin/
-// superappa (isSuperadminLike) tidak didaftarkan di sini — mereka otomatis
-// dapat SEMUA bagian (lihat visibleSections di bawah), superadmin ditambah
-// bagian "Pengaturan" yang tidak diberikan ke owner biasa.
-const ROLE_SECTIONS = {
-  gudang: ["barang-datang", "data-barang", "sku-harga", "stok", "rak", "cetak-label", "transfer-entitas", "chat"],
-  pemotretan: ["foto", "chat"],
-  marketplace: ["marketplace", "chat"],
-  grosir: ["grosir", "pelanggan-toko", "toko-offline", "penjualan-marketplace", "reseller", "scan-resi", "urut-resi", "chat"],
-  keuangan: ["keuangan", "rekap-perpindahan", "chat"],
-  keuangan_pusat: ["holding", "chat"],
-  scan_resi: ["scan-resi", "urut-resi"],
-  kasir: ["kasir-pos", "chat"],
-};
-
-function visibleSections(role) {
-  if (isSuperadminLike(role)) return SECTIONS; // semua bagian, termasuk Pengaturan
-  if (role === "owner") return SECTIONS.filter((s) => s.key !== "pengaturan"); // semua kecuali Pengaturan
-  const keys = ROLE_SECTIONS[role];
-  if (!keys) return SECTIONS; // role tidak dikenali — aman default tampilkan semua
-  return SECTIONS.filter((s) => keys.includes(s.key));
+// Semua bagian panduan ditampilkan ke semua role, supaya setiap fitur
+// bisa dibaca siapa saja. Menu yang tidak bisa dibuka oleh role tertentu
+// tetap tidak muncul di sidebar-nya sendiri.
+function visibleSections() {
+  return SECTIONS;
 }
 
 // Semua teks satu bagian dijadikan satu string kecil, dipakai untuk pencarian.
@@ -1111,8 +1157,7 @@ function teksPencarian(sec) {
 
 export default function Panduan({ session }) {
   const role = session?.role;
-  const sections = visibleSections(role);
-  const showAllBadge = isSuperadminLike(role) || role === "owner";
+  const sections = visibleSections();
 
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(() => new Set(sections.length <= 3 ? sections.map((s) => s.key) : []));
@@ -1150,11 +1195,7 @@ export default function Panduan({ session }) {
     <div>
       <PageHeader
         title="Panduan Penggunaan"
-        description={
-          showAllBadge
-            ? "Penjelasan semua menu dengan bahasa gampang. Tiap menu dijelaskan gunanya dulu, lalu cara memakainya."
-            : "Penjelasan menu untuk bagian kerjamu dengan bahasa gampang. Gunanya dulu, lalu cara memakainya."
-        }
+        description="Penjelasan semua menu dan fitur dengan bahasa gampang. Tiap menu dijelaskan gunanya dulu, lalu cara memakainya."
         action={
           <div className="flex items-center gap-2 flex-wrap">
             <button
