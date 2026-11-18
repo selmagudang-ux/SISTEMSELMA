@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, startTransition } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
@@ -736,20 +736,40 @@ function MainApp({ session, onLogout }) {
   // state — dipisah dari loadCore supaya kedua sumber itu (fetch & cache)
   // pakai jalur setState yang SAMA PERSIS, tidak ada logic yang kegandaan
   // atau ketinggalan salah satu.
+  // Penyebab HP "freeze" saat pindah menu: tiap pindah menu (TTL cache 15 dtk) loadCore menarik ulang
+  // belasan tabel besar lalu MENIMPA semua state dengan array baru walau isinya sama persis -> seluruh
+  // halaman + semua useMemo berat (ribuan SKU) dihitung & digambar ulang di HP. Sekarang state hanya
+  // diganti kalau isinya benar-benar berubah (dibandingkan lewat JSON), dan diganti sebagai pembaruan
+  // non-mendesak (startTransition) supaya sentuhan/scroll tidak tertahan.
+  const jejakCoreRef = useRef({});
   const terapkanDataCore = useCallback((data) => {
-    setItems(data.items || []);
-    setPesananMasuk(data.pesananMasuk || []);
-    setSuppliers(data.suppliers || []);
-    setSkuMaster(data.skuMaster || []);
-    setRak(data.rak || []);
+    const ganti = (kunci, nilai, setter) => {
+      let teks;
+      try {
+        teks = JSON.stringify(nilai);
+      } catch {
+        teks = null;
+      }
+      if (teks !== null && jejakCoreRef.current[kunci] === teks) return;
+      jejakCoreRef.current[kunci] = teks;
+      setter(nilai);
+    };
     daftarkanProfilEntitas(data.masterGrouped || {});
-    setMaster(lingkupTokoMarketplace(data.masterGrouped || {}, entitasBacaSaatIni()));
-    setSettings(data.settings || null);
-    setPenempatan(data.penempatan || []);
-    setStockHistory(data.stockHistory || []);
-    setRakEvents(data.rakEvents || []);
-    setMarketplaceNotifAck(data.marketplaceNotifAck || []);
-    setPengajuanRestock(data.pengajuanRestock || []);
+    const masterBaru = lingkupTokoMarketplace(data.masterGrouped || {}, entitasBacaSaatIni());
+    startTransition(() => {
+      ganti("items", data.items || [], setItems);
+      ganti("pesananMasuk", data.pesananMasuk || [], setPesananMasuk);
+      ganti("suppliers", data.suppliers || [], setSuppliers);
+      ganti("skuMaster", data.skuMaster || [], setSkuMaster);
+      ganti("rak", data.rak || [], setRak);
+      ganti("master", masterBaru, setMaster);
+      ganti("settings", data.settings || null, setSettings);
+      ganti("penempatan", data.penempatan || [], setPenempatan);
+      ganti("stockHistory", data.stockHistory || [], setStockHistory);
+      ganti("rakEvents", data.rakEvents || [], setRakEvents);
+      ganti("marketplaceNotifAck", data.marketplaceNotifAck || [], setMarketplaceNotifAck);
+      ganti("pengajuanRestock", data.pengajuanRestock || [], setPengajuanRestock);
+    });
   }, []);
 
   const loadCore = useCallback(async (force = false) => {
@@ -791,7 +811,8 @@ function MainApp({ session, onLogout }) {
       sbAll("stock_history_latest?select=*"),
       sbAll("rak_events_latest_sku?select=*"),
       sbAll("rak_events_latest_rak_dari?select=*"),
-      sbAll("marketplace_notif_ack?select=*"),
+      // Hanya notif_key yang dipakai (ackedKeys) — kolom lain tidak perlu ikut diunduh.
+      sbAll("marketplace_notif_ack?select=notif_key"),
       // Status "menunggu" TETAP ditarik berapa pun umurnya (masih perlu
       // ditindaklanjuti) — cuma histori yang SUDAH direspon (disetujui/
       // ditolak) yang dibatasi ke bulan berjalan + 1 bulan sebelumnya, sesuai
