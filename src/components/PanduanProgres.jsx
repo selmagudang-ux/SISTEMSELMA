@@ -18,6 +18,24 @@ const STATUS = {
 const URUT = ["dikerjakan", "rencana", "tertunda", "selesai"];
 const field = "w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-amber-500";
 
+function Form({ draf, onUbah, onSimpan, onBatal, sibuk }) {
+  return (
+    <div className="space-y-2.5 mt-3">
+      <input className={field} placeholder="Judul (mis. Barang Aset)" value={draf.judul} onChange={(e) => onUbah({ ...draf, judul: e.target.value })} />
+      <select className={field} value={draf.status} onChange={(e) => onUbah({ ...draf, status: e.target.value })}>
+        {URUT.map((k) => <option key={k} value={k}>{STATUS[k].label}</option>)}
+      </select>
+      <textarea className={`${field} min-h-[140px]`} placeholder="Tulis isi catatan di sini. Satu baris = satu paragraf di PDF." value={draf.isi} onChange={(e) => onUbah({ ...draf, isi: e.target.value })} />
+      <div className="flex gap-2">
+        <button disabled={sibuk} onClick={onSimpan} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950">
+          {sibuk ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Simpan
+        </button>
+        <button onClick={onBatal} className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Batal</button>
+      </div>
+    </div>
+  );
+}
+
 export default function PanduanProgres() {
   const [daftar, setDaftar] = useState(null);
   const [galat, setGalat] = useState("");
@@ -84,22 +102,6 @@ export default function PanduanProgres() {
     finally { setMembuatPdf(false); }
   };
 
-  const Form = ({ draf, onUbah, onSimpan, onBatal }) => (
-    <div className="space-y-2.5 mt-3">
-      <input className={field} placeholder="Judul (mis. Barang Aset)" value={draf.judul} onChange={(e) => onUbah({ ...draf, judul: e.target.value })} />
-      <select className={field} value={draf.status} onChange={(e) => onUbah({ ...draf, status: e.target.value })}>
-        {URUT.map((k) => <option key={k} value={k}>{STATUS[k].label}</option>)}
-      </select>
-      <textarea className={`${field} min-h-[140px]`} placeholder="Tulis isi catatan di sini. Satu baris = satu paragraf di PDF." value={draf.isi} onChange={(e) => onUbah({ ...draf, isi: e.target.value })} />
-      <div className="flex gap-2">
-        <button disabled={sibuk} onClick={onSimpan} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950">
-          {sibuk ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Simpan
-        </button>
-        <button onClick={onBatal} className="text-xs font-semibold px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Batal</button>
-      </div>
-    </div>
-  );
-
   return (
     <div className="rounded-xl border border-amber-500/40 overflow-hidden mb-4">
       <button onClick={() => setBuka(!buka)} className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-900/60">
@@ -126,7 +128,7 @@ export default function PanduanProgres() {
             <div className="mt-3 flex gap-2 text-xs text-amber-400"><AlertTriangle size={14} className="flex-shrink-0 mt-0.5" /> {galat}</div>
           )}
 
-          {baru && <div className="rounded-lg border border-slate-800 p-3 mt-3"><div className="text-xs font-bold uppercase tracking-wide text-amber-400">Catatan baru</div><Form draf={baru} onUbah={setBaru} onSimpan={() => simpan(baru)} onBatal={() => setBaru(null)} /></div>}
+          {baru && <div className="rounded-lg border border-slate-800 p-3 mt-3"><div className="text-xs font-bold uppercase tracking-wide text-amber-400">Catatan baru</div><Form sibuk={sibuk} draf={baru} onUbah={setBaru} onSimpan={() => simpan(baru)} onBatal={() => setBaru(null)} /></div>}
 
           {daftar === null ? (
             <div className="mt-4 text-sm text-slate-500 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Memuat…</div>
@@ -140,7 +142,7 @@ export default function PanduanProgres() {
                 return (
                   <div key={r.id} className="rounded-lg border border-slate-800 p-3.5">
                     {draf ? (
-                      <Form draf={draf} onUbah={(d) => setEdit((p) => ({ ...p, [r.id]: d }))} onSimpan={() => simpan(draf, r.id)}
+                      <Form sibuk={sibuk} draf={draf} onUbah={(d) => setEdit((p) => ({ ...p, [r.id]: d }))} onSimpan={() => simpan(draf, r.id)}
                         onBatal={() => setEdit((p) => { const n = { ...p }; delete n[r.id]; return n; })} />
                     ) : (
                       <>
