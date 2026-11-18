@@ -4,7 +4,7 @@ import {
   TrendingUp, Receipt, Package, Wallet, Download, Megaphone,
 } from "lucide-react";
 import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlined, btnText, formatTanggalID } from "../components/ui";
-import { sb, sbAll, fmtRp, downloadCsv } from "../lib/api";
+import { sb, sbAll, fmtRp, downloadCsv, entitasBacaSaatIni } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
 import RencanaIklan from "./RencanaIklan";
 import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, buangKodeRak, cariMaster, sbTulis, FIELD_BIAYA, produkDariBaris, normJudul } from "../lib/marketplaceImport";
@@ -160,6 +160,13 @@ function ringkasBaris(list) {
   return r;
 }
 
+// HPP MANUAL untuk kode marketplace yang belum ada di Master Barang. Disimpan di master_data
+// (tipe di bawah, kode = "<PT>:<platform>:<KODE MARKETPLACE>", label = HPP per pcs) supaya tetap
+// terpakai saat import berikutnya. Nilainya juga ditulis ke marketplace_penjualan.hpp_satuan
+// (hanya baris yang SKU-nya masih kosong) supaya Laporan Laba Rugi ikut terhitung.
+// Begitu kodenya dipetakan ke SKU Master, HPP Master otomatis menggantikan HPP manual.
+const TIPE_HPP_MP_MANUAL = "hpp_marketplace_manual";
+
 export default function PenjualanRincian({ platform, toko, skuMaster, showToast }) {
   const tokoKode = toko.kode || "";
   const [dari, setDari] = useState(isoAwalBulan());
@@ -173,6 +180,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   const [buka, setBuka] = useState({});
   const [importOpen, setImportOpen] = useState(false);
   const [aliasList, setAliasList] = useState([]);
+  const [hppManual, setHppManual] = useState(() => new Map()); // normSku(kode marketplace) -> { id, hpp }
   const [hanyaRefund, setHanyaRefund] = useState(false);
   const [urutPesanan, setUrutPesanan] = useState(null); // null = urutan asli (tanggal dana dilepas terbaru)
   const [urutSku, setUrutSku] = useState({ k: "laba", d: "desc" });
@@ -255,6 +263,24 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     }
   }, [platform, tokoKode]);
   useEffect(() => { muatPeta(); }, [muatPeta]);
+
+  // HPP manual dimuat terpisah; kalau master_data tidak bisa dibaca, fitur ini saja yang mati.
+  const muatHppManual = useCallback(async () => {
+    try {
+      const awalan = `${entitasBacaSaatIni()}:${platform}:`;
+      const rows = await sbAll(`master_data?select=id,kode,label&tipe=eq.${TIPE_HPP_MP_MANUAL}`);
+      const m = new Map();
+      for (const r of rows || []) {
+        if (!String(r.kode).startsWith(awalan)) continue;
+        const h = Number(r.label) || 0;
+        if (h > 0) m.set(String(r.kode).slice(awalan.length), { id: r.id, hpp: h });
+      }
+      setHppManual(m);
+    } catch {
+      setHppManual(new Map());
+    }
+  }, [platform]);
+  useEffect(() => { muatHppManual(); }, [muatHppManual]);
   useEffect(() => { setHalaman(1); }, [cari, tampil, dari, sampai, urutPesanan, urutSku, urutEtalase, hanyaRefund]);
 
   // ---- olah data ----
@@ -413,12 +439,13 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     for (const b of data) {
       if (!b.sku && b.sku_referensi) {
         const k = normSku(b.sku_referensi);
-        if (!m.has(k)) m.set(k, { ref: b.sku_referensi, k, jumlah: 0, nama: b.nama_produk, variasi: b.variasi });
+        if (!m.has(k)) m.set(k, { ref: b.sku_referensi, k, jumlah: 0, nama: b.nama_produk, variasi: b.variasi, hppManual: hppManual.get(k)?.hpp || 0 });
         m.get(k).jumlah++;
       }
     }
-    return [...m.values()].sort((a, b) => b.jumlah - a.jumlah);
-  }, [data]);
+    // yang sudah diberi HPP manual turun ke bawah, supaya yang benar-benar belum beres tampil duluan
+    return [...m.values()].sort((a, b) => (!!a.hppManual - !!b.hppManual) || b.jumlah - a.jumlah);
+  }, [data, hppManual]);
   const tanpaDataSku = useMemo(() => new Set(data.filter((b) => b.sumber_sku === "laporan").map((b) => b.no_pesanan)).size, [data]);
 
   // ---- aksi: unduh data periode ini (CSV / Excel) ----
@@ -576,6 +603,69 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     }
   };
 
+  // ---- aksi: HPP manual untuk kode yang tidak ada di Master Barang ----
+  const simpanHppManual = async (ref, hpp) => {
+    const nilai = Math.round(Number(hpp));
+    if (!(nilai > 0)) { showToast?.("HPP harus berupa angka lebih dari 0", "error"); return false; }
+    try {
+      const ada = hppManual.get(normSku(ref));
+      if (ada) {
+        await sbTulis(`master_data?id=eq.${ada.id}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ label: String(nilai) }) });
+      } else {
+        await sbTulis("master_data", {
+          method: "POST", prefer: "return=minimal",
+          body: JSON.stringify({ tipe: TIPE_HPP_MP_MANUAL, kode: `${entitasBacaSaatIni()}:${platform}:${normSku(ref)}`, label: String(nilai) }),
+        });
+      }
+      // hanya baris yang SKU-nya masih kosong (baris yang sudah cocok Master tidak disentuh)
+      const hasil = await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}&sku=is.null`, {
+        method: "PATCH", prefer: "return=representation", body: JSON.stringify({ hpp_satuan: nilai }),
+      });
+      const n = Array.isArray(hasil) ? hasil.length : 0;
+      showToast?.(n ? `HPP ${fmtRp(nilai)}/pcs dipakai untuk ${n} baris ${ref}` : `HPP ${fmtRp(nilai)} tersimpan, tapi 0 baris diperbarui — kemungkinan izin tulis (RLS) di tabel marketplace_penjualan`, n ? undefined : "error");
+      await muatHppManual();
+      await muat();
+      return true;
+    } catch (e) {
+      showToast?.(e.message || "Gagal menyimpan HPP manual", "error");
+      return false;
+    }
+  };
+
+  const hapusHppManual = async (ref) => {
+    try {
+      const ada = hppManual.get(normSku(ref));
+      if (ada) await sbTulis(`master_data?id=eq.${ada.id}`, { method: "DELETE", prefer: "return=minimal" });
+      await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}&sku=is.null`, {
+        method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ hpp_satuan: null }),
+      });
+      showToast?.(`HPP manual ${ref} dihapus`);
+      await muatHppManual();
+      await muat();
+    } catch (e) {
+      showToast?.(e.message || "Gagal menghapus HPP manual", "error");
+    }
+  };
+
+  // Setelah import, baris baru yang kodenya belum cocok Master memang HPP-nya kosong:
+  // pasang lagi HPP manual yang pernah diisi.
+  const terapkanHppManual = async () => {
+    if (!hppManual.size) return;
+    try {
+      const rows = await sbAll(`marketplace_penjualan?select=sku_referensi&${filterToko}&sku=is.null&sku_referensi=not.is.null&hpp_satuan=is.null`);
+      const refs = new Set((rows || []).map((r) => r.sku_referensi));
+      for (const ref of refs) {
+        const m = hppManual.get(normSku(ref));
+        if (!m) continue;
+        await sbTulis(`marketplace_penjualan?${filterToko}&sku_referensi=eq.${encodeURIComponent(ref)}&sku=is.null&hpp_satuan=is.null`, {
+          method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ hpp_satuan: m.hpp }),
+        });
+      }
+    } catch {
+      /* gagal diam-diam: HPP manual tetap tersimpan, bisa disimpan ulang dari panel */
+    }
+  };
+
   const simpanAlias = async (ref, skuSistem) => {
     const master = skuMap.get(normSku(skuSistem));
     if (!master) { showToast?.("SKU itu tidak ada di Master Barang (SKU & Harga)", "error"); return false; }
@@ -652,7 +742,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       {importOpen && (
         <PanelImport
           platform={platform} tokoKode={tokoKode} tokoLabel={toko.label || ""} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap} iklanTabelAda={iklanTabelAda}
-          showToast={showToast} onSelesai={(rentang) => { setImportOpen(false); setRentangImport(rentang || null); muat(); }}
+          showToast={showToast} onSelesai={async (rentang) => { setImportOpen(false); setRentangImport(rentang || null); if (rentang) await terapkanHppManual(); muat(); }}
         />
       )}
 
@@ -801,7 +891,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         </div>
       )}
 
-      {belumCocok.length > 0 && <PanelBelumCocok list={belumCocok} skuMaster={skuMaster} onSimpan={simpanAlias} />}
+      {belumCocok.length > 0 && <PanelBelumCocok list={belumCocok} skuMaster={skuMaster} onSimpan={simpanAlias} onSimpanHpp={simpanHppManual} onHapusHpp={hapusHppManual} />}
     </div>
   );
 }
@@ -1273,8 +1363,9 @@ function karakterAneh(s) {
   return out;
 }
 
-function PanelBelumCocok({ list, skuMaster, onSimpan }) {
+function PanelBelumCocok({ list, skuMaster, onSimpan, onSimpanHpp, onHapusHpp }) {
   const [input, setInput] = useState({});
+  const [inputHpp, setInputHpp] = useState({});
   const [sibuk, setSibuk] = useState("");
   const tampil = list.slice(0, 40);
   const indeksLonggar = useMemo(() => {
@@ -1293,6 +1384,10 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
       <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
         Ketik SKU yang benar dari Master Barang, lalu Simpan — dipakai untuk semua baris yang sama (termasuk import berikutnya) dan HPP-nya langsung terisi.
         Awalan kode rak (mis. G6J-1B-) otomatis diabaikan saat mencocokkan, jadi yang tersisa di sini biasanya SKU berformat lama (kode rak + nama barang) atau huruf yang memang berbeda dari SKU sistem.
+      </p>
+      <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
+        Kalau barangnya memang tidak ada di Master Barang, isi <b>HPP manual</b> (per pcs) di bawah kodenya. HPP itu ikut dihitung di laba dan Laporan Laba Rugi, dan dipakai lagi di import berikutnya.
+        Begitu kodenya nanti dipetakan ke SKU Master, HPP Master otomatis menggantikannya.
       </p>
       <datalist id="dl-sku-master">{(skuMaster || []).slice(0, 8000).map((s) => <option key={s.id ?? s.sku} value={s.sku} />)}</datalist>
       <div className="rounded-md-lg bg-md-container-low shadow-elevation-1 divide-y divide-md-outline-variant max-h-[420px] overflow-y-auto">
@@ -1322,6 +1417,16 @@ function PanelBelumCocok({ list, skuMaster, onSimpan }) {
               placeholder="SKU di Master Barang" className={`${inputClass} !w-64`} />
             <button className={btnTonal} disabled={!input[x.k] || sibuk === x.k}
               onClick={async () => { setSibuk(x.k); await onSimpan(x.ref, input[x.k]); setSibuk(""); }}>Simpan</button>
+            <div className="basis-full flex flex-wrap items-center gap-2 text-[11px] text-md-on-surface-variant">
+              {x.hppManual > 0 ? <span className="text-emerald-400">HPP manual: {fmtRp(x.hppManual)} / pcs</span> : <span>Atau tanpa Master:</span>}
+              <input type="number" min="0" step="1" inputMode="numeric" value={inputHpp[x.k] ?? ""} onChange={(e) => setInputHpp((m) => ({ ...m, [x.k]: e.target.value }))}
+                placeholder={x.hppManual > 0 ? "Ubah HPP (Rp)" : "HPP manual (Rp per pcs)"} className={`${inputClass} !w-48`} />
+              <button className={btnOutlined} disabled={!(Number(inputHpp[x.k]) > 0) || sibuk === x.k}
+                onClick={async () => { setSibuk(x.k); const ok = await onSimpanHpp(x.ref, inputHpp[x.k]); if (ok) setInputHpp((m) => ({ ...m, [x.k]: "" })); setSibuk(""); }}>
+                {x.hppManual > 0 ? "Ubah HPP" : "Simpan HPP"}
+              </button>
+              {x.hppManual > 0 && <button className="text-red-400 underline" disabled={sibuk === x.k} onClick={async () => { setSibuk(x.k); await onHapusHpp(x.ref); setSibuk(""); }}>Hapus HPP manual</button>}
+            </div>
           </div>
         ))}
       </div>
