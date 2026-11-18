@@ -33,7 +33,7 @@ function tanggalPanjang(d = new Date()) {
 }
 
 // sections: [{ label, ringkasan, fungsi: [string], cara: [{ judul?, langkah: [string] }] }]
-export function generatePanduanPdf({ sections, namaUsaha = "SELMA ACC BANDUNG", peran = "" }) {
+export function generatePanduanPdf({ sections, namaUsaha = "SELMA ACC BANDUNG", peran = "", judul = "PANDUAN PENGGUNAAN", namaFile = "Panduan-Penggunaan", judulFungsi = "FUNGSI MENU INI" }) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -71,7 +71,7 @@ export function generatePanduanPdf({ sections, namaUsaha = "SELMA ACC BANDUNG", 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   warna(WHITE);
-  doc.text("PANDUAN PENGGUNAAN", M, 15);
+  doc.text(bersih(judul), M, 15);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.text(bersih(namaUsaha), M, 22);
@@ -106,7 +106,7 @@ export function generatePanduanPdf({ sections, namaUsaha = "SELMA ACC BANDUNG", 
     const fungsi = sec.fungsi || [];
     if (fungsi.length) {
       butuh(18);
-      tulis("FUNGSI MENU INI", { size: 9, bold: true, color: AMBER, gap: 1.2 });
+      tulis(judulFungsi, { size: 9, bold: true, color: AMBER, gap: 1.2 });
       fungsi.forEach((f) => tulis(f, { gap: 1.8 }));
       y += 1.5;
     }
@@ -151,10 +151,10 @@ export function generatePanduanPdf({ sections, namaUsaha = "SELMA ACC BANDUNG", 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
     warna(GREY);
-    doc.text(bersih(`${namaUsaha} - Panduan Penggunaan`), M, H - 8);
+    doc.text(bersih(`${namaUsaha} - ${judul}`), M, H - 8);
     doc.text(`Halaman ${p} / ${total}`, W - M, H - 8, { align: "right" });
   }
 
   const stempel = new Date().toISOString().slice(0, 10);
-  doc.save(`Panduan-Penggunaan-${stempel}.pdf`);
+  doc.save(`${namaFile}-${stempel}.pdf`);
 }

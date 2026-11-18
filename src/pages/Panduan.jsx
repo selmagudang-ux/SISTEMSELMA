@@ -6,6 +6,7 @@ import {
   Banknote, MessageCircle, ArrowRightLeft, Receipt,
 } from "lucide-react";
 import { PageHeader } from "../components/ui";
+import PanduanProgres from "../components/PanduanProgres";
 import { roleLabel } from "../lib/constants";
 
 // =========================================================
@@ -1224,6 +1225,9 @@ export default function Panduan({ session }) {
           </div>
         }
       />
+
+      {/* Catatan "Sedang Dikerjakan": hanya untuk role superappa, tidak pernah dirender untuk role lain. */}
+      {role === "superappa" && <PanduanProgres />}
 
       <div className="relative mb-4 max-w-sm">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
