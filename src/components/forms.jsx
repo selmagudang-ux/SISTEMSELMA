@@ -4,6 +4,8 @@ import { BUKTI_ACCEPT, fileAdalahPdf, urlAdalahPdf, daftarBukti } from "../lib/b
 import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, rekeningEntitasSesi, daftarTujuanPencairan, tujuanPencairanDefault } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
+import { useDraftForm } from "../lib/draftForm";
+import BannerDraf from "./BannerDraf";
 import { isSuperadminLike, bisa, KONFIRMASI_DATANG_META } from "../lib/constants";
 import { bacaFotoSku, pecahSegmenPertama, cariKodeDariTeks, decodeKodeHarga } from "../lib/ocrSku";
 
@@ -312,8 +314,40 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
   const valid = supplier.trim() && (jenis !== "Lainnya" || jenisLainnya.trim());
 
+  // Draf otomatis: isian tersimpan di browser tiap berubah & dipulihkan kalau form dibuka lagi (lib/draftForm.js).
+  // Pesanan dari restock punya draf sendiri per SKU supaya tidak tercampur dengan pesanan biasa.
+  const adaIsi = !!(supplier.trim() || harga || catatan.trim() || jenisLainnya.trim());
+  const draf = useDraftForm(
+    initial.dariRestock ? `pesan-barang-restock-${initial.sku}` : "pesan-barang",
+    { supplier, jenis, jenisLainnya, harga, catatan },
+    adaIsi,
+    (d) => {
+      setSupplier(d.supplier || "");
+      setJenis(d.jenis || "Pembelian");
+      setJenisLainnya(d.jenisLainnya || "");
+      setHarga(d.harga ?? "");
+      setCatatan(d.catatan || "");
+    }
+  );
+
   return (
-    <ModalShell title="Pesan Barang ke Supplier" onClose={onClose}>
+    <ModalShell
+      title="Pesan Barang ke Supplier"
+      onClose={onClose}
+      konfirmasiTutup="Pesanan belum disimpan. Isiannya tersimpan otomatis sebagai draf dan akan dipulihkan saat Anda membuka form ini lagi. Tutup form?"
+      kotor={!initial.dariRestock && adaIsi}
+    >
+      <BannerDraf
+        draf={draf}
+        onBuang={() => {
+          draf.hapus();
+          setSupplier(initial.supplier || "");
+          setJenis("Pembelian");
+          setJenisLainnya("");
+          setHarga("");
+          setCatatan(initial.catatan || "");
+        }}
+      />
       {initial.dariRestock && (
         <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-[11px] text-amber-300">
           Dibuat dari pengajuan restock SKU <span className="font-mono font-semibold">{initial.sku}</span> yang
@@ -374,14 +408,16 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
 
       <button
         disabled={saving || !valid}
-        onClick={() =>
-          onSubmit({
+        onClick={async () => {
+          // onSubmit (ModalRouter run()) mengembalikan true kalau berhasil disimpan -> draf dibuang.
+          const ok = await onSubmit({
             tanggal,
             supplier: supplier.trim(),
             jenis: jenisFinal || null,
             bonList: [{ totalHarga: Number(harga) || 0, catatan: catatan.trim() || null }],
-          })
-        }
+          });
+          if (ok === true) draf.hapus();
+        }}
         className="w-full mt-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Simpan Pesanan"}
@@ -904,7 +940,11 @@ export function KonfirmasiDatangForm({ pesanan, onClose, onSubmit, saving, suppl
   }
 
   return (
-    <ModalShell title={`Konfirmasi Datang — ${pesanan?.resi || pesanan?.kode_pesanan || ""}`} onClose={onClose}>
+    <ModalShell
+      title={`Konfirmasi Datang — ${pesanan?.resi || pesanan?.kode_pesanan || ""}`}
+      onClose={onClose}
+      konfirmasiTutup="Rincian barang datang belum disimpan. Pakai tombol “Simpan sebagai Draf” kalau mau melanjutkan nanti. Tutup tanpa menyimpan?"
+    >
       {jumlahBoxTotal > 1 && boxFinalUntukPilih.size < jumlahBoxTotal && (
         utamaTersimpan ? (
           <button

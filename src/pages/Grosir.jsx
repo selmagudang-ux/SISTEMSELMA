@@ -12,6 +12,8 @@ import {
 } from "../lib/api";
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 import { hppGrosir, simpanHppManual, hapusHppManual } from "../lib/hppPenjualan";
+import { useDraftForm } from "../lib/draftForm";
+import BannerDraf from "../components/BannerDraf";
 
 export default function Grosir({
   sub, pelangganGrosir, tokoGrosir, produkManualGrosir, skuMaster, pesananGrosir, pembayaranGrosir, depositGrosir, reload, showToast, setModal,
@@ -1301,6 +1303,27 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
 
+  // Draf otomatis: pesanan yang sedang diisi tersimpan di browser & dipulihkan kalau form dibuka lagi (lib/draftForm.js).
+  const adaIsi = rows.length > 0 || !!(pelangganId || pelangganNamaBaru.trim() || pelangganWaBaru.trim() || catatan.trim());
+  const draf = useDraftForm(
+    "pesanan-grosir",
+    { pelangganId, pelangganNamaBaru, pelangganWaBaru, pelangganAlamatBaru, pelangganKotaBaru, pelangganKategoriBaru, caraSimpan, metodeBayar, rekening, catatan, rows },
+    adaIsi,
+    (d) => {
+      setPelangganId(d.pelangganId || "");
+      setPelangganNamaBaru(d.pelangganNamaBaru || "");
+      setPelangganWaBaru(d.pelangganWaBaru || "");
+      setPelangganAlamatBaru(d.pelangganAlamatBaru || "");
+      setPelangganKotaBaru(d.pelangganKotaBaru || "");
+      setPelangganKategoriBaru(d.pelangganKategoriBaru || "grosir");
+      setCaraSimpan(d.caraSimpan || "bayar");
+      setMetodeBayar(d.metodeBayar || "Cash");
+      setRekening(d.rekening || "");
+      setCatatan(d.catatan || "");
+      setRows(Array.isArray(d.rows) ? d.rows : []);
+    }
+  );
+
   const pelangganOptions = pelangganGrosir.map((p) => ({ value: p.id, label: `${p.nama} (${p.kode})` }));
 
   // Kategori harga mengikuti pelanggan: dipilih dari daftar -> kategori pelanggan itu;
@@ -1413,6 +1436,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
     setRekening("");
     setCatatan("");
     setRows([]);
+    draf.hapus();
   };
 
   const submit = async () => {
@@ -1545,7 +1569,18 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   };
 
   return (
-    <ModalShell title="Buat Pesanan Grosir" onClose={onClose}>
+    <ModalShell
+      title="Buat Pesanan Grosir"
+      onClose={onClose}
+      konfirmasiTutup="Pesanan belum disimpan. Isiannya tersimpan otomatis sebagai draf dan akan dipulihkan saat Anda membuka form ini lagi. Tutup form?"
+      kotor={adaIsi}
+    >
+      <BannerDraf
+        draf={draf}
+        onBuang={() => {
+          resetForm();
+        }}
+      />
       <Field label="Tanggal">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
@@ -2084,7 +2119,11 @@ export function EditPesananForm({
   };
 
   return (
-    <ModalShell title={`Edit Pesanan ${pesanan.nomor_pesanan}`} onClose={onClose}>
+    <ModalShell
+      title={`Edit Pesanan ${pesanan.nomor_pesanan}`}
+      onClose={onClose}
+      konfirmasiTutup="Perubahan pesanan belum disimpan. Tutup tanpa menyimpan?"
+    >
       <Field label="Catatan (opsional)">
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>

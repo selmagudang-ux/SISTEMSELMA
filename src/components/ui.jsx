@@ -70,15 +70,36 @@ export function chipClass(color = "slate") {
   return map[color] || map.slate;
 }
 
-export function ModalShell({ title, onClose, children, maxWidth }) {
+// Prop opsional:
+//   konfirmasiTutup : true -> kalau user sudah mengisi/mengubah sesuatu lalu menekan X, muncul konfirmasi dulu
+//                     (isian terdeteksi otomatis dari input/ketikan di dalam modal). String = teks konfirmasi sendiri.
+//   kotor           : true -> paksa dianggap sudah terisi (untuk isian yang tidak lewat input biasa, mis. pilihan dari daftar,
+//                     baris barang yang ditambah). Dipakai bersama konfirmasiTutup.
+export function ModalShell({ title, onClose, children, maxWidth, konfirmasiTutup = false, kotor = false }) {
+  const adaUbah = useRef(false);
+  const tandai = () => {
+    adaUbah.current = true;
+  };
+  const tutup = () => {
+    if (konfirmasiTutup && (kotor || adaUbah.current)) {
+      const pesan =
+        typeof konfirmasiTutup === "string"
+          ? konfirmasiTutup
+          : "Data yang sudah diisi belum disimpan. Yakin mau menutup form ini?";
+      if (!window.confirm(pesan)) return;
+    }
+    onClose();
+  };
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
       <div
         className={`bg-md-container-high rounded-md-xl shadow-elevation-3 w-full ${maxWidth || "max-w-md"} max-h-[85vh] overflow-y-auto`}
+        onInputCapture={konfirmasiTutup ? tandai : undefined}
+        onChangeCapture={konfirmasiTutup ? tandai : undefined}
       >
         <div className="flex items-center justify-between px-5 py-4 sticky top-0 bg-md-container-high">
           <h3 className="font-medium text-base text-md-on-surface">{title}</h3>
-          <button onClick={onClose} className={iconBtnClass} onMouseDown={rippleEffect}>
+          <button onClick={tutup} className={iconBtnClass} onMouseDown={rippleEffect}>
             <X size={18} />
           </button>
         </div>
