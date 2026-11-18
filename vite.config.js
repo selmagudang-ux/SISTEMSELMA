@@ -50,7 +50,18 @@ export default defineConfig({
           // saat kamera scan benar-benar dibuka (import-nya dynamic di
           // components/ScanKamera.jsx), bukan ikut ke-preload di "vendor".
           if (id.includes("@zxing")) return "vendor-zxing";
-          return "vendor";
+          // pdfjs-dist (~320KB) & pdf-lib (~350KB + font) cuma dipakai di Urut Resi
+          // (lib/urutResi.js, import-nya dynamic) — dulu ikut tergabung ke "vendor"
+          // sehingga ikut diunduh di SETIAP halaman. Dipisah sendiri-sendiri.
+          if (id.includes("pdfjs-dist")) return "vendor-pdfjs";
+          if (id.includes("pdf-lib")) return "vendor-pdflib";
+          // qrcode cuma dipakai di halaman Penggajian (lazy).
+          if (id.includes("node_modules/qrcode")) return "vendor-qrcode";
+          // Yang SEMPAT di bundle awal cuma React. Library lain (canvg, core-js,
+          // pako, dst — turunan jsPDF/pdf-lib) dibiarkan `undefined` supaya Rollup
+          // menaruhnya mengikuti batas lazy-load halaman yang memakainya.
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return "vendor";
+          return undefined;
         },
       },
     },

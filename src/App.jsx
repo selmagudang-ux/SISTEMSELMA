@@ -8,7 +8,6 @@ import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
 import Sidebar, { MobileMenuButton } from "./components/Sidebar";
 import { rippleEffect, iconBtnClass } from "./components/ui";
-import ModalRouter from "./components/ModalRouter";
 import PengingatGaji from "./components/PengingatGaji";
 import Login from "./pages/Login";
 
@@ -19,6 +18,11 @@ import Login from "./pages/Login";
 // "Rak" TETAP diimpor biasa (bukan lazy) karena beberapa fungsinya
 // (cariPerluDitempatkanUlang, dst) dipakai di luar halaman Rak sendiri, mis.
 // untuk badge & notifikasi di Dashboard/Sidebar yang selalu dihitung.
+// ModalRouter (+ forms.jsx) berat (~550KB kode sumber) dan baru dipakai saat ada modal dibuka —
+// dimuat malas supaya tidak ikut bundle awal. Diunduh diam-diam di waktu senggang setelah
+// login (lihat useEffect di MainApp) supaya klik modal pertama tetap terasa instan.
+const muatModalRouter = () => import("./components/ModalRouter");
+const ModalRouter = lazy(muatModalRouter);
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const PersetujuanRestock = lazy(() => import("./pages/PersetujuanRestock"));
 const BarangDatang = lazy(() => import("./pages/BarangDatang"));
@@ -484,6 +488,16 @@ function MainApp({ session, onLogout }) {
   const [pengajuanRestock, setPengajuanRestock] = useState([]);
 
   const [modal, setModal] = useState(null); // {type, item}
+  // Unduh kode modal di latar belakang SETELAH aplikasi tampil & data mulai dimuat (jeda 4 detik +
+  // waktu senggang browser), supaya tidak berebut koneksi dengan data awal di HP.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const pra = () => { muatModalRouter().catch(() => {}); };
+      if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(pra, { timeout: 8000 });
+      else pra();
+    }, 4000);
+    return () => clearTimeout(t);
+  }, []);
   const [saving, setSaving] = useState(false);
   const hasNotifiedRef = useRef(false);
   const hasNotifiedRakRef = useRef(false);
@@ -1595,6 +1609,7 @@ function MainApp({ session, onLogout }) {
       </AppShell>
 
       {modal && (
+        <Suspense fallback={null}>
         <ModalRouter
           modal={modal}
           setModal={setModal}
@@ -1621,6 +1636,7 @@ function MainApp({ session, onLogout }) {
           pembayaranGrosir={pembayaranGrosir}
           depositGrosir={depositGrosir}
         />
+        </Suspense>
       )}
 
       {/* Snackbar Material 3 — sudut kecil (4px, khas snackbar, beda dari
