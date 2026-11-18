@@ -6,7 +6,7 @@ import BarangToko from "./BarangToko";
 import PromoToko from "./PromoToko";
 import LaporanKasir from "./LaporanKasir";
 import CekHppToko from "./CekHppToko";
-import PenjualanLama from "./PenjualanLama";
+import PenjualanLama from "./PenjualanLama.jsx"; // ekstensi ditulis eksplisit: ada juga penjualanLama.js (beda huruf besar/kecil), di Windows keduanya dianggap sama
 import { entitasSesi, lingkupEntitas } from "../../lib/api";
 
 // =========================================================
