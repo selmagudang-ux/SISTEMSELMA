@@ -88,9 +88,27 @@ if (adalahKasir) {
   document.head.appendChild(t);
 }
 
+// Versi HP (/m) juga bisa dipasang di layar utama HP seperti kasir (PWA): tautan manifest hanya
+// dipasang di halaman /m. Warna bar atas tidak diatur di sini — sudah mengikuti tema lewat lib/theme.js.
+if (adalahMobile) {
+  const m = document.createElement("link");
+  m.rel = "manifest";
+  m.href = "/m.webmanifest";
+  document.head.appendChild(m);
+  const a = document.createElement("link");
+  a.rel = "apple-touch-icon";
+  a.href = "/kasir-icon-192.png";
+  document.head.appendChild(a);
+  const t = document.createElement("meta");
+  t.name = "apple-mobile-web-app-title";
+  t.content = "SISTEMSELMA";
+  document.head.appendChild(t);
+}
+
 // Mode offline kasir: service worker membuat halaman /kasir bisa dibuka tanpa internet
-// (lihat public/sw.js). Hanya didaftarkan dari halaman kasir & hanya di build produksi.
-if (adalahKasir && import.meta.env.PROD && "serviceWorker" in navigator) {
+// (lihat public/sw.js). Didaftarkan dari halaman kasir & /m (syarat agar bisa dipasang di HP; di /m
+// dia hanya menyimpan file /assets/* yang sudah ber-hash) & hanya di build produksi.
+if ((adalahKasir || adalahMobile) && import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });

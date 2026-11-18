@@ -1,0 +1,32 @@
+{
+  "id": "/m",
+  "name": "SISTEMSELMA - Selma ACC Bandung",
+  "short_name": "SISTEMSELMA",
+  "description": "SISTEMSELMA versi HP",
+  "start_url": "/m",
+  "scope": "/m",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#004aad",
+  "theme_color": "#181a21",
+  "icons": [
+    {
+      "src": "/kasir-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/kasir-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/kasir-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
