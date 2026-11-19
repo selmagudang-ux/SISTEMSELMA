@@ -31,6 +31,10 @@ import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 // Stok dihitung dari mutasi (bukan angka tunggal) supaya aman dipakai banyak staff.
 // Saat pembelian DIBAYAR, otomatis tercatat sebagai pengeluaran di Keuangan
 // (kategori "Barang Habis Pakai"); rekening default-nya Kas Kecil.
+// PERSEDIAAN: tiap mutasi punya kolom `hpp` (harga per satuan). Pembelian/stok awal mencatat harga
+// belinya, pemakaian/koreksi/transfer mencatat HPP rata-rata saat itu (view perlengkapan_nilai).
+// Kategori "Barang Habis Pakai" di Keuangan diarahkan ke Neraca; bebannya masuk Laba Rugi
+// saat DIPAKAI = jumlah dipakai x hpp (dihitung di lib/api.js, bukan dari uang pembelian).
 // Data dimuat sendiri oleh halaman ini tiap dibuka / setelah tiap aksi.
 // =========================================================
 
@@ -108,13 +112,22 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
 
   const muat = useCallback(async () => {
     try {
-      const [s, b, i, m] = await Promise.all([
+      const [s, b, i, m, n] = await Promise.all([
         sbAll("perlengkapan_stok?select=*&order=nama"),
         sbAll("belanja_habis_pakai?select=*&order=tanggal.desc,id.desc"),
         sbAll("belanja_habis_pakai_item?select=*"),
         sb("perlengkapan_mutasi?select=*&order=tanggal.desc,id.desc&limit=100"),
+        // Nilai persediaan dimuat terpisah: kalau view belum ada, stok tetap tampil (tanpa nilai).
+        sbAll("perlengkapan_nilai?select=perlengkapan_id,hpp_rata,nilai&order=perlengkapan_id").catch(() => []),
       ]);
-      setStok(s || []);
+      const petaNilai = Object.fromEntries((n || []).map((r) => [String(r.perlengkapan_id), r]));
+      setStok(
+        (s || []).map((p) => ({
+          ...p,
+          hpp_rata: Number(petaNilai[String(p.id)]?.hpp_rata) || 0,
+          nilai: Math.max(0, Number(petaNilai[String(p.id)]?.nilai) || 0),
+        }))
+      );
       setBelanja(b || []);
       setItem(i || []);
       setMutasi(m || []);
@@ -290,13 +303,15 @@ function TabStok({ stok, setModal }) {
     return !s || p.nama.toLowerCase().includes(s) || p.kode.toLowerCase().includes(s);
   });
   const jml = (k) => stok.filter((p) => statusStok(p).key === k).length;
+  const totalNilai = stok.reduce((a, p) => a + (Number(p.nilai) || 0), 0);
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-3 mb-4 max-w-xl">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4 max-w-3xl">
         <StatCard label="Aman" value={String(jml("aman"))} accent="text-emerald-400" icon={PackageCheck} iconColor="text-emerald-500" />
         <StatCard label="Menipis" value={String(jml("menipis"))} accent="text-amber-400" icon={AlertTriangle} iconColor="text-amber-500" />
         <StatCard label="Habis" value={String(jml("habis"))} accent="text-red-400" icon={AlertTriangle} iconColor="text-red-500" />
+        <StatCard label="Nilai Persediaan" value={fmtRp(totalNilai)} accent="text-sky-400" icon={Wallet} iconColor="text-sky-500" />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -332,6 +347,7 @@ function TabStok({ stok, setModal }) {
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     {p.kode} · minimum {fmtJumlah(p.stok_minimum)} {p.satuan}
+                    {Number(p.hpp_rata) > 0 ? ` · HPP ${fmtRp(p.hpp_rata)}/${p.satuan} · nilai ${fmtRp(p.nilai)}` : " · HPP belum ada"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -696,6 +712,7 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
   const [satuan, setSatuan] = useState(barang?.satuan || "pcs");
   const [minimum, setMinimum] = useState(barang?.stok_minimum ?? "");
   const [stokAwal, setStokAwal] = useState("");
+  const [hargaAwal, setHargaAwal] = useState(""); // harga per satuan stok awal -> HPP persediaan
   const [saving, setSaving] = useState(false);
 
   const simpan = async () => {
@@ -717,7 +734,7 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
         if (Number(stokAwal) > 0 && baru?.id) {
           await sb("perlengkapan_mutasi", {
             method: "POST",
-            body: JSON.stringify({ perlengkapan_id: baru.id, tipe: "koreksi", jumlah: Number(stokAwal), tanggal: todayIso(), keterangan: "Stok awal" }),
+            body: JSON.stringify({ perlengkapan_id: baru.id, tipe: "koreksi", jumlah: Number(stokAwal), tanggal: todayIso(), keterangan: "Stok awal", hpp: Number(hargaAwal) || null }),
           });
         }
         await onSaved("Barang ditambahkan");
@@ -769,6 +786,14 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
           />
         </Field>
       )}
+      {!barang && Number(stokAwal) > 0 && (
+        <Field label={`Harga per ${satuan.trim() || "satuan"} stok awal (HPP)`}>
+          <InputRupiah value={hargaAwal} onChange={setHargaAwal} />
+          <div className="text-[10px] text-slate-500 mt-1">
+            Dipakai menghitung nilai persediaan dan beban saat barang dipakai. Kosong = nilai dihitung dari HPP pembelian berikutnya.
+          </div>
+        </Field>
+      )}
       <button
         disabled={!nama.trim() || saving}
         onClick={simpan}
@@ -795,13 +820,15 @@ function FormPakai({ barang, onClose, onSaved, showToast }) {
   const [saving, setSaving] = useState(false);
   const j = Number(jumlah) || 0;
   const melebihi = j > Number(barang.stok);
+  const hppRata = Math.round((Number(barang.hpp_rata) || 0) * 100) / 100;
 
   const simpan = async () => {
     setSaving(true);
     try {
+      // hpp = HPP rata-rata saat ini; jadi beban Laba Rugi = jumlah dipakai x hpp (tanggal pemakaian).
       await sb("perlengkapan_mutasi", {
         method: "POST",
-        body: JSON.stringify({ perlengkapan_id: barang.id, tipe: "pakai", jumlah: -j, tanggal, keterangan: ket.trim() || null }),
+        body: JSON.stringify({ perlengkapan_id: barang.id, tipe: "pakai", jumlah: -j, tanggal, keterangan: ket.trim() || null, hpp: hppRata }),
       });
       await onSaved(`${barang.nama} dipakai ${fmtJumlah(j)} ${barang.satuan}`);
     } catch (e) {
@@ -824,6 +851,16 @@ function FormPakai({ barang, onClose, onSaved, showToast }) {
           autoFocus
         />
         {melebihi && <div className="text-[11px] text-red-400 mt-1">Melebihi stok yang tercatat. Kalau stok fisik lebih banyak, koreksi stoknya dulu.</div>}
+        {j > 0 && hppRata > 0 && (
+          <div className="text-[11px] text-slate-400 mt-1">
+            Menjadi beban {fmtRp(Math.round(j * hppRata))} ({fmtRp(hppRata)} per {barang.satuan})
+          </div>
+        )}
+        {hppRata <= 0 && (
+          <div className="text-[11px] text-amber-400 mt-1">
+            HPP barang ini belum ada, jadi pemakaian dihitung Rp 0. Isi harga lewat Belanja atau Stok Awal dulu.
+          </div>
+        )}
       </Field>
       <Field label="Tanggal">
         <InputTanggal value={tanggal} onChange={setTanggal} />
@@ -854,9 +891,17 @@ function FormKoreksi({ barang, onClose, onSaved, showToast }) {
   const simpan = async () => {
     setSaving(true);
     try {
+      // hpp = HPP rata-rata saat ini: koreksi minus (hilang/rusak) jadi beban, koreksi plus menambah nilai persediaan.
       await sb("perlengkapan_mutasi", {
         method: "POST",
-        body: JSON.stringify({ perlengkapan_id: barang.id, tipe: "koreksi", jumlah: selisih, tanggal: todayIso(), keterangan: ket.trim() || "Koreksi stok (hitung fisik)" }),
+        body: JSON.stringify({
+          perlengkapan_id: barang.id,
+          tipe: "koreksi",
+          jumlah: selisih,
+          tanggal: todayIso(),
+          keterangan: ket.trim() || "Koreksi stok (hitung fisik)",
+          hpp: Math.round((Number(barang.hpp_rata) || 0) * 100) / 100,
+        }),
       });
       await onSaved("Stok dikoreksi");
     } catch (e) {
@@ -882,6 +927,7 @@ function FormKoreksi({ barang, onClose, onSaved, showToast }) {
           <div className={`text-[11px] mt-1 ${selisih === 0 ? "text-slate-500" : selisih > 0 ? "text-emerald-400" : "text-red-400"}`}>
             Selisih {selisih > 0 ? "+" : ""}
             {fmtJumlah(selisih)} {barang.satuan}
+            {Number(barang.hpp_rata) > 0 && selisih !== 0 ? ` · nilai ${fmtRp(Math.round(Math.abs(selisih) * Number(barang.hpp_rata)))}` : ""}
           </div>
         )}
       </Field>
@@ -1120,6 +1166,7 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
             tanggal,
             keterangan: `Belanja ${belanja.kode}`,
             belanja_id: belanja.id,
+            hpp: Number(r.harga_satuan) || 0, // harga beli per satuan = HPP masuk persediaan
           }))
         ),
       });

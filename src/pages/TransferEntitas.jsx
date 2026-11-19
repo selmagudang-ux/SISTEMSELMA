@@ -20,6 +20,9 @@ import PermintaanStok from "./PermintaanStok";
 // BARANG HABIS PAKAI (bubble wrap, lakban, ATK, dst) ikut bisa ditransfer lewat tabel yang sama:
 //   - item transfer diberi penanda jenis: "habis_pakai" + nama + satuan (tanpa kolom/SQL baru).
 //   - stoknya bukan di sku_stok, tapi dihitung dari perlengkapan_mutasi (lihat BelanjaHabisPakai.jsx).
+//   - PERSEDIAAN: item habis pakai ikut membawa `hpp` (HPP rata-rata per satuan saat transfer dibuat,
+//     dari view perlengkapan_nilai). Mutasi pengirim & penerima mencatat hpp yang sama, jadi nilai
+//     persediaan PT pengirim turun dan PT penerima naik sebesar qty x hpp.
 //     Kirim = mutasi "koreksi" minus di gudang pengirim; terima / kembalikan = mutasi "koreksi" plus.
 //   - barang habis pakai tidak sama antar PT (id & kode PLK- beda), jadi PT penerima mencocokkan
 //     lewat NAMA barang; kalau belum ada, barangnya dibuat otomatis di PT penerima.
@@ -193,7 +196,7 @@ async function terapkanDeltaStok(ent, daftar) {
 }
 
 // Ubah stok barang habis pakai di PT MANA PUN (ent; bawaan = PT akun sendiri). daftar: [{ nama, satuan,
-// jumlah, catatan }] — jumlah > 0 menambah, jumlah < 0 mengurangi. Barang dicocokkan lewat NAMA (tidak
+// jumlah, catatan, hpp }] — jumlah > 0 menambah, jumlah < 0 mengurangi; hpp = harga per satuan (nilai persediaan). Barang dicocokkan lewat NAMA (tidak
 // peduli huruf besar/kecil); untuk penambahan, barang yang belum ada di PT itu dibuat otomatis (kode PLK-
 // berikutnya); untuk pengurangan barangnya wajib sudah ada. Stok = mutasi "koreksi". Baris diberi kolom
 // `entitas` eksplisit, jadi bisa menulis ke PT lain. Mengembalikan { undo } yang membatalkan perubahan
@@ -239,6 +242,7 @@ async function tambahHabisPakai(daftar, ent = entitasSesi()) {
         jumlah: bulat2(d.jumlah),
         tanggal: tglHariIni(),
         keterangan: d.catatan || null,
+        hpp: d.hpp != null ? bulat2(d.hpp) : null,
       });
     }
     const hasil = await sb("perlengkapan_mutasi", { method: "POST", body: JSON.stringify(baris) });
@@ -276,7 +280,7 @@ function rencanaHapus(t) {
     const qty = Number(it.qty) || 0;
     const diterima = t.status === "diterima" ? Math.min(Number(it.qty_diterima) || 0, qty) : 0;
     const balik = t.stok_dikembalikan ? diterima : qty;
-    const info = { sku: it.sku, hp: adalahHP(it), nama: it.nama, satuan: it.satuan };
+    const info = { sku: it.sku, hp: adalahHP(it), nama: it.nama, satuan: it.satuan, hpp: it.hpp };
     if (diterima > 0) ambil.push({ ...info, jumlah: diterima });
     if (balik > 0) kembali.push({ ...info, jumlah: balik });
   }
@@ -394,9 +398,13 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         });
       }
       let petaHP = new Map();
+      let petaHpp = new Map(); // id barang habis pakai -> HPP rata-rata per satuan (nilai persediaan)
       if (daftarHP.length) {
         const segarHP = await sbAll(`perlengkapan_stok?select=id,nama,satuan,stok&id=in.(${daftarHP.map((d) => d.id).join(",")})`);
         petaHP = new Map((segarHP || []).map((r) => [r.id, r]));
+        // HPP dimuat terpisah: kalau view belum ada, transfer tetap jalan (hpp 0).
+        const nilaiHP = await sbAll(`perlengkapan_nilai?select=perlengkapan_id,hpp_rata&order=perlengkapan_id&perlengkapan_id=in.(${daftarHP.map((d) => d.id).join(",")})`).catch(() => []);
+        petaHpp = new Map((nilaiHP || []).map((r) => [r.perlengkapan_id, Number(r.hpp_rata) || 0]));
         daftarHP.forEach((d) => {
           const r = petaHP.get(d.id);
           if (!r) throw new Error(`Barang habis pakai "${d.nama}" tidak ditemukan di gudang Anda.`);
@@ -408,7 +416,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       const items = daftar.map((d) => {
         if (adalahHP(d)) {
           const r = petaHP.get(d.id);
-          return { jenis: "habis_pakai", sku: `${r.nama} (habis pakai)`, nama: r.nama, satuan: r.satuan || "pcs", qty: d.jumlah, qty_diterima: 0 };
+          return { jenis: "habis_pakai", sku: `${r.nama} (habis pakai)`, nama: r.nama, satuan: r.satuan || "pcs", qty: d.jumlah, qty_diterima: 0, hpp: bulat2(petaHpp.get(d.id)) };
         }
         // hpp = HPP per pcs saat transfer dibuat (dicatat supaya tidak ikut berubah kalau harga katalog berubah).
         const o = { sku: d.sku, qty: d.jumlah, qty_diterima: 0, hpp: Math.round(Number(d.src?.hpp) || 0) };
@@ -458,6 +466,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                 jumlah: -bulat2(d.jumlah),
                 tanggal: tglHariIni(),
                 keterangan: `Transfer ke ${namaEnt(tujuan)} (${t.kode})`,
+                hpp: bulat2(petaHpp.get(d.id)),
               }))
             ),
           });
@@ -585,7 +594,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         if (dSku.length) hasilSku = await tambahStokBanyak(dSku.map((it) => ({ ...it, jumlah: it.qty_diterima, catatan: catatanStok })), master);
         if (dHP.length) {
           try {
-            await tambahHabisPakai(dHP.map((it) => ({ nama: it.nama, satuan: it.satuan, jumlah: it.qty_diterima, catatan: catatanStok })));
+            await tambahHabisPakai(dHP.map((it) => ({ nama: it.nama, satuan: it.satuan, jumlah: it.qty_diterima, catatan: catatanStok, hpp: it.hpp })));
           } catch (e2) {
             await hasilSku?.undo();
             throw e2;
@@ -631,7 +640,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       if (dSku.length) hasilSku = await tambahStokBanyak(dSku.map((it) => ({ ...it, jumlah: it.kembali, catatan: catatanStok })), master);
       if (dHP.length) {
         try {
-          await tambahHabisPakai(dHP.map((it) => ({ nama: it.nama, satuan: it.satuan, jumlah: it.kembali, catatan: catatanStok })));
+          await tambahHabisPakai(dHP.map((it) => ({ nama: it.nama, satuan: it.satuan, jumlah: it.kembali, catatan: catatanStok, hpp: it.hpp })));
         } catch (e2) {
           await hasilSku?.undo();
           throw e2;
@@ -705,13 +714,13 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         }
         if (ambilHP.length) {
           penerimaHP = await tambahHabisPakai(
-            ambilHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: -d.jumlah, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` })),
+            ambilHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: -d.jumlah, hpp: d.hpp, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` })),
             t.entitas_tujuan
           );
         }
         if (kembaliHP.length) {
           pengirimHP = await tambahHabisPakai(
-            kembaliHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` })),
+            kembaliHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: d.jumlah, hpp: d.hpp, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` })),
             t.entitas_asal
           );
         }
