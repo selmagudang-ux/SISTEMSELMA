@@ -111,8 +111,11 @@ export default function KartuOperasionalEntitas({ master = {}, onBuka, jenis = "
   const daftar = urutEntitasPusat(master.entitas || [], kodeHolding);
   const kunci = `${jenis}:${daftar.map((e) => e.kode).join("|")}`;
   const [hasil, setHasil] = useState({});
+  // Operasional: kartu polos (ikon + nama) seperti kartu Barang Habis Pakai / Alur Barang / Data Barang.
+  const polos = jenis === "gudang";
 
   useEffect(() => {
+    if (polos) return undefined;
     let batal = false;
     setHasil({});
     daftar.forEach(async (e) => {
@@ -133,6 +136,27 @@ export default function KartuOperasionalEntitas({ master = {}, onBuka, jenis = "
     return (
       <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-400">
         Belum ada perusahaan yang terdaftar. Tambahkan lewat Keuangan Grup &rsaquo; Pengaturan.
+      </div>
+    );
+  }
+
+  if (polos) {
+    return (
+      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+        {daftar.map((e) => (
+          <button
+            key={e.kode}
+            type="button"
+            onClick={() => onBuka && onBuka(e.kode)}
+            className="rounded-xl border border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70 p-6 text-left transition min-h-[180px] flex flex-col"
+          >
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
+              <Ikon size={17} />
+            </div>
+            <div className="text-base font-semibold text-slate-100">{namaUsahaEntitas(master, e.kode)}</div>
+            {e.kode === kodeHolding && <div className="text-[11px] text-slate-500 mt-1">Pusat</div>}
+          </button>
+        ))}
       </div>
     );
   }
