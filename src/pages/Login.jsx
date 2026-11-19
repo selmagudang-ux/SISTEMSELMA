@@ -7,7 +7,7 @@ import ThemeToggle from "../components/ThemeToggle";
 // absen. Sistem otomatis mendeteksi jenis akunnya dari username/ID yang
 // dimasukkan (lihat lib/unifiedLogin.js), jadi link yang dibagikan sama
 // persis untuk siapa saja.
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, tampilIngat = false }) {
   // Pengaman fokus: di aplikasi desktop (Electron) jendela kadang kehilangan fokus keyboard setelah logout /
   // dialog sistem, sehingga kolom tidak bisa diketik. Minta fokus jendela lagi lalu fokuskan kolom username.
   const refUsername = useRef(null);
@@ -31,6 +31,7 @@ export default function Login({ onLogin }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [ingat, setIngat] = useState(false); // "Ingat saya di HP ini" — hanya tampil di versi HP (/m)
 
   const submit = async (e) => {
     e.preventDefault();
@@ -38,7 +39,7 @@ export default function Login({ onLogin }) {
     setLoading(true);
     setError("");
     try {
-      const result = await unifiedLogin(username, password);
+      const result = await unifiedLogin(username, password, { ingat: tampilIngat && ingat });
       onLogin(result);
     } catch (err) {
       setError(err.message || "Gagal login");
@@ -91,6 +92,23 @@ export default function Login({ onLogin }) {
               autoComplete="current-password"
             />
           </label>
+
+          {tampilIngat && (
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ingat}
+                onChange={(e) => setIngat(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-amber-500 flex-shrink-0"
+              />
+              <span>
+                <span className="block text-sm text-slate-200">Ingat saya di HP ini</span>
+                <span className="block text-[11px] text-slate-500 leading-snug mt-0.5">
+                  Sesi disimpan 7 hari, jadi notifikasi langsung membuka halaman tanpa login. Cocok untuk HP pribadi Pemilik.
+                </span>
+              </span>
+            </label>
+          )}
 
           <button
             disabled={loading}

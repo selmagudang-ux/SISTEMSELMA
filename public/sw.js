@@ -4,6 +4,8 @@
 //  - Halaman /kasir      : jaringan dulu (maks 4 detik), kalau gagal pakai salinan terakhir.
 //  - File /assets/*      : sudah ber-hash (isi tidak pernah berubah) -> salinan dulu, lalu jaringan.
 //  - Panggilan ke Supabase / domain lain & halaman SELMA lainnya : TIDAK disentuh sama sekali.
+// Notifikasi push (Web Push) untuk versi HP /m: event "push" menampilkan notifikasi, "notificationclick"
+// membuka halaman tujuan (lihat lib/pushNotif.js dan supabase/functions/push-kirim).
 // Data penjualan (barang, promo, antrian transaksi) disimpan terpisah di IndexedDB oleh
 // pages/kasir/kasirOffline.js, bukan di sini.
 // =========================================================
@@ -87,4 +89,47 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/assets/")) {
     event.respondWith(asetSalinanDulu(req));
   }
+});
+
+// ---------- Web Push ----------
+self.addEventListener("push", (event) => {
+  let d = {};
+  try {
+    d = event.data ? event.data.json() : {};
+  } catch {
+    d = { isi: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(d.judul || "SISTEMSELMA", {
+      body: d.isi || "",
+      icon: "/kasir-icon-192.png",
+      badge: "/kasir-icon-192.png",
+      tag: d.tag || undefined,
+      renotify: !!d.tag,
+      data: { url: d.url || "/m" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const tujuan = new URL((event.notification.data && event.notification.data.url) || "/m", self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const daftar = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const ada = daftar.find((c) => new URL(c.url).pathname.startsWith("/m"));
+      if (ada) {
+        await ada.focus();
+        if ("navigate" in ada) {
+          try {
+            await ada.navigate(tujuan);
+          } catch {
+            /* abaikan */
+          }
+        }
+        return;
+      }
+      await self.clients.openWindow(tujuan);
+    })()
+  );
 });

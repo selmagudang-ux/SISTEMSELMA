@@ -2,7 +2,9 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
-import { getSession, logout } from "../../lib/auth";
+import { logout, pulihkanSesiIngat } from "../../lib/auth";
+import { lepasPushServer } from "../../lib/pushNotif";
+import TombolNotif from "./TombolNotif";
 import { NAV, allowedMenus, filterNavByAllowed, fiturMatiEntitas, setAksesRole } from "../../lib/constants";
 import { sb } from "../../lib/api";
 import { cariLayar, kunciLayar, punyaLayar, rapikanLabel } from "./mobileMenu";
@@ -98,7 +100,8 @@ function DaftarMenu({ jejak, path, buka }) {
 }
 
 export default function MobileApp() {
-  const [session, setSession] = useState(() => getSession());
+  // Sesi tab, atau dipulihkan dari "Ingat saya di HP ini" (7 hari) — mis. saat dibuka dari ketukan notifikasi.
+  const [session, setSession] = useState(() => pulihkanSesiIngat());
   const [aksesSiap, setAksesSiap] = useState(false);
   const [fitur, setFitur] = useState([]); // baris master_data tipe entitas_fitur (fitur yang dimatikan per PT)
   const [path, setPath] = useState(bacaPath);
@@ -192,8 +195,9 @@ export default function MobileApp() {
     };
   }, [kunci]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const keluar = () => {
+  const keluar = async () => {
     if (!window.confirm("Keluar dari SELMA?")) return;
+    await lepasPushServer(); // HP ini berhenti menerima notifikasi akun ini (butuh token sesi, jadi sebelum logout)
     logout();
     setSession(null);
     setAksesSiap(false);
@@ -202,6 +206,7 @@ export default function MobileApp() {
   if (!session) {
     return (
       <Login
+        tampilIngat
         onLogin={(hasil) => {
           // Akun karyawan absen (bukan app_users) tidak punya akses ke menu ERP HP.
           if (hasil.type !== "admin") {
@@ -255,6 +260,7 @@ export default function MobileApp() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <TombolNotif session={session} />
           <ThemeToggle />
           <button onClick={keluar} className="w-9 h-9 flex items-center justify-center rounded-full text-md-on-surface-variant hover:bg-md-on-surface/10" title="Keluar">
             <LogOut size={18} />

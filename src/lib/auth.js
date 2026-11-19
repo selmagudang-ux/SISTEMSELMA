@@ -2,6 +2,49 @@ import { sb, SUPABASE_URL, SUPABASE_ANON_KEY } from "./api";
 
 const SESSION_KEY = "selma_session";
 
+// "Ingat saya di HP ini" (khusus versi HP /m): salinan sesi disimpan di localStorage selama 7 hari.
+// Sesi kerja tetap di sessionStorage (banyak file membacanya langsung), jadi salinan ini hanya dipakai untuk
+// MEMULIHKAN sesi saat HP membuka /m lagi (mis. dari ketukan notifikasi) tanpa login ulang.
+const INGAT_KEY = "selma_session_ingat";
+const INGAT_MS = 7 * 24 * 60 * 60 * 1000;
+
+function hapusIngat() {
+  try {
+    localStorage.removeItem(INGAT_KEY);
+  } catch {
+    /* abaikan */
+  }
+}
+
+function bacaIngat() {
+  try {
+    const raw = localStorage.getItem(INGAT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d?.session || !d.exp || Date.now() >= d.exp) {
+      hapusIngat();
+      return null;
+    }
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+// Pulihkan sesi dari salinan "ingat saya" bila sesi tab kosong. Mengembalikan sesi aktif (atau null).
+export function pulihkanSesiIngat() {
+  const aktif = getSession();
+  if (aktif) return aktif;
+  const d = bacaIngat();
+  if (!d) return null;
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(d.session));
+  } catch {
+    return null;
+  }
+  return d.session;
+}
+
 // Sengaja pakai sessionStorage (bukan localStorage): sesi otomatis hilang saat
 // tab/browser ditutup, jadi user harus login lagi. Masih tetap login selama
 // tab dibiarkan terbuka / di-refresh.
@@ -19,7 +62,7 @@ export async function sha256Hex(text) {
     .join("");
 }
 
-export async function login(username, password) {
+export async function login(username, password, { ingat = false } = {}) {
   const uname = (username || "").trim();
   if (!uname || !password) throw new Error("Username dan password wajib diisi");
 
@@ -30,7 +73,7 @@ export async function login(username, password) {
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
     },
-    body: JSON.stringify({ username: uname, password }),
+    body: JSON.stringify({ username: uname, password, ingat: !!ingat }), // ingat = minta token sesi 7 hari
   });
   const user = await res.json().catch(() => null);
   if (!res.ok || !user) throw new Error(user?.error || "Gagal login");
@@ -48,6 +91,15 @@ export async function login(username, password) {
     loginAt: new Date().toISOString(),
   };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  if (ingat) {
+    try {
+      localStorage.setItem(INGAT_KEY, JSON.stringify({ session, exp: Date.now() + INGAT_MS }));
+    } catch {
+      /* penyimpanan penuh/diblokir: sesi tab tetap jalan */
+    }
+  } else {
+    hapusIngat(); // login tanpa dicentang = tidak ada salinan lama yang tersisa
+  }
   return session;
 }
 
@@ -62,6 +114,7 @@ export function getSession() {
 
 export function logout() {
   sessionStorage.removeItem(SESSION_KEY);
+  hapusIngat();
 }
 
 // ---- Pilihan PT untuk Super Appa ----
@@ -78,6 +131,14 @@ export function gantiPtSesi(kode) {
   if (!s || s.role !== "superappa" || !kode || kode === s.entitas) return false;
   const baru = { ...s, entitasAsli: s.entitasAsli || s.entitas || "OPS", entitas: kode };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(baru));
+  const ingat = bacaIngat();
+  if (ingat) {
+    try {
+      localStorage.setItem(INGAT_KEY, JSON.stringify({ session: baru, exp: ingat.exp })); // masa berlaku tidak diperpanjang
+    } catch {
+      /* abaikan */
+    }
+  }
   try {
     sessionStorage.removeItem("selma-entitas");
   } catch {

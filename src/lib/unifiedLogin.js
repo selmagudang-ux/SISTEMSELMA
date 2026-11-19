@@ -8,12 +8,12 @@ import { loginKaryawan } from "./absensi";
 // (tabel `karyawan`, pakai ID Karyawan). Kalau username KETEMU di salah satu
 // tabel tapi passwordnya salah, error langsung ditampilkan dari situ (tidak
 // lanjut coba tabel satunya) supaya pesan errornya akurat.
-export async function unifiedLogin(identifier, password) {
+export async function unifiedLogin(identifier, password, opsi = {}) {
   const id = (identifier || "").trim();
   if (!id || !password) throw new Error("Username/ID dan password wajib diisi");
 
   try {
-    const session = await loginAdmin(id, password);
+    const session = await loginAdmin(id, password, { ingat: !!opsi.ingat });
     return { type: "admin", session };
   } catch (err) {
     if (err.message !== "Username tidak ditemukan") throw err;
