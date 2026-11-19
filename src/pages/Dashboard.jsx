@@ -46,6 +46,7 @@ import {
   kodeHoldingPasti, namaUsahaEntitas, namaStoreEntitas,
 } from "../lib/api";
 import { useHppPenjualan } from "../lib/hppPenjualan";
+import { usePemakaianHabisPakai } from "../lib/persediaanHabisPakai";
 import { rekapHarianAbsensi, rekapMingguanAbsensi, rekapBulananAbsensi, NAMA_HARI } from "../lib/absensi";
 import { StatCard, PageHeader, EmptyState, Badge, inputClass, formatTanggalID } from "../components/ui";
 import { BreakdownPengeluaran, BreakdownPemasukan, DetailTransaksiKategoriModal, DetailKelompokModal, GrafikArusKas, LaporanLabaRugi } from "./Keuangan";
@@ -477,6 +478,8 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   const dataKeluarGrup = kelompokkanBreakdown(breakdown.data, master.kelompok_keluar, breakdown.total);
 
   const { hpp: hppPenjualan } = useHppPenjualan(dari, sampai);
+  // Pemakaian barang habis pakai periode ini = beban Laba Rugi (lib/persediaanHabisPakai.js).
+  const { data: pemakaianHP } = usePemakaianHabisPakai(dari, sampai);
   const labaRugiBulanIni = laporanLabaRugi(
     saringLabaRugi(keuanganTransaksi, master),
     master.kategori_masuk || [],
@@ -485,7 +488,8 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
     sampai,
     master.kelompok_masuk,
     master.kelompok_keluar,
-    hppPenjualan?.total || 0
+    hppPenjualan?.total || 0,
+    pemakaianHP?.total || 0
   );
 
   return (
@@ -750,6 +754,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         marginPersen={labaRugiBulanIni.marginPersen}
         hpp={hppPenjualan}
         labaKotor={labaRugiBulanIni.labaKotor}
+        pemakaianHP={pemakaianHP}
         subtitle={periodeLabel}
         onKategoriClick={setDetailKategori}
         action={

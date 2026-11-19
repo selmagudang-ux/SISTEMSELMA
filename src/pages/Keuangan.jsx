@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
 import { usePersediaanBarang } from "./kasir/persediaanToko";
-import { usePersediaanHabisPakai } from "../lib/persediaanHabisPakai";
+import { usePersediaanHabisPakai, usePemakaianHabisPakai } from "../lib/persediaanHabisPakai";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -883,8 +883,9 @@ function kunciSemuaKelompok(data, seksi) {
   return (data || []).flatMap((d) => (d.isGrup ? [`${seksi}:${d.kode}`, ...kunciSemuaKelompok(d.anak, seksi)] : []));
 }
 
-export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, onKategoriClick, hpp = null, labaKotor = null }) {
+export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, subtitle, action, onKategoriClick, hpp = null, labaKotor = null, pemakaianHP = null }) {
   const untung = labaRugi >= 0;
+  const bebanPemakaian = Number(pemakaianHP?.total) || 0;
   const [lihatMasalahHpp, setLihatMasalahHpp] = useState(false);
   const [terbuka, setTerbuka] = useState(() => new Set());
   const toggle = (k) =>
@@ -1043,7 +1044,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
           <tr>
             <td colSpan={2} className="px-4 py-2 font-semibold text-red-400 bg-red-500/5">BEBAN (PENGELUARAN)</td>
           </tr>
-          {beban.data.length === 0 ? (
+          {beban.data.length === 0 && bebanPemakaian <= 0 ? (
             <tr>
               <td colSpan={2} className="px-4 py-3 text-center text-slate-600 text-xs">Belum ada beban pada rentang ini.</td>
             </tr>
@@ -1052,9 +1053,40 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
               <BarisLabaRugi key={d.kode || d.label} d={d} depth={0} seksi="keluar" terbuka={terbuka} toggle={toggle} onKategoriClick={onKategoriClick} />
             ))
           )}
+          {bebanPemakaian > 0 && (
+            <>
+              <tr>
+                <td className="px-4 py-1.5 text-slate-200">
+                  Pemakaian Barang Habis Pakai
+                  <span className="ml-2 text-[11px] text-slate-500">(jumlah dipakai × harga beli)</span>
+                </td>
+                <td className="px-4 py-1.5 text-right text-slate-200">{fmtRp(bebanPemakaian)}</td>
+              </tr>
+              {(pemakaianHP?.daftar || []).slice(0, 10).map((d) => (
+                <tr key={d.id}>
+                  <td className="px-4 py-1 pl-8 text-xs text-slate-400">
+                    {d.nama} · {(Number(d.qty) || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 })} {d.satuan}
+                  </td>
+                  <td className="px-4 py-1 text-right text-xs text-slate-400">{fmtRp(d.nilai)}</td>
+                </tr>
+              ))}
+              {(pemakaianHP?.daftar || []).length > 10 && (
+                <tr>
+                  <td colSpan={2} className="px-4 py-1 pl-8 text-[11px] text-slate-500">dan {(pemakaianHP.daftar.length - 10)} barang lainnya</td>
+                </tr>
+              )}
+              {pemakaianHP?.tanpaHarga > 0 && (
+                <tr>
+                  <td colSpan={2} className="px-4 py-1.5 text-[11px] text-amber-400">
+                    {pemakaianHP.tanpaHarga} catatan pemakaian belum punya harga beli, dihitung Rp 0. Isi harga belinya (Belanja atau Stok Awal) supaya beban akurat.
+                  </td>
+                </tr>
+              )}
+            </>
+          )}
           <tr className="bg-slate-900/60">
             <td className="px-4 py-2 font-semibold text-slate-100">Total Beban</td>
-            <td className="px-4 py-2 text-right font-semibold text-red-400">{fmtRp(beban.total)}</td>
+            <td className="px-4 py-2 text-right font-semibold text-red-400">{fmtRp(beban.total + bebanPemakaian)}</td>
           </tr>
 
           <tr className={untung ? "bg-emerald-500/10" : "bg-red-500/10"}>
@@ -1905,6 +1937,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const dataLabaRugi = saringLabaRugi(dataRentang, master);
   // HPP penjualan (marketplace + grosir + toko) untuk rentang yang dipilih, lihat lib/hppPenjualan.js.
   const { hpp: hppPenjualan } = useHppPenjualan(dari || null, sampai || null);
+  // Pemakaian barang habis pakai pada rentang yang dipilih = beban Laba Rugi (lib/persediaanHabisPakai.js).
+  const { data: pemakaianHP } = usePemakaianHabisPakai(dari || null, sampai || null);
   const labaRugi = laporanLabaRugi(
     dataLabaRugi,
     kategoriMasukList,
@@ -1913,7 +1947,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
     sampai || null,
     master.kelompok_masuk,
     master.kelompok_keluar,
-    hppPenjualan?.total || 0
+    hppPenjualan?.total || 0,
+    pemakaianHP?.total || 0
   );
 
   const sorted = [...list].sort((a, b) => (b.tanggal + b.created_at).localeCompare(a.tanggal + a.created_at));
@@ -2078,6 +2113,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             marginPersen={labaRugi.marginPersen}
             hpp={hppPenjualan}
             labaKotor={labaRugi.labaKotor}
+            pemakaianHP={pemakaianHP}
             subtitle={dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : ""}
             onKategoriClick={setDetailKategori}
           />

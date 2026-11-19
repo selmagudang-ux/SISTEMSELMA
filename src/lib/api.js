@@ -2017,10 +2017,12 @@ export function breakdownPemasukanKategori(transaksi, kategoriList) {
 // bertingkat (Kategori > Sub Kategori > Rincian), lihat kelompokkanBreakdown.
 //
 // hppTotal (opsional, default 0) = Harga Pokok Penjualan periode itu (lihat lib/hppPenjualan.js).
+// bebanPemakaian (opsional, default 0) = nilai barang habis pakai yang DIPAKAI pada periode itu; ikut
+// mengurangi laba bersih (beban.total tidak berubah, baris ini ditampilkan terpisah).
 // Kalau diisi: Laba Kotor = Pendapatan - HPP, dan Laba Bersih = Laba Kotor - Beban.
 // Kategori pembelian barang (mis. "Pembayaran Barang Supplier") sebaiknya diarahkan ke Neraca di
 // Pengaturan > Rekening & Kategori > Masuk ke Laporan supaya tidak terhitung dobel dengan HPP.
-export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai, pemetaanMasuk, pemetaanKeluar, hppTotal = 0) {
+export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList, dari, sampai, pemetaanMasuk, pemetaanKeluar, hppTotal = 0, bebanPemakaian = 0) {
   const { list } = ringkasanKeuangan(transaksi, dari, sampai);
   const pendapatan = breakdownPemasukanKategori(list, kategoriMasukList);
   const beban = breakdownPengeluaranKategori(list, kategoriKeluarList);
@@ -2028,9 +2030,12 @@ export function laporanLabaRugi(transaksi, kategoriMasukList, kategoriKeluarList
   beban.data = kelompokkanBreakdown(beban.data, pemetaanKeluar, beban.total);
   const hpp = Number(hppTotal) || 0;
   const labaKotor = pendapatan.total - hpp;
-  const labaRugi = labaKotor - beban.total;
+  // Pemakaian barang habis pakai (stok dipakai x harga beli) = beban tambahan di luar transaksi Keuangan:
+  // pembeliannya masuk Neraca (persediaan), bebannya baru diakui saat barang DIPAKAI (lib/persediaanHabisPakai.js).
+  const pemakaian = Number(bebanPemakaian) || 0;
+  const labaRugi = labaKotor - beban.total - pemakaian;
   const marginPersen = pendapatan.total > 0 ? (labaRugi / pendapatan.total) * 100 : 0;
-  return { pendapatan, beban, hpp, labaKotor, labaRugi, marginPersen };
+  return { pendapatan, beban, hpp, labaKotor, labaRugi, marginPersen, bebanPemakaian: pemakaian };
 }
 
 // Susun data "Laporan Bulanan" untuk satu tahun: tiap kategori pemasukan &
