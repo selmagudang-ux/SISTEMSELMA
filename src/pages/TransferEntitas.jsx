@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw, FileText, Tag } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, sbAll, nextKode, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, ENTITAS_DEFAULT } from "../lib/api";
+import { sb, sbAll, bacaPerEntitas, nextKode, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, ENTITAS_DEFAULT } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
@@ -192,27 +192,40 @@ async function terapkanDeltaStok(ent, daftar) {
   return { riwayat, undo };
 }
 
-// Tambah stok barang habis pakai ke PT akun sendiri. daftar: [{ nama, satuan, jumlah, catatan }].
-// Barang dicocokkan lewat NAMA (tidak peduli huruf besar/kecil); kalau belum ada di PT ini dibuat
-// otomatis (kode PLK- berikutnya). Stok = mutasi "koreksi" positif. Mengembalikan { undo } yang
-// menghapus mutasi (dan barang baru) kalau langkah berikutnya gagal.
-async function tambahHabisPakai(daftar) {
+// Ubah stok barang habis pakai di PT MANA PUN (ent; bawaan = PT akun sendiri). daftar: [{ nama, satuan,
+// jumlah, catatan }] — jumlah > 0 menambah, jumlah < 0 mengurangi. Barang dicocokkan lewat NAMA (tidak
+// peduli huruf besar/kecil); untuk penambahan, barang yang belum ada di PT itu dibuat otomatis (kode PLK-
+// berikutnya); untuk pengurangan barangnya wajib sudah ada. Stok = mutasi "koreksi". Baris diberi kolom
+// `entitas` eksplisit, jadi bisa menulis ke PT lain. Mengembalikan { undo } yang membatalkan perubahan
+// kalau langkah berikutnya gagal (PT sendiri: mutasi dihapus; PT lain: ditutup mutasi lawan).
+async function tambahHabisPakai(daftar, ent = entitasSesi()) {
+  const lokal = ent === entitasSesi();
   const mutasiId = [];
   const barangBaruId = [];
+  let barisTerkirim = [];
   const undo = async () => {
-    for (const id of mutasiId) await sb(`perlengkapan_mutasi?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
-    for (const id of barangBaruId) await sb(`perlengkapan?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
+    if (lokal) {
+      for (const id of mutasiId) await sb(`perlengkapan_mutasi?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
+      for (const id of barangBaruId) await sb(`perlengkapan?id=eq.${id}`, { method: "DELETE" }).catch(() => {});
+    } else if (barisTerkirim.length) {
+      await sb("perlengkapan_mutasi", {
+        method: "POST",
+        body: JSON.stringify(barisTerkirim.map((r) => ({ ...r, jumlah: -r.jumlah, keterangan: `Pembatalan: ${r.keterangan || "perubahan stok"}` }))),
+      }).catch(() => {});
+    }
   };
   try {
-    const ada = (await sbAll("perlengkapan?select=id,kode,nama,satuan")) || [];
+    // Dibaca dengan satu request (bukan sbAll) supaya filter PT pada bacaPerEntitas pasti terpasang.
+    const ada = (await bacaPerEntitas(ent, () => sb("perlengkapan?select=id,kode,nama,satuan&limit=1000"))) || [];
     const kunci = (n) => String(n || "").trim().toLowerCase();
     const baris = [];
     for (const d of daftar) {
       let b = ada.find((x) => kunci(x.nama) === kunci(d.nama));
       if (!b) {
+        if (Number(d.jumlah) < 0) throw new Error(`Barang habis pakai "${d.nama}" tidak ditemukan di gudang tujuan.`);
         const res = await sb("perlengkapan", {
           method: "POST",
-          body: JSON.stringify({ kode: nextKode(ada, "kode", "PLK-"), nama: String(d.nama).trim(), satuan: d.satuan || "pcs", stok_minimum: 0 }),
+          body: JSON.stringify({ kode: nextKode(ada, "kode", "PLK-"), nama: String(d.nama).trim(), satuan: d.satuan || "pcs", stok_minimum: 0, entitas: ent }),
         });
         b = Array.isArray(res) ? res[0] : res;
         if (!b?.id) throw new Error(`Gagal membuat barang habis pakai "${d.nama}" di gudang ini.`);
@@ -221,6 +234,7 @@ async function tambahHabisPakai(daftar) {
       }
       baris.push({
         perlengkapan_id: b.id,
+        entitas: ent,
         tipe: "koreksi",
         jumlah: bulat2(d.jumlah),
         tanggal: tglHariIni(),
@@ -228,12 +242,28 @@ async function tambahHabisPakai(daftar) {
       });
     }
     const hasil = await sb("perlengkapan_mutasi", { method: "POST", body: JSON.stringify(baris) });
+    barisTerkirim = baris;
     (Array.isArray(hasil) ? hasil : [hasil]).forEach((r) => r?.id && mutasiId.push(r.id));
   } catch (err) {
     await undo();
     throw err;
   }
   return { undo };
+}
+
+// Cek stok barang habis pakai di PT ent cukup untuk ditarik (dicocokkan lewat nama). Melempar error kalau kurang.
+async function cekStokHabisPakai(ent, daftar, namaPT) {
+  const rows = (await bacaPerEntitas(ent, () => sb("perlengkapan_stok?select=id,nama,satuan,stok&limit=1000"))) || [];
+  const k = (n) => String(n || "").trim().toLowerCase();
+  const sisa = (d) => Number(rows.find((x) => k(x.nama) === k(d.nama))?.stok) || 0;
+  const kurang = daftar.filter((d) => Math.round(sisa(d) * 100) < Math.round(d.jumlah * 100));
+  if (kurang.length) {
+    throw new Error(
+      `Tidak bisa dihapus: stok barang habis pakai di ${namaPT} sudah tidak cukup untuk ditarik kembali (${kurang
+        .map((d) => `${d.nama}: perlu ${fmtQty(d.jumlah)}, tersisa ${fmtQty(sisa(d))}`)
+        .join("; ")}). Minta penerima mengembalikan barangnya dulu.`
+    );
+  }
 }
 
 // Rencana membalikkan satu transfer ke kondisi semula (untuk tombol Hapus):
@@ -633,22 +663,18 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       if (!bisaHapus) throw new Error("Role Anda tidak punya akses menghapus transfer antar entitas.");
       if (t.entitas_asal !== entSaya && !superAppa) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
       const { ambil, kembali } = rencanaHapus(t);
-      // Barang habis pakai yang sudah diterima ada di gudang PT penerima (datanya terpisah per PT), jadi
-      // tidak bisa ditarik dari sini. Penerima mengirim baliknya lewat transfer baru.
-      if (ambil.some((d) => d.hp)) {
-        throw new Error("Tidak bisa dihapus: transfer ini berisi barang habis pakai yang sudah diterima. Minta penerima mengirim baliknya lewat transfer baru.");
-      }
+      // Barang habis pakai ditarik / dikembalikan lewat mutasi "koreksi" di PT yang bersangkutan
+      // (tambahHabisPakai menulis ke PT mana pun), jadi tidak lagi harus lewat akun PT itu sendiri.
+      const ambilSku = ambil.filter((d) => !d.hp);
+      const ambilHP = ambil.filter((d) => d.hp);
       const kembaliSku = kembali.filter((d) => !d.hp);
       const kembaliHP = kembali.filter((d) => d.hp);
-      // Barang habis pakai dicatat per PT lewat sesi akun; Super Appa dari PT lain tidak bisa mengembalikannya ke gudang pengirim.
-      if (t.entitas_asal !== entSaya && kembaliHP.length) {
-        throw new Error(`Tidak bisa dihapus dari akun ini: transfer berisi barang habis pakai yang harus dikembalikan ke gudang ${namaEnt(t.entitas_asal)}. Hapus lewat akun PT pengirim.`);
-      }
-      if (ambil.length) {
+      if (ambilHP.length) await cekStokHabisPakai(t.entitas_tujuan, ambilHP, namaEnt(t.entitas_tujuan));
+      if (ambilSku.length) {
         const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
-        const ada = await sb(`sku_stok?entitas=eq.${encodeURIComponent(t.entitas_tujuan)}&sku=in.(${ambil.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
+        const ada = await sb(`sku_stok?entitas=eq.${encodeURIComponent(t.entitas_tujuan)}&sku=in.(${ambilSku.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
         const peta = new Map((ada || []).map((r) => [r.sku, Number(r.stok) || 0]));
-        const kurang = ambil.filter((d) => (peta.get(d.sku) ?? 0) < d.jumlah);
+        const kurang = ambilSku.filter((d) => (peta.get(d.sku) ?? 0) < d.jumlah);
         if (kurang.length) {
           throw new Error(
             `Tidak bisa dihapus: stok di ${namaEnt(t.entitas_tujuan)} sudah tidak cukup untuk ditarik kembali (${kurang
@@ -662,11 +688,13 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       const baris = dihapus[0];
       let penerima = null;
       let pengirim = null;
+      let penerimaHP = null;
+      let pengirimHP = null;
       try {
-        if (ambil.length) {
+        if (ambilSku.length) {
           penerima = await terapkanDeltaStok(
             t.entitas_tujuan,
-            ambil.map((d) => ({ sku: d.sku, delta: -d.jumlah, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` }))
+            ambilSku.map((d) => ({ sku: d.sku, delta: -d.jumlah, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` }))
           );
         }
         if (kembaliSku.length) {
@@ -675,12 +703,21 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
             kembaliSku.map((d) => ({ sku: d.sku, delta: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
           );
         }
+        if (ambilHP.length) {
+          penerimaHP = await tambahHabisPakai(
+            ambilHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: -d.jumlah, catatan: `Transfer ${t.kode} dari ${namaEnt(t.entitas_asal)} dihapus — barang ditarik kembali` })),
+            t.entitas_tujuan
+          );
+        }
         if (kembaliHP.length) {
-          await tambahHabisPakai(
-            kembaliHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
+          pengirimHP = await tambahHabisPakai(
+            kembaliHP.map((d) => ({ nama: d.nama, satuan: d.satuan, jumlah: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` })),
+            t.entitas_asal
           );
         }
       } catch (e) {
+        await pengirimHP?.undo();
+        await penerimaHP?.undo();
         await pengirim?.undo();
         await penerima?.undo();
         try {
