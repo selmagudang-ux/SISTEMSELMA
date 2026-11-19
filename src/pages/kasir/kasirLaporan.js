@@ -176,6 +176,15 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
         it[I.sku] = skuTampil;
       }
     }
+    // Penjualan grosir (mode Master Barang: tidak ada satu pun item dari Barang Toko) tidak ditulis ke Keuangan
+    // lewat kasir, tapi lewat Pesanan Grosir. Ditandai supaya tidak ikut dibandingkan di cek sinkron Keuangan.
+    const punyaToko = new Map();
+    for (const it of items) {
+      const id = it[I.trxId];
+      if (it.dari_toko) punyaToko.set(id, true);
+      else if (!punyaToko.has(id)) punyaToko.set(id, false);
+    }
+    for (const r of transaksi) if (punyaToko.get(r[T.id]) === false) r._grosir = true;
   }
   return { transaksi, items, pembayaran, shift: shift || [] };
 }
@@ -205,6 +214,7 @@ export function olahRekap({ transaksi = [], items = [], pembayaran = [], shift =
       status: statusTrx(r),
       total: num(r[T.total]),
       retur: num(r[T.totalRetur]),
+      grosir: !!r._grosir,
     });
   }
 
@@ -225,7 +235,9 @@ export function olahRekap({ transaksi = [], items = [], pembayaran = [], shift =
 
   for (const d of peta.values()) {
     tambahTrx(ringkas, d);
-    tambahTrx(ambil(harian, d.tanggal, { tanggal: d.tanggal }), d);
+    const hr = ambil(harian, d.tanggal, { tanggal: d.tanggal });
+    tambahTrx(hr, d);
+    if (d.grosir && d.status !== "void") hr.bersihGrosir = (hr.bersihGrosir || 0) + d.total - d.retur;
     tambahTrx(ambil(perKasir, d.kasirId, { kasirId: d.kasirId, nama: d.kasirNama, jumlahShift: 0, selisihKas: 0 }), d);
     tambahTrx(ambil(perKasirHarian, `${d.tanggal}|${d.kasirId}`, { tanggal: d.tanggal, kasirId: d.kasirId, nama: d.kasirNama }), d);
   }
@@ -338,7 +350,7 @@ const LABEL_MASUK = ["OFFLINE CASH", "OFFLINE TRANSFER", "Offline Qris by BCA"];
 const LABEL_KELUAR = "Retur & Void Penjualan Kasir";
 const norm = (s) => (s || "").toLowerCase().replace(/\s+/g, "").trim();
 
-export function hitungSinkronKeuangan({ keuangan = [], master = {}, dari, sampai, bersihKasir }) {
+export function hitungSinkronKeuangan({ keuangan = [], master = {}, dari, sampai, bersihKasir, grosir = 0 }) {
   const kodeMasuk = new Set((master.kategori_masuk || []).filter((k) => LABEL_MASUK.some((l) => norm(l) === norm(k.label))).map((k) => k.kode));
   const kodeKeluar = new Set((master.kategori_keluar || []).filter((k) => norm(k.label) === norm(LABEL_KELUAR)).map((k) => k.kode));
   let masuk = 0;
@@ -349,7 +361,7 @@ export function hitungSinkronKeuangan({ keuangan = [], master = {}, dari, sampai
     else if (t.tipe === "keluar" && kodeKeluar.has(t.kategori)) keluar += num(t.jumlah);
   }
   const bersihKeuangan = masuk - keluar;
-  return { masuk, keluar, bersihKeuangan, bersihKasir, selisih: bersihKasir - bersihKeuangan, kategoriMasukAda: kodeMasuk.size > 0 };
+  return { masuk, keluar, bersihKeuangan, bersihKasir, grosir, selisih: bersihKasir - bersihKeuangan, kategoriMasukAda: kodeMasuk.size > 0 };
 }
 
 // ---------- hook & rangkuman untuk Dashboard ----------

@@ -134,8 +134,11 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
     const dariCek = dari < mulai.tanggal ? mulai.tanggal : dari;
     if (dariCek > sampai) return null;
     // bandingkan hanya bagian rentang yang sama; kalau rentang dipotong, hitung ulang bersih kasir untuk bagian itu
-    const bersihKasir = data.harian.filter((h) => h.tanggal >= dariCek && h.tanggal <= sampai).reduce((a, h) => a + h.bersih, 0);
-    return { ...hitungSinkronKeuangan({ keuangan, master, dari: dariCek, sampai, bersihKasir }), dariCek };
+    const hariIni = data.harian.filter((h) => h.tanggal >= dariCek && h.tanggal <= sampai);
+    // Penjualan grosir dicatat lewat Pesanan Grosir (bukan baris Keuangan kasir), jadi tidak ikut dibandingkan.
+    const grosir = hariIni.reduce((a, h) => a + (h.bersihGrosir || 0), 0);
+    const bersihKasir = hariIni.reduce((a, h) => a + h.bersih, 0) - grosir;
+    return { ...hitungSinkronKeuangan({ keuangan, master, dari: dariCek, sampai, bersihKasir, grosir }), dariCek };
   }, [data, keuangan, master, mulai.tanggal, dari, sampai, rentangValid]);
 
   const r = data?.ringkas;
@@ -312,7 +315,8 @@ export default function LaporanKasir({ master = {}, keuanganTransaksi = [] }) {
                   {sinkron.selisih === 0 ? "Keuangan sinkron dengan kasir" : `Selisih ${fmtRp(Math.abs(sinkron.selisih))} antara kasir dan Keuangan`}
                 </div>
                 <div className="text-xs text-md-on-surface-variant mt-0.5">
-                  Kasir (bersih) {fmtRp(sinkron.bersihKasir)} · Keuangan {fmtRp(sinkron.masuk)} masuk − {fmtRp(sinkron.keluar)} retur/void = {fmtRp(sinkron.bersihKeuangan)}
+                  Kasir ecer (bersih) {fmtRp(sinkron.bersihKasir)}
+                  {sinkron.grosir > 0 && ` (penjualan grosir ${fmtRp(sinkron.grosir)} tidak dibandingkan, dicatat lewat Pesanan Grosir)`} · Keuangan {fmtRp(sinkron.masuk)} masuk − {fmtRp(sinkron.keluar)} retur/void = {fmtRp(sinkron.bersihKeuangan)}
                   {sinkron.dariCek !== dari && ` · dibandingkan mulai ${formatTanggalID(sinkron.dariCek)} (hari pertama kasir dipakai)`}
                 </div>
                 {!sinkron.kategoriMasukAda && (
