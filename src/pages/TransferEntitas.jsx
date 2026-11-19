@@ -293,7 +293,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     // Permintaan stok dimuat terpisah: kalau tabelnya belum dibuat, halaman Transfer tetap jalan.
     try {
       const e = encodeURIComponent(entSaya);
-      setPermintaan((await sb(`permintaan_stok?or=(entitas_peminta.eq.${e},entitas_pemberi.eq.${e})&order=created_at.desc&limit=300`)) || []);
+      const saringP = superAppa ? "" : `or=(entitas_peminta.eq.${e},entitas_pemberi.eq.${e})&`;
+      setPermintaan((await sb(`permintaan_stok?${saringP}order=created_at.desc&limit=300`)) || []);
       setTabelPermintaanAda(true);
     } catch (err) {
       setTabelPermintaanAda(false);
@@ -776,6 +777,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
           session={session}
           bisaMinta={bisaMinta}
           bisaKirim={bisaTransfer}
+          bisaHapus={superAppa || bisaHapus}
           proses={proses}
           jalankan={jalankan}
           muat={muat}
