@@ -964,7 +964,7 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
       <div className="text-xs text-slate-400 mb-1.5">Barang yang dibeli</div>
       <div className="space-y-2.5 mb-2">
         {baris.map((r) => (
-          <div key={r.key} className="rounded-lg border border-slate-800 p-2.5">
+          <div key={r.key} className="rounded-lg border border-slate-700 p-2.5">
             <div className="flex items-start gap-2">
               <div className="flex-1 min-w-0">
                 <SearchableSelectOrNew
