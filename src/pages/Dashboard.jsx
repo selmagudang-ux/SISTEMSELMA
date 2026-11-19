@@ -53,7 +53,7 @@ import { isEntriTokoOffline } from "./TokoOffline";
 import { useRekapKasir, useTanggalMulaiKasir, hariIniWib, tambahHari, barangTerlaris } from "./kasir/kasirLaporan";
 import { getSession } from "../lib/auth";
 import { RingkasanGrup } from "./Holding";
-import KartuOperasionalEntitas from "./DashboardEntitas";
+import KartuOperasionalEntitas, { urutEntitasPusat } from "./DashboardEntitas";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 import PanelBarangHabisPakai from "../components/PanelBarangHabisPakai";
@@ -221,7 +221,7 @@ export default function Dashboard({
   const kodeHoldingDash = kodeHoldingPasti(master.entitas, master.entitas_set);
   const daftarPT = (master.entitas || []).filter((e) => e.kode !== kodeHoldingDash);
   // Akun pusat memilih/melihat SEMUA entitas, termasuk Holding (daftarPT di atas tanpa Holding).
-  const daftarSemuaEntitas = master.entitas || [];
+  const daftarSemuaEntitas = urutEntitasPusat(master.entitas || [], kodeHoldingDash);
   // Nama kartu/grup toko di Dashboard Penjualan: "Store Selma" untuk SELMA, "Store <nama PT>"
   // (tanpa awalan PT/CV) untuk PT lain — sama dengan judul grup di sidebar.
   const namaStore = namaStoreEntitas(master, entAktif);

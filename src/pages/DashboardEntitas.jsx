@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Warehouse, Boxes, Package, Truck, ClipboardList, ArrowRight, Loader2 } from "lucide-react";
-import { sbAll, bacaPerEntitas, kodeHoldingPasti, namaUsahaEntitas } from "../lib/api";
+import { sbAll, bacaPerEntitas, kodeHoldingPasti, namaUsahaEntitas, ENTITAS_DEFAULT } from "../lib/api";
 import { STAGE_META } from "../lib/constants";
 
 // Kartu per perusahaan (entitas) di Dashboard Operasional untuk akun PUSAT (Pemilik / Super Appa)
@@ -9,6 +9,15 @@ import { STAGE_META } from "../lib/constants";
 //
 // Angka tiap kartu ditarik sendiri per perusahaan (bacaPerEntitas) dan sengaja ringan:
 // hanya kolom yang dibutuhkan, tanpa mengubah data gudang yang sedang dimuat App.jsx.
+
+// Urutan tampil untuk akun pusat: Holding dulu, lalu SELMA, lalu PT lainnya (mis. ALIVIA) sesuai urutan master.
+export function urutEntitasPusat(list = [], kodeHolding) {
+  const rank = (kode) => (kode === kodeHolding ? 0 : kode === ENTITAS_DEFAULT ? 1 : 2);
+  return list
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => rank(a.e.kode) - rank(b.e.kode) || a.i - b.i)
+    .map((x) => x.e);
+}
 
 const fmtAngka = (n) => Number(n || 0).toLocaleString("id-ID");
 
@@ -50,7 +59,7 @@ function Angka({ label, nilai, icon: Icon, warna }) {
 export default function KartuOperasionalEntitas({ master = {}, onBuka }) {
   const kodeHolding = kodeHoldingPasti(master.entitas, master.entitas_set);
   // Semua entitas ditampilkan, termasuk Holding (ditandai "Pusat").
-  const daftar = master.entitas || [];
+  const daftar = urutEntitasPusat(master.entitas || [], kodeHolding);
   const kunci = daftar.map((e) => e.kode).join("|");
   const [hasil, setHasil] = useState({});
 
