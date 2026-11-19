@@ -439,6 +439,13 @@ function MainApp({ session, onLogout }) {
   });
 
   const [loading, setLoading] = useState(true);
+  // Sudah pernah selesai memuat sekali. Dipakai supaya Dashboard TIDAK dibongkar-pasang oleh layar
+  // "Memuat data…" saat akun pusat berpindah ke entitas yang belum punya barang (mis. Holding):
+  // kalau dibongkar, pilihan kartu entitas di Dashboard ikut hilang dan terlihat "tidak terjadi apa-apa".
+  const [sudahPernahMuat, setSudahPernahMuat] = useState(false);
+  useEffect(() => {
+    if (!loading) setSudahPernahMuat(true);
+  }, [loading]);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -1312,7 +1319,7 @@ function MainApp({ session, onLogout }) {
             </div>
           )}
 
-          {loading && items.length === 0 ? (
+          {loading && items.length === 0 && !(nav.menu === "dashboard" && sudahPernahMuat) ? (
             <div className="flex items-center justify-center py-24 text-md-on-surface-variant gap-2 text-sm">
               <Loader2 size={18} className="animate-spin" /> Memuat data…
             </div>
