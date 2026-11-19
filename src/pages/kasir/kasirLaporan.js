@@ -102,7 +102,7 @@ function petaBarangToko() {
       // HPP yang kosong dilengkapi dari barang yang mirip (lib/hppTokoCocok.js); yang sudah terisi tidak diubah.
       const lengkapi = buatPelengkapHpp(rows, master);
       // hppAsli = isi di Barang Toko / Master apa adanya (dipakai halaman Cek HPP); toko = baris master_toko.
-      const m = new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, hpp: lengkapi.hppToko(r), hppAsli: num(r.hpp), toko: true }]));
+      const m = new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, barcode: r.barcode || null, hpp: lengkapi.hppToko(r), hppAsli: num(r.hpp), toko: true }]));
       (master || []).forEach((r) => {
         if (!m.has(r.sku)) m.set(r.sku, { sku_gudang: null, hpp: lengkapi.hppSkuMaster(r.sku, r.hpp, r.ecer), hppAsli: num(r.hpp), toko: false });
       });
@@ -157,9 +157,12 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
       it.hpp_satuan = b ? b.hpp : 0; // HPP per pcs saat ini (0 = belum diisi / barang tidak ditemukan)
       it.hpp_asli = b ? b.hppAsli : 0; // isi apa adanya (tanpa dilengkapi dari barang mirip)
       it.dari_toko = !!b?.toko;
-      if (b?.sku_gudang) {
+      // SKU yang tampil: SKU gudang (kalau tertaut) -> SKU/barcode Barang Toko (kalau beda dari kode toko) -> kode toko.
+      // Di Barang Toko, SKU yang diisi saat import/ubah disimpan sebagai barcode.
+      const skuTampil = b?.sku_gudang || (b?.toko && b.barcode && b.barcode !== it[I.sku] ? b.barcode : null);
+      if (skuTampil) {
         it.kode_toko = it[I.sku];
-        it[I.sku] = b.sku_gudang;
+        it[I.sku] = skuTampil;
       }
     }
   }

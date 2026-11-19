@@ -569,6 +569,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       if (harga <= 0) return { ok: false, pesan: `${s.sku}: harga ${modeMaster ? (LABEL_KATEGORI_PELANGGAN[kunciHarga] || "grosir").toLowerCase() : "ecer"} belum diisi di Master Barang` };
       if (stok <= 0) return { ok: false, pesan: `${s.sku}: stok habis` };
       const ada = items.find((it) => it.sku === s.sku);
+      if (ada?.manual) return { ok: false, pesan: `${s.sku}: sudah ada sebagai item manual di keranjang` };
       if (ada && ada.qty + 1 > stok) return { ok: false, pesan: `${s.sku}: stok hanya ${stok}` };
       setItems((prev) =>
         ada
@@ -583,12 +584,19 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     [items, promoMap, modeMaster, kunciHarga]
   );
 
-  // Item manual (mode Master Barang): kode sementara "MNL-…", tanpa batas stok, HPP 0.
-  const tambahManual = ({ nama, harga, qty }) => {
-    const sku = `MNL-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
-    setItems((prev) => [...prev, { sku, nama, harga, hpp: 0, stok: 999999, qty, manual: true, diskonTipe: "rp", diskonNilai: "", promo: null, promoLepas: false }]);
+  // Item manual (mode Master Barang): SKU diketik kasir, tanpa batas stok, HPP 0.
+  // Keranjang memakai SKU sebagai kunci, jadi SKU yang sudah ada di keranjang ditolak.
+  const tambahManual = ({ sku, nama, harga, qty }) => {
+    const kode = String(sku || "").trim();
+    if (!kode) return { ok: false, pesan: "SKU wajib diisi." };
+    if (items.some((it) => String(it.sku).toLowerCase() === kode.toLowerCase())) {
+      return { ok: false, pesan: `SKU ${kode} sudah ada di keranjang.` };
+    }
+    const namaItem = (nama || "").trim() || kode;
+    setItems((prev) => [...prev, { sku: kode, nama: namaItem, harga, hpp: 0, stok: 999999, qty, manual: true, diskonTipe: "rp", diskonNilai: "", promo: null, promoLepas: false }]);
     setManualBuka(false);
-    tampilToast(`${nama} ditambahkan (item manual)`, "ok");
+    tampilToast(`${kode} ditambahkan (item manual)`, "ok");
+    return { ok: true };
   };
 
   const tambahDariKode = (kode) => {
@@ -1159,7 +1167,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
                         {it.nama}
                       </div>
                       <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        {it.manual ? "Manual" : it.sku} · <span className="tabular-nums">{fmtRp(it.harga)}</span>
+                        {it.manual ? `${it.sku} (manual)` : it.sku} · <span className="tabular-nums">{fmtRp(it.harga)}</span>
                       </div>
                     </div>
                     <button

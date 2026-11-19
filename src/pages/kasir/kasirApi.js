@@ -350,10 +350,12 @@ async function tampilkanSkuGudang(items) {
   try {
     for (let i = 0; i < kode.length; i += 60) {
       const potong = kode.slice(i, i + 60).map((k) => encodeURIComponent(`"${String(k).replace(/"/g, '\\"')}"`)).join(",");
-      const rows = (await sb(`master_toko?select=kode,sku_gudang&kode=in.(${potong})`)) || [];
+      const rows = (await sb(`master_toko?select=kode,sku_gudang,barcode&kode=in.(${potong})`)) || [];
       rows.forEach((r) => {
         adaDiToko.add(r.kode);
+        // SKU tampil: SKU gudang -> barcode (= SKU yang diisi di Barang Toko, kalau beda dari kode toko)
         if (r.sku_gudang) peta.set(r.kode, r.sku_gudang);
+        else if (r.barcode && r.barcode !== r.kode) peta.set(r.kode, r.barcode);
       });
     }
   } catch {

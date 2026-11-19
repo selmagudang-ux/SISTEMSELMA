@@ -12,6 +12,7 @@ const inputCls =
   "w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-base outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10";
 
 export default function ModalItemManual({ onTambah, onClose }) {
+  const [sku, setSku] = useState("");
   const [nama, setNama] = useState("");
   const [harga, setHarga] = useState("");
   const [qty, setQty] = useState("1");
@@ -21,10 +22,11 @@ export default function ModalItemManual({ onTambah, onClose }) {
   const q = Math.floor(Number(qty) || 0);
 
   const simpan = () => {
-    if (!nama.trim()) return setError("Nama barang wajib diisi.");
+    if (!sku.trim()) return setError("SKU wajib diisi.");
     if (h <= 0) return setError("Harga harus lebih dari 0.");
     if (q < 1) return setError("Jumlah minimal 1.");
-    onTambah({ nama: nama.trim(), harga: h, qty: q });
+    const r = onTambah({ sku: sku.trim(), nama: nama.trim(), harga: h, qty: q });
+    if (r && r.ok === false) setError(r.pesan);
   };
 
   return (
@@ -40,8 +42,12 @@ export default function ModalItemManual({ onTambah, onClose }) {
         </div>
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-slate-400">Nama barang</label>
-            <input autoFocus value={nama} onChange={(e) => setNama(e.target.value)} placeholder="mis. Plastik packing besar" className={`${inputCls} mt-1`} />
+            <label className="text-xs text-slate-400">SKU</label>
+            <input autoFocus value={sku} onChange={(e) => setSku(e.target.value)} placeholder="mis. TDGL-GSR-14-PUT" className={`${inputCls} mt-1 font-mono`} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400">Nama barang (opsional, kosong = sama dengan SKU)</label>
+            <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="mis. Plastik packing besar" className={`${inputCls} mt-1`} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
