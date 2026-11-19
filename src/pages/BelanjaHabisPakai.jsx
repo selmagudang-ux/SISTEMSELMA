@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Plus, Pencil, Trash2, Search, AlertTriangle, PackageCheck, Wallet, Minus, ClipboardCheck, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, AlertTriangle, PackageCheck, Wallet, Minus, ClipboardCheck, X, Paperclip } from "lucide-react";
 import {
   ModalShell,
   Field,
@@ -16,6 +16,8 @@ import {
 } from "../components/ui";
 import { sb, sbAll, fmtRp, nextKode, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, lingkupEntitas, entitasSesi } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
+import { BUKTI_ACCEPT, daftarBukti } from "../lib/bukti";
+import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 
 // =========================================================
 // BELANJA BARANG HABIS PAKAI (sub-menu Pengadaan Barang)
@@ -54,6 +56,7 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
   const [belanja, setBelanja] = useState([]);
   const [item, setItem] = useState([]);
   const [mutasi, setMutasi] = useState([]);
+  const [buktiMap, setBuktiMap] = useState({}); // keuangan_transaksi_id -> [url bukti]
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   // Edit/hapus riwayat stok hanya untuk superadmin / superappa.
@@ -76,6 +79,21 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
       setBelanja(b || []);
       setItem(i || []);
       setMutasi(m || []);
+      // Bukti pembayaran disimpan di baris Keuangan-nya; ambil untuk pembelian yang sudah dibayar.
+      const idKeu = (b || []).map((x) => x.keuangan_transaksi_id).filter(Boolean).slice(0, 100);
+      const peta = {};
+      if (idKeu.length) {
+        try {
+          const rows = await sb(`keuangan_transaksi?id=in.(${idKeu.join(",")})&select=id,bukti_url,bukti_urls`);
+          (rows || []).forEach((r) => {
+            const d = daftarBukti(r);
+            if (d.length) peta[r.id] = d;
+          });
+        } catch (e) {
+          console.error("Gagal memuat bukti pembayaran:", e);
+        }
+      }
+      setBuktiMap(peta);
     } catch (e) {
       toastRef.current?.(e.message || "Gagal memuat data", "err");
     } finally {
@@ -156,7 +174,7 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
       ) : tab === "stok" ? (
         <TabStok stok={stok} setModal={setModal} />
       ) : tab === "belanja" ? (
-        <TabBelanja belanja={belanja} item={item} stok={stok} setModal={setModal} />
+        <TabBelanja belanja={belanja} item={item} stok={stok} buktiMap={buktiMap} setModal={setModal} />
       ) : (
         <TabRiwayat mutasi={mutasi} stok={stok} bisaUbah={bisaUbahRiwayat} setModal={setModal} />
       )}
@@ -315,7 +333,7 @@ function TabStok({ stok, setModal }) {
 // ---------------------------------------------------------
 // TAB: PEMBELIAN
 // ---------------------------------------------------------
-function TabBelanja({ belanja, item, stok, setModal }) {
+function TabBelanja({ belanja, item, stok, buktiMap = {}, setModal }) {
   const [q, setQ] = useState("");
   const nama = useMemo(() => Object.fromEntries(stok.map((p) => [p.id, p])), [stok]);
   const filtered = belanja.filter((b) => {
@@ -392,6 +410,17 @@ function TabBelanja({ belanja, item, stok, setModal }) {
                       <Wallet size={12} /> Catat Pembayaran
                     </button>
                   )}
+                  {(buktiMap[b.keuangan_transaksi_id] || []).map((u, i, arr) => (
+                    <a
+                      key={u}
+                      href={u}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500"
+                    >
+                      <Paperclip size={12} /> Bukti{arr.length > 1 ? ` ${i + 1}` : ""}
+                    </a>
+                  ))}
                   {bolehEdit && (
                     <button
                       onClick={() => setModal({ type: "belanja", item: b })}
@@ -1082,6 +1111,7 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
   const rekeningList = lingkupEntitas([], master, entitasSesi()).master.rekening || [];
   const petaKas = petaKasRekening(master.kas_grup);
   const [rekening, setRekening] = useState("");
+  const [files, setFiles] = useState([]); // bukti pembayaran (opsional): foto / PDF, boleh banyak
   const [saving, setSaving] = useState(false);
 
   // Kategori pengeluaran di Keuangan bisa dipilih (tidak semua belanja masuk
@@ -1112,6 +1142,8 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
   const bayar = async () => {
     setSaving(true);
     try {
+      // Unggah bukti DULU: kalau gagal, belum ada pengeluaran yang tercatat di Keuangan.
+      const buktiUrls = files.length ? await unggahBuktiBanyak(files, belanja.kode) : [];
       const kategori = kategoriPilih === KATEGORI_BARU ? await cariAtauBuatKategori() : kategoriPilih;
       const res = await sb("keuangan_transaksi", {
         method: "POST",
@@ -1122,6 +1154,7 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
           kategori,
           jumlah: Number(belanja.total),
           keterangan: `Belanja ${belanja.kode}${belanja.supplier ? ` - ${belanja.supplier}` : ""}`,
+          ...(buktiUrls.length ? { bukti_urls: buktiUrls, bukti_url: buktiUrls[0] } : {}),
         }),
       });
       const trx = Array.isArray(res) ? res[0] : res;
@@ -1175,6 +1208,39 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
       </Field>
       <Field label="Tanggal bayar">
         <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+      <Field label="Bukti pembayaran (opsional)">
+        <input
+          type="file"
+          accept={BUKTI_ACCEPT}
+          multiple
+          disabled={saving}
+          onChange={(e) => {
+            const baru = Array.from(e.target.files || []);
+            setFiles((f) => [...f, ...baru]);
+            e.target.value = "";
+          }}
+          className={fileCls}
+        />
+        {files.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {files.map((f, i) => (
+              <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5 text-[11px] text-slate-300">
+                <span className="truncate">{f.name}</span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))}
+                  aria-label="Hapus bukti"
+                  className="text-slate-500 hover:text-red-400 flex-shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="text-[10px] text-slate-500 mt-1">Foto atau PDF (PDF maks 10 MB). Bukti ikut tersimpan di transaksi Keuangan.</div>
       </Field>
       <div className="text-[11px] text-slate-500 mb-3">
         Tercatat sebagai pengeluaran kategori "{labelKategori}" di Keuangan.
