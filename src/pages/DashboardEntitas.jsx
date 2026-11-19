@@ -49,7 +49,8 @@ function Angka({ label, nilai, icon: Icon, warna }) {
 
 export default function KartuOperasionalEntitas({ master = {}, onBuka }) {
   const kodeHolding = kodeHoldingPasti(master.entitas, master.entitas_set);
-  const daftar = (master.entitas || []).filter((e) => e.kode !== kodeHolding);
+  // Semua entitas ditampilkan, termasuk Holding (ditandai "Pusat").
+  const daftar = master.entitas || [];
   const kunci = daftar.map((e) => e.kode).join("|");
   const [hasil, setHasil] = useState({});
 
@@ -97,7 +98,7 @@ export default function KartuOperasionalEntitas({ master = {}, onBuka }) {
               </span>
               <div className="min-w-0">
                 <div className="text-base font-semibold text-slate-100 truncate">{nama}</div>
-                <div className="text-[11px] text-slate-500">{e.kode}</div>
+                <div className="text-[11px] text-slate-500">{e.kode}{e.kode === kodeHolding ? " · Pusat" : ""}</div>
               </div>
             </div>
 

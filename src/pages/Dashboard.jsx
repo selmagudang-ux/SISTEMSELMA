@@ -209,7 +209,7 @@ export default function Dashboard({
   const bukanOps = gabungan || entAktif !== ENTITAS_DEFAULT;
   const absensiBolehTampil = !gabungan;
   const tabsTersedia = gabungan
-    ? TABS.filter((t) => t.key === "gudang" || t.key === "keuangan")
+    ? TABS
     : bukanOps
     ? TABS.filter(
         (t) =>
@@ -220,6 +220,8 @@ export default function Dashboard({
   const namaPerusahaan = gabungan ? "Gabungan semua PT" : namaUsahaEntitas(master, entAktif);
   const kodeHoldingDash = kodeHoldingPasti(master.entitas, master.entitas_set);
   const daftarPT = (master.entitas || []).filter((e) => e.kode !== kodeHoldingDash);
+  // Akun pusat memilih/melihat SEMUA entitas, termasuk Holding (daftarPT di atas tanpa Holding).
+  const daftarSemuaEntitas = master.entitas || [];
   // Nama kartu/grup toko di Dashboard Penjualan: "Store Selma" untuk SELMA, "Store <nama PT>"
   // (tanpa awalan PT/CV) untuk PT lain — sama dengan judul grup di sidebar.
   const namaStore = namaStoreEntitas(master, entAktif);
@@ -272,17 +274,17 @@ export default function Dashboard({
         }
         action={
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {bolehPilihPT && daftarPT.length > 0 && (
+            {bolehPilihPT && daftarSemuaEntitas.length > 0 && (
               <select
                 value={ptLihat || entitas}
                 onChange={(e) => onGantiPT(e.target.value)}
                 className={`${inputClass} w-auto text-xs py-1.5`}
                 aria-label="Pilih perusahaan"
               >
-                {daftarPT.map((e) => (
+                {daftarSemuaEntitas.map((e) => (
                   <option key={e.kode} value={e.kode}>{e.label || e.kode}</option>
                 ))}
-                {daftarPT.length > 1 && <option value="GABUNGAN">Gabungan semua PT</option>}
+                {daftarSemuaEntitas.length > 1 && <option value="GABUNGAN">Gabungan semua PT</option>}
               </select>
             )}
             {!gabungan && (
@@ -328,7 +330,12 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
-      {tab === "gudang" && (gabungan || (bolehPilihPT && daftarPT.length > 1 && tampilKartuOps)) ? (
+      {gabungan && (tab === "penjualan" || tab === "absensi") ? (
+        // Sementara: tab ini belum punya tampilan per entitas. Pilih perusahaan di dropdown untuk melihat datanya.
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-400">
+          Pilih perusahaan di dropdown kanan atas untuk melihat {tab === "penjualan" ? "Dashboard Penjualan" : "Dashboard Absensi"}.
+        </div>
+      ) : tab === "gudang" && (gabungan || (bolehPilihPT && daftarSemuaEntitas.length > 1 && tampilKartuOps)) ? (
         // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard operasional PT itu.
         <KartuOperasionalEntitas
           master={master}
@@ -339,7 +346,7 @@ export default function Dashboard({
         />
       ) : tab === "gudang" ? (
         <>
-          {bolehPilihPT && daftarPT.length > 1 && (
+          {bolehPilihPT && daftarSemuaEntitas.length > 1 && (
             <button
               type="button"
               onClick={() => setTampilKartuOps(true)}
