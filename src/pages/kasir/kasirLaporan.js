@@ -153,7 +153,18 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
   if (items.length) {
     const peta = await petaBarangToko();
     for (const it of items) {
-      const b = peta.get(it[I.sku]);
+      let b = peta.get(it[I.sku]);
+      // Item manual lama: kode sementara "MNL-…", SKU aslinya diketik di kolom nama. Kalau namanya cocok dengan
+      // SKU Master Barang / Barang Toko, pakai itu (SKU tampil + HPP ikut terisi).
+      if (!b && String(it[I.sku] || "").startsWith("MNL-")) {
+        const nm = String(it[I.nama] || "").trim();
+        const cocok = nm && peta.get(nm);
+        if (cocok) {
+          b = cocok;
+          it.kode_toko = it[I.sku];
+          it[I.sku] = nm;
+        }
+      }
       it.hpp_satuan = b ? b.hpp : 0; // HPP per pcs saat ini (0 = belum diisi / barang tidak ditemukan)
       it.hpp_asli = b ? b.hppAsli : 0; // isi apa adanya (tanpa dilengkapi dari barang mirip)
       it.dari_toko = !!b?.toko;
