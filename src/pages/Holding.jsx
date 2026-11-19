@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb, X } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
-import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
+import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, ENTITAS_DEFAULT, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
 import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBuktiBanyak, fileCls } from "./AlurKas";
@@ -207,7 +207,13 @@ function GrafikLaba({ bulanList, nilaiBulan, terpilih, onPilih }) {
 export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tanpaHeader = false, labelBuka = "Lihat keuangan" }) {
   const k = useDataKas(master, keuanganTransaksi);
   const { data: semua, status: statusLama } = useKeuanganRentang(keuanganTransaksi, "");
-  const ents = k.entitasList;
+  // Urutan tampil: Holding, lalu SELMA, lalu PT lainnya (mis. ALIVIA) sesuai urutan master.
+  const ents = useMemo(() => {
+    const kodeHold = kodeHoldingPasti(master.entitas, master.entitas_set);
+    const rank = (kode) => (kode === kodeHold ? 0 : kode === ENTITAS_DEFAULT ? 1 : 2);
+    return k.entitasList.map((e, i) => ({ e, i })).sort((a, b) => rank(a.e.kode) - rank(b.e.kode) || a.i - b.i).map((x) => x.e);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [k.entitasList, master.entitas, master.entitas_set]);
   const bulanIni = hariIniLokal().slice(0, 7);
   const [bulanPilih, setBulanPilih] = useState(bulanIni);
   const [jenisDonat, setJenisDonat] = useState("masuk"); // donat: pemasukan atau pengeluaran
