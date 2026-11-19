@@ -196,7 +196,9 @@ export default function Dashboard({
 }) {
   const [tabPilih, setTab] = useState("gudang");
   // Akun pusat: klik tab Operasional -> kartu per perusahaan dulu; pilih satu -> isi dashboard PT itu.
-  const [tampilKartuOps, setTampilKartuOps] = useState(true);
+  // Berlaku untuk tab Operasional, Penjualan & Absensi (kartu per perusahaan dulu).
+  const [kartuTerbuka, setKartuTerbuka] = useState({ gudang: true, penjualan: true, absensi: true });
+  const aturKartu = (kunci, nilai) => setKartuTerbuka((s) => ({ ...s, [kunci]: nilai }));
   const gabungan = bolehPilihPT && ptLihat === "GABUNGAN";
   const entAktif = bolehPilihPT && ptLihat && !gabungan ? ptLihat : entitas;
   // PT selain SELMA: data gudang, penjualan (grosir/reseller/marketplace, kolom entitas),
@@ -255,6 +257,17 @@ export default function Dashboard({
   const keuanganTransaksi = lingkupOps.transaksi;
   const masterOps = lingkupOps.master;
 
+  const pusatBisaPilih = bolehPilihPT && daftarSemuaEntitas.length > 1;
+  const tombolSemuaPT = pusatBisaPilih ? (
+    <button
+      type="button"
+      onClick={() => aturKartu(tab, true)}
+      className="mb-3 text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+    >
+      <ArrowLeft size={13} /> Semua perusahaan
+    </button>
+  ) : null;
+
   return (
     <div>
       <PageHeader
@@ -309,7 +322,7 @@ export default function Dashboard({
               key={t.key}
               onClick={() => {
                 setTab(t.key);
-                if (t.key === "gudang") setTampilKartuOps(true);
+                if (t.key !== "keuangan") aturKartu(t.key, true);
               }}
               className={`flex items-center gap-2.5 text-left px-3.5 py-3 rounded-xl border transition ${
                 active
@@ -330,31 +343,19 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
-      {gabungan && (tab === "penjualan" || tab === "absensi") ? (
-        // Sementara: tab ini belum punya tampilan per entitas. Pilih perusahaan di dropdown untuk melihat datanya.
-        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-6 text-sm text-slate-400">
-          Pilih perusahaan di dropdown kanan atas untuk melihat {tab === "penjualan" ? "Dashboard Penjualan" : "Dashboard Absensi"}.
-        </div>
-      ) : tab === "gudang" && (gabungan || (bolehPilihPT && daftarSemuaEntitas.length > 1 && tampilKartuOps)) ? (
-        // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard operasional PT itu.
+      {tab !== "keuangan" && (gabungan || (pusatBisaPilih && kartuTerbuka[tab])) ? (
+        // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard PT itu.
         <KartuOperasionalEntitas
+          jenis={tab}
           master={master}
           onBuka={(kode) => {
-            setTampilKartuOps(false);
+            aturKartu(tab, false);
             onGantiPT(kode);
           }}
         />
       ) : tab === "gudang" ? (
         <>
-          {bolehPilihPT && daftarSemuaEntitas.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setTampilKartuOps(true)}
-              className="mb-3 text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-            >
-              <ArrowLeft size={13} /> Semua perusahaan
-            </button>
-          )}
+          {tombolSemuaPT}
           <DashboardGudang
             onNavigate={onNavigate}
             setModal={setModal}
@@ -369,6 +370,8 @@ export default function Dashboard({
           />
         </>
       ) : tab === "penjualan" ? (
+        <>
+        {tombolSemuaPT}
         <DashboardPenjualan
           namaStore={namaStore}
           pesananGrosir={pesananGrosir}
@@ -385,6 +388,7 @@ export default function Dashboard({
           periodeSampai={periodeSampai}
           periodeLabel={periodeLabel}
         />
+        </>
       ) : tab === "keuangan" && gabungan ? (
         // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
         // + laba rugi 6 bulan). Data semua entitas (belum dibatasi), tombol kartu membuka dashboard PT itu.
@@ -402,6 +406,8 @@ export default function Dashboard({
           periodeLabel={periodeLabel}
         />
       ) : (
+        <>
+        {tombolSemuaPT}
         <DashboardAbsensi
           absensiRows={absensiRows}
           karyawanList={karyawanList}
@@ -410,6 +416,7 @@ export default function Dashboard({
           tahun={tahun}
           periodeLabel={periodeLabel}
         />
+        </>
       )}
     </div>
   );
