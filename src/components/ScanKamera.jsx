@@ -11,16 +11,25 @@ import { ScanLine, X, Loader2 } from "lucide-react";
 //
 // hasil + renderHasil (opsional) -> tampilkan hasil tiap scan (berhasil/gagal/duplikat/cancel) langsung
 // di atas kamera sebagai kilatan warna + kartu hasil, supaya operator tidak hanya mengandalkan suara.
-// hasil = objek { tipe: "ok"|"cancel"|"dup"|"asing"|"err", ... }; renderHasil(hasil) -> elemen React.
+// hasil = objek { tipe: "ok"|"cancel"|"dup"|"asing"|"err", tercatat?: bool, baruSaja?: bool, ... }; renderHasil(hasil) -> elemen React.
+//   tercatat = true  -> scan ini MENAMBAH hitungan; false -> tidak menambah (double / terbaca ulang / gagal).
+//   baruSaja = true  -> resi yang sama baru saja tercatat dari perangkat ini (terbaca ulang, bukan paket double).
+// ringkasan (opsional) = { total, label } -> angka besar "label: total" di atas kamera (mis. "Sesi 1: 42 resi").
+// Selain itu modal menghitung sendiri: tercatat / double / cancel / gagal selama kamera ini terbuka,
+// menampilkan strip status terakhir yang TIDAK hilang sampai scan berikutnya, dan 5 scan terakhir.
 const WARNA_KILAT = {
-  ok: { bg: "bg-emerald-500/55", teks: "BERHASIL", ikon: "✓" },
-  cancel: { bg: "bg-red-600/70", teks: "CANCEL", ikon: "✕" },
-  dup: { bg: "bg-amber-500/65", teks: "SUDAH DI-SCAN", ikon: "!" },
-  asing: { bg: "bg-amber-500/65", teks: "TIDAK ADA DI ORDERAN", ikon: "!" },
-  err: { bg: "bg-red-600/70", teks: "GAGAL", ikon: "✕" },
+  ok: { bg: "bg-emerald-500/55", strip: "bg-emerald-600", teks: "BERHASIL", ikon: "✓" },
+  cancel: { bg: "bg-red-600/70", strip: "bg-red-700", teks: "CANCEL", ikon: "✕" },
+  dup: { bg: "bg-orange-500/75", strip: "bg-orange-600", teks: "RESI DOUBLE", ikon: "!" },
+  ulang: { bg: "bg-sky-500/60", strip: "bg-sky-600", teks: "TERBACA ULANG", ikon: "✓" },
+  asing: { bg: "bg-amber-500/65", strip: "bg-amber-600", teks: "TIDAK ADA DI ORDERAN", ikon: "!" },
+  err: { bg: "bg-red-600/70", strip: "bg-red-700", teks: "GAGAL", ikon: "✕" },
 };
 
-export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128", hasil = null, renderHasil = null }) {
+const kunciTampil = (h) => (h?.tipe === "dup" && h.baruSaja ? "ulang" : h?.tipe);
+const jamPendek = (d) => new Date(d).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+export function ScanKameraModal({ onDetect, onClose, continuous = false, judul = "Scan Barcode", format = "code128", hasil = null, renderHasil = null, ringkasan = null }) {
   const isQr = format === "qr";
   // format="resi": resi paket — baca barcode garis (Code 128/39/93, ITF, Codabar; QR & EAN tidak) dan minta kamera
   // resolusi tinggi + fokus otomatis, karena barcode di label resi kecil & rapat.
@@ -37,10 +46,25 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
   // Hasil yang sudah ada sebelum kamera dibuka tidak ditampilkan (bukan dari sesi kamera ini).
   const hasilAwal = useRef(hasil);
   const [kilat, setKilat] = useState(null);
+  // Hitungan selama kamera ini terbuka + 5 scan terakhir (supaya operator tahu sudah berapa yang terscan
+  // dan scan mana yang tercatat / double, tanpa menutup kamera).
+  const [hitung, setHitung] = useState({ tercatat: 0, double: 0, ulang: 0, cancel: 0, gagal: 0 });
+  const [riwayat, setRiwayat] = useState([]);
   useEffect(() => {
     if (!hasil || hasil === hasilAwal.current) return;
-    setKilat(hasil.tipe);
-    const t = setTimeout(() => setKilat(null), 900);
+    const kunci = kunciTampil(hasil);
+    setKilat(kunci);
+    const lama = kunci === "ok" ? 700 : 1600; // yang perlu perhatian tampil lebih lama
+    const t = setTimeout(() => setKilat(null), lama);
+    const tercatat = hasil.tercatat ?? (hasil.tipe === "ok" || hasil.tipe === "asing" || (hasil.tipe === "cancel" && !hasil.ulang));
+    setHitung((h) => ({
+      tercatat: h.tercatat + (tercatat ? 1 : 0),
+      double: h.double + (kunci === "dup" ? 1 : 0),
+      ulang: h.ulang + (kunci === "ulang" ? 1 : 0),
+      cancel: h.cancel + (hasil.tipe === "cancel" ? 1 : 0),
+      gagal: h.gagal + (hasil.tipe === "err" ? 1 : 0),
+    }));
+    setRiwayat((r) => [{ resi: hasil.resi, kunci, tercatat, cancel: hasil.tipe === "cancel", jam: jamPendek(Date.now()) }, ...r].slice(0, 5));
     return () => clearTimeout(t);
   }, [hasil]);
   const hasilBaru = hasil && hasil !== hasilAwal.current ? hasil : null;
@@ -207,6 +231,20 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
           {status === "ready" && isQr && (
             <div className="pointer-events-none absolute inset-0 m-auto w-48 h-48 border-2 border-red-500/80 rounded-lg" />
           )}
+          {ringkasan && typeof ringkasan.total === "number" && (
+            <div className="pointer-events-none absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1.5 text-white">
+              <div className="text-[10px] uppercase tracking-wide text-slate-300">{ringkasan.label || "Tercatat"}</div>
+              <div className="text-3xl font-black leading-none">{ringkasan.total}<span className="ml-1 text-xs font-medium text-slate-300">resi</span></div>
+            </div>
+          )}
+          {continuous && (hitung.tercatat + hitung.double + hitung.ulang + hitung.cancel + hitung.gagal) > 0 && (
+            <div className="pointer-events-none absolute right-2 top-2 rounded-lg bg-black/70 px-2.5 py-1.5 text-[11px] leading-snug text-white text-right">
+              <div className="text-emerald-300">+{hitung.tercatat} di kamera ini</div>
+              {hitung.double > 0 && <div className="text-orange-300">{hitung.double} double</div>}
+              {hitung.cancel > 0 && <div className="text-red-300">{hitung.cancel} cancel</div>}
+              {hitung.gagal > 0 && <div className="text-red-300">{hitung.gagal} gagal</div>}
+            </div>
+          )}
           {kilat && WARNA_KILAT[kilat] && (
             <div className={`pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-white ${WARNA_KILAT[kilat].bg}`}>
               <div className="text-7xl font-black leading-none">{WARNA_KILAT[kilat].ikon}</div>
@@ -224,7 +262,38 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
             </div>
           )}
         </div>
+        {hasilBaru && WARNA_KILAT[kunciTampil(hasilBaru)] && (
+          <div className={`flex items-center gap-3 px-4 py-2 text-white ${WARNA_KILAT[kunciTampil(hasilBaru)].strip}`}>
+            <span className="text-2xl font-black leading-none">{WARNA_KILAT[kunciTampil(hasilBaru)].ikon}</span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold">
+                {hasilBaru.tipe === "cancel"
+                  ? `CANCEL — JANGAN DIKIRIM${hasilBaru.tercatat === false || hasilBaru.ulang ? " (scan ulang, tidak dihitung lagi)" : ""}`
+                  : (hasilBaru.tercatat ?? (hasilBaru.tipe === "ok" || hasilBaru.tipe === "asing"))
+                    ? "TERCATAT"
+                    : WARNA_KILAT[kunciTampil(hasilBaru)].teks + " — hitungan tidak bertambah"}
+              </div>
+              <div className="font-mono text-[11px] opacity-90 break-all">{hasilBaru.resi}</div>
+            </div>
+          </div>
+        )}
         {hasilBaru && renderHasil && <div className="p-3 border-b border-slate-800">{renderHasil(hasilBaru)}</div>}
+        {riwayat.length > 1 && (
+          <div className="px-4 py-2 border-b border-slate-800 text-[11px] text-slate-400">
+            <div className="mb-1 text-slate-500">Scan terakhir</div>
+            {riwayat.slice(1).map((x, i) => (
+              <div key={`${x.resi}-${i}`} className="flex items-center gap-2 py-0.5">
+                <span className={x.kunci === "ok" ? "text-emerald-400" : x.kunci === "ulang" ? "text-sky-400" : x.kunci === "dup" ? "text-orange-400" : "text-red-400"}>
+                  {x.kunci === "ok" ? "✓" : x.kunci === "ulang" ? "✓" : x.kunci === "dup" ? "!" : "✕"}
+                </span>
+                <span className="font-mono text-slate-300 truncate flex-1">{x.resi}</span>
+                <span className="whitespace-nowrap">
+                  {x.kunci === "ok" ? "tercatat" : x.kunci === "ulang" ? "terbaca ulang" : x.kunci === "dup" ? "DOUBLE" : x.cancel ? "cancel" : "gagal"} · {x.jam}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="px-4 py-3 text-[11px] text-slate-400">
           {terakhir ? (
             // Isi QR gaji bersifat rahasia — tidak ditampilkan di layar.
@@ -249,7 +318,7 @@ export function ScanKameraModal({ onDetect, onClose, continuous = false, judul =
   );
 }
 
-export function TombolScanKamera({ onDetect, continuous = false, label = "Scan", judul, format, hasil, renderHasil }) {
+export function TombolScanKamera({ onDetect, continuous = false, label = "Scan", judul, format, hasil, renderHasil, ringkasan }) {
   const [buka, setBuka] = useState(false);
   return (
     <>
@@ -267,6 +336,7 @@ export function TombolScanKamera({ onDetect, continuous = false, label = "Scan",
           format={format}
           hasil={hasil}
           renderHasil={renderHasil}
+          ringkasan={ringkasan}
           onDetect={onDetect}
           onClose={() => setBuka(false)}
         />

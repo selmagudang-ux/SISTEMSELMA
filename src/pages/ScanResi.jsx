@@ -105,6 +105,7 @@ function bunyi(tipe) {
       dup: [{ f: 330, d: 0.12, t: "square" }, { f: 330, d: 0.12, t: "square", jeda: 0.08 }],
       cancel: [{ f: 220, d: 0.35, t: "sawtooth" }, { f: 180, d: 0.45, t: "sawtooth", jeda: 0.05 }],
       retur: [{ f: 660, d: 0.1, t: "sine" }, { f: 990, d: 0.14, t: "sine", jeda: 0.04 }],
+      ulang: [{ f: 520, d: 0.06, t: "sine" }],
       asing: [{ f: 440, d: 0.18, t: "triangle" }, { f: 300, d: 0.25, t: "triangle", jeda: 0.06 }],
     }[tipe] || [];
     let t0 = audioCtx.currentTime;
@@ -120,7 +121,7 @@ function bunyi(tipe) {
       osc.stop(t0 + n.d);
       t0 += n.d;
     });
-    if (tipe !== "ok" && tipe !== "retur") navigator.vibrate?.(tipe === "cancel" ? [200, 100, 200] : 120);
+    if (tipe !== "ok" && tipe !== "retur" && tipe !== "ulang") navigator.vibrate?.(tipe === "cancel" ? [200, 100, 200] : 120);
   } catch {
     // perangkat/browser tanpa audio — abaikan
   }
@@ -191,7 +192,9 @@ function KartuHasil({ hasil }) {
   const gaya = {
     ok: { box: "bg-emerald-500/15 border-emerald-400/50 text-emerald-200", Ikon: CheckCircle2, judul: "OK — Valid" },
     cancel: { box: "bg-red-600/25 border-red-500 text-red-100", Ikon: Ban, judul: "CANCEL — JANGAN DIKIRIM" },
-    dup: { box: "bg-amber-500/20 border-amber-400/60 text-amber-100", Ikon: AlertTriangle, judul: "SUDAH PERNAH DI-SCAN" },
+    dup: hasil.baruSaja
+      ? { box: "bg-sky-500/15 border-sky-400/50 text-sky-100", Ikon: CheckCircle2, judul: "SUDAH TERCATAT — TERBACA ULANG" }
+      : { box: "bg-orange-500/20 border-orange-400/70 text-orange-100", Ikon: AlertTriangle, judul: "RESI DOUBLE — SUDAH PERNAH DI-SCAN" },
     asing: { box: "bg-amber-500/20 border-amber-400/60 text-amber-100", Ikon: AlertTriangle, judul: "TIDAK ADA DI ORDERAN" },
     err: { box: "bg-md-error-container border-red-400/60 text-md-on-error-container", Ikon: AlertTriangle, judul: "GAGAL" },
   }[hasil.tipe];
@@ -498,6 +501,9 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
   });
   const inputRef = useRef(null);
   const antrean = useRef(Promise.resolve());
+  // resi -> waktu tercatat di perangkat ini. Dipakai membedakan "terbaca ulang" (paket yang sama baru saja
+  // dicatat, kamera membacanya dua kali) dari "RESI DOUBLE" (sudah pernah di-scan sebelumnya).
+  const barusan = useRef(new Map());
   // Konfirmasi untuk resi yang TIDAK ada di orderan: scan menunggu jawaban operator sebelum tercatat.
   // Scan berikutnya ikut mengantre (antrean berurutan), jadi tidak ada yang terlewat atau tertimpa.
   const [konfirm, setKonfirm] = useState(null);
@@ -572,6 +578,11 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             // sudah di-scan dari perangkat lain. Keduanya tidak perlu dikirim lagi.
             buang();
             toast(`Resi ${it.resi} ternyata sudah pernah di-scan (mungkin dari perangkat lain).`, "err");
+            const tSendiri = barusan.current.get(it.resi);
+            const sendiri = tSendiri && Date.now() - tSendiri < 10 * 60 * 1000;
+            setHasil(sendiri
+              ? { tipe: "dup", baruSaja: true, tercatat: false, resi: it.resi, ekspedisi: it.ekspedisi, info: "Resi ini sudah tersimpan di server (kiriman sebelumnya yang sempat timeout). Aman, tidak dicatat dobel." }
+              : { tipe: "dup", tercatat: false, resi: it.resi, ekspedisi: it.ekspedisi, info: "Ternyata resi ini sudah ada di server (di-scan dari perangkat lain atau sebelumnya) — TIDAK ditambahkan, hitungan dikoreksi." });
             if (ref.current.suara) bunyi("dup");
             continue;
           }
@@ -618,32 +629,40 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     const { scans: daftar, cancelMap: cmap, suara: bunyiAktif, hari: hariAktif, operator: op, orderanMap: omap, adaOrderan: adaO, sesi: sesiAktif } = ref.current;
     const bip = (t) => bunyiAktif && bunyi(t);
     if (!ref.current.namaAktif) {
-      setHasil({ tipe: "err", resi: String(raw).trim().slice(0, 60), info: "Nama pemegang scan belum diisi untuk sesi ini — TIDAK disimpan. Isi nama dulu, lalu scan ulang." });
+      setHasil({ tipe: "err", tercatat: false, resi: String(raw).trim().slice(0, 60), info: "Nama pemegang scan belum diisi untuk sesi ini — TIDAK disimpan. Isi nama dulu, lalu scan ulang." });
       bip("dup");
       return;
     }
     const resi = normalisasiResi(raw);
     if (!resi) {
-      setHasil({ tipe: "err", resi: String(raw).trim().slice(0, 60), info: "Bukan format resi yang valid (6–40 karakter huruf/angka)." });
+      setHasil({ tipe: "err", tercatat: false, resi: String(raw).trim().slice(0, 60), info: "Bukan format resi yang valid (6–40 karakter huruf/angka)." });
       bip("dup");
       return;
     }
     if (bukanResi(resi)) {
-      setHasil({ tipe: "err", resi, info: "Ini bukan nomor resi (hanya angka pendek) — kemungkinan QR/barcode lain di paket. TIDAK disimpan. Arahkan ke barcode resi (garis)." });
+      setHasil({ tipe: "err", tercatat: false, resi, info: "Ini bukan nomor resi (hanya angka pendek) — kemungkinan QR/barcode lain di paket. TIDAK disimpan. Arahkan ke barcode resi (garis)." });
       bip("dup");
       return;
     }
     // Resi cancel yang di-scan ULANG tetap tampil merah CANCEL (bukan sekadar "sudah di-scan"), tidak dicatat dobel.
     const infoCancel = (c) => [c.platform, c.no_pesanan && `Pesanan ${c.no_pesanan}`, c.alasan].filter(Boolean).join(" · ") || "Pesanan sudah dibatalkan.";
     const ada = daftar.find((s) => s.resi === resi);
+    const tBaru = barusan.current.get(resi);
+    const detikLalu = tBaru ? Math.round((Date.now() - tBaru) / 1000) : null;
+    const baruSaja = detikLalu != null && detikLalu <= 60;
     if (ada) {
       const cx = cmap.get(resi);
       if (cx) {
-        setHasil({ tipe: "cancel", resi, ekspedisi: ada.ekspedisi, barang: omap.get(resi)?.barang, info: `${infoCancel(cx)} · Scan ulang, sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)}.` });
+        setHasil({ tipe: "cancel", ulang: true, tercatat: false, resi, ekspedisi: ada.ekspedisi, barang: omap.get(resi)?.barang, info: `${infoCancel(cx)} · Scan ulang, sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)}.` });
         bip("cancel");
         return;
       }
-      setHasil({ tipe: "dup", resi, ekspedisi: ada.ekspedisi, info: `Sudah di-scan ${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)} (Sesi ${ada.sesi || 1}).` });
+      if (baruSaja) {
+        setHasil({ tipe: "dup", baruSaja: true, tercatat: false, resi, ekspedisi: ada.ekspedisi, info: `Resi ini baru dicatat ${detikLalu} detik lalu, jadi hitungan tidak bertambah. Kalau ini paket KEDUA dengan resi yang sama, itu resi double — pisahkan.` });
+        bip("ulang");
+        return;
+      }
+      setHasil({ tipe: "dup", tercatat: false, resi, ekspedisi: ada.ekspedisi, info: `Sudah di-scan ${ada.discan_oleh ? `oleh ${ada.discan_oleh} ` : ""}${formatTanggalID(ada.tanggal)} pukul ${jam(ada.created_at)} (Sesi ${ada.sesi || 1}). Tidak dicatat lagi, hitungan tidak bertambah.` });
       bip("dup");
       return;
     }
@@ -651,11 +670,16 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     if (tunda) {
       const cx = cmap.get(resi);
       if (cx) {
-        setHasil({ tipe: "cancel", resi, ekspedisi: tunda.ekspedisi, barang: omap.get(resi)?.barang, info: `${infoCancel(cx)} · Scan ulang, sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
+        setHasil({ tipe: "cancel", ulang: true, tercatat: false, resi, ekspedisi: tunda.ekspedisi, barang: omap.get(resi)?.barang, info: `${infoCancel(cx)} · Scan ulang, sudah di-scan pukul ${jam(tunda.created_at)} (menunggu terkirim ke server).` });
         bip("cancel");
         return;
       }
-      setHasil({ tipe: "dup", resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (Sesi ${tunda.sesi || 1}, menunggu terkirim ke server).` });
+      if (baruSaja) {
+        setHasil({ tipe: "dup", baruSaja: true, tercatat: false, resi, ekspedisi: tunda.ekspedisi, info: `Resi ini baru dicatat ${detikLalu} detik lalu (menunggu terkirim ke server), jadi hitungan tidak bertambah. Kalau ini paket KEDUA dengan resi yang sama, itu resi double — pisahkan.` });
+        bip("ulang");
+        return;
+      }
+      setHasil({ tipe: "dup", tercatat: false, resi, ekspedisi: tunda.ekspedisi, info: `Sudah di-scan pukul ${jam(tunda.created_at)} (Sesi ${tunda.sesi || 1}, menunggu terkirim ke server). Tidak dicatat lagi, hitungan tidak bertambah.` });
       bip("dup");
       return;
     }
@@ -668,29 +692,30 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
       bip("asing");
       const setuju = await mintaKonfirm({ resi, ekspedisi, sesi: sesiAktif });
       if (!setuju) {
-        setHasil({ tipe: "err", resi, ekspedisi, info: "Tidak ada di daftar orderan — TIDAK disimpan (dibatalkan oleh operator)." });
+        setHasil({ tipe: "err", tercatat: false, resi, ekspedisi, info: "Tidak ada di daftar orderan — TIDAK disimpan (dibatalkan oleh operator)." });
         return;
       }
     }
     // Catat dulu di perangkat ini, kirim ke server di belakang layar (lihat ANTREAN OFFLINE).
     setAntreanSync((a) => [...a, { resi, ekspedisi, tanggal: hariAktif, discan_oleh: op, sesi: sesiAktif, created_at: new Date().toISOString() }]);
+    barusan.current.set(resi, Date.now());
     kirimAntrean();
     if (c) {
       setHasil({
-        tipe: "cancel", resi, ekspedisi, barang: o?.barang,
+        tipe: "cancel", tercatat: true, resi, ekspedisi, barang: o?.barang,
         info: infoCancel(c),
       });
       bip("cancel");
     } else if (adaO && !o) {
       // Orderan sudah di-import tapi resi ini tidak ada di dalamnya: tetap dicatat, hanya diperingatkan.
       setHasil({
-        tipe: "asing", resi, ekspedisi,
+        tipe: "asing", tercatat: true, resi, ekspedisi,
         info: "Tidak ada di daftar orderan, tetapi Anda memilih menyimpannya — cek paketnya (salah paket?) atau file orderan terbaru belum di-import.",
       });
       bip("asing");
     } else {
       setHasil({
-        tipe: "ok", resi, ekspedisi, barang: o?.barang, orderId: o?.order_id,
+        tipe: "ok", tercatat: true, resi, ekspedisi, barang: o?.barang, orderId: o?.order_id,
         info: ekspedisi === "LAINNYA" ? "Ekspedisi belum dikenali — bisa dikoreksi manual di daftar bawah." : "",
       });
       bip("ok");
@@ -764,6 +789,9 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
     () => (sub === "scan" && sesiFilter ? rows.filter((r) => r.sesi === sesiFilter) : rows),
     [rows, sesiFilter, sub]
   );
+  // Angka besar di atas kamera: scan yang SUDAH TERCATAT (termasuk yang masih menunggu terkirim) di sesi aktif.
+  const jumlahSesiAktif = useMemo(() => rows.filter((r) => r.sesi === sesi && r.tanggal === hari).length, [rows, sesi, hari]);
+  const jumlahHariIni = useMemo(() => rows.filter((r) => r.tanggal === hari).length, [rows, hari]);
   const daftarSesi = useMemo(() => {
     const m = new Map();
     rows.forEach((r) => m.set(r.sesi, (m.get(r.sesi) || 0) + 1));
@@ -1582,7 +1610,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                   spellCheck={false}
                   className={`${inputClass} font-mono text-base`}
                 />
-                <TombolScanKamera continuous format="resi" label="Kamera" judul={`Scan Resi · Sesi ${sesi}`} onDetect={prosesScan} hasil={hasil} renderHasil={(h) => <KartuHasil hasil={h} />} />
+                <TombolScanKamera continuous format="resi" label="Kamera" judul={`Scan Resi · Sesi ${sesi}`} onDetect={prosesScan} hasil={hasil} renderHasil={(h) => <KartuHasil hasil={h} />} ringkasan={{ total: jumlahSesiAktif, label: `Sesi ${sesi} · hari ini ${jumlahHariIni}` }} />
                 <button type="button" onClick={gantiSuara} className="px-3 rounded-lg border border-md-outline-variant text-md-on-surface-variant" aria-label="Suara">
                   {suara ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
