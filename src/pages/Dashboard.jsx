@@ -4,7 +4,7 @@ import {
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
-  ChevronDown, Scale, AlertTriangle,
+  ChevronDown, Scale, AlertTriangle, ArrowLeft,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 import {
@@ -53,6 +53,7 @@ import { isEntriTokoOffline } from "./TokoOffline";
 import { useRekapKasir, useTanggalMulaiKasir, hariIniWib, tambahHari, barangTerlaris } from "./kasir/kasirLaporan";
 import { getSession } from "../lib/auth";
 import { RingkasanGrup } from "./Holding";
+import KartuOperasionalEntitas from "./DashboardEntitas";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 import PanelBarangHabisPakai from "../components/PanelBarangHabisPakai";
@@ -201,11 +202,12 @@ export default function Dashboard({
   // dipisah per PT.
   // Tab Absensi: App.jsx (loadAbsensi) memuat absensi PT yang sedang dilihat — PT akun sendiri,
   // atau PT pilihan akun Holding di dropdown — jadi tab ini tampil untuk PT mana pun yang dipilih.
-  // Gabungan semua PT: hanya Keuangan (data gudang/penjualan/absensi tiap PT tidak dijumlahkan).
+  // Gabungan semua PT: Operasional (kartu per PT, klik -> dashboard PT itu) dan Keuangan (data
+  // penjualan/absensi tiap PT tidak dijumlahkan).
   const bukanOps = gabungan || entAktif !== ENTITAS_DEFAULT;
   const absensiBolehTampil = !gabungan;
   const tabsTersedia = gabungan
-    ? TABS.filter((t) => t.key === "keuangan")
+    ? TABS.filter((t) => t.key === "gudang" || t.key === "keuangan")
     : bukanOps
     ? TABS.filter(
         (t) =>
@@ -262,6 +264,8 @@ export default function Dashboard({
             : "Ringkasan kas masuk, kas keluar, saldo rekening, dan arus kas terkini."
             : tab === "absensi"
             ? "Ringkasan kehadiran karyawan hari ini, rekap mingguan, dan rekap bulanan."
+            : gabungan
+            ? "Ringkasan operasional tiap perusahaan — pilih salah satu untuk melihat dashboard operasionalnya."
             : `Ringkasan alur barang, stok, dan SKU di ${namaPerusahaan}.`
         }
         action={
@@ -319,19 +323,33 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
-      {tab === "gudang" ? (
-        <DashboardGudang
-          onNavigate={onNavigate}
-          setModal={setModal}
-          pengajuanRestock={pengajuanRestock}
-          items={items}
-          pesananMasuk={pesananMasuk}
-          skuMaster={skuMaster}
-          master={master}
-          periodeDari={periodeDari}
-          periodeSampai={periodeSampai}
-          periodeLabel={periodeLabel}
-        />
+      {tab === "gudang" && gabungan ? (
+        // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard operasional PT itu.
+        <KartuOperasionalEntitas master={master} onBuka={onGantiPT} />
+      ) : tab === "gudang" ? (
+        <>
+          {bolehPilihPT && daftarPT.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onGantiPT("GABUNGAN")}
+              className="mb-3 text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              <ArrowLeft size={13} /> Semua perusahaan
+            </button>
+          )}
+          <DashboardGudang
+            onNavigate={onNavigate}
+            setModal={setModal}
+            pengajuanRestock={pengajuanRestock}
+            items={items}
+            pesananMasuk={pesananMasuk}
+            skuMaster={skuMaster}
+            master={master}
+            periodeDari={periodeDari}
+            periodeSampai={periodeSampai}
+            periodeLabel={periodeLabel}
+          />
+        </>
       ) : tab === "penjualan" ? (
         <DashboardPenjualan
           namaStore={namaStore}

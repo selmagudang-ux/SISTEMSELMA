@@ -155,6 +155,21 @@ export function entitasBacaSaatIni() {
   return entitasBacaOverride || entitasSesi();
 }
 
+// Jalankan pembacaan untuk SATU PT tertentu tanpa mengubah PT yang sedang dilihat di layar.
+// `mulai` harus memulai SEMUA request-nya langsung (tanpa await di antaranya), mis.
+//   bacaPerEntitas("ALV", () => Promise.all([sbAll("..."), sbAll("...")]))
+// karena filter PT dipasang saat request dimulai; override langsung dikembalikan setelahnya,
+// jadi beberapa PT boleh dibaca bersamaan tanpa saling menimpa.
+export function bacaPerEntitas(kode, mulai) {
+  const sebelum = entitasBacaOverride;
+  entitasBacaOverride = kode || null;
+  try {
+    return mulai();
+  } finally {
+    entitasBacaOverride = sebelum;
+  }
+}
+
 export function entitasSesi() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY_LOKAL);
