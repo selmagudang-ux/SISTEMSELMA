@@ -643,8 +643,9 @@ function SheetNarasi({ teks, onClose, tampilToast }) {
 // ---------------------------------------------------------
 // LAYAR UTAMA
 // ---------------------------------------------------------
-export default function LaporanHp({ session }) {
-  const kodeAktif = session?.entitas || ENTITAS_DEFAULT;
+export default function LaporanHp({ session, entitas }) {
+  // Menu Keuangan Pusat / Keuangan Perusahaan (GrupHp.jsx) mengunci layar ini ke PT lain lewat `entitas` dan mengatur read-only lewat `bacaSajaPaksa`.
+  const kodeAktif = entitas || session?.entitas || ENTITAS_DEFAULT;
 
   const [master, setMaster] = useState({});
   const [trx, setTrx] = useState([]);

@@ -18,10 +18,15 @@ export const LAYAR_HP = {
   "stok/menipis": { muat: () => import("./StokHp.jsx") },
   // Pengadaan Barang: satu layar menangani 4 sub-menu (datang / habis-pakai / aset / supplier).
   "barang-datang": { muat: () => import("./PengadaanHp.jsx") },
-  // Keuangan: sub-menu Transaksi (daftar kartu + tambah/edit/hapus) dan Kas (Akun Kas, Buku Kas, Rekonsiliasi). Laporan (Saldo Kas, Arus Kas, Laba Rugi, Neraca). Pengaturan menyusul.
+  // Keuangan: sub-menu Transaksi (daftar kartu + tambah/edit/hapus) dan Kas (Akun Kas, Buku Kas, Rekonsiliasi). Laporan (Saldo Kas, Arus Kas, Laba Rugi, Neraca). Pengaturan (Rekening & Kategori, Penggunaan Rekening, Log Keterangan, Riwayat Perubahan).
   "keuangan/transaksi": { muat: () => import("./KeuanganHp.jsx") },
   "keuangan/kas": { muat: () => import("./KasHp.jsx") },
   "keuangan/laporan": { muat: () => import("./LaporanHp.jsx") },
+  "keuangan/pengaturan": { muat: () => import("./PengaturanKeuanganHp.jsx") },
+  // Perusahaan Grup (Ringkasan, Keuangan Perusahaan, Antar Entitas, Kelola Perusahaan) dan Keuangan Pusat (Transaksi, Kas,
+  // Laporan, Modal & Penarikan Pemilik, Pengaturan): satu layar (GrupHp.jsx) menangani semua sub-menunya.
+  perusahaan: { muat: () => import("./GrupHp.jsx") },
+  holding: { muat: () => import("./GrupHp.jsx") },
 };
 
 export const kunciLayar = (menuKey, subKey) => (subKey ? `${menuKey}/${subKey}` : menuKey);

@@ -107,9 +107,10 @@ function ChipTab({ aktif, onClick, children }) {
 const inputCls =
   "w-full rounded-xl bg-md-container border border-md-outline-variant px-3 py-2.5 text-sm text-md-on-surface outline-none focus:border-md-primary";
 
-export default function KeuanganHp({ session, sub }) {
-  const kodeAktif = session?.entitas || ENTITAS_DEFAULT;
-  const bacaSaja = roleHanyaLihat(session?.role);
+export default function KeuanganHp({ session, sub, entitas, bacaSajaPaksa }) {
+  // Menu Keuangan Pusat / Keuangan Perusahaan (GrupHp.jsx) mengunci layar ini ke PT lain lewat `entitas` dan mengatur read-only lewat `bacaSajaPaksa`.
+  const kodeAktif = entitas || session?.entitas || ENTITAS_DEFAULT;
+  const bacaSaja = bacaSajaPaksa ?? roleHanyaLihat(session?.role);
 
   const [master, setMaster] = useState({});
   const [trx, setTrx] = useState([]);

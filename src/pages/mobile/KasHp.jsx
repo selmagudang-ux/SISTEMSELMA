@@ -831,9 +831,10 @@ function RekonsiliasiHp({ transaksi, master, reload, tampilToast, session, bacaS
 // ---------------------------------------------------------
 // HALAMAN
 // ---------------------------------------------------------
-export default function KasHp({ session }) {
-  const kodeAktif = session?.entitas || ENTITAS_DEFAULT;
-  const bacaSaja = roleHanyaLihat(session?.role);
+export default function KasHp({ session, entitas, bacaSajaPaksa }) {
+  // Menu Keuangan Pusat / Keuangan Perusahaan (GrupHp.jsx) mengunci layar ini ke PT lain lewat `entitas` dan mengatur read-only lewat `bacaSajaPaksa`.
+  const kodeAktif = entitas || session?.entitas || ENTITAS_DEFAULT;
+  const bacaSaja = bacaSajaPaksa ?? roleHanyaLihat(session?.role);
 
   const [master, setMaster] = useState({});
   const [trx, setTrx] = useState([]);

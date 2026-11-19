@@ -165,8 +165,9 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
       if (!b && String(it[I.sku] || "").startsWith("MNL-")) {
         const nm = String(it[I.nama] || "").trim();
         const cocok = nm && peta.get(nm);
-        if (cocok) {
-          b = cocok;
+        if (cocok) b = cocok;
+        // Tampil SKU yang dulu diketik (isi kolom nama), bukan kode sementara MNL-…, walau belum ada di Master Barang.
+        if (nm) {
           it.kode_toko = it[I.sku];
           it[I.sku] = nm;
         }
