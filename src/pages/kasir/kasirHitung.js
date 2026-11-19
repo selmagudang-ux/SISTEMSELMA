@@ -72,9 +72,13 @@ export function buatJerami(s) {
     .toLowerCase();
 }
 
+// Nama barang yang tampil di katalog, keranjang, dan struk: SKU, KECUALI kolom nama memang diisi.
+// - Master Barang (punya kolom warna/ukuran): tidak punya kolom nama. model/warna/ukuran hanya potongan kode SKU,
+//   jadi yang ditampilkan SKU-nya.
+// - Barang Toko: pakai nama kalau diisi (disimpan di field model), kalau kosong pakai SKU.
 export function namaTampil(s) {
-  const n = [s.model, s.warna, s.ukuran].filter(Boolean).join(" · ");
-  return n || s.sku;
+  if ("warna" in s || "ukuran" in s) return String(s.sku || "");
+  return String(s.model || "").trim() || String(s.sku || "");
 }
 
 // Pembayaran: Cash / Transfer / QRIS, boleh digabung (split).
