@@ -57,7 +57,7 @@ export function statusPermintaan(p, transfers) {
 }
 
 export default function PermintaanStok({
-  rows, transfers, habisPakai = [], entSaya, namaEnt, skuMaster, master, session, bisaMinta, bisaKirim, bisaHapus = false, proses, jalankan, muat, memuat, tabelAda, onSetujui,
+  rows, transfers, habisPakai = [], entSaya, namaEnt, skuMaster, master, session, bisaMinta, bisaKirim, bisaHapus = false, onHapus, proses, jalankan, muat, memuat, tabelAda, onSetujui,
 }) {
   const [filter, setFilter] = useState("perlu");
   const [modal, setModal] = useState(null); // {jenis:"minta"} | {jenis:"tolak", p}
@@ -100,20 +100,6 @@ export default function PermintaanStok({
       const klaim = await sb(`permintaan_stok?id=eq.${p.id}&status=eq.menunggu`, { method: "PATCH", body: JSON.stringify({ status: "dibatalkan" }) });
       if (!klaim?.length) throw new Error("Permintaan ini sudah diproses pihak lain, tidak bisa dibatalkan. Muat ulang.");
     }, "Permintaan dibatalkan");
-
-  // ---------- Hapus riwayat permintaan (tidak mengubah stok; transfer terkait tetap ada) ----------
-  const hapus = (p) =>
-    jalankan(async () => {
-      if (!bisaHapus) throw new Error("Role Anda tidak punya akses menghapus riwayat permintaan.");
-      const dihapus = await sb(`permintaan_stok?id=eq.${p.id}`, { method: "DELETE" });
-      if (!dihapus?.length) throw new Error("Permintaan sudah terhapus di perangkat lain, atau database menolak DELETE pada tabel permintaan_stok (cek kebijakan RLS). Muat ulang.");
-    }, "Riwayat permintaan dihapus");
-
-  const konfirmasiHapus = (p) => {
-    const baris = [`Hapus riwayat permintaan ${p.kode}?`, "• Stok TIDAK berubah."];
-    if (p.transfer_kode) baris.push(`• Transfer ${p.transfer_kode} tetap ada di tab Transfer (hapus terpisah di sana kalau perlu).`);
-    if (window.confirm(baris.join("\n"))) hapus(p);
-  };
 
   // ---------- Pemberi: tolak ----------
   const tolak = (p, alasan) =>
@@ -210,14 +196,14 @@ export default function PermintaanStok({
                     </div>
                   )}
                 </div>
-                {bisaHapus && p.status !== "menunggu" && (
+                {bisaHapus && p.status !== "menunggu" && (session?.role === "superappa" || !p.transfer_id || p.entitas_pemberi === entSaya) && (
                   <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">
                     <button
                       disabled={proses}
-                      onClick={() => konfirmasiHapus(p)}
+                      onClick={() => onHapus?.(p)}
                       className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-40 ml-auto"
                     >
-                      <Trash2 size={13} /> Hapus riwayat
+                      <Trash2 size={13} /> {p.transfer_id ? "Hapus dan kembalikan" : "Hapus riwayat"}
                     </button>
                   </div>
                 )}

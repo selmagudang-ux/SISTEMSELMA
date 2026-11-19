@@ -629,8 +629,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   // diterima           -> stok penerima ditarik lagi (qty_diterima) + stok pengirim dikembalikan
   // Baris transfer dihapus DULU (hanya satu perangkat yang bisa mendapat baris itu = kunci anti ganda);
   // kalau pembalikan stok gagal, stok dibatalkan dan baris transfer dimasukkan lagi.
-  const hapus = (t) =>
-    jalankan(async () => {
+  const hapusInti = async (t) => {
       if (!bisaHapus) throw new Error("Role Anda tidak punya akses menghapus transfer antar entitas.");
       if (t.entitas_asal !== entSaya && !superAppa) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
       const { ambil, kembali } = rencanaHapus(t);
@@ -692,7 +691,48 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         throw e;
       }
       await catatRiwayat([...(penerima?.riwayat || []), ...(pengirim?.riwayat || [])]);
-    }, "Transfer dihapus, stok dikembalikan ke semula");
+  };
+  const hapus = (t) => jalankan(() => hapusInti(t), "Transfer dihapus, stok dikembalikan ke semula");
+
+  // ---------- HAPUS permintaan stok: transfer terkait ikut dihapus dan stoknya dibalikkan ----------
+  // Permintaan yang belum punya transfer (ditolak / dibatalkan) hanya dihapus barisnya.
+  const cariTransferPermintaan = async (p) => {
+    if (!p.transfer_id) return null;
+    const ada = rows.find((r) => String(r.id) === String(p.transfer_id));
+    if (ada) return ada;
+    const hasil = await sb(`transfer_barang?id=eq.${encodeURIComponent(p.transfer_id)}`);
+    return hasil?.[0] || null;
+  };
+  const hapusPermintaan = (p) =>
+    jalankan(async () => {
+      if (!(superAppa || bisaHapus)) throw new Error("Role Anda tidak punya akses menghapus riwayat permintaan.");
+      const t = await cariTransferPermintaan(p);
+      if (t) await hapusInti(t); // gagal di sini -> permintaan tidak ikut terhapus
+      const dihapus = await sb(`permintaan_stok?id=eq.${p.id}`, { method: "DELETE" });
+      if (!dihapus?.length) throw new Error(`${t ? `Transfer ${t.kode} sudah dihapus dan stok dikembalikan, tapi ` : ""}permintaan tidak bisa dihapus: sudah terhapus di perangkat lain, atau database menolak DELETE pada tabel permintaan_stok (cek kebijakan RLS). Muat ulang.`);
+    }, p.transfer_id ? "Permintaan dan transfernya dihapus, stok dikembalikan ke semula" : "Riwayat permintaan dihapus");
+  const konfirmasiHapusPermintaan = async (p) => {
+    let t = null;
+    try {
+      t = await cariTransferPermintaan(p);
+    } catch (err) {
+      showToast?.(err.message || "Gagal memeriksa transfer terkait", "err");
+      return;
+    }
+    const baris = [`Hapus permintaan ${p.kode}?`];
+    if (t) {
+      const { ambil, kembali } = rencanaHapus(t);
+      const tot = (l) => l.reduce((a, d) => a + d.jumlah, 0);
+      baris.push(`• Transfer ${t.kode} ikut dihapus.`);
+      if (ambil.length) baris.push(`• Stok di ${namaEnt(t.entitas_tujuan)} DITARIK kembali ${tot(ambil)}.`);
+      if (kembali.length) baris.push(`• Stok ${t.entitas_asal === entSaya ? "gudang Anda" : namaEnt(t.entitas_asal)} dikembalikan ${tot(kembali)}.`);
+      if (!ambil.length && !kembali.length) baris.push("• Tidak ada stok yang perlu diubah (sudah dikembalikan sebelumnya).");
+      baris.push("Qty di Peta Rak tidak diubah otomatis.");
+    } else {
+      baris.push("• Belum ada transfer, stok tidak berubah.");
+    }
+    if (window.confirm(baris.join("\n"))) hapusPermintaan(p);
+  };
 
   const konfirmasiHapus = (t) => {
     const { ambil, kembali } = rencanaHapus(t);
@@ -778,6 +818,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
           bisaMinta={bisaMinta}
           bisaKirim={bisaTransfer}
           bisaHapus={superAppa || bisaHapus}
+          onHapus={konfirmasiHapusPermintaan}
           proses={proses}
           jalankan={jalankan}
           muat={muat}
