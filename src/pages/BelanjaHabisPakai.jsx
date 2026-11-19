@@ -31,7 +31,7 @@ import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 // Stok dihitung dari mutasi (bukan angka tunggal) supaya aman dipakai banyak staff.
 // Saat pembelian DIBAYAR, otomatis tercatat sebagai pengeluaran di Keuangan
 // (kategori "Barang Habis Pakai"); rekening default-nya Kas Kecil.
-// PERSEDIAAN: tiap mutasi punya kolom `hpp` (harga per satuan). Pembelian/stok awal mencatat harga
+// PERSEDIAAN: tiap mutasi punya kolom `hpp` (isinya harga BELI per satuan; barang habis pakai tidak punya HPP). Pembelian/stok awal mencatat harga
 // belinya, pemakaian/koreksi/transfer mencatat HPP rata-rata saat itu (view perlengkapan_nilai).
 // Kategori "Barang Habis Pakai" di Keuangan diarahkan ke Neraca; bebannya masuk Laba Rugi
 // saat DIPAKAI = jumlah dipakai x hpp (dihitung di lib/api.js, bukan dari uang pembelian).
@@ -347,7 +347,7 @@ function TabStok({ stok, setModal }) {
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     {p.kode} · minimum {fmtJumlah(p.stok_minimum)} {p.satuan}
-                    {Number(p.hpp_rata) > 0 ? ` · HPP ${fmtRp(p.hpp_rata)}/${p.satuan} · nilai ${fmtRp(p.nilai)}` : " · HPP belum ada"}
+                    {Number(p.hpp_rata) > 0 ? ` · harga beli rata-rata ${fmtRp(p.hpp_rata)}/${p.satuan} · nilai ${fmtRp(p.nilai)}` : " · harga beli belum ada"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -787,10 +787,10 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
         </Field>
       )}
       {!barang && Number(stokAwal) > 0 && (
-        <Field label={`Harga per ${satuan.trim() || "satuan"} stok awal (HPP)`}>
+        <Field label={`Harga per ${satuan.trim() || "satuan"} stok awal (harga beli)`}>
           <InputRupiah value={hargaAwal} onChange={setHargaAwal} />
           <div className="text-[10px] text-slate-500 mt-1">
-            Dipakai menghitung nilai persediaan dan beban saat barang dipakai. Kosong = nilai dihitung dari HPP pembelian berikutnya.
+            Dipakai menghitung nilai persediaan dan beban saat barang dipakai. Kosong = nilai dihitung dari harga beli pembelian berikutnya.
           </div>
         </Field>
       )}
@@ -858,7 +858,7 @@ function FormPakai({ barang, onClose, onSaved, showToast }) {
         )}
         {hppRata <= 0 && (
           <div className="text-[11px] text-amber-400 mt-1">
-            HPP barang ini belum ada, jadi pemakaian dihitung Rp 0. Isi harga lewat Belanja atau Stok Awal dulu.
+            Harga beli barang ini belum ada, jadi pemakaian dihitung Rp 0. Isi harga lewat Belanja atau Stok Awal dulu.
           </div>
         )}
       </Field>

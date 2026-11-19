@@ -943,13 +943,13 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                       </span>
                       <span className="text-slate-400 shrink-0 ml-3">
                         {t.status === "diterima" ? `${fmtQty(it.qty_diterima)} dari ${fmtQty(it.qty)} ${satuanItem(it)}` : `${fmtQty(it.qty)} ${satuanItem(it)}`}
-                        {it.hpp != null ? ` · HPP ${fmtRp(it.hpp)}` : ""}
+                        {it.hpp != null ? ` · ${adalahHP(it) ? "Harga beli" : "HPP"} ${fmtRp(it.hpp)}` : ""}
                       </span>
                     </div>
                   ))}
                   <div className="text-[11px] text-slate-500 mt-1">
                     {(t.items || []).some(adalahHP) ? `${(t.items || []).length} barang · total qty ${fmtQty(totalQty)}` : `${(t.items || []).length} SKU · ${totalQty} pcs`}
-                    {nilaiHpp != null ? ` · Nilai HPP ${fmtRp(nilaiHpp)}` : ""}
+                    {nilaiHpp != null ? ` · ${(t.items || []).some(adalahHP) ? "Nilai" : "Nilai HPP"} ${fmtRp(nilaiHpp)}` : ""}
                     {t.catatan ? ` · Catatan: ${t.catatan}` : ""}
                   </div>
                   {t.diterima_at && (
