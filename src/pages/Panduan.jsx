@@ -767,7 +767,7 @@ const SECTIONS = [
           `Saldo Kas: saldo tiap akun kas (kas kecil dan bank) saat ini.`,
           `Laporan Arus Kas: grafik uang masuk dan uang keluar per hari atau per minggu.`,
           `Laporan Laba Rugi: pendapatan dikurangi biaya, per kategori. Klik kategori untuk melihat rinciannya. Kategori yang tujuannya Neraca (misalnya modal dari pemilik) tidak dihitung sebagai pendapatan.`,
-          `Neraca: gambaran harta (kas, bank, saldo marketplace, piutang, persediaan barang) dan kewajiban. Persediaan Barang dihitung dari stok Barang Toko dikali HPP.`,
+          `Neraca: gambaran harta (kas, bank, saldo marketplace, piutang, persediaan barang) dan kewajiban. Persediaan Barang = (stok Master Barang di gudang × HPP) + (stok Barang Toko × HPP).`,
           `Laporan bisa dibuat PDF bulanan dan tahunan.`,
           `Ada juga ringkasan tulisan untuk dikirim lewat WhatsApp.`,
         ],

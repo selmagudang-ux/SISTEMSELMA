@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
-import { usePersediaanToko } from "./kasir/persediaanToko";
+import { usePersediaanBarang } from "./kasir/persediaanToko";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -1877,8 +1877,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const kategoriMasukList = master.kategori_masuk || [];
   const kategoriKeluarList = master.kategori_keluar || [];
 
-  // Persediaan Barang di Neraca = stok Barang Toko x HPP; dimuat hanya saat tab Neraca dibuka.
-  const persediaanToko = usePersediaanToko(tabLaporan === "neraca");
+  // Persediaan Barang di Neraca = stok Barang Toko x HPP + stok Master Barang (gudang) x HPP; dimuat hanya saat tab Neraca dibuka.
+  const persediaanToko = usePersediaanBarang(tabLaporan === "neraca");
   const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
   const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
@@ -2088,10 +2088,25 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             // Sama persis dengan Total Kas Kecil / Total Kas Bank di tab Saldo Kas.
             kas_kecil: saldoKas.kecil,
             bank: saldoKas.bank,
-            // Stok Barang Toko x HPP (stok gudang belum ikut).
+            // Stok Barang Toko x HPP + stok Master Barang (gudang) x HPP.
             persediaan: persediaanToko.data ? persediaanToko.data.nilai : undefined,
           }}
         />
+      )}
+      {tabLaporan === "neraca" && persediaanToko.error && (
+        <div className="mt-3 text-[11px] text-amber-400">Persediaan gagal dimuat: {persediaanToko.error}</div>
+      )}
+      {tabLaporan === "neraca" && persediaanToko.data && (
+        <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-400 space-y-1">
+          <div className="text-slate-300 font-medium">Rincian Persediaan Barang (stok × HPP)</div>
+          <div className="flex justify-between gap-3"><span>Gudang (Master Barang): {persediaanToko.data.gudang.pcs} pcs, {persediaanToko.data.gudang.jenis} SKU</span><span className="text-slate-200">{fmtRp(persediaanToko.data.gudang.nilai)}</span></div>
+          <div className="flex justify-between gap-3"><span>Toko (Barang Toko): {persediaanToko.data.toko.pcs} pcs, {persediaanToko.data.toko.jenis} jenis</span><span className="text-slate-200">{fmtRp(persediaanToko.data.toko.nilai)}</span></div>
+          {(persediaanToko.data.gudang.tanpaHpp > 0 || persediaanToko.data.toko.tanpaHpp > 0) && (
+            <div className="text-amber-400">
+              Barang ber-stok tanpa HPP dihitung Rp 0: {persediaanToko.data.gudang.tanpaHpp} SKU gudang, {persediaanToko.data.toko.tanpaHpp} barang toko. Isi HPP-nya supaya persediaan akurat.
+            </div>
+          )}
+        </div>
       )}
 
       {detailKategori && detailKategori.isGrup && (

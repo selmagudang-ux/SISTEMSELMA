@@ -14,7 +14,7 @@ import {
 } from "../../lib/api";
 import { useKeuanganRentang } from "../../lib/useKeuanganRentang";
 import { useHppPenjualan } from "../../lib/hppPenjualan";
-import { usePersediaanToko } from "../kasir/persediaanToko";
+import { usePersediaanBarang } from "../kasir/persediaanToko";
 import { buatLaporanNarasi } from "../../lib/laporanNarasi";
 
 // =========================================================
@@ -25,7 +25,7 @@ import { buatLaporanNarasi } from "../../lib/laporanNarasi";
 //   3. Laba Rugi   : pendapatan, HPP, laba kotor, beban, laba bersih + margin. Ketuk kategori = lihat transaksinya.
 //   4. Neraca      : aktiva & pasiva (pos yang sudah terhubung: Kas Kecil, Bank, Persediaan).
 // Rumus SAMA dengan versi komputer (Keuangan.jsx > LaporanKeuangan): lib/api.js, useKeuanganRentang,
-// useHppPenjualan, usePersediaanToko. Dikunci ke PT akun yang login (lingkupEntitas).
+// useHppPenjualan, usePersediaanBarang. Dikunci ke PT akun yang login (lingkupEntitas).
 // Hanya-baca: tidak ada yang diubah dari layar ini.
 // Yang BELUM ada di HP (masih di komputer): Saldo Awal Bulan (ubah manual), Laporan Bulanan / Rekap Tahunan (PDF),
 // daftar item HPP bermasalah.
@@ -529,7 +529,7 @@ const NERACA_STRUKTUR = {
   ],
 };
 
-function TabNeraca({ nilai, memuatPersediaan, galatPersediaan }) {
+function TabNeraca({ nilai, memuatPersediaan, galatPersediaan, rincianPersediaan }) {
   const angka = (k) => (nilai[k] === undefined || nilai[k] === null ? null : Number(nilai[k]) || 0);
   const totalKelompok = (g) => g.baris.reduce((a, b) => a + (b.pengurang ? -1 : 1) * (angka(b.kunci) || 0), 0);
   const totalSisi = (s) => NERACA_STRUKTUR[s].reduce((a, g) => a + totalKelompok(g), 0);
@@ -579,6 +579,24 @@ function TabNeraca({ nilai, memuatPersediaan, galatPersediaan }) {
       {galatPersediaan && <Peringatan>Persediaan gagal dimuat: {galatPersediaan}</Peringatan>}
       <Sisi sisi="aktiva" judul="AKTIVA" warna="text-emerald-500 bg-emerald-500/5" total={totalAktiva} />
       <Sisi sisi="pasiva" judul="PASIVA" warna="text-sky-400 bg-sky-500/5" total={totalPasiva} />
+      {rincianPersediaan && (
+        <div className="rounded-xl bg-md-container border border-md-outline-variant px-3 py-3 text-xs space-y-1">
+          <div className="font-semibold text-md-on-surface">Rincian Persediaan Barang (stok × HPP)</div>
+          <div className="flex justify-between gap-3 text-md-on-surface-variant">
+            <span>Gudang (Master Barang) · {rincianPersediaan.gudang.pcs} pcs, {rincianPersediaan.gudang.jenis} SKU</span>
+            <span className="text-md-on-surface whitespace-nowrap">{fmtRp(rincianPersediaan.gudang.nilai)}</span>
+          </div>
+          <div className="flex justify-between gap-3 text-md-on-surface-variant">
+            <span>Toko (Barang Toko) · {rincianPersediaan.toko.pcs} pcs, {rincianPersediaan.toko.jenis} jenis</span>
+            <span className="text-md-on-surface whitespace-nowrap">{fmtRp(rincianPersediaan.toko.nilai)}</span>
+          </div>
+          {(rincianPersediaan.gudang.tanpaHpp > 0 || rincianPersediaan.toko.tanpaHpp > 0) && (
+            <div className="text-amber-500">
+              Ber-stok tapi tanpa HPP (dihitung Rp 0): {rincianPersediaan.gudang.tanpaHpp} SKU gudang, {rincianPersediaan.toko.tanpaHpp} barang toko.
+            </div>
+          )}
+        </div>
+      )}
       <div
         className={`rounded-xl border px-3 py-3 text-xs flex flex-wrap items-center justify-between gap-2 ${
           !adaIsi
@@ -594,7 +612,7 @@ function TabNeraca({ nilai, memuatPersediaan, galatPersediaan }) {
         </span>
       </div>
       <p className="text-[11px] text-md-on-surface-variant px-1">
-        Neraca masih bertahap: baru Kas Kecil, Bank, dan Persediaan Barang (stok toko × HPP) yang terhubung ke data. Pos lain tampil "-".
+        Neraca masih bertahap: baru Kas Kecil, Bank, dan Persediaan Barang (stok gudang + toko × HPP) yang terhubung ke data. Pos lain tampil "-".
       </p>
     </div>
   );
@@ -726,7 +744,7 @@ export default function LaporanHp({ session, entitas }) {
   );
   const listLR = useMemo(() => ringkasanKeuangan(dataLabaRugi, dari || null, sampai || null).list, [dataLabaRugi, dari, sampai]);
 
-  const persediaan = usePersediaanToko(tab === "neraca");
+  const persediaan = usePersediaanBarang(tab === "neraca");
 
   const subtitle = dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : "";
 
@@ -837,11 +855,12 @@ export default function LaporanHp({ session, entitas }) {
               // Sama persis dengan Total Uang Cash / Saldo Bank di tab Saldo Kas.
               kas_kecil: saldoKas.kecil,
               bank: saldoKas.bank,
-              // Stok Barang Toko × HPP (stok gudang belum ikut).
+              // Stok Barang Toko × HPP + stok Master Barang (gudang) × HPP.
               persediaan: persediaan.data ? persediaan.data.nilai : undefined,
             }}
             memuatPersediaan={persediaan.memuat}
             galatPersediaan={persediaan.error}
+            rincianPersediaan={persediaan.data}
           />
         )}
       </div>
