@@ -1,4 +1,4 @@
-import { sb } from "../../lib/api";
+import { sb, entitasSesi } from "../../lib/api";
 import { SKEMA } from "./kasirApi";
 import { muatRekapKasir, kosongkanCacheBarangToko } from "./kasirLaporan";
 
@@ -26,7 +26,11 @@ export async function muatCekHppToko({ session, dari, sampai }) {
     const qty = num(it[I.qty]) - num(it.qty_retur);
     if (qty <= 0) continue;
     if (num(it.hpp_asli) > 0) continue; // HPP sudah terisi di Barang Toko / Master
-    const kode = it.kode_toko || it[I.sku] || "";
+    // Produk manual (item manual kasir): tidak ada di Barang Toko / Master Barang. Kuncinya SKU yang diketik;
+    // transaksi lama yang tersimpan sebagai "MNL-…" memakai nama (isinya SKU yang dulu diketik).
+    const manual = !it.dikenal && !it.dari_toko;
+    const skuManual = String(it[I.sku] || "").startsWith("MNL-") ? String(it[I.nama] || "").trim() : String(it[I.sku] || "").trim();
+    const kode = manual ? skuManual : it.kode_toko || it[I.sku] || "";
     if (!kode) continue;
     let r = peta.get(kode);
     if (!r) {
@@ -38,7 +42,8 @@ export async function muatCekHppToko({ session, dari, sampai }) {
         nama: it[I.nama] || kode,
         status: hppLaporan > 0 ? "dugaan" : "kosong",
         hppDugaan: hppLaporan > 0 ? hppLaporan : 0,
-        bisaIsi: !!it.dari_toko,
+        bisaIsi: !!it.dari_toko || manual,
+        manual,
         qty: 0,
         harga: num(it[I.harga]),
       };
@@ -54,6 +59,22 @@ export async function simpanHppBarangToko(kode, hpp) {
   const nilai = Math.round(num(hpp));
   if (!(nilai > 0)) throw new Error("HPP harus lebih dari 0");
   await sb(`master_toko?kode=eq.${encodeURIComponent(kode)}`, { method: "PATCH", body: JSON.stringify({ hpp: nilai }) });
+  kosongkanCacheBarangToko();
+  return nilai;
+}
+
+// Simpan HPP produk manual (kasir_hpp_manual, per PT + SKU), lalu kosongkan cache laporan.
+// Tabelnya dibuat lewat supabase/migrations/20261119_kasir_hpp_manual.sql.
+export async function simpanHppManual(sku, nama, hpp) {
+  const nilai = Math.round(num(hpp));
+  if (!(nilai > 0)) throw new Error("HPP harus lebih dari 0");
+  const kode = String(sku || "").trim();
+  if (!kode) throw new Error("SKU produk manual kosong");
+  await sb("kasir_hpp_manual?on_conflict=entitas,sku", {
+    method: "POST",
+    body: JSON.stringify({ entitas: entitasSesi(), sku: kode, nama: nama || null, hpp: nilai, diubah_at: new Date().toISOString() }),
+    prefer: "resolution=merge-duplicates,return=representation",
+  });
   kosongkanCacheBarangToko();
   return nilai;
 }

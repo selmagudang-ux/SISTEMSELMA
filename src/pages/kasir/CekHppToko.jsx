@@ -4,7 +4,7 @@ import { EmptyState, InputRupiah, inputClass } from "../../components/ui";
 import { fmtRp, downloadCsv } from "../../lib/api";
 import { getSession } from "../../lib/auth";
 import { hariIniWib, awalBulanWib } from "./kasirLaporan";
-import { muatCekHppToko, simpanHppBarangToko } from "./kasirCekHpp";
+import { muatCekHppToko, simpanHppBarangToko, simpanHppManual } from "./kasirCekHpp";
 
 // =========================================================
 // CEK HPP TOKO OFFLINE (tab di POS) — barang terjual yang HPP-nya di Barang Toko masih kosong.
@@ -56,7 +56,8 @@ export default function CekHppToko({ showToast, onBerubah }) {
     if (!(nilai > 0)) return toast("Isi HPP lebih dari 0", "err");
     setSibuk((x) => ({ ...x, [m.kunci]: true }));
     try {
-      await simpanHppBarangToko(m.kode, nilai);
+      if (m.manual) await simpanHppManual(m.kode, m.nama, nilai);
+      else await simpanHppBarangToko(m.kode, nilai);
       // sudah terisi di Barang Toko -> keluar dari daftar
       setData((d) => d.filter((x) => x.kunci !== m.kunci));
       setDraft((x) => {
@@ -90,7 +91,7 @@ export default function CekHppToko({ showToast, onBerubah }) {
   return (
     <div>
       <div className="mb-3 text-xs text-md-on-surface-variant">
-        Barang terjual yang HPP-nya di Barang Toko masih kosong. HPP yang diisi di sini langsung tersimpan ke Barang Toko dan dipakai Laporan Kasir &amp; Laba Rugi.
+        Barang terjual yang HPP-nya masih kosong (Barang Toko dan produk manual). HPP yang diisi di sini langsung tersimpan dan dipakai Laporan Kasir &amp; Laba Rugi.
       </div>
 
       <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -157,6 +158,7 @@ export default function CekHppToko({ showToast, onBerubah }) {
                       <div className="mt-0.5 font-mono text-[10px] text-slate-500">
                         {m.kode}
                         {m.sku && m.sku !== m.kode ? ` · ${m.sku}` : ""}
+                        {m.manual ? " · produk manual" : ""}
                       </div>
                     </td>
                     <td className={`px-3 py-2 text-[12px] ${warna}`}>{teks}</td>

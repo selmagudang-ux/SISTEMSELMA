@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { sb, sbAll, entitasBacaSaatIni } from "../../lib/api";
+import { sb, sbAll, entitasBacaSaatIni, entitasSesi } from "../../lib/api";
 import { bisa } from "../../lib/constants";
 import { SKEMA, HARI_WIB, tanggalWib } from "./kasirApi";
 import { buatPelengkapHpp } from "../../lib/hppTokoCocok";
@@ -97,14 +97,20 @@ function petaBarangToko() {
     sbAll("master_toko?select=kode,nama,barcode,sku_gudang,hpp,harga_jual"),
     // Transaksi kasir mode Master Barang menyimpan SKU Master Barang langsung -> HPP-nya dari sku_master.
     sbAll("sku_master?select=sku,hpp,ecer,grosir").catch(() => []),
+    // HPP produk manual (diisi di Cek HPP). Tabel kasir_hpp_manual: lihat supabase/migrations/20261119_kasir_hpp_manual.sql.
+    sbAll(`kasir_hpp_manual?select=sku,hpp&entitas=eq.${encodeURIComponent(entitasSesi())}`).catch(() => []),
   ])
-    .then(([rows, master]) => {
+    .then(([rows, master, manual]) => {
       // HPP yang kosong dilengkapi dari barang yang mirip (lib/hppTokoCocok.js); yang sudah terisi tidak diubah.
       const lengkapi = buatPelengkapHpp(rows, master);
       // hppAsli = isi di Barang Toko / Master apa adanya (dipakai halaman Cek HPP); toko = baris master_toko.
       const m = new Map((rows || []).map((r) => [r.kode, { sku_gudang: r.sku_gudang || null, barcode: r.barcode || null, hpp: lengkapi.hppToko(r), hppAsli: num(r.hpp), toko: true }]));
       (master || []).forEach((r) => {
         if (!m.has(r.sku)) m.set(r.sku, { sku_gudang: null, hpp: lengkapi.hppSkuMaster(r.sku, r.hpp, r.ecer), hppAsli: num(r.hpp), toko: false });
+      });
+      // Produk manual: SKU-nya bukan barang toko / Master Barang, HPP-nya dari kasir_hpp_manual.
+      (manual || []).forEach((r) => {
+        if (!m.has(r.sku)) m.set(r.sku, { sku_gudang: null, hpp: num(r.hpp), hppAsli: num(r.hpp), toko: false, manual: true });
       });
       return m;
     })
@@ -165,6 +171,7 @@ export async function muatRekapKasir({ session, dari, sampai, denganItem = true,
           it[I.sku] = nm;
         }
       }
+      it.dikenal = !!b; // false = bukan barang toko / Master Barang / produk manual ber-HPP (mis. item manual kasir)
       it.hpp_satuan = b ? b.hpp : 0; // HPP per pcs saat ini (0 = belum diisi / barang tidak ditemukan)
       it.hpp_asli = b ? b.hppAsli : 0; // isi apa adanya (tanpa dilengkapi dari barang mirip)
       it.dari_toko = !!b?.toko;
