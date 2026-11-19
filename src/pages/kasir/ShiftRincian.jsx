@@ -120,7 +120,6 @@ export function olahRincian({ transaksi, items, pembayaran }) {
 // ---------------------------------------------------------
 export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, bukaAwal = false }) {
   const [buka, setBuka] = useState(bukaAwal);
-  const [tab, setTab] = useState("transaksi");
   const r = useMemo(() => (rincian ? olahRincian(rincian) : null), [rincian]);
 
   return (
@@ -167,87 +166,24 @@ export function RincianShiftPanel({ rincian, memuat, error, onCetak, mencetak, b
               )}
             </div>
           )}
-          <div className="flex gap-1.5">
-            {[
-              ["transaksi", `Transaksi (${r.daftar.length})`],
-              ["barang", `Barang (${r.barang.length})`],
-            ].map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setTab(k)}
-                className={`text-xs px-3 py-1.5 rounded-full border ${tab === k ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300"}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
           <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-800">
-            {tab === "transaksi" ? (
-              r.daftar.length === 0 ? (
-                <div className="py-6 text-center text-xs text-slate-500">Belum ada transaksi di shift ini.</div>
-              ) : (
-                <table className="w-full text-xs">
-                  <tbody>
-                    {r.daftar.map((d) => (
-                      <tr key={d.id} className="border-t first:border-t-0 border-slate-800">
-                        <td className="px-3 py-1.5">
-                          <div className="font-mono text-slate-300">{d.nomor}</div>
-                          <div className="text-[10px] text-slate-500">
-                            {jam(d.waktu)} · {d.metode || "–"}
-                            {d.jenis && <span className={d.jenis === "grosir" ? "text-violet-300" : "text-sky-300"}> · {d.jenis === "grosir" ? "Grosir" : "Ecer"}</span>}
-                            {d.status === "void" && <span className="text-red-300"> · VOID</span>}
-                            {d.retur > 0 && <span className="text-orange-300"> · retur {fmtRp(d.retur)}</span>}
-                          </div>
-                        </td>
-                        <td className={`px-3 py-1.5 text-right tabular-nums ${d.status === "void" ? "line-through text-slate-600" : "text-slate-200"}`}>{fmtRp(d.total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            ) : r.barang.length === 0 ? (
-              <div className="py-6 text-center text-xs text-slate-500">Belum ada barang terjual.</div>
-            ) : r.barangPerJenis ? (
-              [
-                ["ecer", "Penjualan Ecer", "text-sky-300"],
-                ["grosir", "Penjualan Grosir", "text-violet-300"],
-                ["lain", "Belum terklasifikasi", "text-slate-400"],
-              ].map(([k, judul, kls]) =>
-                r.barangPerJenis[k].length === 0 ? null : (
-                  <div key={k}>
-                    <div className={`px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide bg-slate-900/80 border-t first:border-t-0 border-slate-800 ${kls}`}>
-                      {judul} · {r.barangPerJenis[k].length} barang · {r.barangPerJenis[k].reduce((a, b) => a + b.qty, 0)} pcs
-                    </div>
-                    <table className="w-full text-xs">
-                      <tbody>
-                        {r.barangPerJenis[k].map((b) => (
-                          <tr key={b.sku || b.nama} className="border-t border-slate-800">
-                            <td className="px-3 py-1.5">
-                              <div className="text-slate-200">{b.nama}</div>
-                              <div className="text-[10px] text-slate-500 font-mono">{b.sku}</div>
-                            </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">× {b.qty}</td>
-                            <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmtRp(b.nilai)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )
-              )
+            {r.daftar.length === 0 ? (
+              <div className="py-6 text-center text-xs text-slate-500">Belum ada transaksi di shift ini.</div>
             ) : (
               <table className="w-full text-xs">
                 <tbody>
-                  {r.barang.map((b) => (
-                    <tr key={b.sku || b.nama} className="border-t first:border-t-0 border-slate-800">
+                  {r.daftar.map((d) => (
+                    <tr key={d.id} className="border-t first:border-t-0 border-slate-800">
                       <td className="px-3 py-1.5">
-                        <div className="text-slate-200">{b.nama}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">{b.sku}</div>
+                        <div className="font-mono text-slate-300">{d.nomor}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {jam(d.waktu)} · {d.metode || "–"}
+                          {d.jenis && <span className={d.jenis === "grosir" ? "text-violet-300" : "text-sky-300"}> · {d.jenis === "grosir" ? "Grosir" : "Ecer"}</span>}
+                          {d.status === "void" && <span className="text-red-300"> · VOID</span>}
+                          {d.retur > 0 && <span className="text-orange-300"> · retur {fmtRp(d.retur)}</span>}
+                        </div>
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">× {b.qty}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmtRp(b.nilai)}</td>
+                      <td className={`px-3 py-1.5 text-right tabular-nums ${d.status === "void" ? "line-through text-slate-600" : "text-slate-200"}`}>{fmtRp(d.total)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -301,34 +237,6 @@ function susunBarisRincian({ rincian, info }) {
     if (sub) kiri(`   ${sub}`);
   }
   garis();
-
-  // Daftar barang: satu bagian, atau (kalau shift punya penjualan ecer/grosir) dipisah jadi lampiran per jenis.
-  const tulisBarang = (daftarBarang) => {
-    const digit = String(daftarBarang.length).length;
-    const indent = digit + 2;
-    daftarBarang.forEach((x, i) => {
-      kiri(`${String(i + 1).padStart(digit, " ")}. ${x.nama}`, indent);
-      kolom(`${" ".repeat(indent)}${x.sku ? `${x.sku} x ` : ""}${x.qty}`, rp(x.nilai));
-    });
-  };
-  if (r.barangPerJenis) {
-    for (const [k, judul] of [["ecer", "BARANG TERJUAL - ECER"], ["grosir", "BARANG TERJUAL - GROSIR"], ["lain", "BARANG TERJUAL - LAINNYA"]]) {
-      const l = r.barangPerJenis[k];
-      if (!l.length) continue;
-      tengah(judul, true);
-      tulisBarang(l);
-      kolom(`Total ${k === "lain" ? "lainnya" : k}`, `${l.reduce((a, x) => a + x.qty, 0)} pcs`);
-      garis();
-    }
-    kolom("Total semua barang", `${r.totalQty} pcs`);
-    garis();
-  } else {
-    tengah("BARANG TERJUAL", true);
-    if (!r.barang.length) kiri("(belum ada)");
-    tulisBarang(r.barang);
-    kolom("Total barang", `${r.totalQty} pcs`);
-    garis();
-  }
 
   tengah("RINGKASAN", true);
   kolom(`Transaksi (${r.jumlahTransaksi})`, rp(r.omzet));

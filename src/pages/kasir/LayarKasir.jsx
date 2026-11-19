@@ -250,10 +250,10 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [grosirMap, setGrosirMap] = useState(() => new Map());
   const paketRef = useRef({ paket: [], master: new Map() });
 
-  const tampilToast = useCallback((pesan, tipe = "err") => {
+  const tampilToast = useCallback((pesan, tipe = "err", lamaMs = 2800) => {
     clearTimeout(toastTimer.current);
     setToast({ pesan, tipe });
-    toastTimer.current = setTimeout(() => setToast(null), 2800);
+    toastTimer.current = setTimeout(() => setToast(null), lamaMs);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 
@@ -302,7 +302,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       const { items: baru, catatan } = sinkronItems(itemsRef.current, rows, peta);
       if (catatan.length) {
         setItems(baru);
-        tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`);
+        tampilToast(`Keranjang disesuaikan: ${catatan.join("; ")}`, "err", 10000);
       }
     },
     [tampilToast, modeMaster]
@@ -777,7 +777,18 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       tampilToast(loading ? "Daftar barang belum selesai dimuat. Coba lagi sebentar." : `Tidak ada barang aktif di mode ${modeMaster ? "Master Barang" : "Toko"} ini, jadi keranjang tidak bisa dimuat. Periksa stok barangnya.`);
       return false;
     }
-    const { items: baru, catatan } = sinkronItems(Array.isArray(r.items) ? r.items : [], skuList, promoRef.current);
+    // Stok di skuList sudah dikurangi stok yang DITAHAN keranjang tersimpan, termasuk keranjang ini sendiri (belum berstatus
+    // "sedang dikerjakan"). Kembalikan dulu bagian milik keranjang ini, kalau tidak barangnya dianggap habis / jumlahnya terpotong.
+    const itemsR = Array.isArray(r.items) ? r.items : [];
+    const milikIni = new Map();
+    if (r.id !== asalRef.current && tersimpanRef.current.some((k) => k.id === r.id)) {
+      for (const it of itemsR) {
+        if (!it?.sku || it.manual) continue;
+        milikIni.set(it.sku, (milikIni.get(it.sku) || 0) + (Number(it.qty) || 0));
+      }
+    }
+    const rowsSinkron = milikIni.size ? skuList.map((s) => (milikIni.has(s.sku) ? { ...s, stok: (Number(s.stok) || 0) + milikIni.get(s.sku) } : s)) : skuList;
+    const { items: baru, catatan } = sinkronItems(itemsR, rowsSinkron, promoRef.current);
     if (!baru.length) {
       tampilToast("Semua barang di keranjang ini sudah tidak bisa dijual (habis / dinonaktifkan).");
       return false;
@@ -789,7 +800,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     setDiskonTrx(r.diskon_trx ? { tipe: r.diskon_trx.tipe || "rp", nilai: r.diskon_trx.nilai ?? "" } : { tipe: "rp", nilai: "" });
     setBukaDiskon(new Set());
     setKunci(null);
-    tampilToast(catatan.length ? `Keranjang dimuat, disesuaikan: ${catatan.join("; ")}` : "Keranjang dimuat.", catatan.length ? "err" : "ok");
+    tampilToast(catatan.length ? `Keranjang dimuat, disesuaikan: ${catatan.join("; ")}` : "Keranjang dimuat.", catatan.length ? "err" : "ok", catatan.length ? 10000 : 2800);
     return true;
   };
 
