@@ -195,6 +195,8 @@ export default function Dashboard({
   onGantiPT = () => {},
 }) {
   const [tabPilih, setTab] = useState("gudang");
+  // Akun pusat: klik tab Operasional -> kartu per perusahaan dulu; pilih satu -> isi dashboard PT itu.
+  const [tampilKartuOps, setTampilKartuOps] = useState(true);
   const gabungan = bolehPilihPT && ptLihat === "GABUNGAN";
   const entAktif = bolehPilihPT && ptLihat && !gabungan ? ptLihat : entitas;
   // PT selain SELMA: data gudang, penjualan (grosir/reseller/marketplace, kolom entitas),
@@ -303,7 +305,10 @@ export default function Dashboard({
           return (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => {
+                setTab(t.key);
+                if (t.key === "gudang") setTampilKartuOps(true);
+              }}
               className={`flex items-center gap-2.5 text-left px-3.5 py-3 rounded-xl border transition ${
                 active
                   ? `${c.bg} border-current ${c.text}`
@@ -323,15 +328,21 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
-      {tab === "gudang" && gabungan ? (
+      {tab === "gudang" && (gabungan || (bolehPilihPT && daftarPT.length > 1 && tampilKartuOps)) ? (
         // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard operasional PT itu.
-        <KartuOperasionalEntitas master={master} onBuka={onGantiPT} />
+        <KartuOperasionalEntitas
+          master={master}
+          onBuka={(kode) => {
+            setTampilKartuOps(false);
+            onGantiPT(kode);
+          }}
+        />
       ) : tab === "gudang" ? (
         <>
           {bolehPilihPT && daftarPT.length > 1 && (
             <button
               type="button"
-              onClick={() => onGantiPT("GABUNGAN")}
+              onClick={() => setTampilKartuOps(true)}
               className="mb-3 text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
             >
               <ArrowLeft size={13} /> Semua perusahaan
