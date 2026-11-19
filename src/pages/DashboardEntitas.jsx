@@ -103,7 +103,8 @@ function Angka({ label, nilai, icon: Icon, warna }) {
 }
 
 // jenis: "gudang" (Operasional) | "penjualan" | "absensi"
-export default function KartuOperasionalEntitas({ master = {}, onBuka, jenis = "gudang" }) {
+// terpilih: kode entitas yang sedang dibuka (kartunya diberi tanda), null = belum ada yang dibuka.
+export default function KartuOperasionalEntitas({ master = {}, onBuka, jenis = "gudang", terpilih = null }) {
   const cfg = JENIS[jenis] || JENIS.gudang;
   const Ikon = cfg.icon;
   const kodeHolding = kodeHoldingPasti(master.entitas, master.entitas_set);
@@ -148,7 +149,11 @@ export default function KartuOperasionalEntitas({ master = {}, onBuka, jenis = "
             key={e.kode}
             type="button"
             onClick={() => onBuka && onBuka(e.kode)}
-            className="rounded-xl border border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70 p-6 text-left transition min-h-[180px] flex flex-col"
+            className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+              terpilih === e.kode
+                ? "border-amber-500/50 bg-slate-900/70"
+                : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
+            }`}
           >
             <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
               <Ikon size={17} />

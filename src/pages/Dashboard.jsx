@@ -343,7 +343,40 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
-      {tab !== "keuangan" && (gabungan || (pusatBisaPilih && kartuTerbuka[tab])) ? (
+      {tab === "gudang" && pusatBisaPilih ? (
+        // Akun pusat: kartu entitas SELALU tampil (yang sedang dibuka diberi tanda), isi dashboard
+        // operasional entitas itu muncul di bawahnya. Klik kartu yang sedang dibuka = tutup isinya.
+        <>
+          <KartuOperasionalEntitas
+            jenis="gudang"
+            master={master}
+            terpilih={gabungan || kartuTerbuka.gudang ? null : ptLihat || entitas}
+            onBuka={(kode) => {
+              const sedangDibuka = !gabungan && !kartuTerbuka.gudang && kode === (ptLihat || entitas);
+              if (sedangDibuka) {
+                aturKartu("gudang", true);
+                return;
+              }
+              aturKartu("gudang", false);
+              onGantiPT(kode);
+            }}
+          />
+          {!gabungan && !kartuTerbuka.gudang && (
+            <DashboardGudang
+              onNavigate={onNavigate}
+              setModal={setModal}
+              pengajuanRestock={pengajuanRestock}
+              items={items}
+              pesananMasuk={pesananMasuk}
+              skuMaster={skuMaster}
+              master={master}
+              periodeDari={periodeDari}
+              periodeSampai={periodeSampai}
+              periodeLabel={periodeLabel}
+            />
+          )}
+        </>
+      ) : tab !== "keuangan" && (gabungan || (pusatBisaPilih && kartuTerbuka[tab])) ? (
         // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard PT itu.
         <KartuOperasionalEntitas
           jenis={tab}
