@@ -162,7 +162,7 @@ function DaftarToko({ platform, label, daftarToko, onPilih, setModal }) {
 }
 
 function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMaster, showToast, setModal, onKembali }) {
-  // "saldo" = saldo & riwayat (lama); "rincian" = rincian penjualan per SKU/HPP/laba (baru, Shopee saja)
+  // "saldo" = saldo & riwayat (lama); "rincian" = rincian penjualan per SKU/HPP/laba (Shopee & TikTok)
   const [tab, setTab] = useState("saldo");
   const semuaEntri = (marketplaceTransaksi || []).filter(
     (t) => t.platform === platform && (t.toko || null) === (toko.kode || null)
@@ -238,7 +238,7 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
 
       {(platform === "shopee" || platform === "tiktok") && (
         <div className="flex gap-1 mb-5 border-b border-md-outline-variant">
-          {[["saldo", "Saldo & Riwayat"], ...(platform === "tiktok" ? [["kodelive", "Kode Live"], ["pesanan", "Pesanan (API)"]] : [["rincian", "Rincian Penjualan"]])].map(([k, l]) => (
+          {[["saldo", "Saldo & Riwayat"], ["rincian", "Rincian Penjualan"], ...(platform === "tiktok" ? [["kodelive", "Kode Live"], ["pesanan", "Pesanan (API)"]] : [])].map(([k, l]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -256,7 +256,7 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
         <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />
       ) : tab === "pesanan" && platform === "tiktok" ? (
         <TiktokPesanan toko={toko} showToast={showToast} />
-      ) : tab === "rincian" && platform === "shopee" ? (
+      ) : tab === "rincian" && (platform === "shopee" || platform === "tiktok") ? (
         <PenjualanRincian platform={platform} toko={toko} skuMaster={skuMaster} showToast={showToast} />
       ) : (
       <>
