@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Upload, ChevronDown, ChevronRight, Search, AlertTriangle, RefreshCw, Link2,
   TrendingUp, Receipt, Package, Wallet, Download, Megaphone,
@@ -7,6 +7,7 @@ import { StatCard, EmptyState, Badge, inputClass, btnFilled, btnTonal, btnOutlin
 import { sb, sbAll, fmtRp, downloadCsv, entitasBacaSaatIni } from "../lib/api";
 import { downloadXlsx } from "../lib/exportData";
 import RencanaIklan from "./RencanaIklan";
+import PanelImportTiktok from "./ImportTiktok";
 import { parseLaporanPenghasilan, parseExportPesanan, parseLaporanIklan, parseRincianIklanOtomatis, gabungIklan, parseMassUpdate, bangunIndeksProduk, bagiIklanKeSku, biayaIklanDiRentang, bangunBaris, normSku, buangKodeRak, cariMaster, sbTulis, FIELD_BIAYA, produkDariBaris, normJudul } from "../lib/marketplaceImport";
 
 // =========================================================
@@ -169,6 +170,7 @@ const TIPE_HPP_MP_MANUAL = "hpp_marketplace_manual";
 
 export default function PenjualanRincian({ platform, toko, skuMaster, showToast }) {
   const tokoKode = toko.kode || "";
+  const labelSet = useMemo(() => setLabelPlatform(platform), [platform]);
   const [dari, setDari] = useState(isoAwalBulan());
   const [sampai, setSampai] = useState(isoHariIni());
   const [dataDb, setData] = useState([]); // baris apa adanya dari database
@@ -467,13 +469,13 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
     { key: "subtotal", label: "Subtotal" },
     { key: "harga_produk", label: "Harga Produk (bagian baris)" },
     { key: "refund", label: "Refund" },
-    ...Object.entries(LABEL_BIAYA).map(([key, label]) => ({ key, label })),
+    ...Object.entries(labelSet.label).map(([key, label]) => ({ key, label })),
     { key: "potongan", label: "Total Potongan Marketplace" },
     { key: "dana_dilepas", label: "Dana Dilepas" },
     { key: "hpp_satuan", label: "HPP Satuan" },
     { key: "hpp_total", label: "HPP Total" },
     { key: "laba", label: "Laba Bersih" },
-  ], []);
+  ], [labelSet]);
   const barisUnduh = useMemo(() => data.map((b) => {
     const hpp = hppBaris(b);
     return {
@@ -689,6 +691,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
   };
 
   return (
+    <LabelCtx.Provider value={labelSet}>
     <div>
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <div>
@@ -730,6 +733,9 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         {platform === "shopee" && (
           <button onClick={() => setImportOpen((v) => !v)} className={btnFilled}><Upload size={14} /> Import Laporan Shopee</button>
         )}
+        {platform === "tiktok" && (
+          <button onClick={() => setImportOpen((v) => !v)} className={btnFilled}><Upload size={14} /> Import Laporan TikTok</button>
+        )}
       </div>
 
       {petaOpen && (
@@ -739,7 +745,14 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         />
       )}
 
-      {importOpen && (
+      {importOpen && platform === "tiktok" && (
+        <PanelImportTiktok
+          platform={platform} tokoKode={tokoKode} tokoLabel={toko.label || ""} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap}
+          showToast={showToast} onSelesai={async (rentang) => { setImportOpen(false); setRentangImport(rentang || null); if (rentang) await terapkanHppManual(); muat(); }}
+        />
+      )}
+
+      {importOpen && platform !== "tiktok" && (
         <PanelImport
           platform={platform} tokoKode={tokoKode} tokoLabel={toko.label || ""} filterToko={filterToko} skuMap={skuMap} aliasMap={aliasMap} iklanTabelAda={iklanTabelAda}
           showToast={showToast} onSelesai={async (rentang) => { setImportOpen(false); setRentangImport(rentang || null); if (rentang) await terapkanHppManual(); muat(); }}
@@ -773,7 +786,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         <StatCard label="HPP barang terjual" value={fmtRp(total.hpp)} icon={Package} />
         <StatCard label={`Laba bersih (${total.margin.toFixed(1)}% dari dana)`} value={fmtRp(total.laba)} accent={total.laba >= 0 ? "text-emerald-400" : "text-red-400"} icon={TrendingUp} iconColor="text-emerald-400" />
       </div>
-      {iklanTabelAda && (
+      {iklanTabelAda && platform !== "tiktok" && (
         <>
           <div className="text-[11px] text-md-on-surface-variant mb-1">Setelah biaya iklan</div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
@@ -824,7 +837,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
           <div>
             {total.pesananTanpaHpp} pesanan belum bisa dihitung HPP-nya, jadi tidak masuk HPP & laba di atas
             {tanpaDataSku > 0 && <> ({tanpaDataSku} di antaranya belum punya data SKU — import <b>Export Pesanan</b> yang mencakup tanggal pesanan itu)</>}
-            {belumCocok.length > 0 && <>; {belumCocok.length} SKU Shopee belum cocok dengan Master Barang (lihat panel di bawah)</>}.
+            {belumCocok.length > 0 && <>; {belumCocok.length} {platform === "tiktok" ? "kode live/SKU TikTok" : "SKU Shopee"} belum cocok dengan Master Barang (lihat panel di bawah)</>}.
             Baris "Semua pesanan" tetap mencakup semuanya.
           </div>
         </div>
@@ -832,7 +845,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex rounded-full border border-md-outline-variant overflow-hidden text-xs">
-          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ["etalase", "Per Etalase"], ["biaya", "Rincian Biaya"], ...(platform === "shopee" ? [["rencana", "Rencana Iklan"]] : [])].map(([k, l]) => (
+          {[["pesanan", "Per Pesanan"], ["sku", "Per SKU"], ...(platform === "tiktok" ? [] : [["etalase", "Per Etalase"]]), ["biaya", "Rincian Biaya"], ...(platform === "shopee" ? [["rencana", "Rencana Iklan"]] : [])].map(([k, l]) => (
             <button key={k} onClick={() => setTampil(k)} className={`px-4 py-2 ${tampil === k ? "bg-md-primary-container text-md-on-primary-container font-medium" : "text-md-on-surface-variant"}`}>{l}</button>
           ))}
         </div>
@@ -863,7 +876,7 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
       ) : loading && data.length === 0 ? (
         <div className="text-sm text-md-on-surface-variant py-10 text-center">Memuat…</div>
       ) : data.length === 0 ? (
-        <EmptyState label={platform === "shopee" ? "Belum ada data di periode ini. Klik “Import Laporan Shopee” untuk mengunggah Laporan Penghasilan + Export Pesanan." : "Import otomatis baru tersedia untuk Shopee."} />
+        <EmptyState label={platform === "shopee" ? "Belum ada data di periode ini. Klik “Import Laporan Shopee” untuk mengunggah Laporan Penghasilan + Export Pesanan." : platform === "tiktok" ? "Belum ada data di periode ini. Klik “Import Laporan TikTok” untuk mengunggah Laporan Penghasilan + Export Pesanan." : "Import otomatis baru tersedia untuk Shopee."} />
       ) : tampil === "pesanan" ? (
         <TabelPesanan list={potong} buka={buka} setBuka={setBuka} urut={urutPesanan} onUrut={(k) => ubahUrut(setUrutPesanan, k)} />
       ) : tampil === "biaya" ? (
@@ -891,8 +904,9 @@ export default function PenjualanRincian({ platform, toko, skuMaster, showToast 
         </div>
       )}
 
-      {belumCocok.length > 0 && <PanelBelumCocok list={belumCocok} skuMaster={skuMaster} onSimpan={simpanAlias} onSimpanHpp={simpanHppManual} onHapusHpp={hapusHppManual} />}
+      {belumCocok.length > 0 && <PanelBelumCocok platform={platform} list={belumCocok} skuMaster={skuMaster} onSimpan={simpanAlias} onSimpanHpp={simpanHppManual} onHapusHpp={hapusHppManual} />}
     </div>
+    </LabelCtx.Provider>
   );
 }
 
@@ -935,6 +949,7 @@ function TabelPesanan({ list, buka, setBuka, urut, onUrut }) {
 }
 
 function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
+  const LB = useContext(LabelCtx).label;
   const r = p.r;
   return (
     <>
@@ -1006,10 +1021,10 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1 text-xs">
               <div className="flex justify-between gap-2"><span className="text-md-on-surface-variant">Harga produk</span><Angka v={r.penjualan} /></div>
               {n0(r.refund) !== 0 && <div className="flex justify-between gap-2"><span className="text-md-on-surface-variant">Refund pembeli</span><Angka v={r.refund} /></div>}
-              {Object.keys(LABEL_BIAYA).map((f) => {
+              {Object.keys(LB).map((f) => {
                 const v = p.lines.reduce((a, l) => a + n0(l[f]), 0);
                 if (v === 0) return null;
-                return <div key={f} className="flex justify-between gap-2"><span className="text-md-on-surface-variant">{LABEL_BIAYA[f]}</span><Angka v={v} plus /></div>;
+                return <div key={f} className="flex justify-between gap-2"><span className="text-md-on-surface-variant">{LB[f]}</span><Angka v={v} plus /></div>;
               })}
             </div>
           </td>
@@ -1021,6 +1036,7 @@ function FragmenPesanan({ p, terbuka, adaSku, toggle }) {
 
 // Jumlah SEMUA pesanan di periode (dan sesuai kotak cari) per komponen biaya
 function TabelBiaya({ list }) {
+  const LB = useContext(LabelCtx).label;
   const baris = list.flatMap((p) => p.lines);
   const jml = (f) => baris.reduce((a, b) => a + n0(b[f]), 0);
   const harga = jml("harga_produk");
@@ -1032,7 +1048,7 @@ function TabelBiaya({ list }) {
 
   const komponen = [
     ...(refund !== 0 ? [["Refund ke pembeli", refund]] : []),
-    ...Object.keys(LABEL_BIAYA).map((f) => [LABEL_BIAYA[f], jml(f)]).filter(([, v]) => v !== 0),
+    ...Object.keys(LB).map((f) => [LB[f], jml(f)]).filter(([, v]) => v !== 0),
   ];
   const Baris = ({ label, v, tebal, warna, pct = true }) => (
     <tr className={`border-b border-md-outline-variant last:border-0 ${tebal ? "bg-md-on-surface/[0.04] font-medium" : ""}`}>
@@ -1067,20 +1083,45 @@ const KOLOM_BIAYA = [
   ["biaya_admin", "Admin"], ["biaya_proses", "Proses"], ["biaya_ongkir_xtra", "XTRA"], ["biaya_layanan", "Layanan"],
   ["biaya_ams", "AMS"], ["biaya_kampanye", "Kampanye"], ["biaya_isi_saldo", "Isi Saldo"], ["biaya_promosi", "Promo (lama)"], ["biaya_lain", "Lainnya"], ["pajak", "PPh 22"], ["voucher_penjual", "Voucher"], ["ongkir_net", "Ongkir"],
 ];
+
+// Label biaya per platform. Kolom tabelnya sama; TikTok hanya beda nama komponen (lihat lib/tiktokImport.js).
+const LABEL_BIAYA_TIKTOK = {
+  ongkir_net: "Ongkir & biaya logistik (bersih)",
+  voucher_penjual: "Voucher / diskon penjual",
+  biaya_admin: "Komisi platform",
+  biaya_proses: "Biaya pemrosesan pesanan",
+  biaya_ongkir_xtra: "Program Growth Xtra",
+  biaya_layanan: "Komisi dinamis",
+  biaya_ams: "Komisi afiliasi",
+  biaya_kampanye: "Biaya kampanye",
+  biaya_isi_saldo: "Isi saldo iklan",
+  biaya_promosi: "Promosi",
+  biaya_lain: "Lainnya (penyesuaian, subsidi platform)",
+  pajak: "PPh Pasal 22",
+};
+const KOLOM_BIAYA_TIKTOK = [
+  ["ongkir_net", "Ongkir"], ["biaya_admin", "Komisi"], ["biaya_proses", "Proses"], ["biaya_ongkir_xtra", "Growth Xtra"],
+  ["biaya_layanan", "Komisi dinamis"], ["biaya_ams", "Afiliasi"], ["pajak", "PPh 22"], ["biaya_lain", "Lainnya"],
+];
+const LabelCtx = createContext(null);
+const setLabelPlatform = (platform) => (platform === "tiktok"
+  ? { platform, label: { ...LABEL_BIAYA, ...LABEL_BIAYA_TIKTOK }, kolom: KOLOM_BIAYA_TIKTOK }
+  : { platform, label: LABEL_BIAYA, kolom: KOLOM_BIAYA });
 const MAKS_BARIS_DETAIL = 100;
 
 // Rincian biaya satu SKU: total per komponen + biaya yang kena di tiap pesanan
 function DetailBiayaSku({ s }) {
+  const { label: LB, kolom: KOLOM, platform: plat } = useContext(LabelCtx);
   const lines = s.lines;
   const tampil = lines.slice(0, MAKS_BARIS_DETAIL);
-  const kolom = KOLOM_BIAYA.filter(([f]) => lines.some((l) => n0(l[f]) !== 0));
+  const kolom = KOLOM.filter(([f]) => lines.some((l) => n0(l[f]) !== 0));
   const totalKol = (f) => lines.reduce((a, l) => a + n0(l[f]), 0);
   return (
     <div className="px-4 py-3">
       <div className="text-[11px] text-md-on-surface-variant mb-1">Total biaya marketplace SKU ini per komponen ({lines.length} baris pesanan)</div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1 text-xs mb-4">
         {kolom.map(([f]) => (
-          <div key={f} className="flex justify-between gap-2"><span className="text-md-on-surface-variant">{LABEL_BIAYA[f]}</span><Angka v={totalKol(f)} plus /></div>
+          <div key={f} className="flex justify-between gap-2"><span className="text-md-on-surface-variant">{LB[f]}</span><Angka v={totalKol(f)} plus /></div>
         ))}
       </div>
       <div className="text-[11px] text-md-on-surface-variant mb-1">Biaya yang kena per pesanan</div>
@@ -1116,7 +1157,9 @@ function DetailBiayaSku({ s }) {
         <div className="text-[11px] text-md-on-surface-variant mt-2">Menampilkan {tampil.length} dari {lines.length} baris terbaru. Total di atas tetap mencakup semuanya.</div>
       )}
       <div className="text-[11px] text-md-on-surface-variant mt-2">
-        Biaya proses pesanan dari Shopee flat per pesanan, lalu dibagi ke tiap SKU sesuai harga — sama seperti baris "Sku" di Laporan Penghasilan.
+        {plat === "tiktok"
+          ? "Biaya TikTok dihitung per pesanan, lalu dibagi ke tiap SKU dalam pesanan itu sesuai harga jualnya."
+          : "Biaya proses pesanan dari Shopee flat per pesanan, lalu dibagi ke tiap SKU sesuai harga — sama seperti baris \"Sku\" di Laporan Penghasilan."}
       </div>
     </div>
   );
@@ -1363,7 +1406,7 @@ function karakterAneh(s) {
   return out;
 }
 
-function PanelBelumCocok({ list, skuMaster, onSimpan, onSimpanHpp, onHapusHpp }) {
+function PanelBelumCocok({ platform, list, skuMaster, onSimpan, onSimpanHpp, onHapusHpp }) {
   const [input, setInput] = useState({});
   const [inputHpp, setInputHpp] = useState({});
   const [sibuk, setSibuk] = useState("");
@@ -1380,7 +1423,7 @@ function PanelBelumCocok({ list, skuMaster, onSimpan, onSimpanHpp, onHapusHpp })
   }, [skuMaster]);
   return (
     <div className="mt-8">
-      <div className="text-sm font-medium mb-1 flex items-center gap-2"><Link2 size={14} /> SKU Shopee yang belum cocok dengan Master Barang ({list.length})</div>
+      <div className="text-sm font-medium mb-1 flex items-center gap-2"><Link2 size={14} /> {platform === "tiktok" ? "Kode live / SKU TikTok" : "SKU Shopee"} yang belum cocok dengan Master Barang ({list.length})</div>
       <p className="text-xs text-md-on-surface-variant mb-3 max-w-2xl">
         Ketik SKU yang benar dari Master Barang, lalu Simpan — dipakai untuk semua baris yang sama (termasuk import berikutnya) dan HPP-nya langsung terisi.
         Awalan kode rak (mis. G6J-1B-) otomatis diabaikan saat mencocokkan, jadi yang tersisa di sini biasanya SKU berformat lama (kode rak + nama barang) atau huruf yang memang berbeda dari SKU sistem.
@@ -1401,7 +1444,7 @@ function PanelBelumCocok({ list, skuMaster, onSimpan, onSimpanHpp, onHapusHpp })
                 const mirip = [...new Set([...(indeksLonggar.get(kunciLonggar(x.ref)) || []), ...(indeksLonggar.get(kunciLonggar(buangKodeRak(x.ref))) || [])])];
                 return (
                   <>
-                    {aneh.length > 0 && <div className="text-[11px] text-amber-400">Ada karakter tak biasa di kode Shopee: {aneh.join(", ")}</div>}
+                    {aneh.length > 0 && <div className="text-[11px] text-amber-400">Ada karakter tak biasa di kode {platform === "tiktok" ? "TikTok" : "Shopee"}: {aneh.join(", ")}</div>}
                     {mirip.length > 0 && (
                       <div className="text-[11px] text-sky-400 flex flex-wrap items-center gap-2">
                         Mirip di Master: {mirip.join(", ")}
