@@ -143,22 +143,22 @@ export default function KartuOperasionalEntitas({ master = {}, onBuka, jenis = "
 
   if (polos) {
     return (
-      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+      <div className="flex flex-wrap gap-3 mb-4">
         {daftar.map((e) => (
           <button
             key={e.kode}
             type="button"
             onClick={() => onBuka && onBuka(e.kode)}
-            className={`rounded-xl border p-6 text-left transition min-h-[180px] flex flex-col ${
+            className={`w-full sm:w-56 rounded-xl border p-4 text-left transition min-h-[104px] flex flex-col ${
               terpilih === e.kode
                 ? "border-amber-500/50 bg-slate-900/70"
                 : "border-slate-800 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/70"
             }`}
           >
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-3">
-              <Ikon size={17} />
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-md-on-surface/[0.06] text-md-on-surface-variant mb-2">
+              <Ikon size={15} />
             </div>
-            <div className="text-base font-semibold text-slate-100">{namaUsahaEntitas(master, e.kode)}</div>
+            <div className="text-sm font-semibold text-slate-100 leading-snug">{namaUsahaEntitas(master, e.kode)}</div>
             {e.kode === kodeHolding && <div className="text-[11px] text-slate-500 mt-1">Pusat</div>}
           </button>
         ))}
