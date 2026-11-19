@@ -26,6 +26,8 @@ export const LAYAR_HP = {
   // Perusahaan Grup (Ringkasan, Keuangan Perusahaan, Antar Entitas, Kelola Perusahaan) dan Keuangan Pusat (Transaksi, Kas,
   // Laporan, Modal & Penarikan Pemilik, Pengaturan): satu layar (GrupHp.jsx) menangani semua sub-menunya.
   perusahaan: { muat: () => import("./GrupHp.jsx") },
+  // Transfer Barang antar entitas (kirim / terima / Permintaan Stok): memakai ulang halaman komputer lewat TransferBarangHp.jsx.
+  "transfer-entitas": { muat: () => import("./TransferBarangHp.jsx") },
   holding: { muat: () => import("./GrupHp.jsx") },
 };
 
