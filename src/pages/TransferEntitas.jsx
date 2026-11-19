@@ -257,6 +257,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const entSaya = entitasSesi();
   const bisaTransfer = bisa(session?.role, "stok.transfer_entitas");
   const bisaHapus = bisa(session?.role, "stok.hapus_transfer_entitas");
+  // Super Appa boleh menghapus transfer PT mana pun (bukan hanya yang dikirim PT akunnya).
+  const superAppa = session?.role === "superappa";
   const bisaMinta = bisa(session?.role, "stok.minta_entitas");
   const [halaman, setHalaman] = useState(halamanAwal); // "transfer" | "permintaan"
   const [permintaan, setPermintaan] = useState([]);
@@ -277,7 +279,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     setMemuat(true);
     try {
       const e = encodeURIComponent(entSaya);
-      setRows((await sb(`transfer_barang?or=(entitas_asal.eq.${e},entitas_tujuan.eq.${e})&order=created_at.desc&limit=300`)) || []);
+      const saring = superAppa ? "" : `or=(entitas_asal.eq.${e},entitas_tujuan.eq.${e})&`;
+      setRows((await sb(`transfer_barang?${saring}order=created_at.desc&limit=300`)) || []);
     } catch (err) {
       showToast?.(err.message?.includes("transfer_barang") ? "Tabel transfer_barang belum dibuat — jalankan SQL migrasi dulu." : err.message, "err");
     }
@@ -298,7 +301,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     } finally {
       setMemuat(false);
     }
-  }, [entSaya, showToast]);
+  }, [entSaya, showToast, superAppa]);
 
   useEffect(() => {
     muat();
@@ -628,7 +631,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   const hapus = (t) =>
     jalankan(async () => {
       if (!bisaHapus) throw new Error("Role Anda tidak punya akses menghapus transfer antar entitas.");
-      if (t.entitas_asal !== entSaya) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
+      if (t.entitas_asal !== entSaya && !superAppa) throw new Error("Transfer hanya bisa dihapus oleh pengirim.");
       const { ambil, kembali } = rencanaHapus(t);
       // Barang habis pakai yang sudah diterima ada di gudang PT penerima (datanya terpisah per PT), jadi
       // tidak bisa ditarik dari sini. Penerima mengirim baliknya lewat transfer baru.
@@ -637,6 +640,10 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       }
       const kembaliSku = kembali.filter((d) => !d.hp);
       const kembaliHP = kembali.filter((d) => d.hp);
+      // Barang habis pakai dicatat per PT lewat sesi akun; Super Appa dari PT lain tidak bisa mengembalikannya ke gudang pengirim.
+      if (t.entitas_asal !== entSaya && kembaliHP.length) {
+        throw new Error(`Tidak bisa dihapus dari akun ini: transfer berisi barang habis pakai yang harus dikembalikan ke gudang ${namaEnt(t.entitas_asal)}. Hapus lewat akun PT pengirim.`);
+      }
       if (ambil.length) {
         const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
         const ada = await sb(`sku_stok?entitas=eq.${encodeURIComponent(t.entitas_tujuan)}&sku=in.(${ambil.map((d) => kutip(d.sku)).join(",")})&select=sku,stok`);
@@ -664,7 +671,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         }
         if (kembaliSku.length) {
           pengirim = await terapkanDeltaStok(
-            entSaya,
+            t.entitas_asal,
             kembaliSku.map((d) => ({ sku: d.sku, delta: d.jumlah, catatan: `Transfer ${t.kode} ke ${namaEnt(t.entitas_tujuan)} dihapus — stok dikembalikan` }))
           );
         }
@@ -691,7 +698,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     const tot = (l) => l.reduce((a, d) => a + d.jumlah, 0);
     const baris = [`Hapus transfer ${t.kode}?`];
     if (ambil.length) baris.push(`• Stok di ${namaEnt(t.entitas_tujuan)} DITARIK kembali ${tot(ambil)} pcs.`);
-    if (kembali.length) baris.push(`• Stok gudang Anda dikembalikan ${tot(kembali)} pcs.`);
+    if (kembali.length) baris.push(`• Stok ${t.entitas_asal === entSaya ? "gudang Anda" : namaEnt(t.entitas_asal)} dikembalikan ${tot(kembali)} pcs.`);
     if (!ambil.length && !kembali.length) baris.push("• Tidak ada stok yang perlu diubah (sudah dikembalikan sebelumnya).");
     baris.push("Qty di Peta Rak tidak diubah otomatis. Riwayat transfer ini hilang dari daftar.");
     if (window.confirm(baris.join("\n"))) hapus(t);
@@ -912,7 +919,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                         <Undo2 size={13} /> Kembalikan {kembali.reduce((a, it) => a + it.kembali, 0)} pcs ke stok
                       </button>
                     )}
-                    {keluar && bisaHapus && (
+                    {(keluar || superAppa) && bisaHapus && (
                       <button
                         disabled={proses}
                         onClick={() => konfirmasiHapus(t)}
