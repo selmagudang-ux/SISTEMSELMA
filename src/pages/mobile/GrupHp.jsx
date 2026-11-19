@@ -317,7 +317,7 @@ function LayarDesktop({ session, sub, kodeHolding }) {
           </>
         )}
         {sub === "antar-entitas" && (
-          <AntarEntitas keuanganTransaksi={trx} master={master} reload={muat} showToast={tampilToast} setModal={setModalAman} role={session?.role} entitasAkun={session?.entitas} />
+          <AntarEntitas keuanganTransaksi={trx} master={master} reload={muat} showToast={tampilToast} setModal={setModalAman} role={session?.role} entitasAkun={session?.entitas} session={session} />
         )}
         {sub === "kelola" && <KelolaPerusahaan master={master} reload={muat} showToast={tampilToast} />}
         {sub === "penarikan" && (

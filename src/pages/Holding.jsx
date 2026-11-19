@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect, Fragment } from "react";
 import { Plus, ArrowRightLeft, Landmark, Paperclip, AlertTriangle, Pencil, Trash2, TrendingUp, TrendingDown, Building2, ChevronDown, Wallet, Lightbulb, X } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, Field, InputRupiah } from "../components/ui";
 import { sb, fmtRp, kodeRekeningPeran, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, PENANDA_ANTAR_ENTITAS, penandaUntukArah, kodeEntitasHolding, kodeHoldingPasti, ENTITAS_DEFAULT, bukanLabaRugi, pengaturanEntitas, breakdownPengeluaranKategori, breakdownPemasukanKategori } from "../lib/api";
-import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas } from "../lib/constants";
+import { bolehTransferAntarEntitas, bisaTransferAntarEntitas, fiturTersediaEntitas, fiturMatiEntitas, bisa } from "../lib/constants";
+import PengajuanDana, { usePengajuanDana } from "./PengajuanDana";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBuktiBanyak, fileCls } from "./AlurKas";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
@@ -647,7 +648,7 @@ export function RingkasanGrup({ keuanganTransaksi = [], master = {}, onBuka, tan
 // =========================================================
 // ANTAR ENTITAS
 // =========================================================
-export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal, role, entitasAkun }) {
+export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, showToast, setModal, role, entitasAkun, session }) {
   const k = useDataKas(master, keuanganTransaksi);
   // Hak per arah transfer (lihat ARAH_ANTAR_ENTITAS di lib/constants.js):
   // Pemilik = Holding -> perusahaan, Super Admin = perusahaan -> Holding, Super Appa = keduanya.
@@ -664,10 +665,69 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
     const x = lintasEntitas(t, k);
     return !!x && (!kodeTerikat || x.asal === kodeTerikat || x.tujuan === kodeTerikat);
   };
+  // ---- Pengajuan Dana: hak akses ----
+  // Menanggapi (setujui / tolak) = hak yang sama dengan mencatat transfer dari PEMBERI ke PEMINTA
+  // (Holding -> perusahaan: Pemilik / Super Appa), jadi tidak ada aturan arah baru.
+  const bolehTanggapiDana = (p) => bolehTransferAntarEntitas(role, p.entitas_pemberi, p.entitas_peminta, kodeHolding, entitasAkun);
+  // Mengajukan: perlu izin "holding.ajukan_dana"; akun terikat satu PT hanya atas nama PT-nya.
+  const entPemintaBoleh = !bisa(role, "holding.ajukan_dana")
+    ? []
+    : kodeTerikat
+      ? [kodeTerikat]
+      : entitasAkun && entitasAkun !== kodeHolding && !ROLE_LINTAS_ENTITAS_LIHAT.includes(role)
+        ? [entitasAkun]
+        : k.entitasList.map((e) => e.kode);
+  // Membatalkan: pihak peminta (atau Super Appa) selama masih menunggu.
+  const bolehBatalkanDana = (p) => role === "superappa" || (bisa(role, "holding.ajukan_dana") && entPemintaBoleh.includes(p.entitas_peminta));
+  const opsiRekeningPenerima = (entKode) => {
+    const rek = k.rekeningList.filter((r) => k.entDari(r.kode) === entKode);
+    const khusus = ["penerima_dari_pusat_1", "penerima_dari_pusat_2"].map((pr) => kodeRekeningPeran(master, entKode, pr)).filter(Boolean);
+    return (khusus.length ? rek.filter((r) => khusus.includes(r.kode)) : rek).sort(k.urutKas).map((r) => ({ kode: r.kode, label: r.label }));
+  };
+  // Setujui: buka form transfer yang sudah terisi. Cek dulu pengajuan masih "menunggu" (cegah dobel transfer).
+  const mulaiSetujui = async (p) => {
+    await dana.muat();
+    try {
+      const ada = await sb(`pengajuan_dana?id=eq.${p.id}&select=status`);
+      if (ada?.[0]?.status !== "menunggu") {
+        showToast?.("Pengajuan ini sudah diproses atau dibatalkan. Daftar dimuat ulang.", "err");
+        return;
+      }
+    } catch (e) {
+      showToast?.(e.message || "Gagal memeriksa pengajuan", "err");
+      return;
+    }
+    setPengajuanAwal(p);
+  };
+  // Dipanggil setelah transfer tersimpan: tandai pengajuan "disetujui" + tautkan ke transaksi.
+  const tandaiDisetujui = async (p, trx) => {
+    try {
+      const klaim = await sb(`pengajuan_dana?id=eq.${p.id}&status=eq.menunggu`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "disetujui",
+          transaksi_id: trx?.id ?? null,
+          jumlah_disetujui: Number(trx?.jumlah) || null,
+          diproses_oleh_nama: session?.nama || session?.username || null,
+          diproses_at: new Date().toISOString(),
+        }),
+      });
+      if (!klaim?.length) throw new Error("status pengajuan tidak berubah");
+    } catch (e) {
+      showToast?.(`Transfer SUDAH tercatat, tetapi status pengajuan ${p.kode} gagal diperbarui (${e.message}). Jangan transfer ulang — beri tahu admin.`, "err");
+    }
+    await dana.muat();
+  };
+
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniLokal());
   const [filterPenanda, setFilterPenanda] = useState("semua");
   const [formBuka, setFormBuka] = useState(false);
+  // Tab "Transfer" (riwayat transfer uang) | "Pengajuan Dana" (perusahaan minta dana, lihat pages/PengajuanDana.jsx).
+  const [tab, setTab] = useState("transfer");
+  const [pengajuanAwal, setPengajuanAwal] = useState(null); // pengajuan yang sedang disetujui -> form transfer terisi otomatis
+  const dana = usePengajuanDana(kodeTerikat);
+  const jumlahDanaMenunggu = dana.rows.filter((p) => p.status === "menunggu" && bolehTanggapiDana(p)).length;
   const [menyimpanId, setMenyimpanId] = useState(null);
   const [bukaRincian, setBukaRincian] = useState(() => new Set());
   const [detailRincian, setDetailRincian] = useState(null); // { judul, subtitle, rows } — modal rincian satu sumber setoran
@@ -741,7 +801,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         description="Uang yang pindah antar perusahaan (mis. SELMA ↔ Holding): pemberian modal, pinjaman, setoran pemasukan, dan pembayaran pinjaman. Bukan pemasukan/pengeluaran cabang; setoran pemasukan menjadi pemasukan Pusat."
         sticky
         action={
-          bisaTambah ? (
+          bisaTambah && tab === "transfer" ? (
             <button
               onClick={() => setFormBuka(true)}
               className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
@@ -751,6 +811,44 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
           ) : null
         }
       />
+      <div className="flex items-center gap-1 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
+        {[
+          ["transfer", "Transfer"],
+          ["pengajuan", `Pengajuan Dana${jumlahDanaMenunggu ? ` (${jumlahDanaMenunggu})` : ""}`],
+        ].map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setTab(v)}
+            className={`text-xs font-medium px-3.5 py-1.5 rounded-md transition ${tab === v ? "bg-amber-500 text-slate-950" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {tab === "pengajuan" && (
+        <PengajuanDana
+          rows={dana.rows}
+          memuat={dana.memuat}
+          tabelAda={dana.tabelAda}
+          muat={dana.muat}
+          namaEnt={k.entNama}
+          entitasList={k.entitasList}
+          kodeHolding={kodeHolding}
+          entPemintaBoleh={entPemintaBoleh}
+          bisaAjukan={entPemintaBoleh.length > 0}
+          bolehTanggapi={bolehTanggapiDana}
+          bolehBatalkan={bolehBatalkanDana}
+          onSetujui={mulaiSetujui}
+          opsiRekeningPenerima={opsiRekeningPenerima}
+          session={session}
+          showToast={showToast}
+        />
+      )}
+
+      {tab === "transfer" && (
+      <>
       {role === "owner" && (
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">
           Anda hanya bisa mencatat transfer <b>dari Holding ke perusahaan</b> (pemberian modal, pinjaman). Transfer dari perusahaan ke Holding dicatat oleh Admin.
@@ -899,6 +997,39 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         </div>
       )}
 
+      </>
+      )}
+
+      {pengajuanAwal && (
+        <FormAntarEntitas
+          k={k}
+          semua={semua}
+          master={master}
+          role={role}
+          entitasAkun={entitasAkun}
+          kodeHolding={kodeHolding}
+          awal={{
+            penanda: pengajuanAwal.jenis_usulan,
+            tujuan: pengajuanAwal.rekening_tujuan || "",
+            jumlah: String(Number(pengajuanAwal.jumlah) || ""),
+            keterangan: `Pengajuan dana ${pengajuanAwal.kode}: ${pengajuanAwal.keperluan}`.slice(0, 200),
+            info: `${k.entNama(pengajuanAwal.entitas_peminta)} mengajukan ${fmtRp(pengajuanAwal.jumlah)} (${pengajuanAwal.kode}). Jumlah & jenis boleh diubah sebelum disimpan.`,
+          }}
+          cekSebelum={async () => {
+            const ada = await sb(`pengajuan_dana?id=eq.${pengajuanAwal.id}&select=status`);
+            if (ada?.[0]?.status !== "menunggu") throw new Error("Pengajuan ini sudah diproses atau dibatalkan pihak lain. Tutup form lalu muat ulang.");
+          }}
+          onTersimpan={(trx) => tandaiDisetujui(pengajuanAwal, trx)}
+          onClose={() => setPengajuanAwal(null)}
+          showToast={showToast}
+          onSaved={async () => {
+            await reload?.();
+            setPengajuanAwal(null);
+            setTab("transfer");
+          }}
+        />
+      )}
+
       {formBuka && (
         <FormAntarEntitas
           k={k}
@@ -952,13 +1083,15 @@ function DetailRincianSetoranModal({ data, onClose }) {
   );
 }
 
-function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeHolding, onClose, onSaved, showToast }) {
+function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeHolding, onClose, onSaved, showToast, awal = null, cekSebelum, onTersimpan }) {
+  // `awal` (opsional) = isian awal dari Pengajuan Dana yang sedang disetujui; `cekSebelum` memastikan pengajuan
+  // masih "menunggu" tepat sebelum menyimpan; `onTersimpan(trx)` menautkan pengajuan ke transaksi yang baru dibuat.
   const [tanggal, setTanggal] = useState(hariIniLokal());
-  const [penanda, setPenanda] = useState("");
+  const [penanda, setPenanda] = useState(awal?.penanda || "");
   const [sumber, setSumber] = useState("");
-  const [tujuan, setTujuan] = useState("");
-  const [jumlah, setJumlah] = useState("");
-  const [keterangan, setKeterangan] = useState("");
+  const [tujuan, setTujuan] = useState(awal?.tujuan || "");
+  const [jumlah, setJumlah] = useState(awal?.jumlah || "");
+  const [keterangan, setKeterangan] = useState(awal?.keterangan || "");
   const [fotoList, setFotoList] = useState([]); // bukti transfer (banyak file; foto atau PDF)
   const [saving, setSaving] = useState(false);
 
@@ -1111,8 +1244,9 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
     if (!valid || saving) return;
     setSaving(true);
     try {
+      await cekSebelum?.();
       const buktiUrls = await unggahBuktiBanyak(fotoList, `ent-${tujuan}`);
-      await sb("keuangan_transaksi", {
+      const dibuat = await sb("keuangan_transaksi", {
         method: "POST",
         body: JSON.stringify({
           tanggal,
@@ -1139,6 +1273,7 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
         }),
       });
       showToast?.(`${PENANDA_ANTAR_ENTITAS[penanda]} tercatat`);
+      await onTersimpan?.(Array.isArray(dibuat) ? dibuat[0] : dibuat);
       await onSaved();
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan", "err");
@@ -1147,7 +1282,8 @@ function FormAntarEntitas({ k, semua = [], master = {}, role, entitasAkun, kodeH
   };
 
   return (
-    <ModalShell title="Transfer Antar Entitas" onClose={onClose}>
+    <ModalShell title={awal ? "Setujui Pengajuan Dana" : "Transfer Antar Entitas"} onClose={onClose}>
+      {awal?.info && <div className="mb-3 px-3 py-2 rounded-lg text-xs text-sky-300 bg-sky-500/5 border border-sky-500/20">{awal.info}</div>}
       <Field label="Tanggal">
         <InputTanggal className={inputClass} value={tanggal} onChange={setTanggal} />
       </Field>

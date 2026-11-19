@@ -362,7 +362,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     return <KelolaPerusahaan master={master} reload={reload} showToast={showToast} />;
   }
   if (modeGrup && sub === "antar-entitas") {
-    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} entitasAkun={session?.entitas} />;
+    return <AntarEntitas keuanganTransaksi={keuanganTransaksi} master={master} reload={reload} showToast={showToast} setModal={setModalAman} role={session?.role} entitasAkun={session?.entitas} session={session} />;
   }
   if (sub === "laporan") {
     return bungkus(
