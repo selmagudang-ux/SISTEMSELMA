@@ -844,6 +844,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
           bolehBatalkan={bolehBatalkanDana}
           onSetujui={mulaiSetujui}
           opsiRekeningPenerima={opsiRekeningPenerima}
+          reloadKeuangan={reload}
           session={session}
           showToast={showToast}
         />

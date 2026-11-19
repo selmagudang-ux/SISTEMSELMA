@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, HandCoins, XCircle, Ban, ArrowRight, Paperclip, Send, X } from "lucide-react";
+import { Plus, HandCoins, XCircle, Ban, ArrowRight, Paperclip, Send, X, Trash2 } from "lucide-react";
 import { Badge, EmptyState, ModalShell, Field, inputClass, InputRupiah, InputTanggal, formatTanggalID } from "../components/ui";
 import { sb, fmtRp, PENANDA_ANTAR_ENTITAS, penandaUntukArah } from "../lib/api";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
@@ -59,7 +59,7 @@ export function usePengajuanDana(kodeTerikat) {
 
 export default function PengajuanDana({
   rows, memuat, tabelAda, muat, namaEnt, entitasList, kodeHolding,
-  entPemintaBoleh, bisaAjukan, bolehTanggapi, bolehBatalkan, onSetujui, opsiRekeningPenerima, session, showToast,
+  entPemintaBoleh, bisaAjukan, bolehTanggapi, bolehBatalkan, onSetujui, opsiRekeningPenerima, session, showToast, reloadKeuangan,
 }) {
   const [filter, setFilter] = useState("perlu");
   const [modal, setModal] = useState(null); // {jenis:"ajukan"} | {jenis:"tolak", p}
@@ -111,6 +111,27 @@ export default function PengajuanDana({
       const klaim = await sb(`pengajuan_dana?id=eq.${p.id}&status=eq.menunggu`, { method: "PATCH", body: JSON.stringify({ status: "dibatalkan" }) });
       if (!klaim?.length) throw new Error("Pengajuan ini sudah diproses pihak lain, tidak bisa dibatalkan. Muat ulang.");
     }, "Pengajuan dibatalkan");
+
+  // Hapus pengajuan yang sudah selesai. Kalau sudah disetujui, TRANSFER-nya ikut dihapus (saldo kembali ke semula).
+  // Transfer dicari lewat transaksi_id; untuk data lama tanpa transaksi_id dicari lewat keterangan "Pengajuan dana <kode>".
+  const hapus = (p) =>
+    jalankan(async () => {
+      if (p.status === "disetujui") {
+        let idTrx = p.transaksi_id;
+        if (!idTrx) {
+          const cari = await sb(`keuangan_transaksi?tipe=eq.transfer&keterangan=like.${encodeURIComponent(`Pengajuan dana ${p.kode}*`)}&select=id`);
+          if (cari?.length > 1) throw new Error("Ditemukan lebih dari satu transfer untuk pengajuan ini. Hapus transfernya manual di tab Transfer.");
+          idTrx = cari?.[0]?.id;
+        }
+        if (idTrx) {
+          const ada = await sb(`keuangan_transaksi?id=eq.${encodeURIComponent(idTrx)}&select=id`);
+          if (ada?.length) await sb(`keuangan_transaksi?id=eq.${encodeURIComponent(idTrx)}`, { method: "DELETE" });
+        }
+      }
+      const hasil = await sb(`pengajuan_dana?id=eq.${p.id}&status=neq.menunggu`, { method: "DELETE" });
+      if (!hasil?.length) throw new Error("Pengajuan tidak terhapus: sudah terhapus di perangkat lain atau database menolak. Muat ulang.");
+      await reloadKeuangan?.();
+    }, p.status === "disetujui" ? "Pengajuan dan transfernya dihapus" : "Riwayat pengajuan dihapus");
 
   const tolak = (p, alasan) =>
     jalankan(async () => {
@@ -213,6 +234,23 @@ export default function PengajuanDana({
                     </div>
                   )}
                 </div>
+                {p.status !== "menunggu" && (p.status === "disetujui" ? bolehTanggapi(p) : bolehTanggapi(p) || bolehBatalkan(p)) && (
+                  <div className="flex px-4 py-3 border-t border-slate-800">
+                    <button
+                      disabled={proses}
+                      onClick={() =>
+                        window.confirm(
+                          p.status === "disetujui"
+                            ? `Hapus pengajuan ${p.kode} BESERTA transfer ${fmtRp(p.jumlah_disetujui ?? p.jumlah)} yang sudah tercatat?\n\nSaldo rekening kembali seperti sebelum transfer. Tidak bisa dibatalkan.`
+                            : `Hapus riwayat pengajuan ${p.kode}?`
+                        ) && hapus(p)
+                      }
+                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-40 ml-auto"
+                    >
+                      <Trash2 size={13} /> {p.status === "disetujui" ? "Hapus + transfernya" : "Hapus riwayat"}
+                    </button>
+                  </div>
+                )}
                 {p.status === "menunggu" && (bolehTanggapi(p) || bolehBatalkan(p)) && (
                   <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-slate-800">
                     {bolehTanggapi(p) && (

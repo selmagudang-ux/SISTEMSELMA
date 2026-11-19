@@ -273,7 +273,7 @@ function bolehWalauReadOnly(path, method, opts = {}) {
   if (method === "PATCH" && /^pengajuan_restock(\?|$)/.test(path)) return true;
   // Pemilik menyetujui / menolak Pengajuan Dana (pages/PengajuanDana.jsx): hanya PATCH satu baris berdasarkan id.
   // Hak menanggapi per arah dicek di UI (bolehTransferAntarEntitas), sama seperti transfer Antar Entitas.
-  if (roleSaatIni() === "owner" && method === "PATCH" && /^pengajuan_dana\?id=eq\.[^&]+/.test(path)) return true;
+  if (roleSaatIni() === "owner" && (method === "PATCH" || method === "DELETE") && /^pengajuan_dana\?id=eq\.[^&]+/.test(path)) return true;
   // Pemilik membukukan entitas Holding sendiri (akun kas, transaksi, dst).
   if (roleSaatIni() === "owner" && entitasAktif() && entitasAktif() === kodeHoldingSaatIni() && /^(keuangan_transaksi|master_data)(\?|$)/.test(path)) return true;
   if (roleSaatIni() === "owner" && /^keuangan_transaksi(\?|$)/.test(path)) {
