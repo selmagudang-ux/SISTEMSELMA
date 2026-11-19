@@ -48,6 +48,45 @@ function statusStok(p) {
   return { key: "aman", label: "Aman", color: "emerald" };
 }
 
+// Pilih bukti (foto / PDF, boleh banyak) — dipakai di form Terima Barang & Catat Pembayaran.
+function BuktiUpload({ files, setFiles, disabled, catatan }) {
+  return (
+    <div>
+      <input
+        type="file"
+        accept={BUKTI_ACCEPT}
+        multiple
+        disabled={disabled}
+        onChange={(e) => {
+          const baru = Array.from(e.target.files || []);
+          setFiles((f) => [...f, ...baru]);
+          e.target.value = "";
+        }}
+        className={fileCls}
+      />
+      {files.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {files.map((f, i) => (
+            <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-950/60 px-2.5 py-1.5 text-[11px] text-slate-300">
+              <span className="truncate">{f.name}</span>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))}
+                aria-label="Hapus bukti"
+                className="text-slate-500 hover:text-red-400 flex-shrink-0"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-500 mt-1">{catatan}</div>
+    </div>
+  );
+}
+
 const fmtJumlah = (n) => (Number(n) || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 });
 
 export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload, showToast, session }) {
@@ -410,6 +449,17 @@ function TabBelanja({ belanja, item, stok, buktiMap = {}, setModal }) {
                       <Wallet size={12} /> Catat Pembayaran
                     </button>
                   )}
+                  {(Array.isArray(b.bukti_terima_urls) ? b.bukti_terima_urls : []).filter(Boolean).map((u, i, arr) => (
+                    <a
+                      key={u}
+                      href={u}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500"
+                    >
+                      <Paperclip size={12} /> Bukti terima{arr.length > 1 ? ` ${i + 1}` : ""}
+                    </a>
+                  ))}
                   {(buktiMap[b.keuangan_transaksi_id] || []).map((u, i, arr) => (
                     <a
                       key={u}
@@ -418,7 +468,7 @@ function TabBelanja({ belanja, item, stok, buktiMap = {}, setModal }) {
                       rel="noreferrer"
                       className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500"
                     >
-                      <Paperclip size={12} /> Bukti{arr.length > 1 ? ` ${i + 1}` : ""}
+                      <Paperclip size={12} /> Bukti bayar{arr.length > 1 ? ` ${i + 1}` : ""}
                     </a>
                   ))}
                   {bolehEdit && (
@@ -1051,12 +1101,15 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
 // ---------------------------------------------------------
 function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showToast }) {
   const [tanggal, setTanggal] = useState(todayIso());
+  const [files, setFiles] = useState([]); // bukti terima barang (opsional): foto surat jalan / barang
   const [saving, setSaving] = useState(false);
   const nama = useMemo(() => Object.fromEntries(stok.map((p) => [p.id, p])), [stok]);
 
   const terima = async () => {
     setSaving(true);
     try {
+      // Unggah bukti DULU: kalau gagal, stok belum bertambah.
+      const buktiUrls = files.length ? await unggahBuktiBanyak(files, `${belanja.kode}-terima`) : [];
       await sb("perlengkapan_mutasi", {
         method: "POST",
         body: JSON.stringify(
@@ -1070,7 +1123,7 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
           }))
         ),
       });
-      await sb(`belanja_habis_pakai?id=eq.${belanja.id}`, { method: "PATCH", body: JSON.stringify({ status: "diterima", tanggal_terima: tanggal }) });
+      await sb(`belanja_habis_pakai?id=eq.${belanja.id}`, { method: "PATCH", body: JSON.stringify({ status: "diterima", tanggal_terima: tanggal, ...(buktiUrls.length ? { bukti_terima_urls: buktiUrls } : {}) }) });
       await onSaved("Barang diterima, stok bertambah");
     } catch (e) {
       showToast?.(e.message || "Gagal menyimpan", "err");
@@ -1089,6 +1142,9 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
       </div>
       <Field label="Tanggal diterima">
         <InputTanggal value={tanggal} onChange={setTanggal} />
+      </Field>
+      <Field label="Bukti terima barang (opsional)">
+        <BuktiUpload files={files} setFiles={setFiles} disabled={saving} catatan="Foto barang / surat jalan / nota, atau PDF (maks 10 MB)." />
       </Field>
       <button
         disabled={saving || itemBelanja.length === 0}
@@ -1210,37 +1266,7 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
       <Field label="Bukti pembayaran (opsional)">
-        <input
-          type="file"
-          accept={BUKTI_ACCEPT}
-          multiple
-          disabled={saving}
-          onChange={(e) => {
-            const baru = Array.from(e.target.files || []);
-            setFiles((f) => [...f, ...baru]);
-            e.target.value = "";
-          }}
-          className={fileCls}
-        />
-        {files.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {files.map((f, i) => (
-              <div key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5 text-[11px] text-slate-300">
-                <span className="truncate">{f.name}</span>
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))}
-                  aria-label="Hapus bukti"
-                  className="text-slate-500 hover:text-red-400 flex-shrink-0"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="text-[10px] text-slate-500 mt-1">Foto atau PDF (PDF maks 10 MB). Bukti ikut tersimpan di transaksi Keuangan.</div>
+        <BuktiUpload files={files} setFiles={setFiles} disabled={saving} catatan="Foto atau PDF (PDF maks 10 MB). Bukti ikut tersimpan di transaksi Keuangan." />
       </Field>
       <div className="text-[11px] text-slate-500 mb-3">
         Tercatat sebagai pengeluaran kategori "{labelKategori}" di Keuangan.
