@@ -460,10 +460,29 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   // Buat transfer. Kalau berasal dari PERMINTAAN stok (perm), permintaan "diklaim" dulu supaya
   // tidak bisa dipenuhi dua kali (klik ganda / dua perangkat), lalu ditautkan ke transfer yang jadi.
   // Kalau pembuatan transfer gagal, status permintaan dikembalikan ke "menunggu".
-  const buat = (tujuan, daftar, catatan, perm) =>
+  // Surat jalan (PDF) otomatis terbuka begitu transfer jadi. Tab dibuka SEKARANG (masih di dalam klik
+  // tombol) supaya tidak diblokir popup-blocker; PDF-nya diisi setelah transfer tersimpan.
+  const buat = (tujuan, daftar, catatan, perm) => {
+    const tab = window.open("", "_blank");
+    const bukaSuratJalan = async (t) => {
+      try {
+        const { blob, nama } = await susunPdf("surat", t);
+        tampilkanPdf(tab, blob, nama);
+      } catch (err) {
+        tab?.close();
+        showToast?.(`Transfer ${t.kode} sudah dibuat, tapi surat jalan gagal dibuat otomatis. Klik tombol Surat Jalan di kartu transfer.`, "warn", 7000);
+      }
+    };
+    return buatDanJalankan(tujuan, daftar, catatan, perm, bukaSuratJalan).then((ok) => {
+      if (!ok) tab?.close(); // transfer gagal dibuat -> tutup tab kosong
+      return ok;
+    });
+  };
+  const buatDanJalankan = (tujuan, daftar, catatan, perm, setelahJadi) =>
     jalankan(async () => {
       if (!perm) {
-        await buatInti(tujuan, daftar, catatan);
+        const baru = await buatInti(tujuan, daftar, catatan);
+        if (baru) await setelahJadi(baru);
         return;
       }
       const klaim = await sb(`permintaan_stok?id=eq.${perm.id}&status=eq.menunggu`, {
@@ -499,6 +518,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
       } catch {
         showToast?.(`Transfer ${t.kode} sudah dibuat, tapi tautan ke permintaan ${perm.kode} gagal disimpan. Barang tetap terkirim normal.`, "warn", 7000);
       }
+      if (t) await setelahJadi(t);
     }, perm ? "Permintaan disetujui — barang dikirim, menunggu konfirmasi penerima" : "Transfer dibuat — menunggu konfirmasi penerima");
 
   // ---------- Penerima: terima ----------
@@ -678,6 +698,28 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   };
 
   // ---------- Cetak surat jalan / label paket (PDF, lib/PdfTransfer.js) ----------
+  // Susun PDF surat jalan / label paket untuk satu transfer (dipakai tombol cetak & pembuatan otomatis).
+  const susunPdf = async (jenis, t) => {
+    const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
+    // Logo hanya untuk surat jalan yang dikirim PT Selma (ENTITAS_DEFAULT); PT lain belum punya logo.
+    const logo = jenis === "surat" && t.entitas_asal === ENTITAS_DEFAULT ? (await import("../lib/logoSelma")).LOGO_SELMA : undefined;
+    const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal), logo };
+    const penerima = { nama: namaUsahaEntitas(master, t.entitas_tujuan), alamat: alamatEntitas(master, t.entitas_tujuan), telepon: teleponEntitas(master, t.entitas_tujuan) };
+    return jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima });
+  };
+  // Tampilkan PDF di tab yang sudah dibuka; kalau popup diblokir browser, jatuh ke unduh biasa.
+  const tampilkanPdf = (tab, blob, nama) => {
+    const url = URL.createObjectURL(blob);
+    if (tab) {
+      tab.location.href = url; // langsung terbuka di tab baru (bisa dicetak / disimpan dari sana)
+    } else {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nama;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
   const [cetakId, setCetakId] = useState(null);
   const cetak = async (jenis, t) => {
     if (cetakId) return;
@@ -685,23 +727,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     // Tab dibuka SEKARANG (saat klik) supaya tidak diblokir popup-blocker; PDF diisi setelah jadi.
     const tab = window.open("", "_blank");
     try {
-      const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
-      // Logo hanya untuk surat jalan yang dikirim PT Selma (ENTITAS_DEFAULT); PT lain belum punya logo.
-      const logo = jenis === "surat" && t.entitas_asal === ENTITAS_DEFAULT ? (await import("../lib/logoSelma")).LOGO_SELMA : undefined;
-      const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal), logo };
-      const penerima = { nama: namaUsahaEntitas(master, t.entitas_tujuan), alamat: alamatEntitas(master, t.entitas_tujuan), telepon: teleponEntitas(master, t.entitas_tujuan) };
-      const { blob, nama } = jenis === "surat" ? buatSuratJalan({ t, pengirim, penerima }) : buatLabelPaket({ t, pengirim, penerima });
-      const url = URL.createObjectURL(blob);
-      if (tab) {
-        tab.location.href = url; // langsung terbuka di tab baru (bisa dicetak / disimpan dari sana)
-      } else {
-        // Popup diblokir browser: jatuh ke unduh biasa.
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = nama;
-        a.click();
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      const { blob, nama } = await susunPdf(jenis, t);
+      tampilkanPdf(tab, blob, nama);
     } catch (e) {
       tab?.close();
       showToast?.(e?.message || "Gagal membuat PDF", "err");
