@@ -706,7 +706,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         method: "PATCH",
         body: JSON.stringify({
           status: "disetujui",
-          transaksi_id: trx?.id ?? null,
+          transaksi_id: trx?.id != null ? String(trx.id) : null,
           jumlah_disetujui: Number(trx?.jumlah) || null,
           diproses_oleh_nama: session?.nama || session?.username || null,
           diproses_at: new Date().toISOString(),
