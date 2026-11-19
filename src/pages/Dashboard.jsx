@@ -4,7 +4,7 @@ import {
   ShoppingCart, Wallet, TrendingUp, TrendingDown, Package, Warehouse, Store,
   Landmark, ArrowRight, Clock, UserCheck, CalendarRange, BarChart3, Trash2,
   Truck, ShoppingBag, DollarSign, LayoutGrid, Search, Megaphone, Banknote, Users,
-  ChevronDown, Scale, AlertTriangle, ArrowLeft,
+  ChevronDown, Scale, AlertTriangle,
 } from "lucide-react";
 import { STAGE_ORDER, STAGE_META, COLOR, TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
 import {
@@ -53,7 +53,7 @@ import { isEntriTokoOffline } from "./TokoOffline";
 import { useRekapKasir, useTanggalMulaiKasir, hariIniWib, tambahHari, barangTerlaris } from "./kasir/kasirLaporan";
 import { getSession } from "../lib/auth";
 import { RingkasanGrup } from "./Holding";
-import KartuOperasionalEntitas, { urutEntitasPusat } from "./DashboardEntitas";
+import KartuOperasionalEntitas, { urutEntitasPusat, KODE_GABUNGAN } from "./DashboardEntitas";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { PLATFORM_LABEL, PLATFORM_COLOR } from "./Penjualanmarketplace";
 import PanelBarangHabisPakai from "../components/PanelBarangHabisPakai";
@@ -258,15 +258,23 @@ export default function Dashboard({
   const masterOps = lingkupOps.master;
 
   const pusatBisaPilih = bolehPilihPT && daftarSemuaEntitas.length > 1;
-  const tombolSemuaPT = pusatBisaPilih ? (
-    <button
-      type="button"
-      onClick={() => aturKartu(tab, true)}
-      className="mb-3 text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
-    >
-      <ArrowLeft size={13} /> Semua perusahaan
-    </button>
-  ) : null;
+  // Kartu entitas (akun pusat). Operasional/Penjualan/Absensi: isi baru tampil setelah satu kartu dipilih
+  // (klik kartu yang sedang dibuka = tutup isinya). Keuangan: selalu ada isi — "Gabungan" atau satu PT.
+  const kartuTerpilih =
+    tab === "keuangan" ? (gabungan ? KODE_GABUNGAN : ptLihat || entitas) : gabungan || kartuTerbuka[tab] ? null : ptLihat || entitas;
+  const adaIsi = !pusatBisaPilih || tab === "keuangan" || (!gabungan && !kartuTerbuka[tab]);
+  const bukaKartu = (kode) => {
+    if (tab === "keuangan") {
+      if (kode !== kartuTerpilih) onGantiPT(kode);
+      return;
+    }
+    if (kode === kartuTerpilih) {
+      aturKartu(tab, true);
+      return;
+    }
+    aturKartu(tab, false);
+    onGantiPT(kode);
+  };
 
   return (
     <div>
@@ -343,52 +351,12 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
-      {tab === "gudang" && pusatBisaPilih ? (
-        // Akun pusat: kartu entitas SELALU tampil (yang sedang dibuka diberi tanda), isi dashboard
-        // operasional entitas itu muncul di bawahnya. Klik kartu yang sedang dibuka = tutup isinya.
-        <>
-          <KartuOperasionalEntitas
-            jenis="gudang"
-            master={master}
-            terpilih={gabungan || kartuTerbuka.gudang ? null : ptLihat || entitas}
-            onBuka={(kode) => {
-              const sedangDibuka = !gabungan && !kartuTerbuka.gudang && kode === (ptLihat || entitas);
-              if (sedangDibuka) {
-                aturKartu("gudang", true);
-                return;
-              }
-              aturKartu("gudang", false);
-              onGantiPT(kode);
-            }}
-          />
-          {!gabungan && !kartuTerbuka.gudang && (
-            <DashboardGudang
-              onNavigate={onNavigate}
-              setModal={setModal}
-              pengajuanRestock={pengajuanRestock}
-              items={items}
-              pesananMasuk={pesananMasuk}
-              skuMaster={skuMaster}
-              master={master}
-              periodeDari={periodeDari}
-              periodeSampai={periodeSampai}
-              periodeLabel={periodeLabel}
-            />
-          )}
-        </>
-      ) : tab !== "keuangan" && (gabungan || (pusatBisaPilih && kartuTerbuka[tab])) ? (
-        // Akun pusat: kartu per perusahaan dulu; klik satu kartu -> isi dashboard PT itu.
-        <KartuOperasionalEntitas
-          jenis={tab}
-          master={master}
-          onBuka={(kode) => {
-            aturKartu(tab, false);
-            onGantiPT(kode);
-          }}
-        />
-      ) : tab === "gudang" ? (
-        <>
-          {tombolSemuaPT}
+      {pusatBisaPilih && (
+        <KartuOperasionalEntitas master={master} denganGabungan={tab === "keuangan"} terpilih={kartuTerpilih} onBuka={bukaKartu} />
+      )}
+
+      {adaIsi &&
+        (tab === "gudang" ? (
           <DashboardGudang
             onNavigate={onNavigate}
             setModal={setModal}
@@ -401,56 +369,49 @@ export default function Dashboard({
             periodeSampai={periodeSampai}
             periodeLabel={periodeLabel}
           />
-        </>
-      ) : tab === "penjualan" ? (
-        <>
-        {tombolSemuaPT}
-        <DashboardPenjualan
-          namaStore={namaStore}
-          pesananGrosir={pesananGrosir}
-          pembayaranGrosir={pembayaranGrosir}
-          depositGrosir={depositGrosir}
-          pelangganGrosir={pelangganGrosir}
-          keuanganTransaksi={keuanganTransaksi}
-          marketplaceTransaksi={marketplaceTransaksi}
-          master={masterOps}
-          onNavigate={onNavigate}
-          setModal={setModal}
-          tahun={tahun}
-          periodeDari={periodeDari}
-          periodeSampai={periodeSampai}
-          periodeLabel={periodeLabel}
-        />
-        </>
-      ) : tab === "keuangan" && gabungan ? (
-        // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
-        // + laba rugi 6 bulan). Data semua entitas (belum dibatasi), tombol kartu membuka dashboard PT itu.
-        <RingkasanGrup keuanganTransaksi={keuanganDimuat} master={master} onBuka={onGantiPT} tanpaHeader labelBuka="Lihat dashboard" />
-      ) : tab === "keuangan" ? (
-        <DashboardKeuangan
-          keuanganTransaksi={keuanganTransaksi}
-          keuanganDimuat={keuanganDimuatOps}
-          pesananMasuk={pesananMasuk}
-          marketplaceTransaksi={bukanOps ? [] : marketplaceTransaksi}
-          master={masterOps}
-          onNavigate={onNavigate}
-          periodeDari={periodeDari}
-          periodeSampai={periodeSampai}
-          periodeLabel={periodeLabel}
-        />
-      ) : (
-        <>
-        {tombolSemuaPT}
-        <DashboardAbsensi
-          absensiRows={absensiRows}
-          karyawanList={karyawanList}
-          onNavigate={onNavigate}
-          bulan={bulan}
-          tahun={tahun}
-          periodeLabel={periodeLabel}
-        />
-        </>
-      )}
+        ) : tab === "penjualan" ? (
+          <DashboardPenjualan
+            namaStore={namaStore}
+            pesananGrosir={pesananGrosir}
+            pembayaranGrosir={pembayaranGrosir}
+            depositGrosir={depositGrosir}
+            pelangganGrosir={pelangganGrosir}
+            keuanganTransaksi={keuanganTransaksi}
+            marketplaceTransaksi={marketplaceTransaksi}
+            master={masterOps}
+            onNavigate={onNavigate}
+            setModal={setModal}
+            tahun={tahun}
+            periodeDari={periodeDari}
+            periodeSampai={periodeSampai}
+            periodeLabel={periodeLabel}
+          />
+        ) : tab === "keuangan" && gabungan ? (
+          // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
+          // + laba rugi 6 bulan). Data semua entitas (belum dibatasi), tombol kartu membuka dashboard PT itu.
+          <RingkasanGrup keuanganTransaksi={keuanganDimuat} master={master} onBuka={onGantiPT} tanpaHeader labelBuka="Lihat dashboard" />
+        ) : tab === "keuangan" ? (
+          <DashboardKeuangan
+            keuanganTransaksi={keuanganTransaksi}
+            keuanganDimuat={keuanganDimuatOps}
+            pesananMasuk={pesananMasuk}
+            marketplaceTransaksi={bukanOps ? [] : marketplaceTransaksi}
+            master={masterOps}
+            onNavigate={onNavigate}
+            periodeDari={periodeDari}
+            periodeSampai={periodeSampai}
+            periodeLabel={periodeLabel}
+          />
+        ) : (
+          <DashboardAbsensi
+            absensiRows={absensiRows}
+            karyawanList={karyawanList}
+            onNavigate={onNavigate}
+            bulan={bulan}
+            tahun={tahun}
+            periodeLabel={periodeLabel}
+          />
+        ))}
     </div>
   );
 }
