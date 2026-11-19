@@ -121,6 +121,8 @@ export const TABEL_PER_PT = new Set([
   "stock_history_latest", "rak_events_latest_sku", "rak_events_latest_rak_dari",
   // View stok barang habis pakai (perlengkapan + mutasi) — wajib punya kolom entitas.
   "perlengkapan_stok",
+  // Nilai persediaan habis pakai (stok x harga beli rata-rata) — view ber-kolom entitas, untuk Neraca.
+  "perlengkapan_nilai",
   // Kelengkapan (barang pendamping yang ikut dijual) — lihat kelengkapan_tahap1.sql.
   "kelengkapan", "kelengkapan_mutasi", "kelengkapan_stok", "kelengkapan_harga_riwayat",
   // Penjualan (menu PENJUALAN: Store/Grosir, Toko Offline, Marketplace, Reseller, Master Data

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
 import { usePersediaanBarang } from "./kasir/persediaanToko";
+import { usePersediaanHabisPakai } from "../lib/persediaanHabisPakai";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -1754,6 +1755,7 @@ const NERACA_STRUKTUR = {
         { kunci: "piutang_pemilik", label: "Piutang Pemilik" },
         { kunci: "piutang_antar_entitas", label: "Piutang Antar Entitas" },
         { kunci: "persediaan", label: "Persediaan Barang" },
+        { kunci: "persediaan_hp", label: "Persediaan Barang Habis Pakai" },
         { kunci: "uang_muka", label: "Uang Muka" },
       ],
     },
@@ -1879,6 +1881,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
 
   // Persediaan Barang di Neraca = stok Barang Toko x HPP + stok Master Barang (gudang) x HPP; dimuat hanya saat tab Neraca dibuka.
   const persediaanToko = usePersediaanBarang(tabLaporan === "neraca");
+  // Persediaan Barang Habis Pakai (stok x harga beli rata-rata) + Uang Muka (belanja dibayar, barang belum diterima).
+  const persediaanHP = usePersediaanHabisPakai(tabLaporan === "neraca");
   const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
   const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
@@ -2090,8 +2094,27 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             bank: saldoKas.bank,
             // Stok Barang Toko x HPP + stok Master Barang (gudang) x HPP.
             persediaan: persediaanToko.data ? persediaanToko.data.nilai : undefined,
+            // Stok barang habis pakai x harga beli rata-rata (Pengadaan Barang > Barang Habis Pakai).
+            persediaan_hp: persediaanHP.data ? persediaanHP.data.nilai : undefined,
+            // Belanja habis pakai yang sudah dibayar tapi barangnya belum diterima.
+            uang_muka: persediaanHP.data ? persediaanHP.data.uangMuka : undefined,
           }}
         />
+      )}
+      {tabLaporan === "neraca" && persediaanHP.error && (
+        <div className="mt-3 text-[11px] text-amber-400">Persediaan barang habis pakai gagal dimuat: {persediaanHP.error}</div>
+      )}
+      {tabLaporan === "neraca" && persediaanHP.data && (
+        <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-xs text-slate-400 space-y-1">
+          <div className="text-slate-300 font-medium">Rincian Barang Habis Pakai (stok × harga beli)</div>
+          <div className="flex justify-between gap-3"><span>Persediaan: {persediaanHP.data.jenis} jenis barang ber-stok</span><span className="text-slate-200">{fmtRp(persediaanHP.data.nilai)}</span></div>
+          <div className="flex justify-between gap-3"><span>Uang muka: {persediaanHP.data.belanjaBelumDiterima} belanja sudah dibayar, barang belum diterima</span><span className="text-slate-200">{fmtRp(persediaanHP.data.uangMuka)}</span></div>
+          {persediaanHP.data.tanpaHarga > 0 && (
+            <div className="text-amber-400">
+              Barang ber-stok tanpa harga beli dihitung Rp 0: {persediaanHP.data.tanpaHarga} jenis. Isi harga belinya lewat Belanja atau Stok Awal supaya persediaan akurat.
+            </div>
+          )}
+        </div>
       )}
       {tabLaporan === "neraca" && persediaanToko.error && (
         <div className="mt-3 text-[11px] text-amber-400">Persediaan gagal dimuat: {persediaanToko.error}</div>
