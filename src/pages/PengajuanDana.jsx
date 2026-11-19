@@ -54,7 +54,7 @@ export function usePengajuanDana(kodeTerikat) {
     muat();
   }, [muat]);
 
-  return { rows, memuat, tabelAda, muat };
+  return { rows, setRows, memuat, tabelAda, muat };
 }
 
 export default function PengajuanDana({

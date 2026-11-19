@@ -713,10 +713,12 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
         }),
       });
       if (!klaim?.length) throw new Error("status pengajuan tidak berubah");
+      // Langsung hilang dari daftar "perlu tindakan" tanpa menunggu muat ulang.
+      dana.setRows((l) => l.map((x) => (x.id === p.id ? { ...x, ...klaim[0] } : x)));
     } catch (e) {
       showToast?.(`Transfer SUDAH tercatat, tetapi status pengajuan ${p.kode} gagal diperbarui (${e.message}). Jangan transfer ulang — beri tahu admin.`, "err");
     }
-    await dana.muat();
+    dana.muat(); // sinkron ulang di belakang, tidak ditunggu
   };
 
   const [dari, setDari] = useState(awalBulanIni());
@@ -1023,9 +1025,8 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
           onClose={() => setPengajuanAwal(null)}
           showToast={showToast}
           onSaved={async () => {
-            await reload?.();
-            setPengajuanAwal(null);
-            setTab("transfer");
+            setPengajuanAwal(null); // tutup form dulu; reload data keuangan berjalan di belakang
+            reload?.();
           }}
         />
       )}
