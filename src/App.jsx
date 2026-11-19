@@ -1241,9 +1241,13 @@ function MainApp({ session, onLogout }) {
     belumSelesaiBreakdown,
   } = derived;
 
+  // Akun pusat yang sedang MELIHAT PT lain di Dashboard: angka/notifikasi gudang (badge menu, lonceng,
+  // toast "belum selesai") milik PT itu, bukan tugas akun ini, jadi tidak ditampilkan.
+  const lihatPTLain = !!ptLihat && ptLihat !== "GABUNGAN";
+
   // Notif sekali saat data pertama kali selesai dimuat (bukan tiap reload manual).
   useEffect(() => {
-    if (!loading && !hasNotifiedRef.current && items.length > 0) {
+    if (!loading && !lihatPTLain && !hasNotifiedRef.current && items.length > 0) {
       hasNotifiedRef.current = true;
       if (belumSelesaiCount > 0) {
         const rincian = belumSelesaiBreakdown
@@ -1252,12 +1256,12 @@ function MainApp({ session, onLogout }) {
         showToast(`${belumSelesaiCount} barang belum selesai: ${rincian}`, "warn", 6000);
       }
     }
-  }, [loading, items, belumSelesaiCount]);
+  }, [loading, items, belumSelesaiCount, lihatPTLain]);
 
   // Notif terpisah khusus SKU tanpa rak — digeser sedikit biar tidak tabrakan
   // dengan toast "belum selesai" di atas (toast cuma bisa tampil satu per waktu).
   useEffect(() => {
-    if (!loading && !hasNotifiedRakRef.current && items.length > 0) {
+    if (!loading && !lihatPTLain && !hasNotifiedRakRef.current && items.length > 0) {
       hasNotifiedRakRef.current = true;
       if (tanpaRakCount > 0) {
         const delay = belumSelesaiCount > 0 ? 6300 : 0;
@@ -1266,7 +1270,7 @@ function MainApp({ session, onLogout }) {
         }, delay);
       }
     }
-  }, [loading, items, tanpaRakCount, belumSelesaiCount]);
+  }, [loading, items, tanpaRakCount, belumSelesaiCount, lihatPTLain]);
 
   const { menuLabel, subLabel } = findNavLabel(nav.menu, nav.sub);
   const canSee = (menuKey) => allowed.includes(menuKey);
@@ -1281,7 +1285,7 @@ function MainApp({ session, onLogout }) {
       <AppShell
         active={nav}
         onNavigate={navigate}
-        badges={{ ...sidebarBadges, chat: chatBelumDibacaCount }}
+        badges={lihatPTLain ? { chat: chatBelumDibacaCount } : { ...sidebarBadges, chat: chatBelumDibacaCount }}
         allowedMenuKeys={allowed}
         user={session}
         onLogout={onLogout}
@@ -1294,8 +1298,8 @@ function MainApp({ session, onLogout }) {
         menuLabel={menuLabel}
         subLabel={subLabel}
         canSee={canSee}
-        belumSelesaiCount={belumSelesaiCount}
-        tanpaRakCount={tanpaRakCount}
+        belumSelesaiCount={lihatPTLain ? 0 : belumSelesaiCount}
+        tanpaRakCount={lihatPTLain ? 0 : tanpaRakCount}
         navigate={navigate}
         loadAll={loadAll}
         loading={loading}
