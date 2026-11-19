@@ -118,13 +118,15 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
         sbAll("belanja_habis_pakai_item?select=*"),
         sb("perlengkapan_mutasi?select=*&order=tanggal.desc,id.desc&limit=100"),
         // Nilai persediaan dimuat terpisah: kalau view belum ada, stok tetap tampil (tanpa nilai).
-        sbAll("perlengkapan_nilai?select=perlengkapan_id,hpp_rata,nilai&order=perlengkapan_id").catch(() => []),
+        sbAll("perlengkapan_nilai?select=perlengkapan_id,hpp_rata,nilai,hpp_auto,hpp_manual&order=perlengkapan_id").catch(() => []),
       ]);
       const petaNilai = Object.fromEntries((n || []).map((r) => [String(r.perlengkapan_id), r]));
       setStok(
         (s || []).map((p) => ({
           ...p,
-          hpp_rata: Number(petaNilai[String(p.id)]?.hpp_rata) || 0,
+          hpp_rata: Number(petaNilai[String(p.id)]?.hpp_rata) || 0, // harga yang dipakai (manual kalau diisi, kalau tidak rata-rata pembelian)
+          hpp_auto: Number(petaNilai[String(p.id)]?.hpp_auto) || 0, // rata-rata tertimbang pembelian
+          hpp_manual: Number(petaNilai[String(p.id)]?.hpp_manual) || 0, // harga yang diisi manual di Edit Barang (0 = tidak ada)
           nilai: Math.max(0, Number(petaNilai[String(p.id)]?.nilai) || 0),
         }))
       );
@@ -347,7 +349,7 @@ function TabStok({ stok, setModal }) {
                   </div>
                   <div className="text-[11px] text-slate-500 mt-0.5">
                     {p.kode} · minimum {fmtJumlah(p.stok_minimum)} {p.satuan}
-                    {Number(p.hpp_rata) > 0 ? ` · harga beli rata-rata ${fmtRp(p.hpp_rata)}/${p.satuan} · nilai ${fmtRp(p.nilai)}` : " · harga beli belum ada"}
+                    {Number(p.hpp_rata) > 0 ? ` · harga beli ${p.hpp_manual > 0 ? "(manual) " : "rata-rata "}${fmtRp(p.hpp_rata)}/${p.satuan} · nilai ${fmtRp(p.nilai)}` : " · harga beli belum ada"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -712,7 +714,9 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
   const [satuan, setSatuan] = useState(barang?.satuan || "pcs");
   const [minimum, setMinimum] = useState(barang?.stok_minimum ?? "");
   const [stokAwal, setStokAwal] = useState("");
-  const [hargaAwal, setHargaAwal] = useState(""); // harga per satuan stok awal -> HPP persediaan
+  // Harga beli per satuan yang diisi manual (kolom perlengkapan.hpp_manual). Diisi = menggantikan rata-rata
+  // pembelian untuk pemakaian, transfer, dan nilai persediaan berikutnya. Kosong = otomatis dari pembelian.
+  const [harga, setHarga] = useState(Number(barang?.hpp_manual) > 0 ? Number(barang.hpp_manual) : "");
   const [saving, setSaving] = useState(false);
 
   const simpan = async () => {
@@ -724,7 +728,7 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
     }
     setSaving(true);
     try {
-      const data = { nama: namaTrim, satuan: satuan.trim() || "pcs", stok_minimum: Number(minimum) || 0 };
+      const data = { nama: namaTrim, satuan: satuan.trim() || "pcs", stok_minimum: Number(minimum) || 0, hpp_manual: Number(harga) > 0 ? Number(harga) : null };
       if (barang) {
         await sb(`perlengkapan?id=eq.${barang.id}`, { method: "PATCH", body: JSON.stringify(data) });
         await onSaved("Barang diperbarui");
@@ -734,7 +738,7 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
         if (Number(stokAwal) > 0 && baru?.id) {
           await sb("perlengkapan_mutasi", {
             method: "POST",
-            body: JSON.stringify({ perlengkapan_id: baru.id, tipe: "koreksi", jumlah: Number(stokAwal), tanggal: todayIso(), keterangan: "Stok awal", hpp: Number(hargaAwal) || null }),
+            body: JSON.stringify({ perlengkapan_id: baru.id, tipe: "koreksi", jumlah: Number(stokAwal), tanggal: todayIso(), keterangan: "Stok awal", hpp: Number(harga) || null }),
           });
         }
         await onSaved("Barang ditambahkan");
@@ -775,6 +779,13 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
           />
         </Field>
       </div>
+      <Field label={`Harga Beli per ${satuan.trim() || "satuan"} (isi manual, opsional)`}>
+        <InputRupiah value={harga} onChange={setHarga} />
+        <div className="text-[10px] text-slate-500 mt-1">
+          Dipakai untuk nilai persediaan dan beban saat barang dipakai atau ditransfer. Kosong = otomatis dari rata-rata harga pembelian
+          {barang && Number(barang.hpp_auto) > 0 ? ` (sekarang ${fmtRp(barang.hpp_auto)})` : ""}. Tidak mengubah pemakaian yang sudah tercatat.
+        </div>
+      </Field>
       {!barang && (
         <Field label="Stok Awal (opsional)">
           <input
@@ -786,14 +797,7 @@ function FormBarang({ barang, stok, onClose, onSaved, showToast }) {
           />
         </Field>
       )}
-      {!barang && Number(stokAwal) > 0 && (
-        <Field label={`Harga per ${satuan.trim() || "satuan"} stok awal (harga beli)`}>
-          <InputRupiah value={hargaAwal} onChange={setHargaAwal} />
-          <div className="text-[10px] text-slate-500 mt-1">
-            Dipakai menghitung nilai persediaan dan beban saat barang dipakai. Kosong = nilai dihitung dari harga beli pembelian berikutnya.
-          </div>
-        </Field>
-      )}
+
       <button
         disabled={!nama.trim() || saving}
         onClick={simpan}
