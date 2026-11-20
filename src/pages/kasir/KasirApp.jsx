@@ -27,6 +27,7 @@ import {
   kirimAntrian,
 } from "./kasirOffline";
 import { ChipKoneksi, BannerOffline, PanelAntrian } from "./StatusOffline";
+import { useJudulTab } from "../../lib/judulTab";
 
 // =========================================================
 // KASIR (POS) — pintu masuk aplikasi kasir di alamat /kasir.
@@ -49,6 +50,7 @@ import { ChipKoneksi, BannerOffline, PanelAntrian } from "./StatusOffline";
 
 export default function KasirApp() {
   const [session, setSession] = useState(() => getSession());
+  useJudulTab(session, "Kasir"); // judul tab = nama akun yang login
   const [riwayatBuka, setRiwayatBuka] = useState(false);
   const [barangBuka, setBarangBuka] = useState(false);
   const [promoBuka, setPromoBuka] = useState(false);

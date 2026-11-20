@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, startTransition } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { useJudulTab } from "./lib/judulTab";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
 import { STAGE_ORDER, STAGE_META, findNavLabel, bisa, bolehTransferAntarEntitas, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
@@ -396,6 +397,7 @@ function AppShell({
 }
 
 function MainApp({ session, onLogout }) {
+  useJudulTab(session); // judul tab = nama akun yang login
   // Menu awal (sebelum master dimuat); daftar final `allowed` (sudah dipotong fitur yang
   // dimatikan untuk perusahaan ini) dihitung setelah state master di bawah.
   const allowedAwal = allowedMenus(session.role, session.entitas);
