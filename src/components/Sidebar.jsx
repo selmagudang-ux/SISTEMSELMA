@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound } from "lucide-react";
+import { ChevronDown, Warehouse, X, Menu, LogOut, KeyRound, Download } from "lucide-react";
 import { NAV, roleLabel, navAncestorKeys, filterNavByAllowed } from "../lib/constants";
 import { rippleEffect, iconBtnClass } from "./ui";
 import ThemeToggle from "./ThemeToggle";
+import { URL_UNDUH_APP_ANDROID, perluTawarkanAppAndroid } from "../lib/unduhAndroid";
 
 // Tombol untuk node "menu" (punya key yang dipakai sebagai nav.menu) — dipakai
 // baik untuk item top-level (Dashboard, Laporan, Pengaturan) MAUPUN untuk menu
@@ -242,6 +243,15 @@ export default function Sidebar({
           <span className="text-[11px] text-md-on-surface-variant">Tampilan</span>
           <ThemeToggle />
         </div>
+
+        {perluTawarkanAppAndroid() && (
+          <a
+            href={URL_UNDUH_APP_ANDROID}
+            className="mx-3 mb-2 px-3 h-9 flex items-center gap-2 rounded-full text-[13px] text-md-primary hover:bg-md-on-surface/[0.08]"
+          >
+            <Download size={15} /> Unduh Aplikasi Android
+          </a>
+        )}
 
         {user && (
           <div className="mx-3 mb-3 mt-1 pt-3 border-t border-md-outline-variant flex items-center gap-2.5">

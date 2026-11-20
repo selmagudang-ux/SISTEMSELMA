@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Warehouse, Loader2, AlertCircle } from "lucide-react";
+import { Warehouse, Loader2, AlertCircle, Download } from "lucide-react";
 import { unifiedLogin } from "../lib/unifiedLogin";
 import ThemeToggle from "../components/ThemeToggle";
+import { URL_UNDUH_APP_ANDROID, perluTawarkanAppAndroid } from "../lib/unduhAndroid";
 
 // Satu halaman login untuk semua orang — admin/role SELMA maupun karyawan
 // absen. Sistem otomatis mendeteksi jenis akunnya dari username/ID yang
@@ -119,6 +120,14 @@ export default function Login({ onLogin, tampilIngat = false }) {
           </button>
         </form>
 
+        {perluTawarkanAppAndroid() && (
+          <a
+            href={URL_UNDUH_APP_ANDROID}
+            className="mt-4 flex items-center justify-center gap-1.5 text-xs font-medium text-amber-300 hover:text-amber-200 underline underline-offset-2"
+          >
+            <Download size={13} /> Unduh Aplikasi Android
+          </a>
+        )}
         <div className="text-center text-[11px] text-slate-600 mt-4">SISTEM ERP SELMA</div>
       </div>
     </div>

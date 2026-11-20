@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid } from "lucide-react";
+import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid, BellRing, X } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { logout, pulihkanSesiIngat } from "../../lib/auth";
@@ -9,6 +9,7 @@ import { NAV, allowedMenus, filterNavByAllowed, fiturMatiEntitas, setAksesRole }
 import { sb } from "../../lib/api";
 import { cariLayar, kunciLayar, punyaLayar, rapikanLabel } from "./mobileMenu";
 import Beranda from "./Beranda";
+import useNotifHp from "./useNotifHp";
 
 // =========================================================
 // SISTEMSELMA VERSI HP — pintu masuk di alamat /m.
@@ -50,6 +51,29 @@ function telusuri(akar, path) {
   return jejak;
 }
 
+// Urutan key dari akar menu ke satu menu (dan sub-menunya) — untuk membuka layar dari notifikasi.
+function jalurKe(akar, menuKey, subKey) {
+  const cari = (daftar, jejak) => {
+    for (const n of daftar) {
+      const j = [...jejak, n.key];
+      if (n.key === menuKey) return subKey && (n.children || []).some((c) => c.key === subKey) ? [...j, subKey] : j;
+      const h = cari(n.children || [], j);
+      if (h) return h;
+    }
+    return null;
+  };
+  return cari(akar, []);
+}
+
+function BadgeAngka({ n, className = "" }) {
+  if (!(n > 0)) return null;
+  return (
+    <span className={`text-[10px] font-bold bg-md-error text-md-on-error rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none ${className}`}>
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
 function LayarSegeraHadir({ label }) {
   return (
     <div className="h-full flex items-center justify-center p-8 text-center">
@@ -68,7 +92,7 @@ function LayarSegeraHadir({ label }) {
 }
 
 // Daftar isi satu group / menu (anak-anaknya). Yang belum punya layar HP tampil redup.
-function DaftarMenu({ jejak, path, buka }) {
+function DaftarMenu({ jejak, path, buka, badges = {} }) {
   const node = jejak[jejak.length - 1];
   const induk = node;
   const anak = node.children || [];
@@ -80,6 +104,7 @@ function DaftarMenu({ jejak, path, buka }) {
         const Ikon = c.icon;
         const punyaIsi = !!(c.group || c.children?.length);
         const siap = punyaLayar(c, induk);
+        const jmlBadge = badges[node.group ? c.key : `${node.key}.${c.key}`] || badges[c.key] || 0;
         return (
           <button
             key={c.key}
@@ -91,6 +116,7 @@ function DaftarMenu({ jejak, path, buka }) {
               <span className="block text-sm font-semibold text-md-on-surface leading-tight">{rapikanLabel(c.label)}</span>
               {!siap && <span className="block text-[10px] text-md-on-surface-variant mt-0.5">Segera hadir</span>}
             </span>
+            <BadgeAngka n={jmlBadge} />
             {punyaIsi && <ChevronRight size={16} className="text-md-on-surface-variant flex-shrink-0" />}
           </button>
         );
@@ -130,13 +156,21 @@ export default function MobileApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idSesi, session?.role]);
 
-  // Menu tingkat atas yang boleh dibuka — aturan yang sama dengan sidebar versi web.
-  const tree = useMemo(() => {
+  // Key menu yang boleh dibuka akun ini — aturan yang sama dengan sidebar versi web.
+  const bolehMenu = useMemo(() => {
     if (!session || !aksesSiap) return [];
     const fiturMati = fiturMatiEntitas({ entitas_fitur: fitur }, session.entitas);
-    const boleh = allowedMenus(session.role, session.entitas, fiturMati);
-    return filterNavByAllowed(NAV, boleh, session.role);
+    return allowedMenus(session.role, session.entitas, fiturMati);
   }, [session, aksesSiap, fitur]);
+
+  // Menu tingkat atas yang boleh dibuka.
+  const tree = useMemo(() => {
+    if (!session || !aksesSiap) return [];
+    return filterNavByAllowed(NAV, bolehMenu, session.role);
+  }, [session, aksesSiap, bolehMenu]);
+
+  // Notifikasi dalam aplikasi: pengajuan dana & permintaan stok yang menunggu persetujuan (lihat useNotifHp.js).
+  const { badges, perlu, banner, tutupBanner } = useNotifHp(aksesSiap ? session : null, bolehMenu);
 
   // Bar bawah: grup dulu (Operasional, Penjualan, Keuangan), kalau kurang diisi menu tingkat atas lain; sisanya di "Lainnya".
   const { pin, lainnya, akar } = useMemo(() => {
@@ -159,6 +193,12 @@ export default function MobileApp() {
       if (window.location.hash) window.history.pushState(null, "", window.location.pathname);
       setPath([]);
     } else window.location.hash = "/" + arr.map(encodeURIComponent).join("/");
+  };
+
+  const bukaNotif = (n) => {
+    const jalur = jalurKe(akar, n.menuKey, n.subKey);
+    tutupBanner();
+    if (jalur) buka(jalur);
   };
 
   const jejak = useMemo(() => (path.length ? telusuri(akar, path) : null), [akar, path]);
@@ -231,10 +271,11 @@ export default function MobileApp() {
   const Komponen = layarMuat?.kunci === kunci ? layarMuat.Komponen : null;
   const judul = terakhir ? rapikanLabel(terakhir.label) : "SELMA ERP";
   const dihalamanBeranda = !jejak;
-  const NavItem = ({ aktif, onClick, Ikon, label }) => (
+  const NavItem = ({ aktif, onClick, Ikon, label, badge = 0 }) => (
     <button onClick={onClick} className="flex-1 flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium min-w-0">
-      <span className={`px-4 py-1 rounded-full transition ${aktif ? "bg-md-primary-container text-md-on-primary-container" : "text-md-on-surface-variant"}`}>
+      <span className={`relative px-4 py-1 rounded-full transition ${aktif ? "bg-md-primary-container text-md-on-primary-container" : "text-md-on-surface-variant"}`}>
         <Ikon size={20} />
+        <BadgeAngka n={badge} className="absolute -top-0.5 right-1.5 !min-w-[16px] !h-[16px]" />
       </span>
       <span className={`truncate max-w-full px-1 ${aktif ? "text-md-on-surface" : "text-md-on-surface-variant"}`}>{label}</span>
     </button>
@@ -268,11 +309,27 @@ export default function MobileApp() {
         </div>
       </header>
 
+      {banner.length > 0 && (
+        <div className="px-3 pt-2 space-y-1.5">
+          {banner.map((n) => (
+            <div key={n.kunci} className="flex items-center gap-2 rounded-xl bg-md-primary text-md-on-primary pl-3 pr-1 py-2 shadow-md">
+              <BellRing size={16} className="flex-shrink-0" />
+              <button onClick={() => bukaNotif(n)} className="flex-1 min-w-0 text-left text-xs font-medium leading-tight">
+                {n.teks} — ketuk untuk membuka
+              </button>
+              <button onClick={tutupBanner} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/15 flex-shrink-0" title="Tutup">
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <main className="hp-main flex-1 overflow-y-auto">
         {dihalamanBeranda ? (
-          <Beranda session={session} tree={tree} buka={buka} />
+          <Beranda session={session} tree={tree} buka={buka} badges={badges} perlu={perlu} bukaNotif={bukaNotif} />
         ) : adaDaftar ? (
-          <DaftarMenu jejak={jejak} path={path} buka={buka} />
+          <DaftarMenu jejak={jejak} path={path} buka={buka} badges={badges} />
         ) : !entri ? (
           <LayarSegeraHadir label={judul} />
         ) : Komponen ? (
@@ -291,7 +348,7 @@ export default function MobileApp() {
       <nav className="flex items-stretch border-t border-md-outline-variant bg-md-container-low" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
         <NavItem aktif={dihalamanBeranda} onClick={() => buka([])} Ikon={Home} label="Beranda" />
         {pin.map((n) => (
-          <NavItem key={n.key} aktif={path[0] === n.key} onClick={() => buka([n.key])} Ikon={n.icon || LayoutGrid} label={rapikanLabel(n.label)} />
+          <NavItem key={n.key} aktif={path[0] === n.key} onClick={() => buka([n.key])} Ikon={n.icon || LayoutGrid} label={rapikanLabel(n.label)} badge={badges[n.key] || 0} />
         ))}
         {lainnya && (
           <NavItem
@@ -299,6 +356,7 @@ export default function MobileApp() {
             onClick={() => buka(["lainnya"])}
             Ikon={MoreHorizontal}
             label="Lainnya"
+            badge={lainnya.children.reduce((a, c) => a + (badges[c.key] || 0), 0)}
           />
         )}
       </nav>
