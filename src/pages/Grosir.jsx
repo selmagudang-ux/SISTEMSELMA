@@ -4,7 +4,7 @@ import {
   TrendingUp, Wallet, Download, CalendarRange, BarChart3, Receipt,
   FileClock, Landmark, AlertTriangle, ChevronDown,
 } from "lucide-react";
-import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal, InputRupiah } from "../components/ui";
+import { PageHeader, EmptyState, Field, SearchableSelect, inputClass, Badge, ModalShell, StatCard, InputTanggal, InputRupiah, BuktiBayarInput } from "../components/ui";
 import {
   sb, sbAll, fmtRp, nextKode, todayDDMMYYYY, sisaHutangPesanan, totalHutangPerPelanggan, totalDepositPerPelanggan, pelangganDenganWa,
   ringkasanGrosir, omsetGrosirPerPeriode, laporanBulananGrosir, rekapTahunanGrosir, downloadCsv,
@@ -13,6 +13,7 @@ import {
 import { rencanaKurangiRak, simpanItemPesananGrosir } from "./Rak";
 import { hppGrosir, simpanHppManual, hapusHppManual } from "../lib/hppPenjualan";
 import { useDraftForm } from "../lib/draftForm";
+import { unggahBuktiBanyak } from "./AlurKas";
 import BannerDraf from "../components/BannerDraf";
 
 export default function Grosir({
@@ -1298,6 +1299,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   // otomatis tercatat sebagai pemasukan di Keuangan (lihat submit() di bawah).
   const [caraSimpan, setCaraSimpan] = useState("bayar"); // 'bayar' | 'draft'
   const [metodeBayar, setMetodeBayar] = useState("Cash");
+  const [fotoBukti, setFotoBukti] = useState([]);
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
   const [rows, setRows] = useState([]);
@@ -1414,7 +1416,8 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
   };
 
   const errors = rows.map(rowError);
-  const bayarSiapDicatat = caraSimpan !== "bayar" || (rekening && kategoriGrosirObj);
+  const butuhBukti = caraSimpan === "bayar" && metodeBayar === "Transfer";
+  const bayarSiapDicatat = caraSimpan !== "bayar" || (rekening && kategoriGrosirObj && !(butuhBukti && fotoBukti.length === 0));
   const canSubmit =
     (pelangganId || pelangganNamaBaru.trim()) &&
     !pelangganBaruBentrok &&
@@ -1433,6 +1436,7 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
     setPelangganKategoriBaru("grosir");
     setCaraSimpan("bayar");
     setMetodeBayar("Cash");
+    setFotoBukti([]);
     setRekening("");
     setCatatan("");
     setRows([]);
@@ -1531,10 +1535,12 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
           const namaPelangganFinal = pelangganIdFinal
             ? pelangganGrosir.find((p) => p.id === pelangganIdFinal)?.nama || pelangganNamaBaru.trim()
             : pelangganNamaBaru.trim();
+          const buktiBayar = butuhBukti && fotoBukti.length ? await unggahBuktiBanyak(fotoBukti, `grosir-${pesanan.id}`) : [];
           await sb("keuangan_transaksi", {
             method: "POST",
             body: JSON.stringify({
               tanggal,
+              ...(buktiBayar.length ? { bukti_urls: buktiBayar, bukti_url: buktiBayar[0] } : {}),
               tipe: "masuk",
               rekening,
               kategori: kategoriGrosirObj.kode,
@@ -1772,6 +1778,11 @@ export function BuatPesanan({ pelangganGrosir, produkManualGrosir, skuMaster, pe
                   placeholder={metodeBayar === "Transfer" ? "Pilih rekening tujuan…" : "Pilih rekening kas…"}
                 />
               </Field>
+              {butuhBukti && (
+                <div className="sm:col-span-2">
+                  <BuktiBayarInput files={fotoBukti} setFiles={setFotoBukti} wajib />
+                </div>
+              )}
               <div className="sm:col-span-2">
                 {kategoriGrosirObj ? (
                   <div className="flex items-center gap-1.5 text-[11px] text-slate-500">

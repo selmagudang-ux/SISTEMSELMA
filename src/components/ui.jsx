@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, Inbox, CalendarDays, Plus, Loader2, Check, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { sb } from "../lib/api";
+import { BUKTI_ACCEPT, fileAdalahPdf } from "../lib/bukti";
 
 // =========================================================
 // TOKEN & UTILITAS MATERIAL DESIGN 3 (dipakai bersama di seluruh app)
@@ -307,6 +308,53 @@ export function InputWaktuBayar({ waktu, label = "Tanggal & Jam Bayar" }) {
         className={inputClass}
       />
     </div>
+  );
+}
+
+// Unggah bukti pembayaran (foto/PDF, boleh banyak) untuk form Catat Pembayaran.
+// File-nya diunggah saat simpan & dilampirkan ke baris pemasukan Keuangan yang
+// tertaut (kolom bukti_urls), jadi bukti yang sama juga tampil di menu Keuangan.
+export function BuktiBayarInput({ files, setFiles, wajib = false }) {
+  const pratinjau = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  useEffect(() => () => pratinjau.forEach((u) => URL.revokeObjectURL(u)), [pratinjau]);
+  return (
+    <Field label={wajib ? "Bukti Transfer (wajib)" : "Bukti Pembayaran (opsional)"}>
+      <input
+        type="file"
+        accept={BUKTI_ACCEPT}
+        multiple
+        onChange={(e) => {
+          setFiles((l) => [...l, ...Array.from(e.target.files || [])]);
+          e.target.value = "";
+        }}
+        className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
+      />
+      <div className="text-[11px] text-slate-500 mt-1">
+        {wajib && files.length === 0
+          ? <span className="text-amber-400">Pembayaran Transfer wajib melampirkan bukti. </span>
+          : null}
+        Foto (JPG/PNG) atau PDF, boleh lebih dari satu. Tersimpan di riwayat pembayaran dan di Keuangan.
+      </div>
+      {files.map((f, i) => (
+        <div key={`${f.name}-${i}`} className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+          {fileAdalahPdf(f) ? (
+            <a href={pratinjau[i]} target="_blank" rel="noreferrer" className="block text-center text-xs text-emerald-400 py-3">
+              📄 {f.name}
+            </a>
+          ) : (
+            <img src={pratinjau[i]} alt={`Bukti ${i + 1}`} className="mx-auto max-h-32 w-auto max-w-full rounded-md object-contain" />
+          )}
+          <button
+            type="button"
+            onClick={() => setFiles((l) => l.filter((_, k) => k !== i))}
+            aria-label="Hapus file"
+            className="absolute right-3 top-3 rounded-full bg-slate-900/80 p-1 text-slate-200 hover:bg-red-500/80"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </Field>
   );
 }
 
