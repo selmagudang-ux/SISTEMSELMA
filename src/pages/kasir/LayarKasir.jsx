@@ -95,11 +95,36 @@ function kunciSimpan(session) {
 function kunciTunda(session) {
   return `kasir_cari_tunda_${session?.id ?? "x"}`;
 }
-function bacaSimpan(session) {
+// DRAF OTOMATIS: keranjang yang terisi juga disalin ke localStorage (per akun), jadi tidak hilang walau aplikasi / tab ditutup
+// atau HP mati. Hangus 12 jam setelah perubahan terakhir, dan hanya dipulihkan di mode yang sama (Toko / Master Barang).
+// Dikosongkan (Kosongkan / selesai bayar) = draf ikut terhapus. Beda dengan tombol Simpan (ke database, untuk kasir lain).
+const DRAF_MS = 12 * 60 * 60 * 1000;
+function kunciDraf(session) {
+  return `kasir_draf_${session?.id ?? "x"}`;
+}
+function bacaDraf(session, modeMaster) {
+  try {
+    const raw = localStorage.getItem(kunciDraf(session));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d?.exp || Date.now() >= d.exp) {
+      localStorage.removeItem(kunciDraf(session));
+      return null;
+    }
+    if (!!d.master !== !!modeMaster || !Array.isArray(d.data?.items) || !d.data.items.length) return null;
+    return d.data;
+  } catch {
+    return null;
+  }
+}
+function bacaSimpan(session, modeMaster = false) {
   try {
     const raw = sessionStorage.getItem(kunciSimpan(session));
-    const d = raw ? JSON.parse(raw) : null;
+    // Tab / aplikasi baru (sessionStorage kosong): pakai draf otomatis kalau ada.
+    const draf = raw ? null : bacaDraf(session, modeMaster);
+    const d = raw ? JSON.parse(raw) : draf;
     return {
+      dariDraf: !!draf,
       items: Array.isArray(d?.items) ? d.items : [],
       diskonTrx: d?.diskonTrx || { tipe: "rp", nilai: "" },
       kunci: d?.kunci || null,
@@ -203,17 +228,20 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const [dariCache, setDariCache] = useState(null);
   const statusKoneksi = useStatusKasir();
   const [q, setQ] = useState("");
-  const [items, setItems] = useState(() => bacaSimpan(session).items);
-  const [diskonTrx, setDiskonTrx] = useState(() => bacaSimpan(session).diskonTrx);
+  const dariDrafRef = useRef(null); // true = keranjang awal layar ini dipulihkan dari draf otomatis (diberi tahu lewat toast)
+  if (dariDrafRef.current === null) dariDrafRef.current = bacaSimpan(session, modeMaster).dariDraf;
+  const pernahIsiRef = useRef(false); // draf baru dihapus setelah keranjang ini pernah terisi lalu dikosongkan (layar kosong yang baru dibuka tidak menghapus draf)
+  const [items, setItems] = useState(() => bacaSimpan(session, modeMaster).items);
+  const [diskonTrx, setDiskonTrx] = useState(() => bacaSimpan(session, modeMaster).diskonTrx);
   // Satu keranjang = satu kunci. Dikirim ke database supaya transaksi yang sama tidak
   // tersimpan dua kali kalau tombol Bayar ditekan ulang (mis. koneksi putus).
-  const [kunci, setKunci] = useState(() => bacaSimpan(session).kunci);
+  const [kunci, setKunci] = useState(() => bacaSimpan(session, modeMaster).kunci);
   // Mode Master Barang: pelanggan (dari menu Grosir) menentukan kategori harga, dan transaksinya masuk Pesanan Grosir saat tutup kasir.
-  const [pelanggan, setPelanggan] = useState(() => bacaSimpan(session).pelanggan);
+  const [pelanggan, setPelanggan] = useState(() => bacaSimpan(session, modeMaster).pelanggan);
   // Pramuniaga yang membuat keranjang yang diambil kasir (hilang dari database saat diambil, jadi dibawa di sini sampai transaksi tersimpan).
-  const [pramuniaga, setPramuniaga] = useState(() => bacaSimpan(session).pramuniaga);
+  const [pramuniaga, setPramuniaga] = useState(() => bacaSimpan(session, modeMaster).pramuniaga);
   // id keranjang tersimpan (database) yang sedang dikerjakan di layar ini. Salinannya baru dihapus setelah transaksi dibayar.
-  const [asalId, setAsalId] = useState(() => bacaSimpan(session).asalId);
+  const [asalId, setAsalId] = useState(() => bacaSimpan(session, modeMaster).asalId);
   const asalRef = useRef(asalId);
   asalRef.current = asalId;
   // Keranjang tersimpan (database) milik kasir/pramuniaga lain: isinya ditahan, jadi stok yang tampil & bisa dijual dikurangi.
@@ -471,7 +499,22 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     } catch {
       /* penyimpanan penuh / diblokir — abaikan */
     }
-  }, [items, diskonTrx, kunci, pelanggan, pramuniaga, asalId, session]);
+    // Draf otomatis (lihat bacaDraf).
+    try {
+      if (items.length) {
+        pernahIsiRef.current = true;
+        localStorage.setItem(kunciDraf(session), JSON.stringify({ exp: Date.now() + DRAF_MS, master: !!modeMaster, data: { items, diskonTrx, kunci, pelanggan, pramuniaga, asalId } }));
+      } else if (pernahIsiRef.current) {
+        localStorage.removeItem(kunciDraf(session));
+      }
+    } catch {
+      /* penyimpanan penuh / diblokir — abaikan */
+    }
+  }, [items, diskonTrx, kunci, pelanggan, pramuniaga, asalId, session, modeMaster]);
+  useEffect(() => {
+    if (dariDrafRef.current) tampilToast("Keranjang yang belum selesai dipulihkan dari draf otomatis.", "ok", 5000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Keranjang kosong (dihapus kasir / selesai) -> catatan pramuniaga ikut dibersihkan.
   useEffect(() => {
     if (!items.length) {
