@@ -18,6 +18,7 @@ const ModalRouter = lazy(() => import("../../components/ModalRouter"));
 const DataBarang = lazy(() => import("../DataBarang"));
 const SkuHarga = lazy(() => import("../SkuHarga"));
 const Stok = lazy(() => import("../Stok"));
+const StokOpnameHp = lazy(() => import("./StokOpnameHp.jsx"));
 const Rak = lazy(() => import("../Rak"));
 const CetakLabel = lazy(() => import("../CetakLabel"));
 
@@ -48,6 +49,30 @@ async function muatMaster() {
   });
   daftarkanProfilEntitas(grouped);
   return lingkupTokoMarketplace(grouped, entitasBacaSaatIni());
+}
+
+// ringan = menu Stok (Barang Keluar / Stok Opname / Riwayat): hanya SKU, penempatan, master data & foto barang yang dibutuhkan.
+// Items / pesanan masuk / supplier / rak tidak ditarik (data besar yang tidak dipakai halaman Stok), jadi layar lebih cepat terbuka.
+async function muatIntiRingan() {
+  const [skuMaster, penempatan, master, settings, itemsFoto] = await Promise.all([
+    sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
+    sbAll(`penempatan?select=${KOLOM_PENEMPATAN}&order=created_at.desc`),
+    muatMaster(),
+    sb("settings?select=*"),
+    // Modal detail SKU hanya memakai foto dari items.
+    sbAll("items?select=id,sku,foto_url,tanggal&foto_url=not.is.null").catch(() => []),
+  ]);
+  return {
+    items: itemsFoto || [],
+    pesananMasuk: [],
+    suppliers: [],
+    skuMaster: skuMaster || [],
+    rak: [],
+    master,
+    settings: (settings || [])[0] || null,
+    penempatan: penempatan || [],
+    pengajuanRestock: [],
+  };
 }
 
 async function muatInti() {
@@ -110,7 +135,7 @@ function GudangHp({ session, menu, sub }) {
     setErr("");
     try {
       const [inti, riw, rsk] = await Promise.all([
-        muatInti(),
+        menu === "stok" ? muatIntiRingan() : muatInti(),
         butuhRiwayat ? sbAll("stock_history?select=*&order=created_at.desc") : Promise.resolve(null),
         butuhRusak ? sbAll("barang_rusak?select=*&order=created_at.desc") : Promise.resolve(null),
       ]);
@@ -120,7 +145,7 @@ function GudangHp({ session, menu, sub }) {
     } catch (e) {
       setErr(e.message || "Gagal memuat data gudang");
     }
-  }, [butuhRiwayat, butuhRusak]);
+  }, [menu, butuhRiwayat, butuhRusak]);
   useEffect(() => {
     muat();
   }, [muat]);
@@ -166,7 +191,8 @@ function GudangHp({ session, menu, sub }) {
             pesananMasuk={data.pesananMasuk}
           />
         )}
-        {menu === "stok" && (
+        {menu === "stok" && sub === "hitung" && <StokOpnameHp skuMaster={data.skuMaster} setModal={setModal} />}
+        {menu === "stok" && sub !== "hitung" && (
           <Stok
             sub={sub || "barang"}
             skuMaster={data.skuMaster}
