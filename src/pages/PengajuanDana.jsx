@@ -308,7 +308,11 @@ export default function PengajuanDana({
   );
 }
 
-function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh, opsiRekeningPenerima, saving, onClose, onSubmit }) {
+function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua, opsiRekeningPenerima, saving, onClose, onSubmit }) {
+  // Holding tidak pernah jadi PEMINTA: pengajuan dana = perusahaan yang butuh dana meminta ke Holding / perusahaan lain.
+  // (Holding sebagai peminta berarti arah perusahaan -> Holding, yang tidak punya jenis Pemberian Modal / Pinjaman.)
+  // Holding yang memberi dana mencatatnya lewat tab Transfer, atau menyetujui pengajuan dari perusahaan.
+  const entPemintaBoleh = entPemintaSemua.filter((k) => !kodeHolding || k !== kodeHolding);
   const [peminta, setPeminta] = useState(entPemintaBoleh.length === 1 ? entPemintaBoleh[0] : "");
   const [pemberi, setPemberi] = useState("");
   const [jenis, setJenis] = useState("modal");
