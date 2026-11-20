@@ -268,7 +268,7 @@ export default function MobileApp() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="hp-main flex-1 overflow-y-auto">
         {dihalamanBeranda ? (
           <Beranda session={session} tree={tree} buka={buka} />
         ) : adaDaftar ? (

@@ -222,3 +222,12 @@
 @media (max-width: 1023px) {
   [data-theme="light"] aside { border-right: 0; }
 }
+/* Versi HP (/m): judul halaman tidak ikut menempel. Di PC judul menempel di bawah header utama (top 64px),
+   tapi di HP area scroll-nya <main> sendiri, jadi judul yang menempel menyisakan celah (daftar tampak lewat di
+   atasnya) dan memakan separuh layar. */
+.hp-main .ph-sticky {
+  position: static;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}

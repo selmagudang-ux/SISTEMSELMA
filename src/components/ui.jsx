@@ -1085,7 +1085,7 @@ export function PageHeader({ title, description, action, sticky }) {
   return (
     <div
       className={`flex items-start justify-between gap-4 mb-5 ${
-        sticky ? "sticky top-[64px] z-10 bg-md-surface py-3 -mt-3" : ""
+        sticky ? "ph-sticky sticky top-[64px] z-10 bg-md-surface py-3 -mt-3" : ""
       }`}
     >
       <div>
