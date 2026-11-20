@@ -16,6 +16,7 @@ import {
 } from "./forms";
 import { changeOwnPassword } from "../lib/auth";
 import { unggahBuktiBanyak } from "../pages/AlurKas";
+import { daftarBukti, urlAdalahPdf } from "../lib/bukti";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 
 // Lazy-load: EditPesananForm/BuatPesanan (pages/Grosir.jsx) dan
@@ -1822,6 +1823,20 @@ export default function ModalRouter({
                   <div className="min-w-0">
                     <div className="text-slate-200 text-xs">{new Date(b.created_at).toLocaleString("id-ID")}</div>
                     <div className="text-[11px] text-slate-500">{b.metode_bayar}{b.catatan ? ` · ${b.catatan}` : ""}</div>
+                    {(() => {
+                      const kt = (keuanganTransaksi || []).find((k) => k.id === b.keuangan_transaksi_id);
+                      const bukti = daftarBukti(kt);
+                      return bukti.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {bukti.map((u, i) => (
+                            <a key={u} href={u} target="_blank" rel="noreferrer" title="Buka bukti"
+                               className="block h-9 w-9 rounded border border-slate-700 overflow-hidden bg-slate-950 text-center text-[10px] leading-9 text-emerald-400">
+                              {urlAdalahPdf(u) ? "PDF" : <img src={u} alt={`Bukti ${i + 1}`} className="h-full w-full object-cover" />}
+                            </a>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                     <div className="text-emerald-400 font-medium">{fmtRp(b.jumlah)}</div>
@@ -2743,10 +2758,12 @@ export default function ModalRouter({
                 p.jenis_transaksi === "reseller"
                   ? `${namaPelangganBayar} · ${p.nomor_pesanan}`
                   : `Grosir · ${p.nomor_pesanan} — ${namaPelangganBayar}`;
+              const buktiBayar = data.fotoList?.length ? await unggahBuktiBanyak(data.fotoList, `bayar-${p.id}`) : [];
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
                   tanggal: data.tanggalBayar,
+                  ...(buktiBayar.length ? { bukti_urls: buktiBayar, bukti_url: buktiBayar[0] } : {}),
                   tipe: "masuk",
                   rekening: data.rekening,
                   kategori: data.kategoriKode,
@@ -2896,10 +2913,12 @@ export default function ModalRouter({
             // pesanan lain yang masih ditagih di baris yang sama).
             let keuanganTransaksiId = null;
             if (metode !== "Deposit" && data.rekening && data.kategoriKode) {
+              const buktiBayar = data.fotoList?.length ? await unggahBuktiBanyak(data.fotoList, `bayar-${p.id}`) : [];
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
                   tanggal: data.tanggalBayar,
+                  ...(buktiBayar.length ? { bukti_urls: buktiBayar, bukti_url: buktiBayar[0] } : {}),
                   tipe: "masuk",
                   rekening: data.rekening,
                   kategori: data.kategoriKode,
@@ -3048,10 +3067,12 @@ export default function ModalRouter({
                 nomorInvoiceTerbayar.length > 0 ? nomorInvoiceTerbayar.join(", ") : "Bayar Hutang";
               // "nama pembeli · nomor pesanan (resi)" — nama duluan, TANPA
               // prefix "R.T" — sama pola dengan versi per-pesanan di atas.
+              const buktiBayar = data.fotoList?.length ? await unggahBuktiBanyak(data.fotoList, `bayar-${p.id}`) : [];
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
                   tanggal: data.tanggalBayar,
+                  ...(buktiBayar.length ? { bukti_urls: buktiBayar, bukti_url: buktiBayar[0] } : {}),
                   tipe: "masuk",
                   rekening: data.rekening,
                   kategori: data.kategoriKode,

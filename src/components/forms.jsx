@@ -4083,6 +4083,50 @@ function cariKategoriByLabelBayar(daftarKategori, label) {
   return (daftarKategori || []).find((k) => normalisasiLabelBayar(k.label) === target) || null;
 }
 
+// Unggah bukti pembayaran (foto/PDF, boleh banyak) untuk form Catat Pembayaran.
+// File-nya diunggah saat simpan & dilampirkan ke baris pemasukan Keuangan yang
+// tertaut (kolom bukti_urls), jadi bukti yang sama juga tampil di menu Keuangan.
+function BuktiBayarInput({ files, setFiles }) {
+  const pratinjau = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  useEffect(() => () => pratinjau.forEach((u) => URL.revokeObjectURL(u)), [pratinjau]);
+  return (
+    <Field label="Bukti Pembayaran (opsional)">
+      <input
+        type="file"
+        accept={BUKTI_ACCEPT}
+        multiple
+        onChange={(e) => {
+          setFiles((l) => [...l, ...Array.from(e.target.files || [])]);
+          e.target.value = "";
+        }}
+        className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
+      />
+      <div className="text-[11px] text-slate-500 mt-1">
+        Foto (JPG/PNG) atau PDF, boleh lebih dari satu. Tersimpan di riwayat pembayaran dan di Keuangan.
+      </div>
+      {files.map((f, i) => (
+        <div key={`${f.name}-${i}`} className="relative mt-2 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+          {fileAdalahPdf(f) ? (
+            <a href={pratinjau[i]} target="_blank" rel="noreferrer" className="block text-center text-xs text-emerald-400 py-3">
+              📄 {f.name}
+            </a>
+          ) : (
+            <img src={pratinjau[i]} alt={`Bukti ${i + 1}`} className="mx-auto max-h-32 w-auto max-w-full rounded-md object-contain" />
+          )}
+          <button
+            type="button"
+            onClick={() => setFiles((l) => l.filter((_, k) => k !== i))}
+            aria-label="Hapus file"
+            className="absolute right-3 top-3 rounded-full bg-slate-900/80 p-1 text-slate-200 hover:bg-red-500/80"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </Field>
+  );
+}
+
 export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onClose, onSubmit, saving }) {
   // Reseller Cekout: uang masuk lewat pencairan marketplace, BUKAN
   // langsung ke rekening kas/bank seperti Grosir/Reseller Toko — jadi opsi
@@ -4100,6 +4144,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
   const waktu = useWaktuBayar();
+  const [fotoList, setFotoList] = useState([]);
   // Tujuan pencairan (Reseller Cekout, metode Marketplace): toko marketplace PT ini.
   const daftarTujuan = daftarTujuanPencairan(master);
   const [tujuan, setTujuan] = useState(() => tujuanPencairanDefault(master));
@@ -4238,6 +4283,8 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
         </div>
       )}
 
+      {catatKeKeuangan && <BuktiBayarInput files={fotoList} setFiles={setFotoList} />}
+
       <Field label="Catatan (opsional)">
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>
@@ -4253,6 +4300,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
             kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
             tujuan: metodeBayar === "Marketplace" ? tujuan : null,
             ...waktu.ambil(),
+            fotoList: catatKeKeuangan ? fotoList : [],
           })
         }
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
@@ -4424,6 +4472,7 @@ export function BayarHutangPelangganForm({
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
   const waktu = useWaktuBayar();
+  const [fotoList, setFotoList] = useState([]);
 
   const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
@@ -4544,6 +4593,8 @@ export function BayarHutangPelangganForm({
 
       <InputWaktuBayar waktu={waktu} />
 
+      {catatKeKeuangan && <BuktiBayarInput files={fotoList} setFiles={setFotoList} />}
+
       <Field label="Catatan (opsional)">
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>
@@ -4558,6 +4609,7 @@ export function BayarHutangPelangganForm({
             rekening: catatKeKeuangan ? rekening : null,
             kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
             ...waktu.ambil(),
+            fotoList: catatKeKeuangan ? fotoList : [],
           })
         }
         className="w-full bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg"
