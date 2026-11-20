@@ -21,6 +21,13 @@ export default function TombolNotif({ session }) {
     };
   }, [session?.id]);
 
+  // Di aplikasi Android: izin notifikasi bisa berubah dari jendela izin / Setelan HP.
+  useEffect(() => {
+    const f = () => muat();
+    window.addEventListener("selma:izin-notif", f);
+    return () => window.removeEventListener("selma:izin-notif", f);
+  }, []);
+
   const klik = async () => {
     if (sibuk) return;
     if (perluTambahKeLayarUtama()) {

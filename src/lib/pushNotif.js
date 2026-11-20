@@ -18,12 +18,27 @@ function kunciKeBytes(base64Url) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
+// Di dalam aplikasi Android SISTEMSELMA (WebView) ada jembatan window.SelmaAndroid. Di sana notifikasi lewat FCM
+// (token dari aplikasi), bukan Web Push browser. Kontrak ke server (push-subscribe): subscription = { fcm: "<token>" }.
+function native() {
+  return typeof window !== "undefined" && !!window.SelmaAndroid;
+}
+const tokenFcm = () => {
+  try {
+    return window.SelmaAndroid.getToken() || "";
+  } catch {
+    return "";
+  }
+};
+
 export function dukungPush() {
+  if (native()) return true;
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
 // iPhone/iPad: Web Push hanya jalan kalau SISTEMSELMA sudah ditambahkan ke Layar Utama (iOS 16.4+).
 export function perluTambahKeLayarUtama() {
+  if (native()) return false;
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   const standalone = window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
   return ios && !standalone;
@@ -58,6 +73,10 @@ async function panggilServer(aksi, subscription) {
 
 // { didukung, izin: "default"|"granted"|"denied", aktif }
 export async function statusPush() {
+  if (native()) {
+    const izin = window.SelmaAndroid.izin();
+    return { didukung: true, izin, aktif: izin === "granted" && !!tokenFcm() && localStorage.getItem(PREF_KEY) === "1" };
+  }
   if (!dukungPush()) return { didukung: false, izin: "denied", aktif: false };
   let aktif = false;
   try {
@@ -70,6 +89,17 @@ export async function statusPush() {
 }
 
 export async function aktifkanPush() {
+  if (native()) {
+    if (window.SelmaAndroid.izin() !== "granted") {
+      window.SelmaAndroid.mintaIzin();
+      throw new Error("Izinkan notifikasi di jendela yang muncul (atau di Setelan HP), lalu ketuk lonceng lagi.");
+    }
+    const token = tokenFcm();
+    if (!token) throw new Error("Token notifikasi belum siap. Pastikan HP online, tunggu sebentar, lalu coba lagi.");
+    await panggilServer("simpan", { fcm: token });
+    localStorage.setItem(PREF_KEY, "1");
+    return;
+  }
   if (!dukungPush()) throw new Error("Browser ini belum mendukung notifikasi push.");
   if (!VAPID_PUBLIC) throw new Error("Kunci VAPID belum dipasang (VITE_VAPID_PUBLIC_KEY).");
   const izin = await Notification.requestPermission();
@@ -84,6 +114,18 @@ export async function aktifkanPush() {
 
 // Dimatikan sendiri oleh pengguna: hapus di server DAN berhenti berlangganan di HP.
 export async function matikanPush() {
+  if (native()) {
+    localStorage.removeItem(PREF_KEY);
+    const token = tokenFcm();
+    if (token) {
+      try {
+        await panggilServer("hapus", { fcm: token });
+      } catch {
+        /* tetap lanjut */
+      }
+    }
+    return;
+  }
   const reg = await navigator.serviceWorker.getRegistration("/");
   const sub = reg ? await reg.pushManager.getSubscription() : null;
   localStorage.removeItem(PREF_KEY);
@@ -101,6 +143,11 @@ export async function matikanPush() {
 // browser & pilihan pengguna dibiarkan, jadi login berikutnya otomatis menyala lagi (lihat sinkronkanPush).
 export async function lepasPushServer() {
   try {
+    if (native()) {
+      const token = tokenFcm();
+      if (token && localStorage.getItem(PREF_KEY) === "1") await Promise.race([panggilServer("hapus", { fcm: token }), new Promise((r) => setTimeout(r, 3000))]);
+      return;
+    }
     if (!dukungPush() || localStorage.getItem(PREF_KEY) !== "1") return;
     const reg = await navigator.serviceWorker.getRegistration("/");
     const sub = reg ? await reg.pushManager.getSubscription() : null;
@@ -113,6 +160,11 @@ export async function lepasPushServer() {
 // Setelah login: kalau pengguna sebelumnya menyalakan notifikasi di HP ini, daftarkan lagi ke akun yang login.
 export async function sinkronkanPush() {
   try {
+    if (native()) {
+      const token = tokenFcm();
+      if (localStorage.getItem(PREF_KEY) === "1" && token && window.SelmaAndroid.izin() === "granted") await panggilServer("simpan", { fcm: token });
+      return;
+    }
     if (!dukungPush() || localStorage.getItem(PREF_KEY) !== "1" || Notification.permission !== "granted") return;
     const reg = await navigator.serviceWorker.getRegistration("/");
     const sub = reg ? await reg.pushManager.getSubscription() : null;
