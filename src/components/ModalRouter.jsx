@@ -2744,7 +2744,7 @@ export default function ModalRouter({
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
-                  tanggal: new Date().toISOString().slice(0, 10),
+                  tanggal: data.tanggalBayar,
                   tipe: "masuk",
                   rekening: data.rekening,
                   kategori: data.kategoriKode,
@@ -2775,7 +2775,7 @@ export default function ModalRouter({
                   platform: tujuanCair.platform,
                   toko: tujuanCair.toko,
                   tipe: "pemasukan",
-                  tanggal: new Date().toISOString().slice(0, 10),
+                  tanggal: data.tanggalBayar,
                   jumlah: jumlahDiterima,
                   keterangan: `Pelunasan ${p.nomor_pesanan} · ${pelanggan?.nama || "Pelanggan"}`,
                 }),
@@ -2793,6 +2793,7 @@ export default function ModalRouter({
                   metode_bayar: metode,
                   catatan: data.catatan || null,
                   keuangan_transaksi_id: keuanganTransaksiId,
+                  created_at: data.waktuBayar,
                 }),
               });
               const totalDibayarBaru = totalDibayarPesanan(p.id, pembayaranGrosir) + bayarKePesanan;
@@ -2809,6 +2810,7 @@ export default function ModalRouter({
                   method: "POST",
                   body: JSON.stringify({
                     nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                    created_at: data.waktuBayar,
                     pelanggan_id: p.pelanggan_id,
                     jumlah: -bayarKePesanan,
                     keterangan: `Dipakai bayar pesanan ${p.nomor_pesanan}`,
@@ -2823,6 +2825,7 @@ export default function ModalRouter({
                   method: "POST",
                   body: JSON.stringify({
                     nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                    created_at: data.waktuBayar,
                     pelanggan_id: p.pelanggan_id,
                     jumlah: kelebihan,
                     keterangan: `Kelebihan bayar pesanan ${p.nomor_pesanan}`,
@@ -2894,7 +2897,7 @@ export default function ModalRouter({
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
-                  tanggal: new Date().toISOString().slice(0, 10),
+                  tanggal: data.tanggalBayar,
                   tipe: "masuk",
                   rekening: data.rekening,
                   kategori: data.kategoriKode,
@@ -2922,6 +2925,7 @@ export default function ModalRouter({
                   metode_bayar: metode,
                   catatan: data.catatan || null,
                   keuangan_transaksi_id: keuanganTransaksiId,
+                  created_at: data.waktuBayar,
                 }),
               });
               const totalDibayarBaru = totalDibayarPesanan(ps.id, pembayaranGrosir) + bayarKePs;
@@ -2938,6 +2942,7 @@ export default function ModalRouter({
                 method: "POST",
                 body: JSON.stringify({
                   nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  created_at: data.waktuBayar,
                   pelanggan_id: p.id,
                   jumlah: -bayarKeHutang,
                   keterangan: "Dipakai bayar hutang",
@@ -2948,6 +2953,7 @@ export default function ModalRouter({
                 method: "POST",
                 body: JSON.stringify({
                   nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  created_at: data.waktuBayar,
                   pelanggan_id: p.id,
                   jumlah: kelebihan,
                   keterangan: "Kelebihan bayar hutang",
@@ -3043,7 +3049,7 @@ export default function ModalRouter({
               const [rowKeuangan] = await sb("keuangan_transaksi", {
                 method: "POST",
                 body: JSON.stringify({
-                  tanggal: new Date().toISOString().slice(0, 10),
+                  tanggal: data.tanggalBayar,
                   tipe: "masuk",
                   rekening: data.rekening,
                   kategori: data.kategoriKode,
@@ -3070,6 +3076,7 @@ export default function ModalRouter({
                   metode_bayar: metode,
                   catatan: data.catatan || null,
                   keuangan_transaksi_id: keuanganTransaksiId,
+                  created_at: data.waktuBayar,
                 }),
               });
               const totalDibayarBaru = totalDibayarPesanan(ps.id, pembayaranGrosir) + bayarKePs;
@@ -3086,6 +3093,7 @@ export default function ModalRouter({
                 method: "POST",
                 body: JSON.stringify({
                   nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  created_at: data.waktuBayar,
                   pelanggan_id: p.id,
                   jumlah: -bayarKeHutang,
                   keterangan: "Dipakai bayar hutang reseller",
@@ -3096,6 +3104,7 @@ export default function ModalRouter({
                 method: "POST",
                 body: JSON.stringify({
                   nomor_deposit: `DEP-${todayDDMMYYYY()}-${Date.now().toString().slice(-5)}`,
+                  created_at: data.waktuBayar,
                   pelanggan_id: p.id,
                   jumlah: kelebihan,
                   keterangan: "Kelebihan bayar hutang reseller",

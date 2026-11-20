@@ -259,6 +259,57 @@ export function InputTanggal({ value, onChange, className }) {
   );
 }
 
+// Tanggal + jam pembayaran. Default = waktu SEKARANG (terus berjalan selama
+// belum diubah, jadi saat disimpan yang tercatat jam sebenarnya). Kalau
+// user mengubahnya (mis. mencatat pembayaran kemarin), nilai itu yang dipakai.
+function pad2(n) { return String(n).padStart(2, "0"); }
+function keInputLokal(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+export function useWaktuBayar() {
+  const [nilai, setNilai] = useState(() => keInputLokal(new Date()));
+  const [diubah, setDiubah] = useState(false);
+  useEffect(() => {
+    if (diubah) return undefined;
+    const t = setInterval(() => setNilai(keInputLokal(new Date())), 15000);
+    return () => clearInterval(t);
+  }, [diubah]);
+  return {
+    nilai,
+    diubah,
+    ubah: (v) => { setNilai(v); setDiubah(true); },
+    reset: () => { setNilai(keInputLokal(new Date())); setDiubah(false); },
+    // Dipanggil saat simpan: { waktuBayar: ISO (UTC), tanggalBayar: "YYYY-MM-DD" (lokal) }
+    ambil: () => {
+      const d = diubah && nilai ? new Date(nilai) : new Date();
+      const valid = !Number.isNaN(d.getTime()) ? d : new Date();
+      return { waktuBayar: valid.toISOString(), tanggalBayar: keInputLokal(valid).slice(0, 10) };
+    },
+  };
+}
+export function InputWaktuBayar({ waktu, label = "Tanggal & Jam Bayar" }) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs text-slate-400">{label}</label>
+        {waktu.diubah ? (
+          <button type="button" onClick={waktu.reset} className="text-[11px] text-sky-400 hover:text-sky-300">
+            Kembali ke waktu sekarang
+          </button>
+        ) : (
+          <span className="text-[11px] text-slate-500">Otomatis (waktu sekarang)</span>
+        )}
+      </div>
+      <input
+        type="datetime-local"
+        value={waktu.nilai}
+        onChange={(e) => waktu.ubah(e.target.value)}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
 // Input angka Rupiah dengan tanda ribuan otomatis saat mengetik (mis. "150.000").
 // Sengaja pakai type="text" (bukan type="number") supaya: (1) titik ribuan bisa
 // ditampilkan, dan (2) scroll mouse di atas input tidak diam-diam mengubah

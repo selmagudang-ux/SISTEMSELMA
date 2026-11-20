@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRightLeft, Warehouse, Plus, X, PackageCheck, Camera, ScanLine, Loader2, CheckCircle2, Search, ShoppingBag, Truck, Trash2, ChevronLeft, Receipt } from "lucide-react";
 import { BUKTI_ACCEPT, fileAdalahPdf, urlAdalahPdf, daftarBukti } from "../lib/bukti";
-import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge } from "./ui";
+import { ModalShell, Field, Combobox, SearchableSelect, SearchableSelectOrNew, KodeGabunganInput, inputClass, InputTanggal, InputRupiah, SuggestInput, Badge, useWaktuBayar, InputWaktuBayar } from "./ui";
 import { fmtRp, calcHarga, sameProdukKecualiUkuran, saldoPerRekening, pelangganDenganWa, petaKasRekening, kasDariRekening, LABEL_KAS, KAS_KECIL, KAS_BANK, URUTAN_KAS, rekeningEntitasSesi, daftarTujuanPencairan, tujuanPencairanDefault } from "../lib/api";
 import { rakForSku } from "../pages/Rak";
 import { useDraftForm } from "../lib/draftForm";
@@ -4099,6 +4099,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
   const [metodeBayar, setMetodeBayar] = useState(isCekout ? "Marketplace" : "Cash");
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+  const waktu = useWaktuBayar();
   // Tujuan pencairan (Reseller Cekout, metode Marketplace): toko marketplace PT ini.
   const daftarTujuan = daftarTujuanPencairan(master);
   const [tujuan, setTujuan] = useState(() => tujuanPencairanDefault(master));
@@ -4208,6 +4209,8 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
         </Field>
       )}
 
+      <InputWaktuBayar waktu={waktu} />
+
       <Field label="Jumlah Dibayar">
         <input
           type="number"
@@ -4249,6 +4252,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
             rekening: catatKeKeuangan ? rekening : null,
             kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
             tujuan: metodeBayar === "Marketplace" ? tujuan : null,
+            ...waktu.ambil(),
           })
         }
         className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
@@ -4394,6 +4398,7 @@ export function BayarHutangPelangganForm({
   const [metodeBayar, setMetodeBayar] = useState("Cash");
   const [rekening, setRekening] = useState("");
   const [catatan, setCatatan] = useState("");
+  const waktu = useWaktuBayar();
 
   const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
@@ -4512,6 +4517,8 @@ export function BayarHutangPelangganForm({
         </div>
       )}
 
+      <InputWaktuBayar waktu={waktu} />
+
       <Field label="Catatan (opsional)">
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>
@@ -4525,6 +4532,7 @@ export function BayarHutangPelangganForm({
             catatan: catatan.trim(),
             rekening: catatKeKeuangan ? rekening : null,
             kategoriKode: catatKeKeuangan ? kategoriGrosirObj?.kode || null : null,
+            ...waktu.ambil(),
           })
         }
         className="w-full bg-red-500 hover:bg-red-400 disabled:opacity-40 text-white font-semibold text-sm py-2.5 rounded-lg"
