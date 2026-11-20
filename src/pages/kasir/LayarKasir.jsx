@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users, PencilLine } from "lucide-react";
+import { Search, ScanLine, Plus, Minus, Trash2, RefreshCw, ShoppingCart, ChevronDown, Loader2, AlertCircle, Tag, BadgePercent, CloudUpload, CloudDownload, Users, PencilLine, X } from "lucide-react";
 import { sb, sbAll, fmtRp, nextKode } from "../../lib/api";
 import { kasirModeMaster, kasirModeOtomatis, bisa } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
@@ -636,8 +636,9 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
   const pilihHasil = (s) => {
     const r = tambah(s);
     if (!r.ok) return tampilToast(r.pesan);
-    setQ("");
-    inputRef.current?.focus();
+    // Kata pencarian SENGAJA tidak dikosongkan: pembeli sering menambah qty / memilih barang serupa dari hasil yang sama.
+    // Kosongkan lewat tombol X di kolom cari. (Enter / scanner tetap mengosongkan, supaya scan berikutnya langsung siap.)
+    if (typeof window !== "undefined" && window.matchMedia?.("(pointer:fine)").matches) inputRef.current?.focus();
   };
 
   // Barang dari Master Barang dijual sebagai transaksi Grosir (mode Master), jadi tidak bisa dicampur dengan keranjang Toko.
@@ -922,8 +923,21 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={onEnterCari}
               placeholder="Scan atau ketik kode, nama barang"
-              className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-11 pr-4 py-3.5 text-[15px] outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10"
+              className="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-11 pr-11 py-3.5 text-[15px] outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10"
             />
+            {q && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQ("");
+                  inputRef.current?.focus();
+                }}
+                title="Hapus pencarian"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-200"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
           <button
             onClick={() => {
@@ -1124,15 +1138,13 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
             >
               {menyimpan ? <Loader2 size={13} className="animate-spin" /> : <CloudUpload size={13} />} Simpan
             </button>
-            {!hanyaKeranjang && (
             <button
               onClick={() => setDaftarTersimpanBuka(true)}
-              title="Ambil keranjang yang disimpan dari perangkat lain"
+              title={hanyaKeranjang ? "Ambil lagi keranjang yang tadi kamu simpan (untuk diubah / ditambah)" : "Ambil keranjang yang disimpan dari perangkat lain"}
               className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-amber-400 transition-colors"
             >
               <CloudDownload size={13} /> Ambil
             </button>
-            )}
             <button
               onClick={kosongkan}
               disabled={!items.length}
@@ -1362,7 +1374,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
         />
       )}
 
-      {daftarTersimpanBuka && <KeranjangTersimpan session={session} sumber={modeOtomatis ? null : modeMaster ? "master" : "toko"} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
+      {daftarTersimpanBuka && <KeranjangTersimpan session={session} sumber={modeOtomatis ? null : modeMaster ? "master" : "toko"} hanyaMilikku={hanyaKeranjang} onAmbil={ambilDariCloud} onClose={() => setDaftarTersimpanBuka(false)} />}
 
       {bayarBuka && (
         <ModalBayar

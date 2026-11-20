@@ -12,8 +12,10 @@ import { muatKeranjangTersimpan, hapusKeranjangTersimpan, tandaiKeranjangDiambil
 const tglJam = (v) => new Date(v).toLocaleString("id-ID", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
 // sumber: "toko" | "master" = hanya jenis itu; null = semua jenis (kasir meja).
-export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, onClose }) {
-  const semuaKasir = true;
+// hanyaMilikku: true untuk pramuniaga (HP) — hanya melihat & mengambil ulang keranjang yang DIA simpan sendiri
+// (mis. pembeli labil, mau ubah/tambah barang). Kasir meja tetap melihat keranjang semua petugas.
+export default function KeranjangTersimpan({ session, sumber = "toko", hanyaMilikku = false, onAmbil, onClose }) {
+  const semuaKasir = !hanyaMilikku;
   const [daftar, setDaftar] = useState(null);
   const [error, setError] = useState("");
   const [sibuk, setSibuk] = useState(null); // id yang sedang diproses
@@ -21,7 +23,8 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
   const muat = async () => {
     setError("");
     try {
-      setDaftar(await muatKeranjangTersimpan(session, sumber));
+      const rows = await muatKeranjangTersimpan(session, sumber);
+      setDaftar(hanyaMilikku ? rows.filter((r) => String(r.kasir_id || "") === String(session?.id ?? "")) : rows);
     } catch (e) {
       setDaftar([]);
       setError(e?.message || "Gagal memuat keranjang tersimpan");
@@ -75,7 +78,7 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-800">
           <div>
             <div className="font-bold">Keranjang Tersimpan</div>
-            <div className="text-xs text-slate-500">Dari semua petugas di toko ini</div>
+            <div className="text-xs text-slate-500">{hanyaMilikku ? "Keranjang yang kamu simpan" : "Dari semua petugas di toko ini"}</div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-500 hover:text-slate-200">
             <X size={18} />
@@ -95,7 +98,7 @@ export default function KeranjangTersimpan({ session, sumber = "toko", onAmbil, 
             <div className="text-center py-10">
               <ShoppingCart size={30} className="mx-auto mb-2 text-slate-700" />
               <div className="text-sm text-slate-400">Belum ada keranjang tersimpan</div>
-              <div className="text-xs text-slate-500 mt-1">Petugas mengisi keranjang di HP lalu menekan "Simpan"; keranjangnya muncul di sini.</div>
+              <div className="text-xs text-slate-500 mt-1">{hanyaMilikku ? "Keranjang yang sudah kamu simpan dan belum dibayar kasir akan muncul di sini, bisa diambil lagi untuk diubah." : "Petugas mengisi keranjang di HP lalu menekan \"Simpan\"; keranjangnya muncul di sini."}</div>
             </div>
           ) : (
             daftar.map((r) => (
