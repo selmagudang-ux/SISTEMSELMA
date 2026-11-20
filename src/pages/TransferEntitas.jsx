@@ -93,6 +93,7 @@ async function tambahStokBanyak(daftar, master) {
   const e = encodeURIComponent(ent);
   const undoList = [];
   const riwayat = [];
+  const skuBaru = []; // SKU yang belum ada di gudang PT ini (perlu difoto & diunggah ke marketplace)
   const undo = async () => {
     for (const u of undoList.reverse()) {
       try {
@@ -136,6 +137,7 @@ async function tambahStokBanyak(daftar, master) {
       } else {
         await sb("sku_stok", { method: "POST", body: JSON.stringify({ sku: it.sku, entitas: ent, stok: q }) });
         undoList.push({ sku: it.sku, baru: true });
+        skuBaru.push({ sku: it.sku, jumlah: q });
         riwayat.push({ sku: it.sku, type: "masuk", qty_before: 0, qty_change: q, qty_after: q, note: `${it.catatan} (SKU baru di gudang ini)` });
       }
     }
@@ -143,7 +145,7 @@ async function tambahStokBanyak(daftar, master) {
     await undo();
     throw err;
   }
-  return { riwayat, undo };
+  return { riwayat, undo, skuBaru };
 }
 
 // Ubah stok SKU di entitas MANA PUN (ent diisi eksplisit, bukan dari sesi). delta > 0 = tambah,
@@ -601,6 +603,21 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
           }
         }
         if (hasilSku) await catatRiwayat(hasilSku.riwayat);
+        // SKU yang BARU di gudang penerima langsung masuk antrean Pemotretan (tab Foto Baru) supaya
+        // difoto lalu diunggah ke marketplace. SKU yang sudah ada cukup bertambah stoknya (di atas).
+        // Stok sudah ditambah di atas — baris ini hanya penanda tahap, tidak mengubah stok lagi.
+        // Kalau gagal, penerimaan tetap sah (stok sudah masuk); cukup beri peringatan.
+        if (hasilSku?.skuBaru?.length) {
+          try {
+            const tgl = new Date().toISOString().slice(0, 10);
+            await sb("items", {
+              method: "POST",
+              body: JSON.stringify(hasilSku.skuBaru.map((b) => ({ tanggal: tgl, gudang: "Transfer", jumlah: b.jumlah, sku: b.sku, stage: "verifikasi" }))),
+            });
+          } catch (e3) {
+            showToast?.(`Barang diterima, tapi ${hasilSku.skuBaru.length} SKU baru gagal masuk antrean Pemotretan: ${e3.message || "gagal"}`, "warn", 8000);
+          }
+        }
       } catch (e) {
         await sb(`transfer_barang?id=eq.${t.id}`, {
           method: "PATCH",
@@ -608,7 +625,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         }).catch(() => {});
         throw e;
       }
-    }, "Barang diterima, stok bertambah");
+    }, "Barang diterima, stok bertambah. SKU baru masuk antrean Pemotretan.");
 
   const tolak = (t, alasan) =>
     jalankan(async () => {
