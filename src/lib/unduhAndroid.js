@@ -5,10 +5,10 @@
 // NAMA FILE YANG SAMA (SISTEMSELMA.apk) — link di bawah tidak perlu diubah dan kode ini tidak perlu di-deploy ulang.
 // CATATAN: "latest" hanya satu per repo. Jangan pakai repo yang sama dengan unduhan kasir desktop kecuali kedua
 // file ada di rilis yang sama; sebaiknya repo sendiri.
-// GANTI <nama-repo> di bawah dengan repo GitHub tempat APK diunggah.
+// Repo: selmagudang-ux/Android-selma.
 // =========================================================
 export const URL_UNDUH_APP_ANDROID =
-  "https://github.com/selmagudang-ux/selma-android-download/releases/latest/download/SISTEMSELMA.apk";
+  "https://github.com/selmagudang-ux/Android-selma/releases/latest/download/SISTEMSELMA.apk";
 
 // Di dalam aplikasi Android SISTEMSELMA (WebView) ada jembatan window.SelmaAndroid.
 export const adalahAppAndroid = () => typeof window !== "undefined" && !!window.SelmaAndroid;
