@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense, star
 import ErrorBoundary from "./components/ErrorBoundary";
 import { RefreshCw, AlertCircle, Loader2, Bell, MapPin, Wrench } from "lucide-react";
 import { sb, sbAll, setSaldoDasarRekening, awalRentangKeuanganDefault, resetKeuanganLama, aturEntitasBaca, entitasBacaSaatIni, masterDataUntukPT, namaStoreEntitas, kodeHoldingPasti, daftarkanProfilEntitas, lingkupTokoMarketplace, ENTITAS_DEFAULT, ENTITAS_HOLDING } from "./lib/api";
-import { STAGE_ORDER, STAGE_META, findNavLabel, bisa, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
+import { STAGE_ORDER, STAGE_META, findNavLabel, bisa, bolehTransferAntarEntitas, allowedMenus, allowedSubMenus, fiturMatiEntitas, setAksesRole, SUB_KEUANGAN_LAMA, NAV, withParentBadges, AMBANG_MENIPIS_RESTOCK } from "./lib/constants";
 import { getSession, logout, gantiPtSesi, ptAsliSesi } from "./lib/auth";
 import { chatBelumDibaca } from "./lib/chatApi";
 import { getAbsenSession, logoutKaryawan } from "./lib/absensi";
@@ -513,6 +513,43 @@ function MainApp({ session, onLogout }) {
     setToast({ msg, kind });
     setTimeout(() => setToast(null), duration);
   };
+
+  // Notifikasi Pengajuan Dana (Perusahaan Grup > Antar Entitas > Pengajuan Dana): akun yang berhak menyetujui
+  // (hak yang sama dengan mencatat transfer dari PEMBERI ke PEMINTA) melihat badge di sidebar dan toast begitu
+  // ada pengajuan "menunggu". Polling ringan tiap 30 detik (hanya saat tab terlihat) + segera setelah
+  // halaman Pengajuan Dana memuat ulang datanya (event "selma:dana-berubah").
+  const [danaPerluCount, setDanaPerluCount] = useState(0);
+  const danaSebelumnyaRef = useRef(-1);
+  const kodeHoldingDana = useMemo(() => kodeHoldingPasti(master?.entitas, master?.entitas_set), [master?.entitas, master?.entitas_set]);
+  const bisaLihatDana = allowed.includes("perusahaan") && !!kodeHoldingDana;
+  const refreshBadgeDana = useCallback(async () => {
+    if (!bisaLihatDana || !session?.token || document.visibilityState !== "visible") return;
+    try {
+      const rows = (await sb("pengajuan_dana?status=eq.menunggu&select=id,kode,entitas_peminta,entitas_pemberi,jumlah&limit=200")) || [];
+      const perlu = rows.filter((p) => bolehTransferAntarEntitas(session.role, p.entitas_pemberi, p.entitas_peminta, kodeHoldingDana, session.entitas));
+      setDanaPerluCount(perlu.length);
+      const sebelumnya = danaSebelumnyaRef.current;
+      danaSebelumnyaRef.current = perlu.length;
+      if (perlu.length > 0 && (sebelumnya === -1 || perlu.length > sebelumnya)) {
+        const pesan = `${perlu.length} pengajuan dana menunggu persetujuan Anda — buka Perusahaan Grup > Antar Entitas`;
+        showToast(pesan, "warn", 7000);
+        try {
+          if (sebelumnya !== -1 && "Notification" in window && Notification.permission === "granted") new Notification("Pengajuan dana baru", { body: pesan });
+        } catch { /* abaikan */ }
+      }
+    } catch { /* diam: tabel belum ada / jaringan — badge tidak kritis */ }
+  }, [bisaLihatDana, session?.token, session?.role, session?.entitas, kodeHoldingDana]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    refreshBadgeDana();
+    const t = setInterval(refreshBadgeDana, 30000);
+    window.addEventListener("selma:dana-berubah", refreshBadgeDana);
+    document.addEventListener("visibilitychange", refreshBadgeDana);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("selma:dana-berubah", refreshBadgeDana);
+      document.removeEventListener("visibilitychange", refreshBadgeDana);
+    };
+  }, [refreshBadgeDana]);
 
   // Setiap pindah menu, datanya tetap di-refresh (loadForMenu()) supaya
   // selalu segar — penting karena sistemnya sering dipakai barengan
@@ -1182,6 +1219,7 @@ function MainApp({ session, onLogout }) {
 
     const sidebarBadges = withParentBadges(NAV, {
       "persetujuan-restock": pengajuanMenungguCount,
+      "perusahaan.antar-entitas": danaPerluCount,
       "sku-harga.buat": stageCounts.sku,
       "rak.tempatkan": tanpaRakCount,
       "rak.gudang": sisaGudangList.length,
@@ -1216,7 +1254,7 @@ function MainApp({ session, onLogout }) {
       sidebarBadges,
       belumSelesaiBreakdown,
     };
-  }, [items, skuMaster, rak, penempatan, marketplaceNotifAck, stockHistory, rakEvents, pengajuanRestock]);
+  }, [items, skuMaster, rak, penempatan, marketplaceNotifAck, stockHistory, rakEvents, pengajuanRestock, danaPerluCount]);
 
   const {
     stageCounts,
@@ -1285,7 +1323,7 @@ function MainApp({ session, onLogout }) {
       <AppShell
         active={nav}
         onNavigate={navigate}
-        badges={lihatPTLain ? { chat: chatBelumDibacaCount } : { ...sidebarBadges, chat: chatBelumDibacaCount }}
+        badges={lihatPTLain ? { chat: chatBelumDibacaCount, ...(danaPerluCount ? { "perusahaan.antar-entitas": danaPerluCount } : {}) } : { ...sidebarBadges, chat: chatBelumDibacaCount }}
         allowedMenuKeys={allowed}
         user={session}
         onLogout={onLogout}

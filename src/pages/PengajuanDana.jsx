@@ -47,6 +47,8 @@ export function usePengajuanDana(kodeTerikat) {
       if (/pengajuan_dana|schema cache|does not exist|42P01|PGRST205/i.test(`${e.message} ${e.pgCode || ""}`)) setTabelAda(false);
     } finally {
       setMemuat(false);
+      // Beri tahu App.jsx supaya badge sidebar langsung ikut berubah (setelah setuju / tolak / batal / ajukan).
+      try { window.dispatchEvent(new Event("selma:dana-berubah")); } catch { /* abaikan */ }
     }
   }, [kodeTerikat]);
 
