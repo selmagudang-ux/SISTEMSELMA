@@ -4280,6 +4280,14 @@ export function EditPembayaranForm({ pembayaran, pesanan, keuanganRow, master, o
   const [metodeBayar, setMetodeBayar] = useState(pembayaran.metode_bayar === "Transfer" ? "Transfer" : "Cash");
   const [rekening, setRekening] = useState(keuanganRow?.rekening || "");
   const [catatan, setCatatan] = useState(pembayaran.catatan || "");
+  // Tanggal & jam pembayaran — awalnya waktu catat yang tersimpan (created_at).
+  const pad = (n) => String(n).padStart(2, "0");
+  const keLokal = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const awalWaktu = pembayaran.created_at && !Number.isNaN(new Date(pembayaran.created_at).getTime())
+    ? keLokal(new Date(pembayaran.created_at))
+    : keLokal(new Date());
+  const [waktuInput, setWaktuInput] = useState(awalWaktu);
 
   const daftarRekening = rekeningEntitasSesi(master);
   const daftarKategoriMasuk = master?.kategori_masuk || [];
@@ -4338,6 +4346,20 @@ export function EditPembayaranForm({ pembayaran, pesanan, keuanganRow, master, o
         )}
       </Field>
 
+      <Field label="Tanggal & Jam Bayar">
+        <input
+          type="datetime-local"
+          className={inputClass}
+          value={waktuInput}
+          onChange={(e) => setWaktuInput(e.target.value)}
+        />
+        {waktuInput !== awalWaktu && (
+          <button type="button" onClick={() => setWaktuInput(awalWaktu)} className="text-[11px] text-sky-400 mt-1">
+            Kembalikan ke tanggal semula
+          </button>
+        )}
+      </Field>
+
       <Field label="Jumlah Dibayar (nominal baru untuk baris ini)">
         <input
           type="number"
@@ -4369,6 +4391,9 @@ export function EditPembayaranForm({ pembayaran, pesanan, keuanganRow, master, o
               rekening,
               kategoriKode: kategoriObj?.kode || null,
               catatan: catatan.trim(),
+              // Hanya dikirim kalau diubah, supaya jam asli tidak bergeser.
+              waktuBayar: waktuInput !== awalWaktu && waktuInput ? new Date(waktuInput).toISOString() : null,
+              tanggalBayar: waktuInput !== awalWaktu && waktuInput ? waktuInput.slice(0, 10) : null,
             })
           }
           className="flex-1 bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-xs py-2.5 rounded-lg"

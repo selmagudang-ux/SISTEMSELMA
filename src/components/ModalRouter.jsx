@@ -2661,6 +2661,7 @@ export default function ModalRouter({
                 jumlah: jumlahBaru,
                 metode_bayar: data.metodeBayar,
                 catatan: data.catatan || null,
+                ...(data.waktuBayar ? { created_at: data.waktuBayar } : {}),
               }),
             });
 
@@ -2670,6 +2671,7 @@ export default function ModalRouter({
                 jumlah: jumlahBaru,
                 rekening: data.rekening,
                 kategori: data.kategoriKode,
+                ...(data.tanggalBayar ? { tanggal: data.tanggalBayar } : {}),
               }),
             });
 
