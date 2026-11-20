@@ -13,7 +13,7 @@ export async function unifiedLogin(identifier, password, opsi = {}) {
   if (!id || !password) throw new Error("Username/ID dan password wajib diisi");
 
   try {
-    const session = await loginAdmin(id, password, { ingat: !!opsi.ingat });
+    const session = await loginAdmin(id, password, { ingat: !!opsi.ingat, ingatMs: opsi.ingatMs || undefined });
     return { type: "admin", session };
   } catch (err) {
     if (err.message !== "Username tidak ditemukan") throw err;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LogOut, Store, Repeat, History, Package, Lock, Loader2, AlertCircle, Archive, Download, BadgePercent, Menu, X, ZoomIn } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
-import { getSession, logout } from "../../lib/auth";
+import { getSession, logout, pulihkanSesiIngat } from "../../lib/auth";
 import { bolehKasir as bolehKasirRole, setAksesRole, bisa, kasirHanyaKeranjang, kasirBisaPilihMode, kasirModeMaster, kasirModeOtomatis } from "../../lib/constants";
 import { PasangAplikasi, adalahHp } from "./kasirPasang";
 import { useSkalaTampilan, skalaBerikutnya } from "./kasirTampilan";
@@ -49,7 +49,8 @@ import { useJudulTab } from "../../lib/judulTab";
 // supaya panel "Hak Akses" di Pengaturan selalu sama dengan yang dipakai di sini.
 
 export default function KasirApp() {
-  const [session, setSession] = useState(() => getSession());
+  // pulihkanSesiIngat: kalau akun tadi login dengan "Tetap masuk 12 jam", sesinya dipulihkan saat aplikasi dibuka lagi.
+  const [session, setSession] = useState(() => pulihkanSesiIngat());
   useJudulTab(session, "Kasir"); // judul tab = nama akun yang login
   const [riwayatBuka, setRiwayatBuka] = useState(false);
   const [barangBuka, setBarangBuka] = useState(false);
@@ -233,6 +234,9 @@ export default function KasirApp() {
   if (!session) {
     return (
       <Login
+        tampilIngat
+        ingatJam={12}
+        ingatAwal
         onLogin={(hasil) => {
           // Akun karyawan absen (bukan app_users) tidak punya akses kasir.
           if (hasil.type !== "admin") {

@@ -2,7 +2,8 @@ import { sb, SUPABASE_URL, SUPABASE_ANON_KEY } from "./api";
 
 const SESSION_KEY = "selma_session";
 
-// "Ingat saya di HP ini" (khusus versi HP /m): salinan sesi disimpan di localStorage selama 7 hari.
+// "Ingat saya / tetap masuk": salinan sesi disimpan di localStorage (bawaan 7 hari untuk /m; aplikasi kasir /kasir memakai 12 jam,
+// lewat opsi ingatMs di login()).
 // Sesi kerja tetap di sessionStorage (banyak file membacanya langsung), jadi salinan ini hanya dipakai untuk
 // MEMULIHKAN sesi saat HP membuka /m lagi (mis. dari ketukan notifikasi) tanpa login ulang.
 const INGAT_KEY = "selma_session_ingat";
@@ -62,7 +63,7 @@ export async function sha256Hex(text) {
     .join("");
 }
 
-export async function login(username, password, { ingat = false } = {}) {
+export async function login(username, password, { ingat = false, ingatMs = INGAT_MS } = {}) {
   const uname = (username || "").trim();
   if (!uname || !password) throw new Error("Username dan password wajib diisi");
 
@@ -93,7 +94,7 @@ export async function login(username, password, { ingat = false } = {}) {
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
   if (ingat) {
     try {
-      localStorage.setItem(INGAT_KEY, JSON.stringify({ session, exp: Date.now() + INGAT_MS }));
+      localStorage.setItem(INGAT_KEY, JSON.stringify({ session, exp: Date.now() + ingatMs }));
     } catch {
       /* penyimpanan penuh/diblokir: sesi tab tetap jalan */
     }

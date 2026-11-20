@@ -8,7 +8,8 @@ import { URL_UNDUH_APP_ANDROID, perluTawarkanAppAndroid } from "../lib/unduhAndr
 // absen. Sistem otomatis mendeteksi jenis akunnya dari username/ID yang
 // dimasukkan (lihat lib/unifiedLogin.js), jadi link yang dibagikan sama
 // persis untuk siapa saja.
-export default function Login({ onLogin, tampilIngat = false }) {
+// ingatJam: lama sesi "tetap masuk" (jam); kosong = 7 hari (versi HP /m). ingatAwal: kotaknya langsung tercentang.
+export default function Login({ onLogin, tampilIngat = false, ingatJam = 0, ingatAwal = false }) {
   // Pengaman fokus: di aplikasi desktop (Electron) jendela kadang kehilangan fokus keyboard setelah logout /
   // dialog sistem, sehingga kolom tidak bisa diketik. Minta fokus jendela lagi lalu fokuskan kolom username.
   const refUsername = useRef(null);
@@ -32,7 +33,7 @@ export default function Login({ onLogin, tampilIngat = false }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [ingat, setIngat] = useState(false); // "Ingat saya di HP ini" — hanya tampil di versi HP (/m)
+  const [ingat, setIngat] = useState(!!ingatAwal); // "Ingat saya / tetap masuk" — hanya tampil di versi HP (/m) dan aplikasi kasir (/kasir)
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,7 +41,7 @@ export default function Login({ onLogin, tampilIngat = false }) {
     setLoading(true);
     setError("");
     try {
-      const result = await unifiedLogin(username, password, { ingat: tampilIngat && ingat });
+      const result = await unifiedLogin(username, password, { ingat: tampilIngat && ingat, ingatMs: ingatJam ? ingatJam * 60 * 60 * 1000 : undefined });
       onLogin(result);
     } catch (err) {
       setError(err.message || "Gagal login");
@@ -103,9 +104,11 @@ export default function Login({ onLogin, tampilIngat = false }) {
                 className="mt-0.5 w-4 h-4 accent-amber-500 flex-shrink-0"
               />
               <span>
-                <span className="block text-sm text-slate-200">Ingat saya di HP ini</span>
+                <span className="block text-sm text-slate-200">{ingatJam ? `Tetap masuk ${ingatJam} jam` : "Ingat saya di HP ini"}</span>
                 <span className="block text-[11px] text-slate-500 leading-snug mt-0.5">
-                  Sesi disimpan 7 hari, jadi notifikasi langsung membuka halaman tanpa login. Cocok untuk HP pribadi Pemilik.
+                  {ingatJam
+                    ? `Aplikasi ditutup lalu dibuka lagi tidak perlu login ulang, selama belum lewat ${ingatJam} jam atau belum menekan Keluar. Jangan dicentang di perangkat bersama.`
+                    : "Sesi disimpan 7 hari, jadi notifikasi langsung membuka halaman tanpa login. Cocok untuk HP pribadi Pemilik."}
                 </span>
               </span>
             </label>
