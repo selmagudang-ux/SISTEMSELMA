@@ -16,6 +16,16 @@
 export const LAYAR_HP = {
   "stok/barang": { muat: () => import("./StokHp.jsx") },
   "stok/menipis": { muat: () => import("./StokHp.jsx") },
+  // Operasional > Admin Gudang yang lain: memakai ulang halaman komputer + modalnya lewat GudangHp.jsx (nama ekspor per menu).
+  "stok/keluar": { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.StokLainHp })) },
+  "stok/hitung": { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.StokLainHp })) },
+  "stok/riwayat": { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.StokLainHp })) },
+  "data-barang": { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.AlurBarangHp })) },
+  // SKU & Harga: satu layar untuk 4 sub-menu (buat / master-barang / kategori / reject).
+  "sku-harga": { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.SkuHargaHp })) },
+  // Rak: satu layar untuk 4 sub-menu (tempatkan / gudang / master / peta).
+  rak: { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.RakHp })) },
+  "cetak-label": { muat: () => import("./GudangHp.jsx").then((m) => ({ default: m.CetakLabelHp })) },
   // Pengadaan Barang: satu layar menangani 4 sub-menu (datang / habis-pakai / aset / supplier).
   "barang-datang": { muat: () => import("./PengadaanHp.jsx") },
   // Keuangan: sub-menu Transaksi (daftar kartu + tambah/edit/hapus) dan Kas (Akun Kas, Buku Kas, Rekonsiliasi). Laporan (Saldo Kas, Arus Kas, Laba Rugi, Neraca). Pengaturan (Rekening & Kategori, Penggunaan Rekening, Log Keterangan, Riwayat Perubahan).
