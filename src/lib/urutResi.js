@@ -1,3 +1,5 @@
+import { normalisasiResi, bukanResi } from "./resiEkspedisi";
+
 // =========================================================
 // URUT RESI — baca PDF resi (Shopee / TikTok Shop / Tokopedia; J&T, GTL, SPX),
 // kelompokkan per produk, lalu susun ulang halamannya supaya resi dengan produk
@@ -179,4 +181,44 @@ export async function buatPdfTerurut(files, urut) {
     pg.forEach((p) => out.addPage(p));
   }
   return out.save();
+}
+
+// Ubah hasil baca PDF (labels) jadi baris orderan untuk tabel resi_barang (Scan Resi),
+// bentuknya sama dengan hasil parseFileOrderan() di lib/resiOrderan.js:
+// { resi, order_id, platform, barang: [{nama, variasi, sku, qty}], total_qty }.
+// Halaman tanpa nomor resi ("?") dilewati. Satu resi = satu baris (barang yang sama digabung).
+export function labelKeOrderan(labels) {
+  const perResi = new Map();
+  let tanpaResi = 0;
+  labels.forEach((l) => {
+    const resi = normalisasiResi(l.resi);
+    if (!resi || bukanResi(resi)) { tanpaResi += 1; return; }
+    const x = perResi.get(resi) || {
+      resi,
+      order_id: l.oid || null,
+      platform: l.tt ? "TikTok Shop" : l.cur === "SPX" ? "Shopee" : l.cur === "GTL" ? "Tokopedia" : "Lainnya",
+      barang: new Map(),
+    };
+    if (!x.order_id && l.oid) x.order_id = l.oid;
+    l.rows.forEach((r) => {
+      // Label TikTok: kolom "SKU" di PDF = isi kolom Variation di export (mis. "CI-72, 7").
+      // Label Shopee/Tokopedia: SKU di kolom SKU, kode rak/variasi di kolom Variasi.
+      const item = {
+        nama: String(r.name || "").slice(0, 160),
+        variasi: l.tt ? String(r.sku || "").trim() : String(r.v || "").trim(),
+        sku: l.tt ? "" : String(r.sku || "").trim(),
+        qty: r.qty || 1,
+      };
+      const kunci = `${item.sku}|${item.nama}|${item.variasi}`;
+      const ada = x.barang.get(kunci);
+      if (ada) ada.qty += item.qty;
+      else x.barang.set(kunci, item);
+    });
+    perResi.set(resi, x);
+  });
+  const baris = [...perResi.values()].map((x) => {
+    const barang = [...x.barang.values()];
+    return { resi: x.resi, order_id: x.order_id, platform: x.platform, barang, total_qty: barang.reduce((a, b) => a + b.qty, 0) };
+  });
+  return { baris, totalPcs: baris.reduce((a, b) => a + b.total_qty, 0), tanpaResi };
 }

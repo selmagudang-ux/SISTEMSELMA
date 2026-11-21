@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from "react";
-import { ListOrdered, Upload, Download, Trash2, Loader2 } from "lucide-react";
+import { ListOrdered, Upload, Download, Trash2, Loader2, PackageCheck } from "lucide-react";
 import { PageHeader, EmptyState, inputClass, btnFilled, btnOutlined } from "../components/ui";
-import { bacaPdfResi, urutkanResi, ringkasPacking, buatPdfTerurut, MODE_URUT } from "../lib/urutResi";
+import { bacaPdfResi, urutkanResi, ringkasPacking, buatPdfTerurut, labelKeOrderan, MODE_URUT } from "../lib/urutResi";
+import { sb } from "../lib/api";
+import { getSession } from "../lib/auth";
+import { ambilInfoPerangkat } from "../lib/infoPerangkat";
 import UrutResiTiktok from "./UrutResiTiktok";
 
 // =========================================================
@@ -11,6 +14,8 @@ import UrutResiTiktok from "./UrutResiTiktok";
 // Logika: lib/urutResi.js.
 // =========================================================
 
+const hariIni = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+
 export default function UrutResi({ showToast }) {
   const [files, setFiles] = useState([]); // [{name, buf}]
   const [labels, setLabels] = useState([]);
@@ -18,6 +23,7 @@ export default function UrutResi({ showToast }) {
   const [pesan, setPesan] = useState(null); // {teks, ok}
   const [sibuk, setSibuk] = useState(false);
   const [seret, setSeret] = useState(false);
+  const [menyimpanOrderan, setMenyimpanOrderan] = useState(false);
   const inputRef = useRef(null);
   const seen = useRef(new Set());
 
@@ -93,6 +99,71 @@ export default function UrutResi({ showToast }) {
     }
   }
 
+  // Jadikan hasil baca PDF sebagai ORDERAN Scan Resi (tabel resi_barang) untuk hari ini,
+  // jadi tidak perlu import orderan (.xlsx) lagi. Resi yang SUDAH ada di orderan (mis. dari
+  // import Excel yang datanya lebih lengkap) tidak ditimpa.
+  async function jadikanOrderan() {
+    const { baris, tanpaResi } = labelKeOrderan(labels);
+    if (!baris.length) { showToast?.("Tidak ada resi yang bisa dijadikan orderan.", "error"); return; }
+    setMenyimpanOrderan(true);
+    try {
+      const hari = hariIni();
+      let baru = 0;
+      for (let i = 0; i < baris.length; i += 300) {
+        const potong = baris.slice(i, i + 300).map((b) => ({
+          resi: b.resi, order_id: b.order_id, platform: b.platform,
+          barang: b.barang, total_qty: b.total_qty, tanggal: hari,
+        }));
+        const res = await sb("resi_barang?on_conflict=entitas,resi&select=id", {
+          method: "POST",
+          body: JSON.stringify(potong),
+          prefer: "resolution=ignore-duplicates,return=representation",
+        });
+        baru += (res || []).length;
+      }
+      const sudahAda = baris.length - baru;
+      // Catat di log import Scan Resi. Gagal mencatat TIDAK boleh menggagalkan orderan yang sudah tersimpan.
+      try {
+        const s = getSession();
+        const dev = await ambilInfoPerangkat();
+        await sb("resi_import_log", {
+          method: "POST",
+          prefer: "return=minimal",
+          body: JSON.stringify({
+            user_id: s?.id != null ? String(s.id) : null,
+            username: s?.username || null,
+            nama: s?.nama || null,
+            role: s?.role || null,
+            tanggal_orderan: hari,
+            nama_file: `Urut Resi (PDF): ${files.length} file`.slice(0, 200),
+            jumlah_terbaca: baris.length,
+            total_pcs: baris.reduce((a, b) => a + b.total_qty, 0),
+            resi_baru: baru,
+            resi_diperbarui: 0,
+            tanpa_resi: tanpaResi,
+            batal_diabaikan: 0,
+            jumlah_hilang: 0,
+            jumlah_cancel: 0,
+            cancel_sudah_scan: 0,
+            resi_cancel: [],
+            ...dev,
+          }),
+        });
+      } catch (errLog) {
+        console.warn("Log import gagal dicatat:", errLog?.message || errLog);
+      }
+      showToast?.(
+        `${baru} resi jadi orderan Scan Resi` +
+          (sudahAda ? `, ${sudahAda} sudah ada (tidak ditimpa)` : "") +
+          (tanpaResi ? `, ${tanpaResi} halaman tanpa nomor resi dilewati` : "") + "."
+      );
+    } catch (e) {
+      showToast?.("Gagal menyimpan orderan: " + (e?.message || e), "error");
+    } finally {
+      setMenyimpanOrderan(false);
+    }
+  }
+
   function kosongkan() {
     setFiles([]); setLabels([]); seen.current = new Set(); setPesan(null);
   }
@@ -162,8 +233,11 @@ export default function UrutResi({ showToast }) {
               </select>
             </label>
             <div className="flex gap-2">
-              <button className={btnOutlined} onClick={kosongkan} disabled={sibuk}>
+              <button className={btnOutlined} onClick={kosongkan} disabled={sibuk || menyimpanOrderan}>
                 <Trash2 size={16} /> Kosongkan
+              </button>
+              <button className={btnOutlined} onClick={jadikanOrderan} disabled={sibuk || menyimpanOrderan}>
+                {menyimpanOrderan ? <Loader2 size={16} className="animate-spin" /> : <PackageCheck size={16} />} Jadikan orderan Scan Resi
               </button>
               <button className={btnFilled} onClick={unduh} disabled={sibuk}>
                 <Download size={16} /> Download PDF terurut
