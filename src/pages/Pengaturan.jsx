@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench } from "lucide-react";
+import { Trash2, Search, AlertTriangle, UserPlus, KeyRound, ImageOff, Wrench, Pencil } from "lucide-react";
 import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../components/ui";
 import { sb, sbAll, RUMUS_HARGA_BAWAAN, rumusHargaEntitas, daftarkanProfilEntitas, entitasSesi } from "../lib/api";
 import { ROLES, bisa, GRUP_AKSI, aksiBawaan, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, ROLE_HANYA_LIHAT_BAWAAN, NAV, allowedMenus, allowedSubMenus, allowedSubMenusBawaan, menuBawaanRole, aksesRoleTersimpan, bolehKasir, setAksesRole, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
-import { listUsers, createUser, updateUserPassword, deleteUser } from "../lib/auth";
+import { listUsers, createUser, updateUserPassword, updateUserNama, deleteUser } from "../lib/auth";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
   // Mode Perbaikan & pembersih data HANYA untuk role "superappa" (Super Admin tersembunyi) —
@@ -722,6 +722,7 @@ function UserManager({ showToast, ptTetap = null }) {
   const [entitasList, setEntitasList] = useState([]);
   const [saving, setSaving] = useState(false);
   const [pwEdit, setPwEdit] = useState(null); // {id, value}
+  const [namaEdit, setNamaEdit] = useState(null); // {id, value}
 
   const load = async () => {
     setLoadingUsers(true);
@@ -784,6 +785,26 @@ function UserManager({ showToast, ptTetap = null }) {
       showToast("Password diperbarui");
     } catch (e) {
       showToast(e.message || "Gagal mengubah password", "err");
+    }
+  };
+
+  const simpanNama = async (u) => {
+    const baru = (namaEdit?.value || "").trim();
+    if (!baru) {
+      showToast("Nama tidak boleh kosong", "err");
+      return;
+    }
+    if (baru === u.nama) {
+      setNamaEdit(null);
+      return;
+    }
+    try {
+      await updateUserNama(u.id, baru);
+      setNamaEdit(null);
+      await load();
+      showToast("Nama user diperbarui");
+    } catch (e) {
+      showToast(e.message || "Gagal mengubah nama", "err");
     }
   };
 
@@ -851,6 +872,13 @@ function UserManager({ showToast, ptTetap = null }) {
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                   <button
+                    onClick={() => setNamaEdit(namaEdit?.id === u.id ? null : { id: u.id, value: u.nama || "" })}
+                    title="Ubah nama"
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-900"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
                     onClick={() => setPwEdit(pwEdit?.id === u.id ? null : { id: u.id, value: "" })}
                     title="Ubah password"
                     className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-900"
@@ -866,6 +894,24 @@ function UserManager({ showToast, ptTetap = null }) {
                   </button>
                 </div>
               </div>
+              {namaEdit?.id === u.id && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    autoFocus
+                    placeholder="Nama baru"
+                    className={inputClass}
+                    value={namaEdit.value}
+                    onChange={(e) => setNamaEdit({ id: u.id, value: e.target.value })}
+                    onKeyDown={(e) => e.key === "Enter" && simpanNama(u)}
+                  />
+                  <button
+                    onClick={() => simpanNama(u)}
+                    className="flex-shrink-0 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+                  >
+                    Simpan
+                  </button>
+                </div>
+              )}
               {pwEdit?.id === u.id && (
                 <div className="flex items-center gap-2 mt-2">
                   <input

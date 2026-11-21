@@ -215,6 +215,25 @@ export async function updateUserPassword(id, newPassword) {
   return data;
 }
 
+// Ubah NAMA tampilan user (bukan username login). Sama seperti password: tabel
+// app_users dikunci dari anon key, jadi lewat Edge Function update-user-nama
+// (service_role, cek JWT sesi lewat header x-selma-jwt).
+export async function updateUserNama(id, nama) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/update-user-nama`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...headerKelolaUser(),
+    },
+    body: JSON.stringify({ id, nama: (nama || "").trim() }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.ok) throw new Error(data?.error || "Gagal mengubah nama");
+  return data;
+}
+
 // Tabel app_users dikunci total dari anon key, jadi hapus user lewat Edge
 // Function delete-user (service_role) — bukan sb() langsung (lihat
 // supabase/functions/delete-user).
