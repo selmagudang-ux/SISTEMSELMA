@@ -3234,7 +3234,20 @@ function SaldoAwalNeraca({ master, entitasKode, reload, showToast }) {
         </div>
         <div>
           <div className="text-xs text-slate-300 mb-1">Saldo awal Laba Ditahan</div>
-          <input type="number" value={laba === 0 ? "" : laba} onChange={(e) => setLaba(e.target.value === "" ? 0 : Number(e.target.value))} placeholder="0" className={inputClass} />
+          <input
+            type="text"
+            inputMode="numeric"
+            value={laba === 0 ? "" : Number(laba).toLocaleString("id-ID")}
+            onChange={(e) => {
+              // Titik pemisah ribuan otomatis; tanda minus di depan boleh (kalau saldo awal Laba Ditahan negatif / rugi).
+              const teks = e.target.value.trim();
+              const minus = teks.startsWith("-");
+              const digit = teks.replace(/\D/g, "");
+              setLaba(digit === "" ? 0 : (minus ? -1 : 1) * Number(digit));
+            }}
+            placeholder="0"
+            className={inputClass}
+          />
           <div className="text-[11px] text-slate-500 mt-1">
             Isi sekali supaya Neraca seimbang pada hari sebelum tanggal awal. Angka yang pas ditampilkan di bawah Neraca (&quot;Saldo awal Laba Ditahan yang membuat Neraca seimbang&quot;). Setelah terisi, selisih
             Aktiva dan Pasiva yang muncul berarti ada transaksi yang salah catat atau belum tercatat.
