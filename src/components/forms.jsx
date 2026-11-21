@@ -5814,21 +5814,20 @@ export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, onClose, o
   );
 }
 
-export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningList, iklanBelum = 0, onClose, onSubmit, saving }) {
+export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningList, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(todayIso);
-  const [jumlah, setJumlah] = useState(saldo + iklanBelum > 0 ? saldo + iklanBelum : "");
+  const [jumlah, setJumlah] = useState(saldo > 0 ? saldo : "");
   const [rekening, setRekening] = useState("");
-  const [rekeningIklan, setRekeningIklan] = useState("");
   const [keterangan, setKeterangan] = useState("");
 
-  // Iklan dibayar dari rekening lain (bukan dipotong dari saldo marketplace),
-  // jadi saldo yang bisa dicairkan = saldo + iklan yang belum tercatat.
-  const saldoRiil = saldo + iklanBelum;
+  // Iklan DIPOTONG dari saldo marketplace yang ada sekarang (saldo sudah dikurangi iklan),
+  // jadi iklan tidak ikut dalam pencairan dan tidak ditambahkan ke jumlah yang bisa dicairkan.
+  const saldoRiil = saldo;
   const jumlahNum = Number(jumlah) || 0;
   const melebihi = jumlahNum > saldoRiil + 0.0001;
   const rekeningOptions = (rekeningList || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
-  const canSubmit = !saving && tanggal && jumlahNum > 0 && !melebihi && rekening && (iklanBelum <= 0 || rekeningIklan);
+  const canSubmit = !saving && tanggal && jumlahNum > 0 && !melebihi && rekening;
   const namaPlatform = PLATFORM_LABEL_FORM[platform] || platform;
 
   return (
@@ -5845,17 +5844,10 @@ export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningL
         Keuangan (kategori "Pencairan Marketplace").
       </p>
 
-      {iklanBelum > 0 && (
-        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
-          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
-          <div>
-            Ada Iklan {fmtRp(iklanBelum)} yang belum tercatat di Keuangan — akan ikut diselesaikan sekarang sebagai
-            Biaya Iklan Marketplace, keluar dari rekening pembayaran iklan yang kamu pilih di bawah (terpisah dari
-            rekening pencairan). Pemasukan tercatat {fmtRp(jumlahNum)} sesuai yang cair. Saldo di atas sudah
-            ditambah iklan ini, karena iklan dibayar dari rekening lain, bukan dipotong dari saldo marketplace.
-          </div>
-        </div>
-      )}
+      <p className="text-xs text-slate-500 mb-3">
+        Saldo di atas sudah dipotong iklan. Biaya iklan diambil dari saldo marketplace yang ada sekarang, tidak ikut
+        dalam jumlah pencairan.
+      </p>
 
       <Field label="Tanggal">
         <InputTanggal value={tanggal} onChange={setTanggal} />
@@ -5881,24 +5873,13 @@ export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningL
         />
       </Field>
 
-      {iklanBelum > 0 && (
-        <Field label={`Rekening Pembayaran Biaya Iklan (${fmtRp(iklanBelum)})`}>
-          <SearchableSelect
-            value={rekeningIklan}
-            onChange={setRekeningIklan}
-            options={rekeningOptions}
-            placeholder="Pilih rekening yang dipakai isi saldo iklan…"
-          />
-        </Field>
-      )}
-
       <Field label="Keterangan (opsional)">
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
       </Field>
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, rekeningIklan: iklanBelum > 0 ? rekeningIklan : null, keterangan: keterangan.trim() })}
+        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, keterangan: keterangan.trim() })}
         className="w-full bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Cairkan"}

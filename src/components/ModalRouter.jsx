@@ -1545,14 +1545,11 @@ export default function ModalRouter({
     // modal.platform, modal.toko (kode toko), modal.tokoLabel, modal.saldo
     // (saldo toko ini saat tombol diklik)
     const rekeningList = rekeningEntitasSesi(master);
-    const iklanBelum = iklanBelumTercatat(marketplaceTransaksi, modal.platform, modal.toko || null);
-    const totalIklanBelum = iklanBelum.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
     // Cari kategori Keuangan berdasarkan label persis (case-insensitive);
     // kalau belum ada, buat otomatis di master_data — supaya Pemasukan
-    // Pencairan Marketplace & Biaya Iklan Marketplace selalu konsisten
-    // tanpa perlu dipilih manual tiap kali (lihat pertanyaan Raden soal
-    // kategori tetap "Pencairan Marketplace" / "Biaya Iklan Marketplace").
+    // Pencairan Marketplace selalu konsisten tanpa perlu dipilih manual
+    // tiap kali.
     const cariAtauBuatKategori = async (tipeKategori, label) => {
       const daftar = master?.[tipeKategori] || [];
       const cocok = daftar.find((m) => (m.label || "").trim().toLowerCase() === label.toLowerCase());
@@ -1569,19 +1566,15 @@ export default function ModalRouter({
         tokoLabel={modal.tokoLabel}
         saldo={modal.saldo}
         rekeningList={rekeningList}
-        iklanBelum={totalIklanBelum}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
           run(async () => {
-            // Iklan yang belum tercatat dibayar dari rekening lain (bukan dipotong
-            // dari saldo marketplace), jadi saldo riil = saldo + iklan belum tercatat.
-            const saldoRiil = modal.saldo + totalIklanBelum;
+            // Iklan DIPOTONG dari saldo marketplace saat ini (saldo sudah dikurangi iklan),
+            // jadi yang bisa dicairkan = saldo saat ini, iklan tidak ikut dalam pencairan.
+            const saldoRiil = modal.saldo;
             if (data.jumlah > saldoRiil + 0.0001) {
               throw new Error(`Saldo ${modal.tokoLabel || modal.platform} (${fmtRp(saldoRiil)}) tidak cukup untuk dicairkan sebesar ${fmtRp(data.jumlah)}`);
-            }
-            if (totalIklanBelum > 0 && !data.rekeningIklan) {
-              throw new Error("Pilih rekening pembayaran Biaya Iklan dulu");
             }
             const rekeningLabel = rekeningList.find((r) => r.kode === data.rekening)?.label || data.rekening;
             const namaSumber = modal.tokoLabel
@@ -1591,9 +1584,8 @@ export default function ModalRouter({
 
             const kategoriPemasukan = await cariAtauBuatKategori("kategori_masuk", "Pencairan Marketplace");
 
-            // Pemasukan = jumlah yang benar-benar cair ke rekening tujuan. Biaya Iklan
-            // (kalau ada) dicatat terpisah, keluar dari rekening pembayaran iklan
-            // (data.rekeningIklan) — bisa beda dengan rekening pencairan.
+            // Pemasukan = jumlah yang benar-benar cair ke rekening tujuan (iklan sudah
+            // dipotong dari saldo marketplace, tidak dicatat terpisah di sini).
             const [rowKeuanganMasuk] = await sb("keuangan_transaksi", {
               method: "POST",
               body: JSON.stringify({
@@ -1606,37 +1598,11 @@ export default function ModalRouter({
               }),
             });
 
-            let rowKeuanganIklan = null;
-            if (totalIklanBelum > 0) {
-              const kategoriBeban = await cariAtauBuatKategori("kategori_keluar", "Biaya Iklan Marketplace");
-              [rowKeuanganIklan] = await sb("keuangan_transaksi", {
-                method: "POST",
-                body: JSON.stringify({
-                  tanggal: data.tanggal,
-                  tipe: "keluar",
-                  rekening: data.rekeningIklan,
-                  kategori: kategoriBeban,
-                  jumlah: totalIklanBelum,
-                  keterangan: `Biaya Iklan ${namaSumber} (dibayar dari ${rekeningList.find((r) => r.kode === data.rekeningIklan)?.label || data.rekeningIklan})`,
-                }),
-              });
-              // Tandai semua Iklan yang baru diselesaikan supaya pencairan
-              // berikutnya tidak menghitungnya lagi. Kolom rekening diisi =
-              // tanda "dibayar dari rekening lain", jadi tidak lagi memotong
-              // saldo marketplace (lihat saldoMarketplace di lib/api.js).
-              const idList = iklanBelum.map((t) => t.id).join(",");
-              await sb(`marketplace_transaksi?id=in.(${idList})`, {
-                method: "PATCH",
-                body: JSON.stringify({ keuangan_transaksi_id: rowKeuanganIklan?.id || null, rekening: data.rekeningIklan }),
-              });
-            }
-
             // Baris keuangan_transaksi dibuat DULU, baru marketplace_transaksi
-            // ditautkan ke id-nya (keuangan_transaksi_id = baris Pemasukan,
-            // keuangan_transaksi_id_iklan = baris Biaya Iklan kalau ada) —
-            // supaya kalau baris pencairan ini dihapus lagi nanti, kedua baris
-            // Keuangan yang nyambung bisa ikut dihapus & Iklan-nya dilepas
-            // tandanya (lihat "hapus-marketplace-transaksi" di bawah).
+            // ditautkan ke id-nya (keuangan_transaksi_id = baris Pemasukan) —
+            // supaya kalau baris pencairan ini dihapus lagi nanti, baris
+            // Keuangan yang nyambung bisa ikut dihapus (lihat
+            // "hapus-marketplace-transaksi" di bawah).
             await sb("marketplace_transaksi", {
               method: "POST",
               body: JSON.stringify({
@@ -1648,7 +1614,6 @@ export default function ModalRouter({
                 rekening: data.rekening,
                 keterangan: data.keterangan || `Dicairkan ke ${rekeningLabel}`,
                 keuangan_transaksi_id: rowKeuanganMasuk?.id || null,
-                keuangan_transaksi_id_iklan: rowKeuanganIklan?.id || null,
               }),
             });
           }, "Saldo dicairkan — tercatat juga di Keuangan")
