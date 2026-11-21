@@ -2514,7 +2514,7 @@ export function SkuEntryForm({ item, master, settings, skuMaster, reload, onClos
         </div>
 
         <Field label="Harga Asli (Rp)">
-          <input type="number" className={inputClass} value={hargaAsli} onChange={(e) => setHargaAsli(e.target.value)} placeholder="0" />
+          <InputRupiah value={hargaAsli} onChange={(v) => setHargaAsli(v === "" ? "" : String(v))} placeholder="0" />
           {Number(item?.harga) > 0 && (
             <p className="text-[11px] text-slate-500 mt-1">
               Otomatis terisi dari harga/pcs saat Input Barang Datang — ubah di sini kalau perlu.

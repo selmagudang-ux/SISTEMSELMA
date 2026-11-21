@@ -1462,7 +1462,7 @@ function PanelBelumCocok({ platform, list, skuMaster, onSimpan, onSimpanHpp, onH
               onClick={async () => { setSibuk(x.k); await onSimpan(x.ref, input[x.k]); setSibuk(""); }}>Simpan</button>
             <div className="basis-full flex flex-wrap items-center gap-2 text-[11px] text-md-on-surface-variant">
               {x.hppManual > 0 ? <span className="text-emerald-400">HPP manual: {fmtRp(x.hppManual)} / pcs</span> : <span>Atau tanpa Master:</span>}
-              <input type="number" min="0" step="1" inputMode="numeric" value={inputHpp[x.k] ?? ""} onChange={(e) => setInputHpp((m) => ({ ...m, [x.k]: e.target.value }))}
+              <input type="text" inputMode="numeric" value={inputHpp[x.k] ? Number(inputHpp[x.k]).toLocaleString("id-ID") : ""} onChange={(e) => setInputHpp((m) => ({ ...m, [x.k]: e.target.value.replace(/\D/g, "") }))}
                 placeholder={x.hppManual > 0 ? "Ubah HPP (Rp)" : "HPP manual (Rp per pcs)"} className={`${inputClass} !w-48`} />
               <button className={btnOutlined} disabled={!(Number(inputHpp[x.k]) > 0) || sibuk === x.k}
                 onClick={async () => { setSibuk(x.k); const ok = await onSimpanHpp(x.ref, inputHpp[x.k]); if (ok) setInputHpp((m) => ({ ...m, [x.k]: "" })); setSibuk(""); }}>

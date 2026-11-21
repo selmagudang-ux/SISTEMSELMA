@@ -52,7 +52,14 @@ export default function ModalItemManual({ onTambah, onClose }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-400">Harga satuan (Rp)</label>
-              <input type="number" inputMode="numeric" min="0" value={harga} onChange={(e) => setHarga(e.target.value)} placeholder="0" className={`${inputCls} mt-1 tabular-nums`} />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={harga === "" ? "" : Number(harga).toLocaleString("id-ID")}
+                onChange={(e) => setHarga(e.target.value.replace(/\D/g, ""))}
+                placeholder="0"
+                className={`${inputCls} mt-1 tabular-nums`}
+              />
             </div>
             <div>
               <label className="text-xs text-slate-400">Jumlah</label>
