@@ -210,7 +210,7 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
 
       <PageHeader
         title={`${label} — ${toko.label}`}
-        description="Pemasukan & pengeluaran iklan dicatat di sini, saldonya dihitung sendiri (belum masuk Keuangan). Saat dicairkan, baru tercatat sebagai pemasukan di Keuangan."
+        description="Pemasukan dicatat di sini dan baru masuk Keuangan saat dicairkan. Tiap top-up iklan dicatat satu-satu: memotong saldo marketplace dan langsung tercatat sebagai Biaya Iklan di Keuangan."
         action={tab !== "saldo" ? null : (
           <div className="flex gap-2">
             <button
@@ -223,7 +223,7 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
               onClick={() => setModal({ type: "marketplace-transaksi-form", tipe: "iklan", ...modalDasar })}
               className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
             >
-              <Plus size={14} /> Iklan
+              <Plus size={14} /> Top-up Iklan
             </button>
             <button
               onClick={() => setModal({ type: "marketplace-pencairan", ...modalDasar, saldo })}
@@ -294,7 +294,17 @@ function DetailToko({ platform, label, toko, marketplaceTransaksi, master, skuMa
                     <td className="px-4 py-2.5">
                       <Badge color={TIPE_BADGE[t.tipe] || "slate"}>{TIPE_LABEL[t.tipe] || t.tipe}</Badge>
                     </td>
-                    <td className="px-4 py-2.5 text-md-on-surface-variant">{t.keterangan || "—"}</td>
+                    <td className="px-4 py-2.5 text-md-on-surface-variant">
+                      {t.keterangan || "—"}
+                      {t.tipe === "iklan" && !t.keuangan_transaksi_id && (
+                        <button
+                          onClick={() => setModal({ type: "marketplace-iklan-catat", item: t })}
+                          className="ml-2 text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
+                        >
+                          Catat ke Keuangan
+                        </button>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-md-on-surface-variant">{rekeningLabel}</td>
                     <td className={`px-4 py-2.5 text-right font-medium ${t.tipe === "pemasukan" ? "text-emerald-400" : "text-slate-300"}`}>
                       {t.tipe === "pemasukan" ? "+" : "-"}{fmtRp(t.jumlah)}
