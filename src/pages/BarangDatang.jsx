@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, PackageOpen, Clock, Pencil, Search, Truck } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, ChevronLeft, Trash2, AlertTriangle, Receipt, X, PackageCheck, PackageOpen, Clock, Pencil, Search, Truck, Wallet } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Badge, formatTanggalID, InputTanggal } from "../components/ui";
 import { detailModelPesanan, fmtRp, statusPesananMasuk, tahapPesanan, statusBongkar, statusKonfirmasiDatang, rincianBongkarBox } from "../lib/api";
 import { TAHAP_PESANAN_META, BONGKAR_META, KONFIRMASI_DATANG_META } from "../lib/constants";
@@ -827,6 +827,22 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const jumlahSudahDatang = list.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
   const jumlahBelumDatang = list.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
 
+  // Total Belanja & Total Barang Reject — dihitung dari `list` yang sama
+  // (ikut filter periode) dan dengan rumus yang SAMA seperti kolom "Nilai"
+  // di tabel: qty datang (baik + rusak) x harga/pcs, dijumlah dari invoice
+  // utama + invoice tambahan. Pesanan berjenis "Retur" tidak dihitung
+  // sebagai belanja. Reject = qty rusak (dan nilai Rp-nya = qty rusak x
+  // harga/pcs) dari semua model di pesanan yang sama.
+  let totalBelanja = 0;
+  let totalRejectQty = 0;
+  let totalRejectNilai = 0;
+  list.forEach((p) => {
+    const detail = [p, ...anakDari(p.id)].flatMap((inv) => detailModelPesanan(inv));
+    if (p.jenis !== "Retur") totalBelanja += totalNilaiTransaksi(detail);
+    totalRejectQty += totalRusakTransaksi(detail);
+    totalRejectNilai += detail.reduce((s, m) => s + (Number(m.rusak) || 0) * (Number(m.harga) || 0), 0);
+  });
+
   // Kalau halaman aktif jadi kelebihan (mis. sebelumnya di halaman 5 lalu
   // sebagian riwayat dihapus sehingga cuma tersisa 2 halaman), tarik balik
   // ke halaman terakhir yang masih valid supaya tidak nampak tabel kosong.
@@ -854,7 +870,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
         }
       />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
         <StatCard label="Total Pesanan" value={list.length} icon={Clock} accent="text-slate-200" iconColor="text-slate-400" />
         <div
           role="button"
@@ -887,6 +903,22 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
           )}
         </div>
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
+        <StatCard
+          label="Total Belanja"
+          value={fmtRp(totalBelanja)}
+          icon={Wallet}
+          accent="text-emerald-400"
+          iconColor="text-emerald-500"
+          sub="Nilai barang datang (tanpa Retur)"
+        />
+        <StatCard
+          label="Total Barang Reject"
+          value={`${totalRejectQty}x`}
+          icon={AlertTriangle}
+          accent="text-red-400"
+          iconColor="text-red-500"
+          sub={totalRejectQty > 0 ? `Senilai ${fmtRp(totalRejectNilai)}` : "Tidak ada barang reject"}
+        />
       </div>
 
       {/* Filter periode (berdasar tanggal pesan) — default BULAN INI. Panah

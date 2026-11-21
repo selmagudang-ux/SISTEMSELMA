@@ -1155,7 +1155,7 @@ export function SearchableSelectOrNew({
 // Kartu statistik ala Material — permukaan "container" (bukan cuma border
 // tipis) dengan elevation 1 yang naik ke elevation 2 saat disentuh/hover,
 // memberi kesan kartu benar-benar "terangkat" seperti di app Android.
-export function StatCard({ label, value, accent, icon: Icon, iconColor, onClick }) {
+export function StatCard({ label, value, accent, icon: Icon, iconColor, onClick, sub }) {
   const Comp = onClick ? "button" : "div";
   return (
     <Comp
@@ -1172,6 +1172,7 @@ export function StatCard({ label, value, accent, icon: Icon, iconColor, onClick 
       )}
       <div className={`text-2xl font-medium ${accent || "text-md-on-surface"}`}>{value}</div>
       <div className="text-xs text-md-on-surface-variant mt-1">{label}</div>
+      {sub ? <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div> : null}
     </Comp>
   );
 }
