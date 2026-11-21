@@ -1584,6 +1584,10 @@ export default function ModalRouter({
 
             const kategoriPemasukan = await cariAtauBuatKategori("kategori_masuk", "Pencairan Marketplace");
 
+            // Bukti pencairan (foto/PDF, boleh banyak) diunggah DULU supaya kalau gagal upload,
+            // belum ada baris yang tersimpan. URL-nya ikut di baris Pemasukan Keuangan.
+            const buktiCair = data.fotoList?.length ? await unggahBuktiBanyak(data.fotoList, `cair-${modal.platform}`) : [];
+
             // Pemasukan = jumlah yang benar-benar cair ke rekening tujuan (iklan sudah
             // dipotong dari saldo marketplace, tidak dicatat terpisah di sini).
             const [rowKeuanganMasuk] = await sb("keuangan_transaksi", {
@@ -1595,6 +1599,7 @@ export default function ModalRouter({
                 kategori: kategoriPemasukan,
                 jumlah: data.jumlah,
                 keterangan: keteranganKeuangan,
+                ...(buktiCair.length ? { bukti_urls: buktiCair, bukti_url: buktiCair[0] } : {}),
               }),
             });
 

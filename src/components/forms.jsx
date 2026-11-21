@@ -5820,6 +5820,7 @@ export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningL
   const [jumlah, setJumlah] = useState(saldo > 0 ? saldo : "");
   const [rekening, setRekening] = useState("");
   const [keterangan, setKeterangan] = useState("");
+  const [fotoList, setFotoList] = useState([]); // bukti pencairan (foto/PDF, boleh banyak)
 
   // Iklan DIPOTONG dari saldo marketplace yang ada sekarang (saldo sudah dikurangi iklan),
   // jadi iklan tidak ikut dalam pencairan dan tidak ditambahkan ke jumlah yang bisa dicairkan.
@@ -5877,9 +5878,11 @@ export function MarketplacePencairanForm({ platform, tokoLabel, saldo, rekeningL
         <input className={inputClass} value={keterangan} onChange={(e) => setKeterangan(e.target.value)} />
       </Field>
 
+      <BuktiBayarInput files={fotoList} setFiles={setFotoList} />
+
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, keterangan: keterangan.trim() })}
+        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, rekening, keterangan: keterangan.trim(), fotoList })}
         className="w-full bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Cairkan"}
