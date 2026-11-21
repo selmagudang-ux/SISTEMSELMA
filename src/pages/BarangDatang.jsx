@@ -828,15 +828,17 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const jumlahSudahDatang = list.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
   const jumlahBelumDatang = list.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
 
-  // Total Belanja = TOTAL PEMBAYARAN KE SUPPLIER, dari `list` yang sama
-  // (ikut filter periode). Nominal pembayaran per pesanan = harga_kesepakatan
-  // (diisi waktu "Pesan Barang", sama dengan yang dicatat ke Keuangan); kalau
-  // kosong (data lama) dipakai jumlah harga_pembayaran tiap invoice. Pesanan
-  // berjenis "Retur" tidak dihitung. Saat kartu diklik, total itu dipecah:
-  // - Sudah datang = pesanan yang sudah ditandai datang (atau sudah punya
-  //   rincian/draf barang datang),
-  // - Belum datang = pesanan yang masih berstatus "belum datang".
-  // Jadi Sudah + Belum selalu = Total Belanja.
+  // Total Belanja = TOTAL PEMBAYARAN KE SUPPLIER yang diambil dari PESANAN,
+  // dari `list` yang sama (ikut filter periode). Nominal pembayaran per
+  // pesanan = harga_kesepakatan (diisi waktu "Pesan Barang", sama dengan yang
+  // dicatat ke Keuangan); kalau kosong (data lama) dipakai jumlah
+  // harga_pembayaran tiap invoice. Pesanan berjenis "Retur" tidak dihitung.
+  // Saat kartu diklik, rinciannya:
+  // - Barang Sudah Datang = nilai barang dari INVOICE (qty x harga/pcs di
+  //   rincian Konfirmasi Datang) untuk pesanan yang sudah datang,
+  // - Barang Belum Datang = nominal PESANAN yang masih "belum datang",
+  // - Diskon = selisih nilai invoice dikurangi nominal pesanan, hanya untuk
+  //   pesanan sudah datang yang invoice-nya lebih besar dari pembayarannya.
   // Total Barang Reject = qty rusak (+ nilai Rp: qty rusak x harga/pcs).
   const pembayaranPesanan = (p) => {
     const k = Number(p.harga_kesepakatan) || 0;
@@ -846,6 +848,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   let totalBelanja = 0;
   let belanjaSudahDatang = 0;
   let belanjaBelumDatang = 0;
+  let totalDiskon = 0;
   let totalRejectQty = 0;
   let totalRejectNilai = 0;
   list.forEach((p) => {
@@ -853,8 +856,13 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
     if (p.jenis !== "Retur") {
       const bayar = pembayaranPesanan(p);
       totalBelanja += bayar;
-      if (statusKonfirmasiDatang(p) === "belum") belanjaBelumDatang += bayar;
-      else belanjaSudahDatang += bayar;
+      if (statusKonfirmasiDatang(p) === "belum") {
+        belanjaBelumDatang += bayar;
+      } else {
+        const nilaiInvoice = totalNilaiTransaksi(detail);
+        belanjaSudahDatang += nilaiInvoice;
+        if (bayar > 0 && nilaiInvoice > bayar) totalDiskon += nilaiInvoice - bayar;
+      }
     }
     totalRejectQty += totalRusakTransaksi(detail);
     totalRejectNilai += detail.reduce((s, m) => s + (Number(m.rusak) || 0) * (Number(m.harga) || 0), 0);
@@ -943,6 +951,10 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1"><Clock size={11} className="text-amber-500" /> Barang Belum Datang</span>
                 <span className="text-amber-400 font-semibold">{fmtRp(belanjaBelumDatang)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2" title="Nilai barang di invoice dikurangi nominal pembayaran di pesanan">
+                <span>Diskon</span>
+                <span className="text-emerald-400 font-semibold">{fmtRp(totalDiskon)}</span>
               </div>
             </div>
           )}
