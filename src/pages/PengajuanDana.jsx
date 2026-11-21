@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, HandCoins, XCircle, Ban, ArrowRight, Paperclip, Send, X, Trash2 } from "lucide-react";
+import { Plus, HandCoins, XCircle, Ban, ArrowRight, Paperclip, Send, X, Trash2, Loader2 } from "lucide-react";
 import { Badge, EmptyState, ModalShell, Field, inputClass, InputRupiah, InputTanggal, formatTanggalID } from "../components/ui";
-import { sb, fmtRp, PENANDA_ANTAR_ENTITAS, penandaUntukArah } from "../lib/api";
+import { sb, fmtRp, PENANDA_ANTAR_ENTITAS, penandaUntukArah, daftarGaji, tandaiGajiDiterimaAdmin, labelPeriodeGaji } from "../lib/api";
+import { listKaryawan } from "../lib/absensi";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
 import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 
@@ -11,6 +12,10 @@ import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 //   -> Pemberi: "Setujui & Transfer" (Holding.jsx membuka form Transfer Antar Entitas yang sudah terisi;
 //      setelah transfer tersimpan, pengajuan ditandai "disetujui" + transaksi_id) atau "Tolak" (wajib alasan)
 //   -> Peminta boleh "Batalkan" selama masih menunggu.
+// JENIS "GAJI" (jenis = "gaji", rincian_gaji = [{id, nama, nominal, periode, rekening, selesai}]): cabang mengajukan
+//   gaji karyawan yang sudah disiapkan (draft) di Penggajian. Saat Pusat "Setujui & Bayar Gaji", setiap gaji dicatat
+//   "Dibayar Pusat" lewat edge function gaji-admin (Pemberian Modal Pusat -> cabang + beban gaji di cabang).
+//   Migrasi: supabase/migrations/20261121_pengajuan_dana_gaji.sql
 // Tabel ini tidak menggerakkan uang — uang hanya bergerak lewat keuangan_transaksi (transfer biasa).
 // Tabel: pengajuan_dana (supabase/migrations/20261119_pengajuan_dana.sql).
 // =========================================================
@@ -95,6 +100,7 @@ export default function PengajuanDana({
           entitas_peminta: d.peminta,
           entitas_pemberi: d.pemberi,
           jenis_usulan: d.jenis,
+          ...(d.rincianGaji ? { jenis: "gaji", rincian_gaji: d.rincianGaji } : {}),
           jumlah: d.jumlah,
           keperluan: d.keperluan,
           tanggal_dibutuhkan: d.tanggalDibutuhkan || null,
@@ -149,6 +155,65 @@ export default function PengajuanDana({
       });
       if (!klaim?.length) throw new Error("Pengajuan ini sudah dibatalkan peminta atau sudah diproses. Muat ulang.");
     }, "Pengajuan ditolak");
+
+  // Setujui pengajuan jenis gaji: periksa dulu masih "menunggu", lalu buka form (password admin + rekening Pusat).
+  const mulaiSetujuiGaji = async (p) => {
+    await muat();
+    try {
+      const ada = await sb(`pengajuan_dana?id=eq.${p.id}&select=status,rincian_gaji`);
+      if (ada?.[0]?.status !== "menunggu") {
+        showToast?.("Pengajuan ini sudah diproses atau dibatalkan. Daftar dimuat ulang.", "err");
+        return;
+      }
+      setModal({ jenis: "setujuiGaji", p: { ...p, rincian_gaji: ada[0].rincian_gaji ?? p.rincian_gaji } });
+    } catch (e) {
+      showToast?.(e.message || "Gagal memeriksa pengajuan", "err");
+    }
+  };
+
+  // Jalankan "Dibayar Pusat" untuk tiap gaji. Gaji yang sudah berhasil ditandai (selesai) dan dilewati saat dicoba lagi,
+  // jadi aman diulang kalau ada yang gagal di tengah (mis. password salah / gaji sudah diubah).
+  const setujuiGaji = async (p, pw, rekPusat) => {
+    setProses(true);
+    try {
+      const daftar = (Array.isArray(p.rincian_gaji) ? p.rincian_gaji : []).map((x) => ({ ...x }));
+      const gagal = [];
+      for (const it of daftar) {
+        if (it.selesai) continue;
+        try {
+          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekPusat });
+          it.selesai = true;
+        } catch (e) {
+          gagal.push(`${it.nama || "gaji"}: ${e.message}`);
+        }
+      }
+      if (daftar.length && daftar.every((x) => x.selesai)) {
+        const klaim = await sb(`pengajuan_dana?id=eq.${p.id}&status=eq.menunggu`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "disetujui",
+            rincian_gaji: daftar,
+            jumlah_disetujui: Number(p.jumlah) || null,
+            diproses_oleh_nama: session?.nama || session?.username || null,
+            diproses_at: new Date().toISOString(),
+          }),
+        });
+        if (!klaim?.length) throw new Error("Gaji sudah tercatat dibayar Pusat, tetapi status pengajuan tidak berubah. Muat ulang.");
+        showToast?.(`Gaji ${daftar.length} karyawan dicatat dibayar Pusat`);
+        setModal(null);
+      } else {
+        try { await sb(`pengajuan_dana?id=eq.${p.id}&status=eq.menunggu`, { method: "PATCH", body: JSON.stringify({ rincian_gaji: daftar }) }); } catch { /* abaikan */ }
+        setModal({ jenis: "setujuiGaji", p: { ...p, rincian_gaji: daftar } });
+        showToast?.(`Sebagian belum berhasil — ${gagal.join("; ")}`, "err");
+      }
+      await muat();
+      await reloadKeuangan?.();
+    } catch (e) {
+      showToast?.(e.message || "Gagal memproses", "err");
+    } finally {
+      setProses(false);
+    }
+  };
 
   return (
     <div>
@@ -205,12 +270,26 @@ export default function PengajuanDana({
                 <div className="px-4 py-3">
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                     <div className="text-lg font-semibold text-sky-400">{fmtRp(p.jumlah)}</div>
-                    <Badge color={p.jenis_usulan === "pinjaman" ? "amber" : "sky"}>Usulan: {PENANDA_ANTAR_ENTITAS[p.jenis_usulan] || p.jenis_usulan}</Badge>
+                    {p.jenis === "gaji" ? (
+                      <Badge color="violet">Gaji karyawan — dibayar langsung oleh Pusat</Badge>
+                    ) : (
+                      <Badge color={p.jenis_usulan === "pinjaman" ? "amber" : "sky"}>Usulan: {PENANDA_ANTAR_ENTITAS[p.jenis_usulan] || p.jenis_usulan}</Badge>
+                    )}
                     {p.status === "disetujui" && p.jumlah_disetujui != null && Number(p.jumlah_disetujui) !== Number(p.jumlah) && (
                       <span className="text-xs text-emerald-400">disetujui {fmtRp(p.jumlah_disetujui)}</span>
                     )}
                   </div>
                   <div className="text-sm text-slate-200 mt-1.5">{p.keperluan}</div>
+                  {p.jenis === "gaji" && Array.isArray(p.rincian_gaji) && (
+                    <div className="mt-1.5 rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800">
+                      {p.rincian_gaji.map((it) => (
+                        <div key={it.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+                          <span className="text-slate-200">{it.nama}{it.periode ? <span className="text-slate-500"> · {labelPeriodeGaji(it.periode)}</span> : null}</span>
+                          <span className="text-slate-300">{fmtRp(it.nominal)}{it.selesai ? " ✓" : ""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="text-[11px] text-slate-500 mt-1">
                     {p.tanggal_dibutuhkan ? `Dibutuhkan ${formatTanggalID(p.tanggal_dibutuhkan)}` : "Tanggal dibutuhkan tidak ditentukan"}
                     {p.rekening_tujuan ? ` · ke rekening ${p.rekening_tujuan}` : ""}
@@ -232,7 +311,7 @@ export default function PengajuanDana({
                   )}
                   {p.status === "disetujui" && (
                     <div className="text-[11px] text-slate-500 mt-1.5">
-                      Disetujui{p.diproses_oleh_nama ? ` oleh ${p.diproses_oleh_nama}` : ""} {fmtWaktu(p.diproses_at)} · transfer tercatat di tab Transfer
+                      Disetujui{p.diproses_oleh_nama ? ` oleh ${p.diproses_oleh_nama}` : ""} {fmtWaktu(p.diproses_at)} · {p.jenis === "gaji" ? "gaji dicatat dibayar Pusat (lihat Penggajian & tab Transfer)" : "transfer tercatat di tab Transfer"}
                     </div>
                   )}
                 </div>
@@ -242,14 +321,16 @@ export default function PengajuanDana({
                       disabled={proses}
                       onClick={() =>
                         window.confirm(
-                          p.status === "disetujui"
+                          p.status === "disetujui" && p.jenis === "gaji"
+                            ? `Hapus riwayat pengajuan ${p.kode}?\n\nGajinya TIDAK ikut terhapus — kelola di menu Penggajian.`
+                            : p.status === "disetujui"
                             ? `Hapus pengajuan ${p.kode} BESERTA transfer ${fmtRp(p.jumlah_disetujui ?? p.jumlah)} yang sudah tercatat?\n\nSaldo rekening kembali seperti sebelum transfer. Tidak bisa dibatalkan.`
                             : `Hapus riwayat pengajuan ${p.kode}?`
                         ) && hapus(p)
                       }
                       className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10 disabled:opacity-40 ml-auto"
                     >
-                      <Trash2 size={13} /> {p.status === "disetujui" ? "Hapus + transfernya" : "Hapus riwayat"}
+                      <Trash2 size={13} /> {p.status === "disetujui" && p.jenis !== "gaji" ? "Hapus + transfernya" : "Hapus riwayat"}
                     </button>
                   </div>
                 )}
@@ -259,10 +340,10 @@ export default function PengajuanDana({
                       <>
                         <button
                           disabled={proses}
-                          onClick={() => onSetujui(p)}
+                          onClick={() => (p.jenis === "gaji" ? mulaiSetujuiGaji(p) : onSetujui(p))}
                           className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40"
                         >
-                          <Send size={13} /> Setujui & Transfer
+                          <Send size={13} /> {p.jenis === "gaji" ? "Setujui & Bayar Gaji" : "Setujui & Transfer"}
                         </button>
                         <button
                           disabled={proses}
@@ -301,6 +382,17 @@ export default function PengajuanDana({
           onSubmit={(d) => ajukan(d).then((ok) => ok && setModal(null))}
         />
       )}
+      {modal?.jenis === "setujuiGaji" && (
+        <FormSetujuiGaji
+          p={modal.p}
+          namaEnt={namaEnt}
+          rekeningList={opsiRekeningPenerima(kodeHolding)}
+          bolehBayar={session?.role === "superappa"}
+          saving={proses}
+          onClose={() => setModal(null)}
+          onSubmit={(pw, rek) => setujuiGaji(modal.p, pw, rek)}
+        />
+      )}
       {modal?.jenis === "tolak" && (
         <FormTolak p={modal.p} namaEnt={namaEnt} saving={proses} onClose={() => setModal(null)} onSubmit={(p, alasan) => tolak(p, alasan).then((ok) => ok && setModal(null))} />
       )}
@@ -323,6 +415,13 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
   const [catatan, setCatatan] = useState("");
   const [fileList, setFileList] = useState([]);
   const [mengunggah, setMengunggah] = useState(false);
+  // Mode "gaji": pilih gaji berstatus draft dari Penggajian (butuh password admin untuk membacanya).
+  const [mode, setMode] = useState("dana");
+  const [pwGaji, setPwGaji] = useState("");
+  const [draftGaji, setDraftGaji] = useState(null); // null = belum dimuat
+  const [muatGaji, setMuatGaji] = useState(false);
+  const [pilihGaji, setPilihGaji] = useState({}); // id -> true
+  const [galatGaji, setGalatGaji] = useState("");
 
   const labelEnt = (kode) => entitasList.find((e) => e.kode === kode)?.label || kode;
   const pilihanPemberi = entitasList.filter((e) => e.kode !== peminta);
@@ -350,8 +449,33 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
   const pratinjau = useMemo(() => fileList.map((f) => URL.createObjectURL(f)), [fileList]);
   useEffect(() => () => pratinjau.forEach((u) => URL.revokeObjectURL(u)), [pratinjau]);
 
-  const jumlahNum = Number(jumlah) || 0;
-  const valid = peminta && pemberi && peminta !== pemberi && jumlahNum > 0 && keperluan.trim().length >= 3;
+  const muatDraftGaji = async () => {
+    if (!peminta || !pwGaji) return;
+    setMuatGaji(true);
+    setGalatGaji("");
+    try {
+      const [baris, kar] = await Promise.all([daftarGaji(pwGaji, { status: "draft", entitas: peminta }), listKaryawan(false, peminta)]);
+      const nama = new Map((kar || []).map((k) => [k.id, k.nama]));
+      setDraftGaji((baris || []).map((g) => ({ ...g, nama: nama.get(g.karyawan_id) || "—" })));
+      setPilihGaji({});
+    } catch (e) {
+      setGalatGaji(e.message || "Gagal membaca gaji.");
+      setDraftGaji(null);
+    } finally {
+      setMuatGaji(false);
+    }
+  };
+  useEffect(() => {
+    setDraftGaji(null);
+    setPilihGaji({});
+  }, [peminta, mode]);
+  const gajiTerpilih = (draftGaji || []).filter((g) => pilihGaji[g.id]);
+  const totalGaji = gajiTerpilih.reduce((a, g) => a + (Number(g.nominal) || 0), 0);
+
+  const jumlahNum = mode === "gaji" ? totalGaji : Number(jumlah) || 0;
+  const valid = mode === "gaji"
+    ? !!(peminta && pemberi && peminta !== pemberi && gajiTerpilih.length > 0)
+    : peminta && pemberi && peminta !== pemberi && jumlahNum > 0 && keperluan.trim().length >= 3;
 
   const kirim = async () => {
     if (!valid || saving || mengunggah) return;
@@ -366,6 +490,12 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
         return;
       }
       setMengunggah(false);
+    }
+    if (mode === "gaji") {
+      const rincianGaji = gajiTerpilih.map((g) => ({ id: g.id, nama: g.nama, nominal: Number(g.nominal) || 0, periode: g.periode, rekening: g.rekening_sumber }));
+      const ringkas = rincianGaji.slice(0, 3).map((x) => x.nama).join(", ") + (rincianGaji.length > 3 ? ` +${rincianGaji.length - 3} lainnya` : "");
+      onSubmit({ peminta, pemberi, jenis: "modal", jumlah: jumlahNum, keperluan: `Gaji karyawan: ${ringkas}`, tanggalDibutuhkan, rekening: "", catatan: catatan.trim(), bukti, rincianGaji });
+      return;
     }
     onSubmit({ peminta, pemberi, jenis, jumlah: jumlahNum, keperluan: keperluan.trim(), tanggalDibutuhkan, rekening, catatan: catatan.trim(), bukti });
   };
@@ -385,6 +515,19 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
         <div className="text-xs text-slate-400 mb-3">Diajukan atas nama <span className="text-slate-100 font-medium">{labelEnt(peminta)}</span></div>
       )}
 
+      <div className="flex gap-2 mb-3">
+        {[["dana", "Dana biasa"], ["gaji", "Gaji karyawan (dibayar Pusat)"]].map(([k, l]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setMode(k)}
+            className={`text-xs px-3 py-1.5 rounded-full border ${mode === k ? "bg-amber-500/15 border-amber-500/40 text-amber-300" : "border-slate-700 text-slate-400 hover:bg-slate-800"}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
       <Field label="Minta ke">
         <select className={inputClass} value={pemberi} onChange={(e) => setPemberi(e.target.value)} disabled={!peminta}>
           <option value="">{peminta ? "Pilih pihak yang dimintai dana…" : "Pilih perusahaan dulu…"}</option>
@@ -394,6 +537,36 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
         </select>
       </Field>
 
+      {mode === "gaji" ? (
+        <div className="mb-3">
+          <div className="text-[11px] text-slate-500 mb-2">
+            Pusat membayar gaji langsung ke karyawan. Pembukuan: Pemberian Modal Pusat → cabang dan beban gaji tercatat di cabang (tidak ganda).
+            Siapkan dulu gajinya sebagai <b>draft</b> di menu Penggajian dan pilih rekening sumbernya.
+          </div>
+          <Field label="Password akun Anda (untuk membaca data gaji)">
+            <div className="flex gap-2">
+              <input type="password" className={inputClass} value={pwGaji} onChange={(e) => setPwGaji(e.target.value)} autoComplete="current-password" />
+              <button type="button" disabled={!peminta || !pwGaji || muatGaji} onClick={muatDraftGaji} className="text-xs px-3 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800 disabled:opacity-40 whitespace-nowrap">
+                {muatGaji ? "Memuat…" : "Muat gaji draft"}
+              </button>
+            </div>
+          </Field>
+          {galatGaji && <div className="text-xs text-red-300 mb-2">{galatGaji}</div>}
+          {draftGaji && draftGaji.length === 0 && <div className="text-xs text-slate-400 mb-2">Tidak ada gaji berstatus draft untuk {labelEnt(peminta)}. Siapkan dulu di menu Penggajian.</div>}
+          {draftGaji && draftGaji.length > 0 && (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800">
+              {draftGaji.map((g) => (
+                <label key={g.id} className={`flex items-center gap-2 px-3 py-2 text-xs ${g.rekening_sumber ? "cursor-pointer" : "opacity-50"}`}>
+                  <input type="checkbox" disabled={!g.rekening_sumber} checked={!!pilihGaji[g.id]} onChange={(e) => setPilihGaji((m) => ({ ...m, [g.id]: e.target.checked }))} />
+                  <span className="text-slate-200 flex-1">{g.nama} <span className="text-slate-500">· {labelPeriodeGaji(g.periode)}{g.rekening_sumber ? "" : " · rekening sumber belum dipilih"}</span></span>
+                  <span className="text-slate-300">{fmtRp(g.nominal)}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="text-sm text-slate-200 mt-2">Total diajukan: <b className="text-sky-400">{fmtRp(totalGaji)}</b> ({gajiTerpilih.length} gaji)</div>
+        </div>
+      ) : (<>
       <Field label="Jenis dana yang diusulkan">
         <select className={inputClass} value={jenis} onChange={(e) => setJenis(e.target.value)}>
           {jenisBoleh.map((v) => (
@@ -413,10 +586,13 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
         <textarea className={inputClass} rows={3} value={keperluan} onChange={(e) => setKeperluan(e.target.value)} placeholder="mis. bayar supplier kain bulan ini / gaji karyawan / beli stok" />
       </Field>
 
+      </>)}
+
       <Field label="Dibutuhkan tanggal (opsional)">
         <InputTanggal className={inputClass} value={tanggalDibutuhkan} onChange={setTanggalDibutuhkan} />
       </Field>
 
+      {mode === "dana" && (
       <Field label="Dikirim ke rekening (opsional)">
         <select className={inputClass} value={rekening} onChange={(e) => setRekening(e.target.value)} disabled={!peminta}>
           <option value="">Belum ditentukan — pemberi yang memilih</option>
@@ -425,6 +601,7 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
           ))}
         </select>
       </Field>
+      )}
 
       <Field label="Catatan (opsional)">
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
@@ -469,6 +646,53 @@ function FormTolak({ p, namaEnt, saving, onClose, onSubmit }) {
         className="w-full text-sm font-medium py-2.5 rounded-lg bg-red-500 text-white hover:bg-red-400 disabled:opacity-40"
       >
         {saving ? "Memproses…" : "Tolak Pengajuan"}
+      </button>
+    </ModalShell>
+  );
+}
+
+// Persetujuan pengajuan jenis gaji: Pusat membayar gaji langsung ke karyawan, sistem mencatat pembukuannya.
+function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose, onSubmit }) {
+  const [pw, setPw] = useState("");
+  const [rek, setRek] = useState("");
+  const daftar = Array.isArray(p.rincian_gaji) ? p.rincian_gaji : [];
+  const sisa = daftar.filter((x) => !x.selesai);
+  const total = sisa.reduce((a, x) => a + (Number(x.nominal) || 0), 0);
+  return (
+    <ModalShell title={`Bayar gaji ${p.kode}`} onClose={onClose} maxWidth="max-w-xl">
+      <div className="text-xs text-slate-400 mb-2">
+        Gaji karyawan {namaEnt(p.entitas_peminta)} yang dibayar langsung oleh Pusat. Pastikan pembayaran ke karyawan sudah dilakukan.
+      </div>
+      <div className="rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800 mb-3">
+        {daftar.map((it) => (
+          <div key={it.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+            <span className="text-slate-200">{it.nama}{it.periode ? <span className="text-slate-500"> · {labelPeriodeGaji(it.periode)}</span> : null}</span>
+            <span className="text-slate-300">{fmtRp(it.nominal)}{it.selesai ? " ✓ sudah dicatat" : ""}</span>
+          </div>
+        ))}
+      </div>
+      <div className="text-sm text-slate-200 mb-3">Dicatat sekarang: <b className="text-sky-400">{fmtRp(total)}</b> ({sisa.length} gaji). Nominal mengikuti data gaji di Penggajian saat ini.</div>
+      {!bolehBayar && (
+        <div className="text-xs text-amber-300 mb-3">Pencatatan gaji dibayar Pusat hanya bisa dilakukan oleh Super Appa.</div>
+      )}
+      <Field label="Rekening Pusat yang dipakai membayar">
+        <select className={inputClass} value={rek} onChange={(e) => setRek(e.target.value)}>
+          <option value="">— pilih rekening Pusat —</option>
+          {rekeningList.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
+        </select>
+      </Field>
+      <Field label="Password akun Anda">
+        <input type="password" className={inputClass} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" />
+      </Field>
+      <div className="text-[11px] text-slate-500 mb-3">
+        Pusat: Pemberian Modal ke {namaEnt(p.entitas_peminta)} (kas Pusat berkurang, bukan beban Pusat). {namaEnt(p.entitas_peminta)}: beban Gaji. Saldo kas cabang tidak berubah.
+      </div>
+      <button
+        disabled={!bolehBayar || !rek || !pw || saving || sisa.length === 0}
+        onClick={() => onSubmit(pw, rek)}
+        className="w-full flex items-center justify-center gap-2 text-sm font-semibold py-2.5 rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40"
+      >
+        {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} {saving ? "Memproses…" : "Setujui & catat dibayar Pusat"}
       </button>
     </ModalShell>
   );
