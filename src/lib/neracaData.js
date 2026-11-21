@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   sbAll, totalHutangPerPelanggan, totalDepositPerPelanggan, saldoMarketplace, PLATFORM_MARKETPLACE, statusKonfirmasiDatang,
   PENARIKAN_PEMILIK, TIPE_PENARIKAN, ENTITAS_DEFAULT, petaEntitasRekening, entitasDariRekening,
-  setoranSebagaiPemasukan, saringLabaRugi, laporanLabaRugi,
+  setoranSebagaiPemasukan, gajiPusatSebagaiPengeluaran, saringLabaRugi, laporanLabaRugi,
 } from "./api";
 import { ringkasAset } from "./aset";
 import { useKeuanganRentang } from "./useKeuanganRentang";
@@ -168,7 +168,8 @@ export function hitungPosEkuitas(semua, master, entitasKode, tanggalAwal) {
     if (asal === tujuan) return;
     if (t.penanda === "modal") {
       if (tujuan === ent) h.modal_disetor += j;
-      if (asal === ent) h.penyertaan_entitas += j;
+      // Gaji cabang yang dibayar Pusat = beban Pusat (lihat gajiPusatSebagaiPengeluaran), bukan penyertaan modal.
+      if (asal === ent && !t.untuk_gaji) h.penyertaan_entitas += j;
     } else if (t.penanda === "setoran_penghasilan" || t.penanda === "dividen") {
       if (asal === ent) h.prive += j; // cabang menyetor ke Pusat: kas turun, bukan beban
     } else if (t.penanda === "pinjaman" || t.penanda === "pelunasan_pinjaman") {
@@ -214,7 +215,10 @@ export function useEkuitasNeraca({ transaksi, master, entitasKode, aktif }) {
     if (!aktif || status) return null;
     const pos = hitungPosEkuitas(semua, master, entitasKode, tanggalAwal);
     // Laba Berjalan = Laba Rugi dari tanggal awal sampai hari ini (aturan sama dengan tab Laporan Laba Rugi).
-    const dataLR = saringLabaRugi(setoranSebagaiPemasukan(semua, master, entitasKode), master);
+    const dataLR = saringLabaRugi(
+      [...setoranSebagaiPemasukan(semua, master, entitasKode), ...gajiPusatSebagaiPengeluaran(semua, master, entitasKode)],
+      master
+    );
     const lr = laporanLabaRugi(
       dataLR, master.kategori_masuk || [], master.kategori_keluar || [], tanggalAwal, sampai,
       master.kelompok_masuk, master.kelompok_keluar, hpp?.total || 0, pemakaian?.total || 0

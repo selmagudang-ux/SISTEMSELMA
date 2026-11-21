@@ -2677,10 +2677,11 @@ export function setoranSebagaiPemasukan(transaksi, master, kodeEntitas) {
 
 // Gaji karyawan cabang yang DIBAYAR LANGSUNG oleh Pusat (transfer Pemberian Modal bertanda untuk_gaji, dibuat server
 // gaji-admin) = PENGELUARAN KAS bagi Pusat, per cabang: kategori "Gaji <nama cabang>", dan rincian per karyawan ada di
-// keterangan tiap baris (klik kategori di Breakdown Pengeluaran). Bukan beban Pusat: bebannya sudah ada di Laba Rugi
-// cabang, jadi baris ini TIDAK boleh ikut Laba Rugi (buang lewat t._gajiPusat) supaya laba Pusat/konsolidasi tidak dobel.
+// keterangan tiap baris (klik kategori di Breakdown Pengeluaran / Laba Rugi). Di sisi Pusat baris ini dihitung sebagai
+// BEBAN (ikut Laba Rugi, Laba Berjalan Neraca, dan Kas Keluar); transfer aslinya tidak lagi dihitung sebagai Penyertaan
+// Modal di Neraca Pusat (lihat hitungPosEkuitas) supaya tidak dobel. Beban gaji yang sama tetap ada di Laba Rugi cabang.
 // Hanya mengembalikan baris bayangan (bukan gabungan), dan hanya untuk sisi Pusat. Pakai HANYA untuk laporan/dashboard
-// (kas keluar, breakdown) — JANGAN untuk saldo rekening, nanti terhitung dua kali.
+// — JANGAN untuk saldo rekening, nanti terhitung dua kali.
 export function gajiPusatSebagaiPengeluaran(transaksi, master, kodeEntitas) {
   const entitasList = master?.entitas || [];
   if (!kodeEntitas || entitasList.length < 2) return [];

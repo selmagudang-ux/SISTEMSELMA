@@ -448,11 +448,11 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
 
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
   // Sisi Pusat: gaji cabang yang dibayar Pusat = pengeluaran kas "Gaji <cabang>" (klik = rincian per karyawan).
-  // Hanya masuk Kas Keluar, grafik arus kas, dan breakdown pengeluaran. TIDAK mengurangi Laba (Rugi): bebannya sudah di cabang.
+  // Ikut Kas Keluar, grafik arus kas, breakdown pengeluaran, dan Laba (Rugi).
   const gajiPusatBaris = gabungan ? [] : ringkasanKeuangan(gajiPusatSebagaiPengeluaran(keuanganTransaksi, master, entAktif), dari, sampai).list;
   const totalGajiPusat = gajiPusatBaris.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
   const ringkasanKas = gajiPusatBaris.length
-    ? { ...ringkasanBulanIni, list: [...ringkasanBulanIni.list, ...gajiPusatBaris], keluar: ringkasanBulanIni.keluar + totalGajiPusat }
+    ? { ...ringkasanBulanIni, list: [...ringkasanBulanIni.list, ...gajiPusatBaris], keluar: ringkasanBulanIni.keluar + totalGajiPusat, saldo: ringkasanBulanIni.saldo - totalGajiPusat }
     : ringkasanBulanIni;
   const saldoRekeningAsli = saldoPerRekening(keuanganDimuat || keuanganSemua, master.rekening || [], true);
   const saldoRekeningSemua = saldoRekeningAsli.filter((r) => rekeningDiLokasi(r.kode));
@@ -489,7 +489,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   // Pemakaian barang habis pakai periode ini = beban Laba Rugi (lib/persediaanHabisPakai.js).
   const { data: pemakaianHP } = usePemakaianHabisPakai(dari, sampai);
   const labaRugiBulanIni = laporanLabaRugi(
-    saringLabaRugi(keuanganTransaksi, master),
+    saringLabaRugi(gajiPusatBaris.length ? [...keuanganTransaksi, ...gajiPusatBaris] : keuanganTransaksi, master),
     master.kategori_masuk || [],
     master.kategori_keluar || [],
     dari,
@@ -614,10 +614,10 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         <StatCard label={`Kas Keluar (${periodeLabel})`} value={fmtRp(ringkasanKas.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
         <StatCard
           label={`Laba (Rugi) ${periodeLabel}`}
-          value={fmtRp(ringkasanBulanIni.saldo)}
-          accent={ringkasanBulanIni.saldo >= 0 ? "text-emerald-400" : "text-red-400"}
+          value={fmtRp(ringkasanKas.saldo)}
+          accent={ringkasanKas.saldo >= 0 ? "text-emerald-400" : "text-red-400"}
           icon={Wallet}
-          iconColor={ringkasanBulanIni.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
+          iconColor={ringkasanKas.saldo >= 0 ? "text-emerald-500" : "text-red-500"}
         />
         {kasTab === "semua" ? (
           <>
