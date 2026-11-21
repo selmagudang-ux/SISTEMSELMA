@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { bisa } from "../lib/constants";
 import QRCode from "qrcode";
-import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator } from "lucide-react";
+import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator, Send } from "lucide-react";
 import {
   PageHeader, EmptyState, Badge, Field, ModalShell, InputRupiah,
   inputClass, btnFilled, btnTonal, btnOutlined, btnText,
 } from "../components/ui";
 import {
   fmtRp, cekPasswordAdmin, daftarGaji, simpanDraftGaji, serahkanGaji,
-  batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, kodeHoldingPasti,
+  batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, kodeHoldingPasti, sb,
 } from "../lib/api";
+import { kodePengajuanDana } from "./PengajuanDana";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
 import { hitungGajiOtomatis, daftarPengaturanGaji } from "../lib/gajiOtomatis";
 import PengaturanGaji from "../components/PengaturanGaji";
@@ -234,12 +235,15 @@ export default function Penggajian({ session, master, showToast }) {
   const [filterKaryawan, setFilterKaryawan] = useState("");
   const [qr, setQr] = useState(null); // { nama, periode, nominal, token, kedaluwarsa }
   const [bayarPusat, setBayarPusat] = useState(null); // gaji yang akan dibayar oleh Pusat
+  const [diajukan, setDiajukan] = useState(() => new Map()); // id gaji -> kode pengajuan yang masih menunggu Pusat
   const rekeningPusat = useMemo(
     () => (kodeHolding ? lingkupEntitas([], master || {}, kodeHolding).master.rekening || [] : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [master?.rekening, master?.rekening_entitas, master?.entitas, master?.entitas_set, kodeHolding]
   );
   const bolehBayarPusat = bisa(session?.role, "holding.bayar_gaji_pusat") && !!kodeHolding && ent !== kodeHolding;
+  // Cabang mengajukan gaji ke Pusat langsung dari sini (jadi Pengajuan Dana jenis gaji, disetujui Pusat di Antar Entitas).
+  const bolehAjukanPusat = !readOnly && bisa(session?.role, "holding.ajukan_dana") && !!kodeHolding && ent !== kodeHolding;
 
   const peta = useMemo(() => new Map(karyawan.map((k) => [k.id, k])), [karyawan]);
   const karyawanAktif = useMemo(() => karyawan.filter((k) => k.aktif), [karyawan]);
@@ -273,6 +277,14 @@ export default function Penggajian({ session, master, showToast }) {
       setGaji(g || []);
       setKaryawan(k || []);
       setTipeKaryawan(new Map((pg || []).map((r) => [r.karyawan_id, r.tipe_gaji])));
+      try {
+        const aj = await sb(`pengajuan_dana?jenis=eq.gaji&status=eq.menunggu&entitas_peminta=eq.${encodeURIComponent(ent)}&select=kode,rincian_gaji`);
+        const m = new Map();
+        (aj || []).forEach((p) => (Array.isArray(p.rincian_gaji) ? p.rincian_gaji : []).forEach((it) => m.set(it.id, p.kode)));
+        setDiajukan(m);
+      } catch {
+        setDiajukan(new Map()); // migrasi pengajuan_dana belum dijalankan
+      }
     } catch (e) {
       tanganiError(e, "Gagal memuat data gaji.");
     } finally {
@@ -448,6 +460,62 @@ export default function Penggajian({ session, master, showToast }) {
     jalankan(g, () => tandaiGajiDiterimaAdmin(pw, g.id), "Gaji ditandai diterima dan dicatat di Keuangan.");
   };
 
+  // Simpan perubahan yang belum tersimpan (kalau ada), lalu ajukan SEMUA draft periode ini ke Pusat dalam satu pengajuan.
+  const ajukanKePusat = async () => {
+    if (!periode) return;
+    if (barisTersimpan.length > 0) await simpan();
+    setSibuk("ajukan");
+    try {
+      const segar = await daftarGaji(pw, { entitas: ent, periode, status: "draft" });
+      const daftar = (segar || []).filter((g) => !diajukan.has(g.id) && Number(g.nominal) > 0);
+      if (daftar.length === 0) {
+        showToast?.("Tidak ada gaji draft yang bisa diajukan (kosong atau sudah diajukan).", "err");
+        return;
+      }
+      if (daftar.some((g) => !g.rekening_sumber && !rekening)) {
+        showToast?.("Pilih rekening sumber di atas dulu — dipakai untuk mencatat gaji di perusahaan ini.", "err");
+        return;
+      }
+      const rincian = daftar.map((g) => ({
+        id: g.id,
+        nama: peta.get(g.karyawan_id)?.nama || "—",
+        nominal: Number(g.nominal) || 0,
+        periode: g.periode,
+        rekening: g.rekening_sumber || rekening,
+      }));
+      const total = rincian.reduce((a, x) => a + x.nominal, 0);
+      if (!window.confirm(`Ajukan gaji ${rincian.length} karyawan (${fmtRp(total)}) ke Pusat untuk periode ${labelPeriode(periode)}?\n\nPusat akan membayar langsung ke karyawan.`)) return;
+      const ringkas = rincian.slice(0, 3).map((x) => x.nama).join(", ") + (rincian.length > 3 ? ` +${rincian.length - 3} lainnya` : "");
+      await sb("pengajuan_dana", {
+        method: "POST",
+        body: JSON.stringify({
+          kode: kodePengajuanDana(),
+          entitas_peminta: ent,
+          entitas_pemberi: kodeHolding,
+          jenis_usulan: "modal",
+          jenis: "gaji",
+          rincian_gaji: rincian,
+          jumlah: total,
+          keperluan: `Gaji karyawan: ${ringkas} (periode ${labelPeriode(periode)})`,
+          tanggal_dibutuhkan: null,
+          rekening_tujuan: null,
+          catatan: null,
+          bukti_url: null,
+          bukti_urls: [],
+          dibuat_oleh: session?.username || null,
+          dibuat_oleh_nama: session?.nama || session?.username || null,
+        }),
+      });
+      try { window.dispatchEvent(new Event("selma:dana-berubah")); } catch { /* abaikan */ }
+      showToast?.(`Pengajuan gaji ${rincian.length} karyawan terkirim ke Pusat.`);
+      await muat();
+    } catch (e) {
+      tanganiError(e, "Gagal mengajukan gaji ke Pusat.");
+    } finally {
+      setSibuk(null);
+    }
+  };
+
   const konfirmasiBayarPusat = async (g, rekPusat) => {
     await jalankan(g, () => tandaiGajiDiterimaAdmin(pw, g.id, { dibayarPusat: true, rekeningPusat: rekPusat }),
       "Gaji dicatat dibayar oleh Pusat: modal Pusat → cabang dan beban gaji cabang tercatat.");
@@ -511,7 +579,7 @@ export default function Penggajian({ session, master, showToast }) {
     return (
       <div className="flex flex-wrap items-center justify-end gap-1">
         {proses && <Loader2 size={16} className="animate-spin text-md-primary" />}
-        {(g.status === "draft" || g.status === "diserahkan") && (
+        {(g.status === "draft" || g.status === "diserahkan") && !diajukan.has(g.id) && (
           <button disabled={proses} className={btnTonal + " !px-3 !py-1.5"} onClick={() => serahkan(g)}>
             <QrCode size={14} /> {g.status === "draft" ? "Serahkan" : "QR baru"}
           </button>
@@ -779,7 +847,7 @@ export default function Penggajian({ session, master, showToast }) {
                           )}
                         </td>
                         <td className="px-2 py-2">
-                          {g ? <><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge>{g.dibayar_pusat && <Badge color="sky">Dibayar Pusat</Badge>}</> : <span className="text-md-on-surface-variant">Belum disiapkan</span>}
+                          {g ? <><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge>{g.dibayar_pusat && <Badge color="sky">Dibayar Pusat</Badge>}{diajukan.has(g.id) && <Badge color="amber">Diajukan ke Pusat</Badge>}</> : <span className="text-md-on-surface-variant">Belum disiapkan</span>}
                         </td>
                         <td className="px-4 py-2">{g ? <AksiGaji g={g} /> : null}</td>
                       </tr>
@@ -795,10 +863,23 @@ export default function Penggajian({ session, master, showToast }) {
               Total {periode ? labelPeriode(periode) : "—"}: <span className="text-md-on-surface font-medium">{fmtRp(totalDraft)}</span>
             </div>
             {!readOnly && (
-              <button className={btnFilled} onClick={simpan} disabled={sibuk === "simpan" || barisTersimpan.length === 0}>
-                {sibuk === "simpan" ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                Simpan draft ({barisTersimpan.length})
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={btnFilled} onClick={simpan} disabled={sibuk === "simpan" || barisTersimpan.length === 0}>
+                  {sibuk === "simpan" ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  Simpan draft ({barisTersimpan.length})
+                </button>
+                {bolehAjukanPusat && (
+                  <button
+                    className={btnTonal}
+                    onClick={ajukanKePusat}
+                    disabled={!!sibuk || (barisTersimpan.length === 0 && ![...gajiPeriode.values()].some((g) => g.status === "draft" && !diajukan.has(g.id)))}
+                    title="Simpan draft lalu ajukan semua gaji draft periode ini ke Pusat; Pusat membayar langsung ke karyawan"
+                  >
+                    {sibuk === "ajukan" ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    Ajukan ke Pusat
+                  </button>
+                )}
+              </div>
             )}
           </div>
           {!readOnly && !rekening && (
