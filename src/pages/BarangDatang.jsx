@@ -702,6 +702,7 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
     );
   const [halaman, setHalaman] = useState(1);
   const [showRincianBongkar, setShowRincianBongkar] = useState(false);
+  const [showRincianBelanja, setShowRincianBelanja] = useState(false);
   // Filter periode (tanggal_pesan) buat tabel di bawah — "" berarti tidak
   // dibatasi di sisi itu. Ganti tanggal -> balik ke halaman 1 supaya tidak
   // nyangkut di halaman kosong kalau hasil filter barunya lebih sedikit.
@@ -827,18 +828,34 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
   const jumlahSudahDatang = list.filter((p) => statusKonfirmasiDatang(p) === "sudah").length;
   const jumlahBelumDatang = list.filter((p) => statusKonfirmasiDatang(p) === "belum").length;
 
-  // Total Belanja & Total Barang Reject — dihitung dari `list` yang sama
-  // (ikut filter periode) dan dengan rumus yang SAMA seperti kolom "Nilai"
-  // di tabel: qty datang (baik + rusak) x harga/pcs, dijumlah dari invoice
-  // utama + invoice tambahan. Pesanan berjenis "Retur" tidak dihitung
-  // sebagai belanja. Reject = qty rusak (dan nilai Rp-nya = qty rusak x
-  // harga/pcs) dari semua model di pesanan yang sama.
+  // Total Belanja = TOTAL PEMBAYARAN KE SUPPLIER, dari `list` yang sama
+  // (ikut filter periode). Nominal pembayaran per pesanan = harga_kesepakatan
+  // (diisi waktu "Pesan Barang", sama dengan yang dicatat ke Keuangan); kalau
+  // kosong (data lama) dipakai jumlah harga_pembayaran tiap invoice. Pesanan
+  // berjenis "Retur" tidak dihitung. Saat kartu diklik, total itu dipecah:
+  // - Sudah datang = pesanan yang sudah ditandai datang (atau sudah punya
+  //   rincian/draf barang datang),
+  // - Belum datang = pesanan yang masih berstatus "belum datang".
+  // Jadi Sudah + Belum selalu = Total Belanja.
+  // Total Barang Reject = qty rusak (+ nilai Rp: qty rusak x harga/pcs).
+  const pembayaranPesanan = (p) => {
+    const k = Number(p.harga_kesepakatan) || 0;
+    if (k > 0) return k;
+    return [p, ...anakDari(p.id)].reduce((s, inv) => s + (Number(inv.harga_pembayaran) || 0), 0);
+  };
   let totalBelanja = 0;
+  let belanjaSudahDatang = 0;
+  let belanjaBelumDatang = 0;
   let totalRejectQty = 0;
   let totalRejectNilai = 0;
   list.forEach((p) => {
     const detail = [p, ...anakDari(p.id)].flatMap((inv) => detailModelPesanan(inv));
-    if (p.jenis !== "Retur") totalBelanja += totalNilaiTransaksi(detail);
+    if (p.jenis !== "Retur") {
+      const bayar = pembayaranPesanan(p);
+      totalBelanja += bayar;
+      if (statusKonfirmasiDatang(p) === "belum") belanjaBelumDatang += bayar;
+      else belanjaSudahDatang += bayar;
+    }
     totalRejectQty += totalRusakTransaksi(detail);
     totalRejectNilai += detail.reduce((s, m) => s + (Number(m.rusak) || 0) * (Number(m.harga) || 0), 0);
   });
@@ -903,14 +920,33 @@ function DaftarBarangDatang({ pesananMasuk, setModal }) {
           )}
         </div>
         <StatCard label="Belum Datang" value={jumlahBelumDatang} icon={Clock} accent="text-amber-400" iconColor="text-amber-500" />
-        <StatCard
-          label="Total Belanja"
-          value={fmtRp(totalBelanja)}
-          icon={Wallet}
-          accent="text-emerald-400"
-          iconColor="text-emerald-500"
-          sub="Nilai barang datang (tanpa Retur)"
-        />
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setShowRincianBelanja((s) => !s)}
+          onKeyDown={(e) => e.key === "Enter" && setShowRincianBelanja((s) => !s)}
+          className="w-full text-left rounded-md-lg bg-md-container-low p-4 shadow-elevation-1 hover:shadow-elevation-2 transition-shadow cursor-pointer"
+          title={showRincianBelanja ? "Klik untuk sembunyikan rincian" : "Klik untuk lihat nilai barang sudah/belum datang"}
+        >
+          <div className="w-8 h-8 rounded-full flex items-center justify-center mb-2 bg-md-on-surface/[0.06] text-emerald-500">
+            <Wallet size={15} />
+          </div>
+          <div className="text-2xl font-medium text-emerald-400">{fmtRp(totalBelanja)}</div>
+          <div className="text-xs text-md-on-surface-variant mt-1">Total Belanja</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">Pembayaran ke supplier (tanpa Retur)</div>
+          {showRincianBelanja && (
+            <div className="text-[11px] text-slate-500 mt-1.5 pt-1.5 border-t border-slate-800/60 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1"><Truck size={11} className="text-sky-500" /> Barang Sudah Datang</span>
+                <span className="text-sky-400 font-semibold">{fmtRp(belanjaSudahDatang)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1"><Clock size={11} className="text-amber-500" /> Barang Belum Datang</span>
+                <span className="text-amber-400 font-semibold">{fmtRp(belanjaBelumDatang)}</span>
+              </div>
+            </div>
+          )}
+        </div>
         <StatCard
           label="Total Barang Reject"
           value={`${totalRejectQty}x`}
