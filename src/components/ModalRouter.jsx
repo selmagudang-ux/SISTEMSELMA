@@ -1410,7 +1410,9 @@ export default function ModalRouter({
               {t.tipe === "transfer" ? "Transfer Antar Rekening" : t.kategori}
             </span>{" "}
             sebesar <span className="font-semibold">{fmtRp(t.jumlah)}</span> ({t.tanggal}) akan dihapus permanen.
-            Tindakan ini tidak bisa dibatalkan.
+            Kalau transaksi ini tertaut ke Marketplace (pencairan atau top-up iklan), tautannya dilepas otomatis: entri
+            Marketplace-nya tetap ada, dan top-up iklan yang tertaut akan muncul lagi dengan tombol "Catat ke Keuangan"
+            (pasangan baris Keuangan-nya ikut dihapus). Tindakan ini tidak bisa dibatalkan.
           </div>
         </div>
         <div className="flex gap-2">
@@ -1425,7 +1427,34 @@ export default function ModalRouter({
             disabled={saving}
             onClick={() =>
               run(async () => {
-                await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "DELETE" });
+                // Baris marketplace_transaksi (pencairan/iklan) menunjuk ke baris ini lewat foreign key
+                // (keuangan_transaksi_id / keuangan_transaksi_id_iklan), jadi DELETE langsung ditolak database
+                // (23503, "masih dipakai di bagian lain"). Lepas dulu tautannya, baru hapus.
+                const idHapus = new Set([t.id]);
+                const refs = (await sb(
+                  `marketplace_transaksi?or=(keuangan_transaksi_id.eq.${t.id},keuangan_transaksi_id_iklan.eq.${t.id})&select=id,tipe,keuangan_transaksi_id,keuangan_transaksi_id_iklan`
+                ).catch(() => [])) || [];
+                // Top-up iklan gaya baru = sepasang baris Keuangan (masuk + keluar). Hapus salah satu -> pasangannya ikut,
+                // supaya tidak ada sisa baris yang tidak seimbang.
+                refs.forEach((r) => {
+                  if (r.tipe === "iklan" && r.keuangan_transaksi_id && r.keuangan_transaksi_id_iklan) {
+                    idHapus.add(r.keuangan_transaksi_id);
+                    idHapus.add(r.keuangan_transaksi_id_iklan);
+                  }
+                });
+                for (const id of idHapus) {
+                  await sb(`marketplace_transaksi?keuangan_transaksi_id=eq.${id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ keuangan_transaksi_id: null }),
+                  });
+                  await sb(`marketplace_transaksi?keuangan_transaksi_id_iklan=eq.${id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ keuangan_transaksi_id_iklan: null }),
+                  });
+                }
+                for (const id of idHapus) {
+                  await sb(`keuangan_transaksi?id=eq.${id}`, { method: "DELETE" });
+                }
               }, "Transaksi dihapus")
             }
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-400 text-white disabled:opacity-50"
