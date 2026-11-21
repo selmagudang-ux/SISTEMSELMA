@@ -15,7 +15,8 @@ import {
 import { useKeuanganRentang } from "../../lib/useKeuanganRentang";
 import { useHppPenjualan } from "../../lib/hppPenjualan";
 import { usePersediaanBarang } from "../kasir/persediaanToko";
-import { useDataNeraca } from "../../lib/neracaData";
+import { useDataNeraca, useEkuitasNeraca } from "../../lib/neracaData";
+import { usePersediaanHabisPakai } from "../../lib/persediaanHabisPakai";
 import { buatLaporanNarasi } from "../../lib/laporanNarasi";
 
 // =========================================================
@@ -493,6 +494,7 @@ const NERACA_STRUKTUR = {
         { kunci: "piutang_pemilik", label: "Piutang Pemilik" },
         { kunci: "piutang_antar_entitas", label: "Piutang Antar Entitas" },
         { kunci: "persediaan", label: "Persediaan Barang" },
+        { kunci: "persediaan_hp", label: "Persediaan Barang Habis Pakai" },
         { kunci: "uang_muka", label: "Uang Muka" },
       ],
     },
@@ -503,6 +505,7 @@ const NERACA_STRUKTUR = {
         { kunci: "peralatan", label: "Peralatan & Perlengkapan" },
         { kunci: "kendaraan", label: "Kendaraan" },
         { kunci: "akum_penyusutan", label: "Akumulasi Penyusutan", pengurang: true },
+        { kunci: "penyertaan_entitas", label: "Penyertaan Modal pada Entitas" },
       ],
     },
   ],
@@ -530,7 +533,7 @@ const NERACA_STRUKTUR = {
   ],
 };
 
-function TabNeraca({ nilai, memuatPersediaan, galatPersediaan, rincianPersediaan }) {
+function TabNeraca({ nilai, memuat, statusEkuitas, tanggalAwal, labaDitahanSaatIni = 0, memuatPersediaan, galatPersediaan, rincianPersediaan }) {
   const angka = (k) => (nilai[k] === undefined || nilai[k] === null ? null : Number(nilai[k]) || 0);
   const totalKelompok = (g) => g.baris.reduce((a, b) => a + (b.pengurang ? -1 : 1) * (angka(b.kunci) || 0), 0);
   const totalSisi = (s) => NERACA_STRUKTUR[s].reduce((a, g) => a + totalKelompok(g), 0);
@@ -609,11 +612,17 @@ function TabNeraca({ nilai, memuatPersediaan, galatPersediaan, rincianPersediaan
       >
         <span>Aktiva = Pasiva</span>
         <span className="font-semibold">
-          {!adaIsi ? "Belum diisi" : Math.round(selisih) === 0 ? "Seimbang" : `Belum seimbang — selisih ${fmtRp(Math.abs(selisih))}`}
+          {!adaIsi ? "Belum diisi" : memuat ? "Memuat data…" : Math.round(selisih) === 0 ? "Seimbang" : `Belum seimbang — selisih ${fmtRp(Math.abs(selisih))}`}
         </span>
       </div>
+      {statusEkuitas && <p className="text-[11px] text-amber-500 px-1">{statusEkuitas}</p>}
+      {adaIsi && !memuat && Math.round(selisih) !== 0 && (
+        <p className="text-[11px] text-md-on-surface-variant px-1">
+          Saldo awal Laba Ditahan yang membuat seimbang hari ini: {fmtRp(Math.round(labaDitahanSaatIni + selisih))}. Isi sekali di versi komputer: Keuangan &gt; Pengaturan &gt; Rekening &amp; Kategori &gt; Saldo Awal Neraca.
+        </p>
+      )}
       <p className="text-[11px] text-md-on-surface-variant px-1">
-        Neraca masih bertahap: sudah terhubung: Kas Kecil, Bank, Persediaan Barang, Saldo Marketplace, Piutang Grosir, Aktiva Tetap, dan Titipan Deposit. Pos lain tampil "-".
+        Semua pos Neraca sudah terhubung ke data. Laba Berjalan dihitung sejak tanggal awal pencatatan (diatur di versi komputer).
       </p>
     </div>
   );
@@ -747,6 +756,9 @@ export default function LaporanHp({ session, entitas }) {
 
   const persediaan = usePersediaanBarang(tab === "neraca");
   const dataNeraca = useDataNeraca(tab === "neraca");
+  const persediaanHP = usePersediaanHabisPakai(tab === "neraca");
+  // Modal, Prive, Piutang Pemilik, pinjaman antar entitas, Laba Berjalan sejak tanggal awal (lib/neracaData.js).
+  const ekuitas = useEkuitasNeraca({ transaksi: lingkup.transaksi, master: m, entitasKode: kodeAktif, aktif: tab === "neraca" });
 
   const subtitle = dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : "";
 
@@ -861,9 +873,18 @@ export default function LaporanHp({ session, entitas }) {
               persediaan: persediaan.data ? persediaan.data.nilai : undefined,
               // Aset tetap, piutang grosir, saldo marketplace, titipan deposit (lib/neracaData.js).
               ...(dataNeraca.data ? dataNeraca.data.nilai : {}),
-              // Uang muka barang: pesanan dibayar, belum datang (belanja habis pakai belum ada di versi HP).
-              uang_muka: dataNeraca.data ? dataNeraca.data.nilai.uang_muka_barang : undefined,
+              ...ekuitas.nilai,
+              persediaan_hp: persediaanHP.data ? persediaanHP.data.nilai : undefined,
+              // Uang Muka = belanja habis pakai (dibayar, belum diterima) + pesanan barang dibayar, belum datang.
+              uang_muka:
+                persediaanHP.data && dataNeraca.data && dataNeraca.data.nilai.uang_muka_barang !== undefined
+                  ? persediaanHP.data.uangMuka + dataNeraca.data.nilai.uang_muka_barang
+                  : undefined,
             }}
+            memuat={ekuitas.memuat || (!dataNeraca.data && !dataNeraca.error) || (!persediaanHP.data && !persediaanHP.error) || persediaan.memuat || (!persediaan.data && !persediaan.error)}
+            statusEkuitas={ekuitas.status}
+            tanggalAwal={ekuitas.pengaturan.tanggalAwal}
+            labaDitahanSaatIni={ekuitas.pengaturan.labaDitahan}
             memuatPersediaan={persediaan.memuat}
             galatPersediaan={persediaan.error}
             rincianPersediaan={persediaan.data}

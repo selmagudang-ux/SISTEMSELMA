@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
 import { usePersediaanBarang } from "./kasir/persediaanToko";
 import { usePersediaanHabisPakai, usePemakaianHabisPakai } from "../lib/persediaanHabisPakai";
-import { useDataNeraca } from "../lib/neracaData";
+import { useDataNeraca, useEkuitasNeraca, pengaturanNeraca } from "../lib/neracaData";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -1799,6 +1799,7 @@ const NERACA_STRUKTUR = {
         { kunci: "peralatan", label: "Peralatan & Perlengkapan" },
         { kunci: "kendaraan", label: "Kendaraan" },
         { kunci: "akum_penyusutan", label: "Akumulasi Penyusutan", pengurang: true },
+        { kunci: "penyertaan_entitas", label: "Penyertaan Modal pada Entitas" },
       ],
     },
   ],
@@ -1826,7 +1827,7 @@ const NERACA_STRUKTUR = {
   ],
 };
 
-function NeracaLaporan({ nilai = {} }) {
+function NeracaLaporan({ nilai = {}, memuat = false, tanggalAwal = "", labaDitahanSaatIni = 0 }) {
   const angka = (kunci) => (nilai[kunci] === undefined || nilai[kunci] === null ? null : Number(nilai[kunci]) || 0);
   const totalKelompok = (g) => g.baris.reduce((a, b) => a + (b.pengurang ? -1 : 1) * (angka(b.kunci) || 0), 0);
   const totalSisi = (sisi) => NERACA_STRUKTUR[sisi].reduce((a, g) => a + totalKelompok(g), 0);
@@ -1886,9 +1887,16 @@ function NeracaLaporan({ nilai = {} }) {
       >
         <span>Aktiva = Pasiva</span>
         <span className="font-semibold">
-          {!adaIsi ? "Belum diisi" : Math.round(selisih) === 0 ? "Seimbang" : `Belum seimbang — selisih ${fmtRp(Math.abs(selisih))}`}
+          {!adaIsi ? "Belum diisi" : memuat ? "Memuat data…" : Math.round(selisih) === 0 ? "Seimbang" : `Belum seimbang — selisih ${fmtRp(Math.abs(selisih))}`}
         </span>
       </div>
+      {adaIsi && !memuat && Math.round(selisih) !== 0 && (
+        <div className="mt-2 text-[11px] text-slate-500">
+          Saldo awal Laba Ditahan yang membuat Neraca seimbang hari ini: <span className="text-slate-300">{fmtRp(Math.round(labaDitahanSaatIni + selisih))}</span>. Isi sekali di
+          Pengaturan &gt; Rekening &amp; Kategori &gt; Saldo Awal Neraca ({tanggalAwal ? `posisi per ${formatTanggalID(tanggalAwal)}` : "per hari sebelum tanggal awal"}).
+          Setelah terisi, selisih yang muncul berarti ada transaksi yang salah catat atau belum tercatat.
+        </div>
+      )}
     </div>
   );
 }
@@ -1918,6 +1926,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const persediaanHP = usePersediaanHabisPakai(tabLaporan === "neraca");
   // Aktiva Tetap (aset), Piutang Grosir, Saldo Marketplace, Titipan Deposit — lihat lib/neracaData.js.
   const dataNeraca = useDataNeraca(tabLaporan === "neraca");
+  // Modal, Prive, Piutang Pemilik, pinjaman antar entitas, Laba Berjalan (sejak tanggal awal) — lib/neracaData.js.
+  const ekuitas = useEkuitasNeraca({ transaksi: keuanganTransaksi, master, entitasKode, aktif: tabLaporan === "neraca" });
   const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
   const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
@@ -2139,13 +2149,25 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             uang_muka: persediaanHP.data ? persediaanHP.data.uangMuka : undefined,
             // Aset tetap (harga perolehan per kategori + akumulasi penyusutan), piutang grosir, saldo marketplace, titipan deposit.
             ...(dataNeraca.data ? dataNeraca.data.nilai : {}),
+            ...ekuitas.nilai,
             // Uang Muka = belanja habis pakai (dibayar, belum diterima) + pesanan barang dibayar, belum datang.
             uang_muka:
               persediaanHP.data && dataNeraca.data && dataNeraca.data.nilai.uang_muka_barang !== undefined
                 ? persediaanHP.data.uangMuka + dataNeraca.data.nilai.uang_muka_barang
                 : undefined,
           }}
+          memuat={ekuitas.memuat || (!dataNeraca.data && !dataNeraca.error) || (!persediaanHP.data && !persediaanHP.error) || (!persediaanToko.data && !persediaanToko.error)}
+          tanggalAwal={ekuitas.pengaturan.tanggalAwal}
+          labaDitahanSaatIni={ekuitas.pengaturan.labaDitahan}
         />
+      )}
+      {tabLaporan === "neraca" && ekuitas.status && (
+        <div className="mt-3 text-[11px] text-amber-400">{ekuitas.status}</div>
+      )}
+      {tabLaporan === "neraca" && (
+        <div className="mt-3 text-[11px] text-slate-500">
+          Laba (Rugi) Tahun Berjalan dihitung dari {formatTanggalID(ekuitas.pengaturan.tanggalAwal)} sampai hari ini, memakai aturan Laporan Laba Rugi.
+        </div>
       )}
       {tabLaporan === "neraca" && (dataNeraca.error || (dataNeraca.data && dataNeraca.data.galat.length > 0)) && (
         <div className="mt-3 text-[11px] text-amber-400">
@@ -2891,6 +2913,8 @@ const TAB_KEUANGAN = [
   { key: "pengelompokan", label: "Kategori & Sub Kategori" },
   // Tujuan laporan tiap kategori (Laba Rugi / Neraca) — lihat TujuanLaporanKategori.
   { key: "tujuan", label: "Masuk ke Laporan" },
+  // Saldo awal Neraca (Laba Ditahan + tanggal mulai) — lihat SaldoAwalNeraca.
+  { key: "saldo-awal-neraca", label: "Saldo Awal Neraca" },
 ];
 
 
@@ -3169,6 +3193,67 @@ function PenggunaanRekening({ master, entitasKode, kodeHolding, reload, showToas
   );
 }
 
+// Tab "Saldo Awal Neraca": dua angka yang diisi sekali.
+//   - Tanggal awal pencatatan: Laba (Rugi) Tahun Berjalan di Neraca dihitung mulai tanggal ini (bawaan 14 Nov 2026).
+//   - Saldo awal Laba Ditahan: diisi supaya Neraca seimbang pada hari sebelum tanggal awal. Setelah itu selisih
+//     Aktiva - Pasiva di Neraca = ada transaksi yang salah catat / belum tercatat.
+// Disimpan di master_data tipe "neraca_awal", kode "<tanggal_awal|laba_ditahan>:<kode entitas>", label = nilainya.
+function SaldoAwalNeraca({ master, entitasKode, reload, showToast }) {
+  const peng = pengaturanNeraca(master, entitasKode);
+  const [tanggal, setTanggal] = useState(peng.tanggalAwal);
+  const [laba, setLaba] = useState(peng.labaDitahan);
+  const [menyimpan, setMenyimpan] = useState(false);
+  const berubah = tanggal !== peng.tanggalAwal || Number(laba) !== peng.labaDitahan;
+
+  const simpanBaris = async (ada, kunci, nilai) => {
+    if (ada) await sb(`master_data?id=eq.${ada.id}`, { method: "PATCH", body: JSON.stringify({ label: String(nilai) }) });
+    else await sb("master_data", { method: "POST", body: JSON.stringify({ tipe: "neraca_awal", kode: `${kunci}:${peng.entitas}`, label: String(nilai) }) });
+  };
+
+  const simpan = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal || "")) return showToast("Tanggal awal wajib diisi", "err");
+    setMenyimpan(true);
+    try {
+      await simpanBaris(peng.barisTanggal, "tanggal_awal", tanggal);
+      await simpanBaris(peng.barisLaba, "laba_ditahan", Math.round(Number(laba) || 0));
+      await reload();
+      showToast("Saldo awal Neraca disimpan");
+    } catch (e) {
+      showToast(e.message || "Gagal menyimpan", "err");
+    }
+    setMenyimpan(false);
+  };
+
+  return (
+    <div className="max-w-xl">
+      <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-4">
+        <div>
+          <div className="text-xs text-slate-300 mb-1">Tanggal awal pencatatan</div>
+          <InputTanggal value={tanggal} onChange={setTanggal} />
+          <div className="text-[11px] text-slate-500 mt-1">Laba (Rugi) Tahun Berjalan di Neraca dihitung dari tanggal ini sampai hari ini.</div>
+        </div>
+        <div>
+          <div className="text-xs text-slate-300 mb-1">Saldo awal Laba Ditahan</div>
+          <input type="number" value={laba === 0 ? "" : laba} onChange={(e) => setLaba(e.target.value === "" ? 0 : Number(e.target.value))} placeholder="0" className={inputClass} />
+          <div className="text-[11px] text-slate-500 mt-1">
+            Isi sekali supaya Neraca seimbang pada hari sebelum tanggal awal. Angka yang pas ditampilkan di bawah Neraca (&quot;Saldo awal Laba Ditahan yang membuat Neraca seimbang&quot;). Setelah terisi, selisih
+            Aktiva dan Pasiva yang muncul berarti ada transaksi yang salah catat atau belum tercatat.
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <button
+            onClick={simpan}
+            disabled={menyimpan || !berubah}
+            className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-xs px-4 py-2 rounded-lg"
+          >
+            {menyimpan ? "Menyimpan…" : "Simpan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
   const [activeTab, setActiveTab] = useState("rekening");
   // Isian tab "Kategori & Sub Kategori" yang belum disimpan (lihat PengelompokanKategori).
@@ -3367,6 +3452,19 @@ function RekeningKategori({ master, reload, showToast, entitasKode = "" }) {
         />
         {tabBar}
         <TujuanLaporanKategori master={master} reload={reload} showToast={showToast} draft={draftTujuan} setDraft={setDraftTujuan} />
+      </div>
+    );
+  }
+
+  if (activeTab === "saldo-awal-neraca") {
+    return (
+      <div>
+        <PageHeader
+          title="Rekening & Kategori"
+          description="Saldo awal Neraca: tanggal mulai pencatatan dan saldo awal Laba Ditahan."
+        />
+        {tabBar}
+        <SaldoAwalNeraca key={entitasKode || "ops"} master={master} entitasKode={entitasKode} reload={reload} showToast={showToast} />
       </div>
     );
   }
