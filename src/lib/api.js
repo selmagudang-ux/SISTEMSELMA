@@ -2797,7 +2797,9 @@ async function panggilGaji(fn, body) {
 // disimpan di browser). Role owner read-only: hanya boleh aksi baca.
 const AKSI_GAJI_BACA = ["cek", "daftar"];
 async function gajiAdmin(aksi, passwordAdmin, data = {}) {
-  if (roleHanyaLihat(roleSaatIni()) && !AKSI_GAJI_BACA.includes(aksi)) {
+  // Gaji dibayar Pusat: boleh walau role read-only, selama punya izin "holding.bayar_gaji_pusat".
+  const izinBayarPusat = aksi === "tandai_diterima" && data?.dibayar_pusat === true && bisa(roleSaatIni(), "holding.bayar_gaji_pusat");
+  if (roleHanyaLihat(roleSaatIni()) && !AKSI_GAJI_BACA.includes(aksi) && !izinBayarPusat) {
     throw new Error("Role Owner hanya bisa melihat data (read-only) — tidak bisa menyiapkan, menyerahkan, atau mengubah gaji.");
   }
   if (!passwordAdmin) throw new Error("Password admin wajib diisi.");

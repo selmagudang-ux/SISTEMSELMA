@@ -239,7 +239,7 @@ export default function Penggajian({ session, master, showToast }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [master?.rekening, master?.rekening_entitas, master?.entitas, master?.entitas_set, kodeHolding]
   );
-  const bolehBayarPusat = session?.role === "superappa" && !!kodeHolding && ent !== kodeHolding;
+  const bolehBayarPusat = bisa(session?.role, "holding.bayar_gaji_pusat") && !!kodeHolding && ent !== kodeHolding;
 
   const peta = useMemo(() => new Map(karyawan.map((k) => [k.id, k])), [karyawan]);
   const karyawanAktif = useMemo(() => karyawan.filter((k) => k.aktif), [karyawan]);

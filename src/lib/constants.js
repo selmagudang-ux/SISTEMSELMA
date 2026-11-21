@@ -776,6 +776,7 @@ export const GRUP_AKSI = [
       { key: "holding.transfer_antar_anak", label: "Catat transfer Antar Entitas: antar dua perusahaan", bawaan: tak },
       { key: "holding.ajukan_dana", label: "Ajukan / minta dana ke Holding (Antar Entitas > Pengajuan Dana)", bawaan: dari("superadmin") },
       { key: "holding.penarikan_pemilik", label: "Catat Penarikan Pemilik", bawaan: dari("owner") },
+      { key: "holding.bayar_gaji_pusat", label: "Catat gaji karyawan cabang yang dibayar langsung oleh Pusat (Setujui & Bayar Gaji)", bawaan: dari("owner") },
       { key: "keuangan.riwayat_perubahan", label: "Lihat tab Riwayat Perubahan Keuangan", bawaan: tak },
     ],
   },

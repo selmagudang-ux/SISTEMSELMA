@@ -3,6 +3,7 @@ import { Plus, HandCoins, XCircle, Ban, ArrowRight, Paperclip, Send, X, Trash2, 
 import { Badge, EmptyState, ModalShell, Field, inputClass, InputRupiah, InputTanggal, formatTanggalID } from "../components/ui";
 import { sb, fmtRp, PENANDA_ANTAR_ENTITAS, penandaUntukArah, daftarGaji, tandaiGajiDiterimaAdmin, labelPeriodeGaji } from "../lib/api";
 import { listKaryawan } from "../lib/absensi";
+import { bisa } from "../lib/constants";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
 import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 
@@ -387,7 +388,7 @@ export default function PengajuanDana({
           p={modal.p}
           namaEnt={namaEnt}
           rekeningList={opsiRekeningPenerima(kodeHolding)}
-          bolehBayar={session?.role === "superappa"}
+          bolehBayar={bisa(session?.role, "holding.bayar_gaji_pusat")}
           saving={proses}
           onClose={() => setModal(null)}
           onSubmit={(pw, rek) => setujuiGaji(modal.p, pw, rek)}
@@ -680,9 +681,6 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
         ))}
       </div>
       <div className="text-sm text-slate-200 mb-3">Dicatat sekarang: <b className="text-sky-400">{fmtRp(total)}</b> ({sisa.length} gaji). Nominal mengikuti data gaji di Penggajian saat ini.</div>
-      {!bolehBayar && (
-        <div className="text-xs text-amber-300 mb-3">Pencatatan gaji dibayar Pusat hanya bisa dilakukan oleh Super Appa.</div>
-      )}
       <Field label="Rekening Pusat yang dipakai membayar">
         <select className={inputClass} value={rek} onChange={(e) => setRek(e.target.value)}>
           <option value="">— pilih rekening Pusat —</option>
