@@ -42,6 +42,7 @@ import {
   daftarTokoMarketplace,
   lingkupEntitas,
   lingkupGabunganPT,
+  gajiPusatSebagaiPengeluaran,
   ENTITAS_DEFAULT,
   kodeHoldingPasti, namaUsahaEntitas, namaStoreEntitas,
 } from "../lib/api";
@@ -446,6 +447,13 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   );
 
   const ringkasanBulanIni = ringkasanKeuangan(keuanganTransaksi, dari, sampai);
+  // Sisi Pusat: gaji cabang yang dibayar Pusat = pengeluaran kas "Gaji <cabang>" (klik = rincian per karyawan).
+  // Hanya masuk Kas Keluar, grafik arus kas, dan breakdown pengeluaran. TIDAK mengurangi Laba (Rugi): bebannya sudah di cabang.
+  const gajiPusatBaris = gabungan ? [] : ringkasanKeuangan(gajiPusatSebagaiPengeluaran(keuanganTransaksi, master, entAktif), dari, sampai).list;
+  const totalGajiPusat = gajiPusatBaris.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
+  const ringkasanKas = gajiPusatBaris.length
+    ? { ...ringkasanBulanIni, list: [...ringkasanBulanIni.list, ...gajiPusatBaris], keluar: ringkasanBulanIni.keluar + totalGajiPusat }
+    : ringkasanBulanIni;
   const saldoRekeningAsli = saldoPerRekening(keuanganDimuat || keuanganSemua, master.rekening || [], true);
   const saldoRekeningSemua = saldoRekeningAsli.filter((r) => rekeningDiLokasi(r.kode));
   const saldoKas = saldoPerKas(saldoRekeningSemua, petaKas);
@@ -458,7 +466,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
   // Arus kas mengikuti bulan & tahun yang dipilih di filter atas Dashboard
   // (bukan lagi selalu 60 hari terakhir), supaya grafiknya konsisten dengan
   // kartu ringkasan "Kas Masuk/Keluar (bulan terpilih)" di bawahnya.
-  const arusKas = arusKasPerPeriode(ringkasanBulanIni.list);
+  const arusKas = arusKasPerPeriode(ringkasanKas.list);
 
   // Panel "Riwayat Transaksi Terakhir" & "Pengisian Kas Kecil" (tab Ringkasan) — dari data yang sama, tanpa query baru.
   const labelRek = (kode) => (master.rekening || []).find((r) => r.kode === kode)?.label || kode || "—";
@@ -470,7 +478,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
     .sort(urutTerbaru);
   const totalPengisianKasKecil = pengisianKasKecil.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
 
-  const breakdown = breakdownPengeluaranKategori(ringkasanBulanIni.list, master.kategori_keluar || []);
+  const breakdown = breakdownPengeluaranKategori(ringkasanKas.list, master.kategori_keluar || []);
   const breakdownMasuk = breakdownPemasukanKategori(ringkasanBulanIni.list, master.kategori_masuk || []);
   // Sama seperti di Laporan Keuangan: kategori yang dipetakan ke kelompok yang
   // sama (Keuangan > Rekening & Kategori) digabung jadi satu baris di grafik.
@@ -603,7 +611,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <StatCard label={kasTab === "semua" ? "Saldo Kas Saat Ini" : `${LABEL_KAS[kasTab]} Saat Ini`} value={fmtRp(totalSaldoKas)} icon={Landmark} accent="text-amber-400" iconColor="text-amber-500" />
         <StatCard label={`Kas Masuk (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.masuk)} accent="text-emerald-400" icon={TrendingUp} iconColor="text-emerald-500" />
-        <StatCard label={`Kas Keluar (${periodeLabel})`} value={fmtRp(ringkasanBulanIni.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
+        <StatCard label={`Kas Keluar (${periodeLabel})`} value={fmtRp(ringkasanKas.keluar)} accent="text-red-400" icon={TrendingDown} iconColor="text-red-500" />
         <StatCard
           label={`Laba (Rugi) ${periodeLabel}`}
           value={fmtRp(ringkasanBulanIni.saldo)}
@@ -791,7 +799,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         <DetailKelompokModal
           kelompok={detailKategori}
           tipe={detailKategori.tipe}
-          list={ringkasanBulanIni.list}
+          list={ringkasanKas.list}
           pesananMasuk={pesananMasuk}
           rekeningList={master.rekening || []}
           subtitle={periodeLabel}
@@ -803,7 +811,7 @@ function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, p
         <DetailTransaksiKategoriModal
           kategori={detailKategori}
           tipe={detailKategori.tipe}
-          list={ringkasanBulanIni.list}
+          list={ringkasanKas.list}
           pesananMasuk={pesananMasuk}
           rekeningList={master.rekening || []}
           subtitle={periodeLabel}

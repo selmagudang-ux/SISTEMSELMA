@@ -2675,6 +2675,38 @@ export function setoranSebagaiPemasukan(transaksi, master, kodeEntitas) {
   return tambahan.length ? [...transaksi, ...tambahan] : transaksi;
 }
 
+// Gaji karyawan cabang yang DIBAYAR LANGSUNG oleh Pusat (transfer Pemberian Modal bertanda untuk_gaji, dibuat server
+// gaji-admin) = PENGELUARAN KAS bagi Pusat, per cabang: kategori "Gaji <nama cabang>", dan rincian per karyawan ada di
+// keterangan tiap baris (klik kategori di Breakdown Pengeluaran). Bukan beban Pusat: bebannya sudah ada di Laba Rugi
+// cabang, jadi baris ini TIDAK boleh ikut Laba Rugi (buang lewat t._gajiPusat) supaya laba Pusat/konsolidasi tidak dobel.
+// Hanya mengembalikan baris bayangan (bukan gabungan), dan hanya untuk sisi Pusat. Pakai HANYA untuk laporan/dashboard
+// (kas keluar, breakdown) — JANGAN untuk saldo rekening, nanti terhitung dua kali.
+export function gajiPusatSebagaiPengeluaran(transaksi, master, kodeEntitas) {
+  const entitasList = master?.entitas || [];
+  if (!kodeEntitas || entitasList.length < 2) return [];
+  if (kodeHoldingPasti(entitasList, master?.entitas_set) !== kodeEntitas) return [];
+  const peta = petaEntitasRekening(master.rekening_entitas);
+  const entDari = (kode) => entitasDariRekening(peta, entitasList, kode);
+  const hasil = [];
+  (transaksi || []).forEach((t) => {
+    if (t.tipe !== "transfer" || !t.untuk_gaji) return;
+    if (entDari(t.rekening) !== kodeEntitas) return; // hanya yang uangnya keluar dari rekening Pusat
+    const kodeCabang = t.untuk_gaji.entitas;
+    const nama = t.untuk_gaji.entitas_nama || entitasList.find((e) => e.kode === kodeCabang)?.label || kodeCabang || "Cabang";
+    hasil.push({
+      ...t,
+      id: `gajipusat-${t.id}`,
+      tipe: "keluar",
+      rekening_tujuan: null,
+      penanda: null,
+      kategori: `Gaji ${nama}`,
+      keterangan: t.keterangan || `Gaji ${t.untuk_gaji.karyawan || ""}`.trim(),
+      _gajiPusat: true,
+    });
+  });
+  return hasil;
+}
+
 export function lingkupEntitas(transaksi, master, kodeEntitas) {
   const entitasList = master?.entitas || [];
   if (!kodeEntitas || entitasList.length < 2) return { transaksi, master };

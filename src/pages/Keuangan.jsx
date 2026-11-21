@@ -37,6 +37,7 @@ import {
   rekapTahunanData,
   laporanLabaRugi,
   setoranSebagaiPemasukan,
+  gajiPusatSebagaiPengeluaran,
   saringLabaRugi,
   saranPendapatanLabaRugi,
   tujuanKategori,
@@ -1990,7 +1991,11 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const ekuitas = useEkuitasNeraca({ transaksi: keuanganTransaksi, master, entitasKode, aktif: tabLaporan === "neraca" });
   const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
-  const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
+  const dataRentangSetoran = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
+  // Sisi Pusat: gaji cabang yang dibayar Pusat tampil sebagai pengeluaran kas "Gaji <cabang>" (klik = rincian per karyawan),
+  // tapi TIDAK ikut Laba Rugi (bebannya sudah di cabang) — lihat dataLabaRugi di bawah.
+  const gajiPusatBaris = gajiPusatSebagaiPengeluaran(dataRentangAsli, master, entitasKode);
+  const dataRentang = gajiPusatBaris.length ? [...dataRentangSetoran, ...gajiPusatBaris] : dataRentangSetoran;
   const { masuk, keluar, saldo, list } = ringkasanKeuangan(dataRentang, dari || null, sampai || null);
 
   // Saldo per rekening SENGAJA pakai data yang dimuat saja + saldo dasar dari database
@@ -2007,7 +2012,7 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const dataMasukGrup = kelompokkanBreakdown(breakdownMasuk.data, master.kelompok_masuk, breakdownMasuk.total);
   const dataKeluarGrup = kelompokkanBreakdown(breakdownKeluar.data, master.kelompok_keluar, breakdownKeluar.total);
   // Laba Rugi: kategori yang tujuannya Neraca (Pengaturan > Rekening & Kategori > Masuk ke Laporan) tidak dihitung.
-  const dataLabaRugi = saringLabaRugi(dataRentang, master);
+  const dataLabaRugi = saringLabaRugi(gajiPusatBaris.length ? dataRentang.filter((t) => !t._gajiPusat) : dataRentang, master);
   // HPP penjualan (marketplace + grosir + toko) untuk rentang yang dipilih, lihat lib/hppPenjualan.js.
   const { hpp: hppPenjualan } = useHppPenjualan(dari || null, sampai || null);
   // Pemakaian barang habis pakai pada rentang yang dipilih = beban Laba Rugi (lib/persediaanHabisPakai.js).
