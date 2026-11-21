@@ -44,7 +44,6 @@ import {
   renameRekeningKode,
   renameKategoriKode,
   sb,
-  kodeHoldingPasti,
 } from "../lib/api";
 import { useHppPenjualan } from "../lib/hppPenjualan";
 import { downloadCsv } from "../lib/api";
@@ -1911,65 +1910,6 @@ const TAB_LAPORAN = [
   { key: "neraca", label: "Neraca" },
 ];
 
-// Gaji karyawan cabang yang dibayar langsung oleh Pusat (Pengajuan Dana jenis gaji). Datanya = transfer Pemberian Modal
-// bertanda untuk_gaji (dibuat server gaji-admin). BUKAN beban Pusat: di Pusat tampil sebagai "Dibayarkan untuk Cabang",
-// di cabang tampil sebagai "Gaji Dibayar Pusat" (bebannya sendiri ada di Laba Rugi cabang kategori Gaji).
-function GajiDibayarPusat({ transaksi, master, entitasKode, dari, sampai }) {
-  const kodeHold = kodeHoldingPasti(master?.entitas, master?.entitas_set);
-  const sisiPusat = !!kodeHold && entitasKode === kodeHold;
-  const namaEnt = (kode) => (master?.entitas || []).find((e) => e.kode === kode)?.label || kode;
-  const baris = (transaksi || [])
-    .filter((t) => t.tipe === "transfer" && t.untuk_gaji && (!dari || t.tanggal >= dari) && (!sampai || t.tanggal <= sampai))
-    .filter((t) => sisiPusat || t.untuk_gaji.entitas === entitasKode)
-    .sort((a, b) => String(b.tanggal).localeCompare(String(a.tanggal)));
-  if (!baris.length) return null;
-  const tgl = (v) => new Date(`${v}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
-  const total = baris.reduce((a, t) => a + (Number(t.jumlah) || 0), 0);
-  const grup = [];
-  baris.forEach((t) => {
-    const k = t.untuk_gaji.entitas;
-    let g = grup.find((x) => x.kode === k);
-    if (!g) grup.push((g = { kode: k, rows: [], total: 0 }));
-    g.rows.push(t);
-    g.total += Number(t.jumlah) || 0;
-  });
-  return (
-    <section className="rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4 mb-5">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h3 className="text-sm font-semibold text-slate-100">{sisiPusat ? "Dibayarkan untuk Cabang" : "Gaji Dibayar Pusat"}</h3>
-        <span className="text-sm font-semibold text-violet-300">{fmtRp(total)}</span>
-      </div>
-      <p className="text-[11px] text-slate-400 mb-3">
-        {sisiPusat
-          ? "Gaji karyawan cabang yang dibayar langsung oleh Pusat. Bukan beban Pusat: bebannya tercatat di Laba Rugi cabang masing-masing."
-          : "Gaji karyawan yang dibayar langsung oleh Pusat. Bebannya sudah ada di Laba Rugi (kategori Gaji); uangnya bukan dari kas cabang."}
-      </p>
-      {grup.map((g) => (
-        <div key={g.kode} className="mb-3 last:mb-0">
-          {sisiPusat && (
-            <div className="flex justify-between text-xs font-medium text-slate-200 mb-1">
-              <span>{namaEnt(g.kode)}</span>
-              <span>{fmtRp(g.total)}</span>
-            </div>
-          )}
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800">
-            {g.rows.map((t) => (
-              <div key={t.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
-                <span className="text-slate-200">
-                  Gaji {t.untuk_gaji.karyawan}
-                  {sisiPusat ? <span className="text-slate-500"> · {namaEnt(g.kode)}</span> : null}
-                  <span className="text-slate-500"> · {tgl(t.tanggal)}</span>
-                </span>
-                <span className="text-slate-300 whitespace-nowrap">{fmtRp(t.jumlah)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTransaksi = [], master, entitasKode, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
@@ -2096,10 +2036,6 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             <InputTanggal className={`${inputClass} w-auto`} value={sampai} onChange={setSampai} />
           </div>
         </div>
-      )}
-
-      {(tabLaporan === "arus-kas" || tabLaporan === "laba-rugi") && (
-        <GajiDibayarPusat transaksi={dataRentangAsli} master={master} entitasKode={entitasKode} dari={dari} sampai={sampai} />
       )}
 
       {tabLaporan === "saldo-kas" && (

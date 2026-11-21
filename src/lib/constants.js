@@ -457,20 +457,18 @@ export const NAV = [
           { key: "pengaturan", label: "Pengaturan" },
         ],
       },
-      { key: "penggajian", label: "Penggajian", icon: Banknote },
     ],
   },
+  // SDM (dulu "ABSENSI"): satu menu dengan 4 sub — Rekap Absensi, Penggajian, Data Karyawan, Pengaturan.
+  // Key menu tetap "absensi" (routing & hak akses lama aman). Sub "penggajian" dulu menu sendiri di grup
+  // KEUANGAN; hak aksesnya sekarang lewat sub-menu (lihat allowedSubMenus) + fitur per PT "penggajian".
   {
-    key: "absensi-group", label: "ABSENSI", icon: CalendarClock, group: true,
+    key: "absensi", label: "SDM", icon: Users,
     children: [
-      {
-        key: "absensi", label: "Absensi", icon: Clock,
-        children: [
-          { key: "rekap", label: "Rekap Absensi" },
-          { key: "karyawan", label: "Data Karyawan" },
-          { key: "pengaturan", label: "Pengaturan" },
-        ],
-      },
+      { key: "rekap", label: "Rekap Absensi" },
+      { key: "penggajian", label: "Penggajian" },
+      { key: "karyawan", label: "Data Karyawan" },
+      { key: "pengaturan", label: "Pengaturan" },
     ],
   },
   // Panduan penggunaan — menu untuk SEMUA role (didaftarkan manual di
@@ -545,7 +543,7 @@ export function filterNavByAllowed(nodes, allowedMenuKeys, role) {
       ...n,
       // Sub-menu "onlyRole" tampil untuk role itu, ATAU untuk role lain yang SECARA EKSPLISIT diberi akses
       // oleh Super Appa lewat Hak Akses (ada di daftar sub override).
-      children: n.children.filter((c) => (!c.onlyRole || c.onlyRole === role || (adaOverrideSub(role, n.key) && subs && subs.includes(c.key))) && (!subs || subs.includes(c.key))),
+      children: n.children.filter((c) => !(n.key === "absensi" && c.key === "penggajian" && allowedMenuKeys?.includes("-penggajian"))).filter((c) => (!c.onlyRole || c.onlyRole === role || (adaOverrideSub(role, n.key) && subs && subs.includes(c.key))) && (!subs || subs.includes(c.key))),
     };
   };
   if (!allowedMenuKeys) return nodes.map(sembunyikanSub);
@@ -1003,7 +1001,9 @@ export function allowedMenus(role, entitas, fiturMati = []) {
   const ov = role !== "superappa" ? AKSES_ROLE[role] : null;
   if (ov && Array.isArray(ov.menus)) {
     // Hanya key menu yang valid; "barang-masuk" (izin tombol cepat) ikut "barang-datang".
-    menus = ov.menus.filter((k) => ALL_MENU_KEYS.includes(k) || k === "barang-masuk");
+    // Hak Akses lama menyimpan "penggajian" sebagai menu sendiri; sekarang jadi sub dari "absensi" (SDM).
+    const menusLama = ov.menus.includes("penggajian") && !ov.menus.includes("absensi") ? [...ov.menus, "absensi"] : ov.menus;
+    menus = menusLama.filter((k) => ALL_MENU_KEYS.includes(k) || k === "barang-masuk");
     if (menus.includes("barang-datang") && !menus.includes("barang-masuk")) menus = [...menus, "barang-masuk"];
   } else if (entitas && entitas === KODE_HOLDING_MENU && MENU_GUDANG_HOLDING_ROLE.includes(role)) {
     // Holding memegang Master Barang (katalog bersama) dan stok miliknya sendiri, jadi akun Holding
@@ -1034,6 +1034,8 @@ export function allowedMenus(role, entitas, fiturMati = []) {
     // "barang-masuk" = izin tombol tambah cepat, ikut mati bersama "barang-datang".
     if (mati.has("barang-datang")) mati.add("barang-masuk");
     menus = menus.filter((k) => !mati.has(k));
+    // "penggajian" kini sub-menu SDM, bukan menu sendiri: tandai "-penggajian" supaya sub-nya disembunyikan.
+    if (mati.has("penggajian")) menus = [...menus, "-penggajian"];
   }
   return menus;
 }
@@ -1133,6 +1135,15 @@ export const SUB_KEUANGAN_LAMA = {
 // Return null = boleh akses semua anak menu (tidak dibatasi).
 export function allowedSubMenus(role, menuKey) {
   const ov = role !== "superappa" ? AKSES_ROLE[role]?.subs?.[menuKey] : null;
+  if (menuKey === "absensi" && role !== "superappa") {
+    // Kompatibel dengan Hak Akses lama: dulu "penggajian" menu sendiri. Role yang diberi menu "penggajian"
+    // (belum disimpan ulang di editor) tetap boleh; role yang hanya punya "absensi" tetap TIDAK dapat Penggajian.
+    const menusTersimpan = AKSES_ROLE[role]?.menus;
+    const penggajianLama = Array.isArray(menusTersimpan) && menusTersimpan.includes("penggajian");
+    if (Array.isArray(ov)) return penggajianLama && !ov.includes("penggajian") ? [...ov, "penggajian"] : ov;
+    if (Array.isArray(menusTersimpan) && !penggajianLama) return ["rekap", "karyawan", "pengaturan"];
+    return null;
+  }
   if (Array.isArray(ov)) return ov;
   return allowedSubMenusBawaan(role, menuKey);
 }

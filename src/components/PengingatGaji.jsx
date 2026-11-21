@@ -34,7 +34,7 @@ export default function PengingatGaji({ bolehKelola, menuAktif, onNavigate }) {
   const siapkan = (p) => {
     try { localStorage.setItem(KUNCI_TIPE_PERIODE, tipePeriodeUntuk(p.tipe)); } catch { /* abaikan */ }
     window.dispatchEvent(new CustomEvent(EVENT_PILIH_PERIODE_GAJI, { detail: p }));
-    if (menuAktif !== "penggajian") onNavigate?.("penggajian");
+    if (menuAktif !== "penggajian") onNavigate?.("absensi", "penggajian");
   };
   const sudah = (p) => {
     tandaiSelesai(p.kunci);

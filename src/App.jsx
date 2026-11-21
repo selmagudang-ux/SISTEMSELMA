@@ -432,6 +432,8 @@ function MainApp({ session, onLogout }) {
         let s = lama ? { ...saved, sub: lama.sub } : saved;
         // Menu Holding lama dipecah: halaman grup/antar-entitas sekarang di "Perusahaan Grup".
         if (s.menu === "holding" && ["grup", "antar-entitas"].includes(s.sub)) s = { ...s, menu: "perusahaan" };
+        // Penggajian dulu menu sendiri, sekarang sub-menu SDM (key menu "absensi").
+        if (s.menu === "penggajian") s = { menu: "absensi", sub: "penggajian" };
         // Transfer Antar Entitas dulu sub-menu Stok, sekarang menu sendiri.
         if (s.menu === "stok" && s.sub === "transfer") s = { menu: "transfer-entitas", sub: null };
         if (allowedAwal.includes(s.menu)) return s;
@@ -569,6 +571,7 @@ function MainApp({ session, onLogout }) {
     if (!allowed.includes(menu)) return;
     const subs = allowedSubMenus(session.role, menu);
     if (subs && sub && !subs.includes(sub)) return;
+    if (menu === "absensi" && sub === "penggajian" && allowed.includes("-penggajian")) return;
 
     if (menu === nav.menu && (sub || null) === (nav.sub || null)) return; // sudah di menu itu, tidak perlu apa-apa
 
@@ -1316,6 +1319,7 @@ function MainApp({ session, onLogout }) {
   const canSee = (menuKey) => allowed.includes(menuKey);
   const canSeeSub = (menuKey, subKey) => {
     if (!subKey) return true;
+    if (menuKey === "absensi" && subKey === "penggajian" && allowed.includes("-penggajian")) return false;
     const subs = allowedSubMenus(session.role, menuKey);
     return !subs || subs.includes(subKey);
   };
@@ -1353,8 +1357,8 @@ function MainApp({ session, onLogout }) {
         <main className="px-5 py-6 w-full print:p-0">
           {/* Pengingat gajian: Sabtu/Minggu (mingguan) dan tanggal 23 (bulanan). Hanya untuk yang boleh mengelola gaji. */}
           <PengingatGaji
-            bolehKelola={canSee("penggajian") && bisa(session.role, "penggajian.ubah")}
-            menuAktif={nav.menu}
+            bolehKelola={canSee("absensi") && canSeeSub("absensi", "penggajian") && bisa(session.role, "penggajian.ubah")}
+            menuAktif={nav.menu === "absensi" && nav.sub === "penggajian" ? "penggajian" : nav.menu}
             onNavigate={navigate}
           />
           {error && (
@@ -1642,10 +1646,10 @@ function MainApp({ session, onLogout }) {
               {nav.menu === "rekap-perpindahan" && (
                 <RekapPerpindahan keuanganTransaksi={keuanganTransaksi} master={master} session={session} showToast={showToast} />
               )}
-              {nav.menu === "penggajian" && (
+              {nav.menu === "absensi" && nav.sub === "penggajian" && (
                 <Penggajian session={session} master={master} showToast={showToast} />
               )}
-              {nav.menu === "absensi" && (
+              {nav.menu === "absensi" && nav.sub !== "penggajian" && (
                 <Absensi sub={nav.sub || "rekap"} showToast={showToast} session={session} master={master} />
               )}
               {nav.menu === "pengaturan" && (
