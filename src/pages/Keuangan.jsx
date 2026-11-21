@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, Fragment } from "react";
 import { downloadXlsx } from "../lib/exportData";
 import { usePersediaanBarang } from "./kasir/persediaanToko";
 import { usePersediaanHabisPakai, usePemakaianHabisPakai } from "../lib/persediaanHabisPakai";
+import { useDataNeraca } from "../lib/neracaData";
 import { Plus, Search, Pencil, Trash2, Check, X, TrendingUp, TrendingDown, Wallet, ArrowRightLeft, Landmark, Download, MessageCircleMore, Copy, FileText, CalendarRange, BarChart3, Scale, RotateCcw, ChevronDown, ChevronRight, Receipt, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
 import { PageHeader, StatCard, EmptyState, inputClass, Badge, InputTanggal, formatTanggalID, ModalShell, suggestKode } from "../components/ui";
 import {
@@ -1915,6 +1916,8 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
   const persediaanToko = usePersediaanBarang(tabLaporan === "neraca");
   // Persediaan Barang Habis Pakai (stok x harga beli rata-rata) + Uang Muka (belanja dibayar, barang belum diterima).
   const persediaanHP = usePersediaanHabisPakai(tabLaporan === "neraca");
+  // Aktiva Tetap (aset), Piutang Grosir, Saldo Marketplace, Titipan Deposit — lihat lib/neracaData.js.
+  const dataNeraca = useDataNeraca(tabLaporan === "neraca");
   const { data: dataRentangAsli, status: statusLama } = useKeuanganRentang(keuanganTransaksi, dari);
   // Setoran Pemasukan dari cabang dihitung sebagai pemasukan Pusat di laporan (saldo kas tetap dari transaksi asli).
   const dataRentang = setoranSebagaiPemasukan(dataRentangAsli, master, entitasKode);
@@ -2134,8 +2137,15 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             persediaan_hp: persediaanHP.data ? persediaanHP.data.nilai : undefined,
             // Belanja habis pakai yang sudah dibayar tapi barangnya belum diterima.
             uang_muka: persediaanHP.data ? persediaanHP.data.uangMuka : undefined,
+            // Aset tetap (harga perolehan per kategori + akumulasi penyusutan), piutang grosir, saldo marketplace, titipan deposit.
+            ...(dataNeraca.data ? dataNeraca.data.nilai : {}),
           }}
         />
+      )}
+      {tabLaporan === "neraca" && (dataNeraca.error || (dataNeraca.data && dataNeraca.data.galat.length > 0)) && (
+        <div className="mt-3 text-[11px] text-amber-400">
+          Sebagian pos gagal dimuat: {dataNeraca.error || dataNeraca.data.galat.join(" · ")}
+        </div>
       )}
       {tabLaporan === "neraca" && persediaanHP.error && (
         <div className="mt-3 text-[11px] text-amber-400">Persediaan barang habis pakai gagal dimuat: {persediaanHP.error}</div>

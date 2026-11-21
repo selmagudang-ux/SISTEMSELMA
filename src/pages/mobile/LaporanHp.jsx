@@ -15,6 +15,7 @@ import {
 import { useKeuanganRentang } from "../../lib/useKeuanganRentang";
 import { useHppPenjualan } from "../../lib/hppPenjualan";
 import { usePersediaanBarang } from "../kasir/persediaanToko";
+import { useDataNeraca } from "../../lib/neracaData";
 import { buatLaporanNarasi } from "../../lib/laporanNarasi";
 
 // =========================================================
@@ -612,7 +613,7 @@ function TabNeraca({ nilai, memuatPersediaan, galatPersediaan, rincianPersediaan
         </span>
       </div>
       <p className="text-[11px] text-md-on-surface-variant px-1">
-        Neraca masih bertahap: baru Kas Kecil, Bank, dan Persediaan Barang (stok gudang + toko × HPP) yang terhubung ke data. Pos lain tampil "-".
+        Neraca masih bertahap: sudah terhubung: Kas Kecil, Bank, Persediaan Barang, Saldo Marketplace, Piutang Grosir, Aktiva Tetap, dan Titipan Deposit. Pos lain tampil "-".
       </p>
     </div>
   );
@@ -745,6 +746,7 @@ export default function LaporanHp({ session, entitas }) {
   const listLR = useMemo(() => ringkasanKeuangan(dataLabaRugi, dari || null, sampai || null).list, [dataLabaRugi, dari, sampai]);
 
   const persediaan = usePersediaanBarang(tab === "neraca");
+  const dataNeraca = useDataNeraca(tab === "neraca");
 
   const subtitle = dari && sampai ? `${formatTanggalID(dari)} – ${formatTanggalID(sampai)}` : "";
 
@@ -857,6 +859,8 @@ export default function LaporanHp({ session, entitas }) {
               bank: saldoKas.bank,
               // Stok Barang Toko × HPP + stok Master Barang (gudang) × HPP.
               persediaan: persediaan.data ? persediaan.data.nilai : undefined,
+              // Aset tetap, piutang grosir, saldo marketplace, titipan deposit (lib/neracaData.js).
+              ...(dataNeraca.data ? dataNeraca.data.nilai : {}),
             }}
             memuatPersediaan={persediaan.memuat}
             galatPersediaan={persediaan.error}
