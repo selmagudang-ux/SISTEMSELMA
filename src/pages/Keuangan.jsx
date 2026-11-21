@@ -2139,6 +2139,11 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
             uang_muka: persediaanHP.data ? persediaanHP.data.uangMuka : undefined,
             // Aset tetap (harga perolehan per kategori + akumulasi penyusutan), piutang grosir, saldo marketplace, titipan deposit.
             ...(dataNeraca.data ? dataNeraca.data.nilai : {}),
+            // Uang Muka = belanja habis pakai (dibayar, belum diterima) + pesanan barang dibayar, belum datang.
+            uang_muka:
+              persediaanHP.data && dataNeraca.data && dataNeraca.data.nilai.uang_muka_barang !== undefined
+                ? persediaanHP.data.uangMuka + dataNeraca.data.nilai.uang_muka_barang
+                : undefined,
           }}
         />
       )}

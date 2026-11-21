@@ -861,6 +861,8 @@ export default function LaporanHp({ session, entitas }) {
               persediaan: persediaan.data ? persediaan.data.nilai : undefined,
               // Aset tetap, piutang grosir, saldo marketplace, titipan deposit (lib/neracaData.js).
               ...(dataNeraca.data ? dataNeraca.data.nilai : {}),
+              // Uang muka barang: pesanan dibayar, belum datang (belanja habis pakai belum ada di versi HP).
+              uang_muka: dataNeraca.data ? dataNeraca.data.nilai.uang_muka_barang : undefined,
             }}
             memuatPersediaan={persediaan.memuat}
             galatPersediaan={persediaan.error}
