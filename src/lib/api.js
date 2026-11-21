@@ -2849,8 +2849,13 @@ export const hapusGaji = (passwordAdmin, id) => gajiAdmin("hapus", passwordAdmin
 
 // Cadangan bila karyawan tidak bisa memindai: admin menandai diterima
 // (server mencatat transaksi Keuangan, kategori GAJI).
-export const tandaiGajiDiterimaAdmin = (passwordAdmin, id) =>
-  gajiAdmin("tandai_diterima", passwordAdmin, { id });
+// opsi.dibayarPusat + opsi.rekeningPusat: gaji dibayar langsung oleh Pusat (Holding) untuk karyawan
+// cabang. Server mencatat Pemberian Modal Pusat -> cabang (bukan laba rugi) + beban gaji di cabang.
+// Hanya Super Appa; boleh langsung dari status draft (tanpa QR).
+export const tandaiGajiDiterimaAdmin = (passwordAdmin, id, opsi = {}) =>
+  gajiAdmin("tandai_diterima", passwordAdmin, opsi.dibayarPusat
+    ? { id, dibayar_pusat: true, rekening_pusat: opsi.rekeningPusat }
+    : { id });
 
 // ---- Sisi karyawan (gaji-karyawan) ----
 // Bentuk request sesuai server: { id_karyawan, password, aksi, data }.

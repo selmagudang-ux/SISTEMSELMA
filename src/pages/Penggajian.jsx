@@ -233,6 +233,13 @@ export default function Penggajian({ session, master, showToast }) {
   const [berlaku, setBerlaku] = useState(1440);
   const [filterKaryawan, setFilterKaryawan] = useState("");
   const [qr, setQr] = useState(null); // { nama, periode, nominal, token, kedaluwarsa }
+  const [bayarPusat, setBayarPusat] = useState(null); // gaji yang akan dibayar oleh Pusat
+  const rekeningPusat = useMemo(
+    () => (kodeHolding ? lingkupEntitas([], master || {}, kodeHolding).master.rekening || [] : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [master?.rekening, master?.rekening_entitas, master?.entitas, master?.entitas_set, kodeHolding]
+  );
+  const bolehBayarPusat = session?.role === "superappa" && !!kodeHolding && ent !== kodeHolding;
 
   const peta = useMemo(() => new Map(karyawan.map((k) => [k.id, k])), [karyawan]);
   const karyawanAktif = useMemo(() => karyawan.filter((k) => k.aktif), [karyawan]);
@@ -441,6 +448,12 @@ export default function Penggajian({ session, master, showToast }) {
     jalankan(g, () => tandaiGajiDiterimaAdmin(pw, g.id), "Gaji ditandai diterima dan dicatat di Keuangan.");
   };
 
+  const konfirmasiBayarPusat = async (g, rekPusat) => {
+    await jalankan(g, () => tandaiGajiDiterimaAdmin(pw, g.id, { dibayarPusat: true, rekeningPusat: rekPusat }),
+      "Gaji dicatat dibayar oleh Pusat: modal Pusat → cabang dan beban gaji cabang tercatat.");
+    setBayarPusat(null);
+  };
+
   // Isi komponen gaji semua karyawan untuk periode terpilih dari data Absensi + tarif di tab
   // Pengaturan Gaji. Hasilnya masuk ke baris draft di layar (belum disimpan), jadi masih bisa
   // diperiksa dan diubah dulu. Gaji yang sudah diserahkan/diterima tidak disentuh.
@@ -516,6 +529,11 @@ export default function Penggajian({ session, master, showToast }) {
         {g.status === "diserahkan" && (
           <button disabled={proses} className={btnText} onClick={() => tandaiDiterima(g)}>
             <CheckCircle2 size={14} /> Tandai diterima
+          </button>
+        )}
+        {bolehBayarPusat && (g.status === "draft" || g.status === "diserahkan") && g.rekening_sumber && (
+          <button disabled={proses} className={btnText} onClick={() => setBayarPusat(g)} title="Pusat membayar langsung ke karyawan, tanpa QR">
+            <CheckCircle2 size={14} /> Dibayar Pusat
           </button>
         )}
         {(g.status === "draft" || g.status === "diserahkan") && (
@@ -761,7 +779,7 @@ export default function Penggajian({ session, master, showToast }) {
                           )}
                         </td>
                         <td className="px-2 py-2">
-                          {g ? <Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge> : <span className="text-md-on-surface-variant">Belum disiapkan</span>}
+                          {g ? <><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge>{g.dibayar_pusat && <Badge color="sky">Dibayar Pusat</Badge>}</> : <span className="text-md-on-surface-variant">Belum disiapkan</span>}
                         </td>
                         <td className="px-4 py-2">{g ? <AksiGaji g={g} /> : null}</td>
                       </tr>
@@ -844,7 +862,7 @@ export default function Penggajian({ session, master, showToast }) {
                           </div>
                         )}
                       </td>
-                      <td className="px-2 py-2"><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge></td>
+                      <td className="px-2 py-2"><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge>{g.dibayar_pusat && <> <Badge color="sky">Dibayar Pusat</Badge></>}</td>
                       <td className="px-2 py-2 text-md-on-surface-variant">
                         {g.diterima_pada ? `${fmtWaktu(g.diterima_pada)} (${g.cara_diterima === "admin" ? "oleh admin" : "scan QR"})` : "—"}
                       </td>
@@ -859,6 +877,17 @@ export default function Penggajian({ session, master, showToast }) {
       )}
 
       {qr && <ModalQr data={qr} onClose={() => setQr(null)} />}
+      {bayarPusat && (
+        <ModalBayarPusat
+          g={bayarPusat}
+          nama={peta.get(bayarPusat.karyawan_id)?.nama || "—"}
+          namaPT={namaPT}
+          rekeningList={rekeningPusat}
+          sibuk={sibuk === bayarPusat.id}
+          onClose={() => setBayarPusat(null)}
+          onOk={(rek) => konfirmasiBayarPusat(bayarPusat, rek)}
+        />
+      )}
     </div>
   );
 }
@@ -900,6 +929,37 @@ function ModalQr({ data, onClose }) {
             {mengunduh ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Unduh QR
           </button>
           <button className={btnOutlined} onClick={onClose}>Tutup</button>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// Gaji dibayar langsung oleh Pusat ke karyawan cabang. Pembukuan otomatis (server):
+//   Pusat  : Pemberian Modal ke cabang (kas Pusat berkurang) — BUKAN beban Pusat.
+//   Cabang : beban Gaji (laba rugi cabang) dari rekening yang sama; saldo kas cabang tidak berubah.
+function ModalBayarPusat({ g, nama, namaPT, rekeningList, sibuk, onClose, onOk }) {
+  const [rek, setRek] = useState("");
+  return (
+    <ModalShell title="Gaji dibayar oleh Pusat" onClose={onClose}>
+      <div className="text-sm text-md-on-surface">
+        <div className="font-medium">{nama} · {namaPT}</div>
+        <div className="text-xs text-md-on-surface-variant mb-3">{labelPeriode(g.periode)} · {fmtRp(g.nominal)}</div>
+        <Field label="Rekening Pusat yang dipakai membayar">
+          <select value={rek} onChange={(e) => setRek(e.target.value)} className={inputClass}>
+            <option value="">— pilih rekening Pusat —</option>
+            {rekeningList.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
+          </select>
+        </Field>
+        <p className="text-[11px] text-md-on-surface-variant mt-3">
+          Pastikan pembayaran ke karyawan sudah dilakukan Pusat. Sistem mencatat Pemberian Modal Pusat → {namaPT} sebesar{" "}
+          {fmtRp(g.nominal)} (bukan laba rugi) dan beban gaji di {namaPT}. Beban gaji hanya muncul di {namaPT}, tidak di Pusat.
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className={btnOutlined} onClick={onClose} disabled={sibuk}>Batal</button>
+          <button className={btnFilled} disabled={!rek || sibuk} onClick={() => onOk(rek)}>
+            {sibuk ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Catat dibayar Pusat
+          </button>
         </div>
       </div>
     </ModalShell>
