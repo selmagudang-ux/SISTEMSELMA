@@ -1941,6 +1941,17 @@ export function breakdownPengeluaranKategori(transaksi, kategoriList) {
 // di level paling atas. Hasil: array setipe `data` breakdown — elemen kelompok
 // punya isGrup = true + `anak` (kelompok lain atau kategori master), kode-nya
 // "__grup__:<jalur>". Elemen non-kelompok = kategori master (daun) apa adanya.
+// Setoran dari cabang (baris bayangan setoranSebagaiPemasukan, kategori "Setoran dari <cabang> — <sumber>") otomatis
+// digabung jadi SATU kelompok "Setoran dari <cabang>" yang bisa dibuka; sumbernya jadi anak. Tidak menimpa pemetaan buatan user.
+const POLA_SETORAN = /^(Setoran dari .+?) — /;
+function petakanSetoran(peta, daftarKode) {
+  (daftarKode || []).forEach((k) => {
+    if (!k || peta.has(k)) return;
+    const m = POLA_SETORAN.exec(String(k));
+    if (m) peta.set(k, [m[1]]);
+  });
+}
+
 export function kelompokkanBreakdown(data, pemetaan, total) {
   const peta = new Map();
   (pemetaan || []).forEach((m) => {
@@ -1948,6 +1959,7 @@ export function kelompokkanBreakdown(data, pemetaan, total) {
     const jalur = String(m.label).split(">").map((x) => x.trim()).filter(Boolean);
     if (jalur.length) peta.set(m.kode, jalur);
   });
+  petakanSetoran(peta, (data || []).map((d) => d.kode));
   if (peta.size === 0) return data;
 
   const akar = [];
@@ -2062,6 +2074,7 @@ function kelompokkanBarisBulanan(baris, pemetaan) {
     const jalur = String(m.label).split(">").map((x) => x.trim()).filter(Boolean);
     if (jalur.length) peta.set(m.kode, jalur);
   });
+  petakanSetoran(peta, (baris || []).map((r) => r.kode));
   if (peta.size === 0) return baris;
 
   const akar = [];
@@ -2651,7 +2664,7 @@ export function setoranSebagaiPemasukan(transaksi, master, kodeEntitas) {
     const dasar = { ...t, tipe: "masuk", rekening: t.rekening_tujuan, rekening_tujuan: null, penanda: null, rincian_setoran: null, _setoran: true };
     const rincian = Array.isArray(t.rincian_setoran) ? t.rincian_setoran : [];
     if (!rincian.length) {
-      tambahan.push({ ...dasar, id: `setoran-${t.id}`, kategori: `Setoran dari ${nama}`, keterangan: t.keterangan || "Setoran pemasukan dari cabang" });
+      tambahan.push({ ...dasar, id: `setoran-${t.id}`, kategori: `Setoran dari ${nama} — Tanpa rincian`, keterangan: t.keterangan || "Setoran pemasukan dari cabang" });
       return;
     }
     // Ada rincian sumber: satu baris pemasukan per transaksi yang disetor (kategori = sumbernya di cabang),
