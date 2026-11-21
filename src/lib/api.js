@@ -2854,7 +2854,7 @@ export const hapusGaji = (passwordAdmin, id) => gajiAdmin("hapus", passwordAdmin
 // Hanya Super Appa; boleh langsung dari status draft (tanpa QR).
 export const tandaiGajiDiterimaAdmin = (passwordAdmin, id, opsi = {}) =>
   gajiAdmin("tandai_diterima", passwordAdmin, opsi.dibayarPusat
-    ? { id, dibayar_pusat: true, rekening_pusat: opsi.rekeningPusat }
+    ? { id, dibayar_pusat: true, rekening_pusat: opsi.rekeningPusat, ...(opsi.rekeningCabang ? { rekening_cabang: opsi.rekeningCabang } : {}) }
     : { id });
 
 // ---- Sisi karyawan (gaji-karyawan) ----

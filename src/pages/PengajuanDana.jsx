@@ -181,7 +181,7 @@ export default function PengajuanDana({
       for (const it of daftar) {
         if (it.selesai) continue;
         try {
-          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekPusat });
+          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekPusat, rekeningCabang: it.rekening });
           it.selesai = true;
         } catch (e) {
           gagal.push(`${it.nama || "gaji"}: ${e.message}`);
@@ -474,7 +474,7 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
 
   const jumlahNum = mode === "gaji" ? totalGaji : Number(jumlah) || 0;
   const valid = mode === "gaji"
-    ? !!(peminta && pemberi && peminta !== pemberi && gajiTerpilih.length > 0)
+    ? !!(peminta && pemberi && peminta !== pemberi && gajiTerpilih.length > 0 && gajiTerpilih.every((g) => g.rekening_sumber || rekening))
     : peminta && pemberi && peminta !== pemberi && jumlahNum > 0 && keperluan.trim().length >= 3;
 
   const kirim = async () => {
@@ -492,7 +492,7 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
       setMengunggah(false);
     }
     if (mode === "gaji") {
-      const rincianGaji = gajiTerpilih.map((g) => ({ id: g.id, nama: g.nama, nominal: Number(g.nominal) || 0, periode: g.periode, rekening: g.rekening_sumber }));
+      const rincianGaji = gajiTerpilih.map((g) => ({ id: g.id, nama: g.nama, nominal: Number(g.nominal) || 0, periode: g.periode, rekening: g.rekening_sumber || rekening }));
       const ringkas = rincianGaji.slice(0, 3).map((x) => x.nama).join(", ") + (rincianGaji.length > 3 ? ` +${rincianGaji.length - 3} lainnya` : "");
       onSubmit({ peminta, pemberi, jenis: "modal", jumlah: jumlahNum, keperluan: `Gaji karyawan: ${ringkas}`, tanggalDibutuhkan, rekening: "", catatan: catatan.trim(), bukti, rincianGaji });
       return;
@@ -541,7 +541,7 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
         <div className="mb-3">
           <div className="text-[11px] text-slate-500 mb-2">
             Pusat membayar gaji langsung ke karyawan. Pembukuan: Pemberian Modal Pusat → cabang dan beban gaji tercatat di cabang (tidak ganda).
-            Siapkan dulu gajinya sebagai <b>draft</b> di menu Penggajian dan pilih rekening sumbernya.
+            Siapkan dulu gajinya sebagai <b>draft</b> di menu Penggajian. Rekening sumber boleh dikosongkan, dipilih di bawah.
           </div>
           <Field label="Password akun Anda (untuk membaca data gaji)">
             <div className="flex gap-2">
@@ -556,13 +556,21 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
           {draftGaji && draftGaji.length > 0 && (
             <div className="rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800">
               {draftGaji.map((g) => (
-                <label key={g.id} className={`flex items-center gap-2 px-3 py-2 text-xs ${g.rekening_sumber ? "cursor-pointer" : "opacity-50"}`}>
-                  <input type="checkbox" disabled={!g.rekening_sumber} checked={!!pilihGaji[g.id]} onChange={(e) => setPilihGaji((m) => ({ ...m, [g.id]: e.target.checked }))} />
-                  <span className="text-slate-200 flex-1">{g.nama} <span className="text-slate-500">· {labelPeriodeGaji(g.periode)}{g.rekening_sumber ? "" : " · rekening sumber belum dipilih"}</span></span>
+                <label key={g.id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={!!pilihGaji[g.id]} onChange={(e) => setPilihGaji((m) => ({ ...m, [g.id]: e.target.checked }))} />
+                  <span className="text-slate-200 flex-1">{g.nama} <span className="text-slate-500">· {labelPeriodeGaji(g.periode)}{g.rekening_sumber ? ` · rek. ${g.rekening_sumber}` : ""}</span></span>
                   <span className="text-slate-300">{fmtRp(g.nominal)}</span>
                 </label>
               ))}
             </div>
+          )}
+          {gajiTerpilih.some((g) => !g.rekening_sumber) && (
+            <Field label={`Rekening ${labelEnt(peminta)} untuk pencatatan gaji (untuk gaji yang belum punya rekening)`}>
+              <select className={inputClass} value={rekening} onChange={(e) => setRekening(e.target.value)}>
+                <option value="">— pilih rekening cabang —</option>
+                {rekeningPilihan.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
+              </select>
+            </Field>
           )}
           <div className="text-sm text-slate-200 mt-2">Total diajukan: <b className="text-sky-400">{fmtRp(totalGaji)}</b> ({gajiTerpilih.length} gaji)</div>
         </div>
