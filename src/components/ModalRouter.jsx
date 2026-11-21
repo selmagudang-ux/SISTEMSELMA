@@ -545,9 +545,10 @@ const MODAL_BUTUH_DETAIL_GROSIR = new Set([
 // ---------------------------------------------------------------------------
 // Biaya iklan marketplace — SATU entri = SATU top-up saldo iklan, langsung tercatat di Keuangan.
 // Top-up memotong saldo marketplace (bukan uang di rekening bank), jadi di Keuangan dicatat sepasang baris
-// di rekening yang sama: Pemasukan "Pencairan Marketplace" + Pengeluaran "Biaya Iklan Marketplace".
-// Saldo rekening tidak berubah, tapi biaya iklan muncul sebagai beban per top-up (pola sama seperti
-// dulu saat iklan ikut dicatat waktu pencairan, hanya sekarang satu-satu).
+// di rekening KHUSUS "Saldo Iklan Marketplace" (otomatis dibuat per entitas, selalu bersaldo 0):
+// Pemasukan "Pencairan Marketplace" + Pengeluaran "Biaya Iklan Marketplace". Rekening bank tidak tersentuh
+// (jadi tidak ikut jadi kandidat Setor ke Holding), tapi biaya iklan muncul sebagai beban per top-up
+// di Laba Rugi; pencairan yang masuk bank sudah bersih dari iklan, jadi laba tidak terpotong dua kali.
 // Kolom marketplace_transaksi: keuangan_transaksi_id = baris Biaya Iklan (keluar),
 // keuangan_transaksi_id_iklan = baris pasangannya (masuk). Kolom `rekening` SENGAJA tidak diisi
 // supaya top-up tetap memotong saldo marketplace (lihat saldoMarketplace di lib/api.js).
@@ -567,7 +568,8 @@ function namaSumberMarketplace(platform, tokoLabel) {
 }
 
 // Buat sepasang baris Keuangan untuk satu top-up iklan. Mengembalikan { keluar, masuk } (baris hasil insert).
-async function buatBarisKeuanganIklan({ master, platform, tokoLabel, tanggal, jumlah, rekening, keterangan, fotoList }) {
+async function buatBarisKeuanganIklan({ master, platform, tokoLabel, tanggal, jumlah, keterangan, fotoList }) {
+  const rekening = await cariAtauBuatRekeningTetap(master, "Saldo Iklan Marketplace", suggestKode, "saldo_iklan_marketplace");
   const namaSumber = namaSumberMarketplace(platform, tokoLabel);
   const bukti = fotoList?.length ? await unggahBuktiBanyak(fotoList, `iklan-${platform}`) : [];
   const kategoriBeban = await cariAtauBuatKategoriMaster(master, "kategori_keluar", "Biaya Iklan Marketplace");
@@ -1580,7 +1582,6 @@ export default function ModalRouter({
         tipe={modal.tipe}
         platform={modal.platform}
         tokoLabel={modal.tokoLabel}
-        rekeningList={modal.tipe === "iklan" ? rekeningEntitasSesi(master) : []}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -1591,7 +1592,7 @@ export default function ModalRouter({
               // Top-up iklan: baris Keuangan dibuat DULU, lalu entri marketplace ditautkan ke id-nya.
               ({ keluar, masuk } = await buatBarisKeuanganIklan({
                 master, platform: modal.platform, tokoLabel: modal.tokoLabel, tanggal: data.tanggal,
-                jumlah: data.jumlah, rekening: data.rekening, keterangan: data.keterangan, fotoList: data.fotoList,
+                jumlah: data.jumlah, keterangan: data.keterangan, fotoList: data.fotoList,
               }));
             }
             try {
@@ -1625,7 +1626,6 @@ export default function ModalRouter({
     return (
       <MarketplaceIklanCatatForm
         item={it}
-        rekeningList={rekeningEntitasSesi(master)}
         onClose={close}
         saving={saving}
         onSubmit={(data) =>
@@ -1633,7 +1633,7 @@ export default function ModalRouter({
             const tokoLabelIt = it.toko ? (master?.[`toko_${it.platform}`] || []).find((tk) => tk.kode === it.toko)?.label || it.toko : null;
             const { keluar, masuk } = await buatBarisKeuanganIklan({
               master, platform: it.platform, tokoLabel: tokoLabelIt, tanggal: it.tanggal,
-              jumlah: Number(it.jumlah) || 0, rekening: data.rekening, keterangan: it.keterangan || "", fotoList: data.fotoList,
+              jumlah: Number(it.jumlah) || 0, keterangan: it.keterangan || "", fotoList: data.fotoList,
             });
             try {
               await sb(`marketplace_transaksi?id=eq.${it.id}`, {

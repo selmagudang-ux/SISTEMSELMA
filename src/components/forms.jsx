@@ -5764,18 +5764,16 @@ export function MarketplaceTokoForm({ platform, toko, kodeBaru, onClose, onSubmi
   );
 }
 
-export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, rekeningList = [], onClose, onSubmit, saving }) {
+export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, onClose, onSubmit, saving }) {
   const todayIso = new Date().toISOString().slice(0, 10);
   const [tanggal, setTanggal] = useState(todayIso);
   const [jumlah, setJumlah] = useState("");
   const [keterangan, setKeterangan] = useState("");
-  const [rekening, setRekening] = useState(""); // khusus Iklan: rekening Keuangan tempat top-up dicatat
   const [fotoList, setFotoList] = useState([]); // khusus Iklan: bukti top-up (opsional)
 
   const jumlahNum = Number(jumlah) || 0;
   const isPemasukan = tipe === "pemasukan";
-  const canSubmit = !saving && tanggal && jumlahNum > 0 && (isPemasukan || rekening);
-  const rekeningOptions = (rekeningList || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
+  const canSubmit = !saving && tanggal && jumlahNum > 0;
   const judul = isPemasukan ? "Tambah Pemasukan" : "Catat Top-up Saldo Iklan";
   const namaPlatform = PLATFORM_LABEL_FORM[platform] || platform;
 
@@ -5784,7 +5782,7 @@ export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, rekeningLi
       <p className="text-xs text-slate-500 mb-3">
         {isPemasukan
           ? "Dicatat sebagai penambah saldo marketplace — belum masuk ke Keuangan sampai dicairkan."
-          : "Satu entri = satu kali top-up saldo iklan. Memotong saldo marketplace dan langsung tercatat sebagai Biaya Iklan Marketplace di Keuangan (tidak menambah/mengurangi uang di rekening bank)."}
+          : "Satu entri = satu kali top-up saldo iklan. Memotong saldo marketplace dan langsung tercatat sebagai Biaya Iklan Marketplace di Keuangan (masuk Laba Rugi, tidak menyentuh rekening bank)."}
       </p>
 
       <Field label="Tanggal">
@@ -5794,17 +5792,6 @@ export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, rekeningLi
       <Field label="Jumlah">
         <InputRupiah value={jumlah} onChange={setJumlah} placeholder="0" />
       </Field>
-
-      {!isPemasukan && (
-        <Field label="Dicatat di rekening Keuangan">
-          <SearchableSelect
-            value={rekening}
-            onChange={setRekening}
-            options={rekeningOptions}
-            placeholder="Pilih rekening untuk mencatat biaya iklan…"
-          />
-        </Field>
-      )}
 
       <Field label={isPemasukan ? "Keterangan (mis. Pemasukan Agustus 2026)" : "Keterangan (mis. Top-up iklan 21 Nov)"}>
         <input
@@ -5819,7 +5806,7 @@ export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, rekeningLi
 
       <button
         disabled={!canSubmit}
-        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, keterangan: keterangan.trim(), ...(isPemasukan ? {} : { rekening, fotoList }) })}
+        onClick={() => onSubmit({ tanggal, jumlah: jumlahNum, keterangan: keterangan.trim(), ...(isPemasukan ? {} : { fotoList }) })}
         className={`w-full disabled:opacity-40 text-sm font-semibold py-2.5 rounded-lg ${
           isPemasukan ? "bg-emerald-500 hover:bg-emerald-400 text-slate-950" : "bg-amber-500 hover:bg-amber-400 text-slate-950"
         }`}
@@ -5832,10 +5819,8 @@ export function MarketplaceTransaksiForm({ tipe, platform, tokoLabel, rekeningLi
 
 // Iklan lama (dicatat sebelum iklan otomatis masuk Keuangan) yang belum tercatat di Keuangan.
 // Cukup pilih rekening (+ bukti opsional); tanggal, nominal, dan keterangan ikut entri aslinya.
-export function MarketplaceIklanCatatForm({ item, rekeningList = [], onClose, onSubmit, saving }) {
-  const [rekening, setRekening] = useState("");
+export function MarketplaceIklanCatatForm({ item, onClose, onSubmit, saving }) {
   const [fotoList, setFotoList] = useState([]);
-  const rekeningOptions = (rekeningList || []).map((r) => ({ value: r.kode, label: `${r.label} (${r.kode})` }));
   return (
     <ModalShell title="Catat Iklan ke Keuangan" onClose={onClose}>
       <div className="rounded-lg border border-slate-800 overflow-hidden mb-3">
@@ -5845,15 +5830,12 @@ export function MarketplaceIklanCatatForm({ item, rekeningList = [], onClose, on
         </div>
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        Dicatat sebagai Biaya Iklan Marketplace di Keuangan. Tidak menambah atau mengurangi uang di rekening bank.
+        Dicatat sebagai Biaya Iklan Marketplace di Keuangan (masuk Laba Rugi). Tidak menyentuh rekening bank.
       </p>
-      <Field label="Dicatat di rekening Keuangan">
-        <SearchableSelect value={rekening} onChange={setRekening} options={rekeningOptions} placeholder="Pilih rekening untuk mencatat biaya iklan…" />
-      </Field>
       <BuktiBayarInput files={fotoList} setFiles={setFotoList} />
       <button
-        disabled={saving || !rekening}
-        onClick={() => onSubmit({ rekening, fotoList })}
+        disabled={saving}
+        onClick={() => onSubmit({ fotoList })}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
         {saving ? "Menyimpan…" : "Catat ke Keuangan"}
