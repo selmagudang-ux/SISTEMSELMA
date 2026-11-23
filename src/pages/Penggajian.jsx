@@ -443,6 +443,30 @@ export default function Penggajian({ session, master, showToast }) {
   };
 
   const serahkan = async (g) => {
+    // Rekening sumber yang dipilih di layar baru tersimpan kalau draft disimpan ulang. Kalau draft ini belum punya
+    // rekening (atau rekeningnya beda dengan pilihan di layar), simpan dulu ke draft sebelum diserahkan.
+    if (g.status === "draft" && rekening && g.rekening_sumber !== rekening) {
+      const k = komponenDariGaji(g);
+      const ok = await jalankan(g, async () => {
+        const h = await simpanDraftGaji(pw, [{
+          karyawan_id: g.karyawan_id,
+          periode: g.periode,
+          gaji_pokok: angka(k.gaji_pokok),
+          premi_jabatan: angka(k.premi_jabatan),
+          premi_kehadiran: angka(k.premi_kehadiran),
+          bonus: angka(k.bonus),
+          nominal: angka(g.nominal),
+          catatan: g.catatan || null,
+          rekening_sumber: rekening,
+        }], ent);
+        if (!h[0]?.ok) throw new Error(h[0]?.error || "Gagal menyimpan rekening sumber.");
+        return true;
+      });
+      if (!ok) return;
+    } else if (!g.rekening_sumber && !rekening) {
+      showToast?.("Pilih rekening sumber dulu.", "err");
+      return;
+    }
     const hasil = await jalankan(g, () => serahkanGaji(pw, g.id, berlaku));
     if (hasil?.token) bukaQr(g, hasil.token, hasil.kedaluwarsa);
   };
