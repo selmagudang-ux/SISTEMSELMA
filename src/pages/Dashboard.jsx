@@ -494,6 +494,8 @@ export default function Dashboard({
             periodeDari={periodeDari}
             periodeSampai={periodeSampai}
             periodeLabel={periodeLabel}
+            gabungan={gabungan}
+            entAktif={entAktif}
           />
         ) : (
           <DashboardAbsensi
@@ -509,7 +511,7 @@ export default function Dashboard({
   );
 }
 
-function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel }) {
+function DashboardKeuangan({ keuanganTransaksi: keuanganSemua, keuanganDimuat, pesananMasuk = [], marketplaceTransaksi = [], master, onNavigate, periodeDari, periodeSampai, periodeLabel, gabungan = false, entAktif = ENTITAS_DEFAULT }) {
   const [detailKategori, setDetailKategori] = useState(null);
   // Kartu toggle (pola sama seperti Dashboard Penjualan/Absensi): klik untuk
   // buka panelnya di bawah, klik lagi untuk menutup. Satu panel dalam satu waktu.
