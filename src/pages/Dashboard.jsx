@@ -152,9 +152,9 @@ function FilterBulanTahun({ bulan, tahun, onChangeBulan, onChangeTahun }) {
   );
 }
 
-// Filter rentang tanggal khusus tab Dashboard Penjualan. "Ikut filter bulan"
-// = perilaku lama (bulan & tahun di dropdown sebelahnya). Pilihan lain
-// menggantikan bulan itu HANYA untuk tab Penjualan (tab lain tidak berubah).
+// Filter rentang tanggal untuk Dashboard (Operasional, Penjualan, Keuangan). "Ikut filter
+// bulan" = perilaku lama (bulan & tahun di dropdown sebelahnya). Pilihan lain menggantikan
+// bulan itu. Tab Absensi tidak memakainya (rekapnya per bulan).
 const PRESET_RENTANG_PENJUALAN = [
   { key: "bulan", label: "Ikut filter bulan" },
   { key: "hariini", label: "Hari ini" },
@@ -203,7 +203,7 @@ function FilterRentangPenjualan({ rentang, onChange }) {
           }
         }}
         className={`${inputClass} w-auto text-xs py-1.5`}
-        aria-label="Rentang tanggal penjualan"
+        aria-label="Rentang tanggal"
       >
         {PRESET_RENTANG_PENJUALAN.map((o) => (
           <option key={o.key} value={o.key}>{o.label}</option>
@@ -324,12 +324,18 @@ export default function Dashboard({
   const periodeLabel = `${BULAN_LABEL_PANJANG[bulan - 1]} ${tahun}`;
   // App.jsx hanya memuat keuangan bulan ini; kalau periode yang dipilih lebih
   // lama, data lamanya ditarik & digabung di sini (lib/useKeuanganRentang.js).
-  // Rentang tanggal khusus tab Penjualan (default "Ikut filter bulan" = sama seperti sebelumnya).
+  // Rentang tanggal untuk tab Operasional, Penjualan & Keuangan (default "Ikut filter bulan" = sama seperti
+  // sebelumnya). Tab Absensi tetap memakai filter bulan karena rekapnya memang per bulan.
   const [rentangPj, setRentangPj] = useState({ preset: "bulan", dari: "", sampai: "" });
-  const rentangPenjualan = hitungRentangPenjualan(rentangPj, periodeDari, periodeSampai, periodeLabel);
+  const rentangAktif = hitungRentangPenjualan(rentangPj, periodeDari, periodeSampai, periodeLabel);
   // Kalau rentang Penjualan mulai lebih awal dari bulan yang dipilih, transaksi keuangan lamanya ikut ditarik.
   const dariKeuangan =
-    tab === "penjualan" && rentangPenjualan.kustom && rentangPenjualan.dari < periodeDari ? rentangPenjualan.dari : periodeDari;
+    (tab === "penjualan" || tab === "keuangan") && rentangAktif.kustom && rentangAktif.dari < periodeDari ? rentangAktif.dari : periodeDari;
+  // Histori pengajuan restock yang sudah direspon hanya dimuat sejak awal bulan lalu (lihat App.jsx).
+  const awalDataRestock = (() => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`;
+  })();
   const { data: keuanganSemuaEntitas, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, dariKeuangan);
   // Dashboard ini khusus SATU perusahaan (PT akun yang login): rekening & transaksi
   // perusahaan lain / Holding tidak boleh ikut terhitung (kas, pemasukan, laba).
@@ -398,10 +404,10 @@ export default function Dashboard({
                 {daftarSemuaEntitas.length > 1 && <option value="GABUNGAN">Gabungan semua PT</option>}
               </select>
             )}
-            {!gabungan && tab === "penjualan" && (
+            {!gabungan && tab !== "absensi" && (
               <FilterRentangPenjualan rentang={rentangPj} onChange={setRentangPj} />
             )}
-            {!gabungan && (tab !== "penjualan" || rentangPj.preset === "bulan") && (
+            {!gabungan && (tab === "absensi" || rentangPj.preset === "bulan") && (
               <FilterBulanTahun
                 bulan={bulan}
                 tahun={tahun}
@@ -444,6 +450,12 @@ export default function Dashboard({
         <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">{statusKeuanganLama}</div>
       )}
 
+      {tab === "gudang" && !gabungan && rentangAktif.kustom && rentangAktif.dari < awalDataRestock && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20">
+          Histori pengajuan restock yang sudah direspon hanya dimuat sejak {formatTanggalID(awalDataRestock)}, jadi angka restock sebelum tanggal itu bisa kurang lengkap.
+        </div>
+      )}
+
       {pusatBisaPilih && (
         <KartuOperasionalEntitas master={master} denganGabungan={tab === "keuangan"} terpilih={kartuTerpilih} onBuka={bukaKartu} />
       )}
@@ -458,9 +470,9 @@ export default function Dashboard({
             pesananMasuk={pesananMasuk}
             skuMaster={skuMaster}
             master={master}
-            periodeDari={periodeDari}
-            periodeSampai={periodeSampai}
-            periodeLabel={periodeLabel}
+            periodeDari={rentangAktif.dari}
+            periodeSampai={rentangAktif.sampai}
+            periodeLabel={rentangAktif.label}
           />
         ) : tab === "penjualan" ? (
           <DashboardPenjualan
@@ -475,9 +487,9 @@ export default function Dashboard({
             onNavigate={onNavigate}
             setModal={setModal}
             tahun={tahun}
-            periodeDari={rentangPenjualan.dari}
-            periodeSampai={rentangPenjualan.sampai}
-            periodeLabel={rentangPenjualan.label}
+            periodeDari={rentangAktif.dari}
+            periodeSampai={rentangAktif.sampai}
+            periodeLabel={rentangAktif.label}
           />
         ) : tab === "keuangan" && gabungan ? (
           // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
@@ -491,9 +503,9 @@ export default function Dashboard({
             marketplaceTransaksi={bukanOps ? [] : marketplaceTransaksi}
             master={masterOps}
             onNavigate={onNavigate}
-            periodeDari={periodeDari}
-            periodeSampai={periodeSampai}
-            periodeLabel={periodeLabel}
+            periodeDari={rentangAktif.dari}
+            periodeSampai={rentangAktif.sampai}
+            periodeLabel={rentangAktif.label}
             gabungan={gabungan}
             entAktif={entAktif}
           />
