@@ -230,15 +230,22 @@ export async function updateAbsensiSettings(patch, entitas = entitasAbsensi()) {
   // Perusahaan ini belum punya baris: buat baru. jam_masuk_standar/jam_pulang_standar adalah
   // kolom lama (dipakai daftarShift sebagai cadangan), diisi dari shift pertama.
   const shift1 = Array.isArray(patch.shift_list) ? patch.shift_list[0] : null;
-  return sb("absensi_settings", {
-    method: "POST",
-    body: JSON.stringify({
-      jam_masuk_standar: shift1?.jam_masuk || "08:00",
-      jam_pulang_standar: shift1?.jam_pulang || "17:00",
-      ...patch,
-      entitas,
-    }),
-  });
+  const baru = {
+    jam_masuk_standar: shift1?.jam_masuk || "08:00",
+    jam_pulang_standar: shift1?.jam_pulang || "17:00",
+    ...patch,
+    entitas,
+  };
+  try {
+    return await sb("absensi_settings", { method: "POST", body: JSON.stringify(baru) });
+  } catch (e) {
+    // Urutan id (sequence) tabel ini tertinggal karena baris pertama dulu diisi dengan id=1 secara manual, jadi id otomatis
+    // bentrok dengan baris yang sudah ada (pkey duplikat). Coba lagi sekali dengan id = id terbesar + 1.
+    const semua = await sb("absensi_settings?select=id&order=id.desc&limit=1").catch(() => null);
+    const maks = Number((semua || [])[0]?.id);
+    if (!Number.isFinite(maks)) throw e;
+    return sb("absensi_settings", { method: "POST", body: JSON.stringify({ ...baru, id: maks + 1 }) });
+  }
 }
 
 // ---- Hitung jarak (meter) antara dua koordinat, rumus Haversine ----
