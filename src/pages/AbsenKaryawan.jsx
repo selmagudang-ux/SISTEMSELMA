@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2, QrCode, Wallet, History } from "lucide-react";
+import { Clock, Loader2, AlertCircle, MapPin, LogOut, KeyRound, CheckCircle2, QrCode, Wallet, History, Download } from "lucide-react";
 import { gantiPasswordKaryawan, getAbsensiSettings, hitungJarakMeter, submitAbsen, daftarShift } from "../lib/absensi";
 import { fmtRp, lihatGajiDariQr, konfirmasiGajiDiterima, riwayatGajiKaryawan, labelPeriodeGaji } from "../lib/api";
 import { ScanKameraModal } from "../components/ScanKamera";
@@ -332,13 +332,29 @@ function KartuGaji({ session }) {
     setError("");
     try {
       const r = await konfirmasiGajiDiterima(session.id_karyawan, pw, token);
-      setSukses(r);
+      setSukses({ ...r, slip: { ...rincian, periode: r.periode ?? rincian?.periode, nominal: r.nominal ?? rincian?.nominal, diterima_pada: new Date().toISOString() } });
       reset();
       setRiwayat(null); // riwayat dimuat ulang saat dibuka lagi
     } catch (e) {
       setError(e.message || "Gagal mengonfirmasi gaji.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Slip gaji dibuat di HP karyawan dari rincian yang baru dikonfirmasi (tidak ada data tambahan dari server).
+  const unduhSlip = async (g) => {
+    try {
+      const { simpanPdfSlipGaji } = await import("../lib/PdfGaji");
+      simpanPdfSlipGaji({
+        daftar: [{
+          gaji: { ...g, status: "diterima", diterima_pada: g.diterima_pada || new Date().toISOString() },
+          karyawan: { nama: session.nama, id_karyawan: session.id_karyawan },
+        }],
+        identitas: { nama: session.entitas_nama || session.nama_perusahaan || "", alamat: [] },
+      });
+    } catch {
+      setError("Gagal membuat slip gaji.");
     }
   };
 
@@ -365,7 +381,14 @@ function KartuGaji({ session }) {
       {sukses && (
         <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-2 rounded-lg">
           <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5" />
-          Terima kasih! Gaji periode {labelPeriodeGaji(sukses.periode)} sebesar {fmtRp(sukses.nominal)} sudah tercatat diterima.
+          <div>
+            Terima kasih! Gaji periode {labelPeriodeGaji(sukses.periode)} sebesar {fmtRp(sukses.nominal)} sudah tercatat diterima.
+            {sukses.slip && (
+              <button onClick={() => unduhSlip(sukses.slip)} className="mt-2 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-3 py-2 rounded-lg">
+                <Download size={13} /> Unduh slip gaji
+              </button>
+            )}
+          </div>
         </div>
       )}
 
