@@ -1943,11 +1943,14 @@ export function breakdownPengeluaranKategori(transaksi, kategoriList) {
 // "__grup__:<jalur>". Elemen non-kelompok = kategori master (daun) apa adanya.
 // Setoran dari cabang (baris bayangan setoranSebagaiPemasukan, kategori "Setoran dari <cabang> — <sumber>") otomatis
 // digabung jadi SATU kelompok "Setoran dari <cabang>" yang bisa dibuka; sumbernya jadi anak. Tidak menimpa pemetaan buatan user.
+// Gaji cabang yang dibayar Pusat (kategori "Gaji <cabang> — <komponen>", dibuat server gaji-admin) juga digabung jadi
+// SATU kelompok "Gaji <cabang>" di sisi beban, komponen gajinya jadi anak.
 const POLA_SETORAN = /^(Setoran dari .+?) — /;
+const POLA_GAJI_CABANG = /^(Gaji .+?) — /;
 function petakanSetoran(peta, daftarKode) {
   (daftarKode || []).forEach((k) => {
     if (!k || peta.has(k)) return;
-    const m = POLA_SETORAN.exec(String(k));
+    const m = POLA_SETORAN.exec(String(k)) || POLA_GAJI_CABANG.exec(String(k));
     if (m) peta.set(k, [m[1]]);
   });
 }
