@@ -152,6 +152,88 @@ function FilterBulanTahun({ bulan, tahun, onChangeBulan, onChangeTahun }) {
   );
 }
 
+// Filter rentang tanggal khusus tab Dashboard Penjualan. "Ikut filter bulan"
+// = perilaku lama (bulan & tahun di dropdown sebelahnya). Pilihan lain
+// menggantikan bulan itu HANYA untuk tab Penjualan (tab lain tidak berubah).
+const PRESET_RENTANG_PENJUALAN = [
+  { key: "bulan", label: "Ikut filter bulan" },
+  { key: "hariini", label: "Hari ini" },
+  { key: "7hari", label: "7 hari terakhir" },
+  { key: "30hari", label: "30 hari terakhir" },
+  { key: "kustom", label: "Pilih tanggal…" },
+];
+
+function hitungRentangPenjualan(rentang, periodeDari, periodeSampai, periodeLabel) {
+  const h = hariIniWib();
+  const asli = { dari: periodeDari, sampai: periodeSampai, label: periodeLabel, kustom: false };
+  switch (rentang.preset) {
+    case "hariini":
+      return { dari: h, sampai: h, label: `Hari ini (${formatTanggalID(h)})`, kustom: true };
+    case "7hari": {
+      const d = tambahHari(h, -6);
+      return { dari: d, sampai: h, label: `7 hari terakhir (${formatTanggalID(d)} – ${formatTanggalID(h)})`, kustom: true };
+    }
+    case "30hari": {
+      const d = tambahHari(h, -29);
+      return { dari: d, sampai: h, label: `30 hari terakhir (${formatTanggalID(d)} – ${formatTanggalID(h)})`, kustom: true };
+    }
+    case "kustom": {
+      if (!rentang.dari || !rentang.sampai) return asli;
+      const d = rentang.dari <= rentang.sampai ? rentang.dari : rentang.sampai;
+      const e = rentang.dari <= rentang.sampai ? rentang.sampai : rentang.dari;
+      return { dari: d, sampai: e, label: d === e ? formatTanggalID(d) : `${formatTanggalID(d)} – ${formatTanggalID(e)}`, kustom: true };
+    }
+    default:
+      return asli;
+  }
+}
+
+function FilterRentangPenjualan({ rentang, onChange }) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap justify-end">
+      <select
+        value={rentang.preset}
+        onChange={(e) => {
+          const preset = e.target.value;
+          if (preset === "kustom") {
+            const h = hariIniWib();
+            onChange({ preset, dari: rentang.dari || `${h.slice(0, 8)}01`, sampai: rentang.sampai || h });
+          } else {
+            onChange({ ...rentang, preset });
+          }
+        }}
+        className={`${inputClass} w-auto text-xs py-1.5`}
+        aria-label="Rentang tanggal penjualan"
+      >
+        {PRESET_RENTANG_PENJUALAN.map((o) => (
+          <option key={o.key} value={o.key}>{o.label}</option>
+        ))}
+      </select>
+      {rentang.preset === "kustom" && (
+        <>
+          <input
+            type="date"
+            value={rentang.dari}
+            max={rentang.sampai || undefined}
+            onChange={(e) => onChange({ ...rentang, dari: e.target.value })}
+            className={`${inputClass} w-auto text-xs py-1.5`}
+            aria-label="Dari tanggal"
+          />
+          <span className="text-xs text-slate-500">s/d</span>
+          <input
+            type="date"
+            value={rentang.sampai}
+            min={rentang.dari || undefined}
+            onChange={(e) => onChange({ ...rentang, sampai: e.target.value })}
+            className={`${inputClass} w-auto text-xs py-1.5`}
+            aria-label="Sampai tanggal"
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 function isToday(dateStr) {
   if (!dateStr) return false;
   const d = new Date(dateStr);
@@ -242,7 +324,13 @@ export default function Dashboard({
   const periodeLabel = `${BULAN_LABEL_PANJANG[bulan - 1]} ${tahun}`;
   // App.jsx hanya memuat keuangan bulan ini; kalau periode yang dipilih lebih
   // lama, data lamanya ditarik & digabung di sini (lib/useKeuanganRentang.js).
-  const { data: keuanganSemuaEntitas, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, periodeDari);
+  // Rentang tanggal khusus tab Penjualan (default "Ikut filter bulan" = sama seperti sebelumnya).
+  const [rentangPj, setRentangPj] = useState({ preset: "bulan", dari: "", sampai: "" });
+  const rentangPenjualan = hitungRentangPenjualan(rentangPj, periodeDari, periodeSampai, periodeLabel);
+  // Kalau rentang Penjualan mulai lebih awal dari bulan yang dipilih, transaksi keuangan lamanya ikut ditarik.
+  const dariKeuangan =
+    tab === "penjualan" && rentangPenjualan.kustom && rentangPenjualan.dari < periodeDari ? rentangPenjualan.dari : periodeDari;
+  const { data: keuanganSemuaEntitas, status: statusKeuanganLama } = useKeuanganRentang(keuanganDimuat, dariKeuangan);
   // Dashboard ini khusus SATU perusahaan (PT akun yang login): rekening & transaksi
   // perusahaan lain / Holding tidak boleh ikut terhitung (kas, pemasukan, laba).
   // Dashboard Holding ada di menu Holding.
@@ -310,7 +398,10 @@ export default function Dashboard({
                 {daftarSemuaEntitas.length > 1 && <option value="GABUNGAN">Gabungan semua PT</option>}
               </select>
             )}
-            {!gabungan && (
+            {!gabungan && tab === "penjualan" && (
+              <FilterRentangPenjualan rentang={rentangPj} onChange={setRentangPj} />
+            )}
+            {!gabungan && (tab !== "penjualan" || rentangPj.preset === "bulan") && (
               <FilterBulanTahun
                 bulan={bulan}
                 tahun={tahun}
@@ -384,9 +475,9 @@ export default function Dashboard({
             onNavigate={onNavigate}
             setModal={setModal}
             tahun={tahun}
-            periodeDari={periodeDari}
-            periodeSampai={periodeSampai}
-            periodeLabel={periodeLabel}
+            periodeDari={rentangPenjualan.dari}
+            periodeSampai={rentangPenjualan.sampai}
+            periodeLabel={rentangPenjualan.label}
           />
         ) : tab === "keuangan" && gabungan ? (
           // Mode Gabungan: tampilan sama dengan Keuangan > Ringkasan Grup (kartu gabungan + per perusahaan
@@ -2639,7 +2730,7 @@ function DashboardPenjualan({ namaStore = "Store Selma", pesananGrosir, pembayar
   const mulaiKasir = useTanggalMulaiKasir(aktifTO);
   const tanggalMulai = mulaiKasir.tanggal; // null = kasir belum pernah dipakai
   const aktifKasir = aktifTO && mulaiKasir.siap && !!tanggalMulai;
-  const rekapTahun = useRekapKasir({ session: sesiKasir, dari: awalTahunTerpilih, sampai: akhirTahunTerpilih, denganItem: false, denganBayar: false, ringan: true }, aktifKasir);
+  const rekapTahun = useRekapKasir({ session: sesiKasir, dari: periodeDari && periodeDari < awalTahunTerpilih ? periodeDari : awalTahunTerpilih, sampai: periodeSampai && periodeSampai > akhirTahunTerpilih ? periodeSampai : akhirTahunTerpilih, denganItem: false, denganBayar: false, ringan: true }, aktifKasir);
   const rekapRiwayat = useRekapKasir({ session: sesiKasir, dari: tambahHari(hariWib, -13), sampai: hariWib, denganItem: false, denganBayar: true }, aktifKasir);
   const rekapBulan = useRekapKasir({ session: sesiKasir, dari: periodeDari, sampai: periodeSampai, denganItem: true, denganBayar: false }, aktifKasir);
   const memuatKasir = aktifKasir && (rekapTahun.memuat || rekapRiwayat.memuat || rekapBulan.memuat);
