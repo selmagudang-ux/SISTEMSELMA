@@ -39,6 +39,8 @@ export const LAYAR_HP = {
   // Transfer Barang antar entitas (kirim / terima / Permintaan Stok): memakai ulang halaman komputer lewat TransferBarangHp.jsx.
   "transfer-entitas": { muat: () => import("./TransferBarangHp.jsx") },
   holding: { muat: () => import("./GrupHp.jsx") },
+  // SDM (key menu tetap "absensi"): satu layar (SdmHp.jsx) menangani 4 sub-menu — Rekap Absensi, Penggajian, Data Karyawan, Pengaturan.
+  absensi: { muat: () => import("./SdmHp.jsx") },
 };
 
 export const kunciLayar = (menuKey, subKey) => (subKey ? `${menuKey}/${subKey}` : menuKey);
