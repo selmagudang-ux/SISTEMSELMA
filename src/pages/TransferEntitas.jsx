@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Search, Trash2, PackageCheck, PackageX, Undo2, Truck, ArrowRight, RefreshCw, FileText, Tag } from "lucide-react";
 import { PageHeader, EmptyState, Badge, ModalShell, Field, inputClass } from "../components/ui";
-import { sb, sbAll, bacaPerEntitas, nextKode, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, ENTITAS_DEFAULT } from "../lib/api";
+import { sb, sbAll, bacaPerEntitas, nextKode, entitasSesi, namaUsahaEntitas, alamatEntitas, teleponEntitas, fmtRp, priceCode, ENTITAS_DEFAULT } from "../lib/api";
 import { bisa, fiturMatiEntitas } from "../lib/constants";
 import { rencanaKurangiRak } from "./Rak";
 import { TombolScanKamera } from "../components/ScanKamera";
@@ -422,6 +422,8 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
         }
         // hpp = HPP per pcs saat transfer dibuat (dicatat supaya tidak ikut berubah kalau harga katalog berubah).
         const o = { sku: d.sku, qty: d.jumlah, qty_diterima: 0, hpp: Math.round(Number(d.src?.hpp) || 0) };
+        // Kode harga label (grosir+tengah+ecer dalam ribuan) dicatat juga, untuk kolom Kode Harga di surat jalan.
+        if (Number(d.src?.grosir) > 0) o.kode_harga = priceCode(d.src.grosir, d.src.tengah, d.src.ecer);
         TIPE_KODE_SKU.forEach((k) => {
           if (d.src[k]) o[k] = d.src[k];
         });
@@ -812,6 +814,21 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
   // Susun PDF surat jalan / label paket untuk satu transfer (dipakai tombol cetak & pembuatan otomatis).
   const susunPdf = async (jenis, t) => {
     const { buatSuratJalan, buatLabelPaket } = await import("../lib/PdfTransfer");
+    // Transfer lama belum menyimpan kode_harga: ambil dari harga SKU saat ini (kalau gagal, kolom Kode Harga tidak tampil).
+    if (jenis === "surat") {
+      const tanpa = (t.items || []).filter((it) => it.kode_harga == null && it.jenis !== "habis_pakai" && it.sku);
+      if (tanpa.length) {
+        try {
+          const kutip = (v) => `"${String(v).replace(/"/g, '\\"')}"`;
+          const rows = await sbAll(`sku_master?select=sku,grosir,tengah,ecer&sku=in.(${tanpa.map((it) => kutip(it.sku)).join(",")})`);
+          const peta = new Map((rows || []).map((r) => [r.sku, r]));
+          t = { ...t, items: t.items.map((it) => {
+            const r = it.kode_harga == null ? peta.get(it.sku) : null;
+            return r && Number(r.grosir) > 0 ? { ...it, kode_harga: priceCode(r.grosir, r.tengah, r.ecer) } : it;
+          }) };
+        } catch { /* abaikan: surat jalan tetap dicetak tanpa kode harga */ }
+      }
+    }
     // Logo hanya untuk surat jalan yang dikirim PT Selma (ENTITAS_DEFAULT); PT lain belum punya logo.
     const logo = jenis === "surat" && t.entitas_asal === ENTITAS_DEFAULT ? (await import("../lib/logoSelma")).LOGO_SELMA : undefined;
     const pengirim = { nama: namaUsahaEntitas(master, t.entitas_asal), alamat: alamatEntitas(master, t.entitas_asal), telepon: teleponEntitas(master, t.entitas_asal), logo };
