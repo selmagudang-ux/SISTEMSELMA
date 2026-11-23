@@ -776,6 +776,7 @@ export const GRUP_AKSI = [
       { key: "holding.penarikan_pemilik", label: "Catat Penarikan Pemilik", bawaan: dari("owner") },
       { key: "holding.bayar_gaji_pusat", label: "Catat gaji karyawan cabang yang dibayar langsung oleh Pusat (Setujui & Bayar Gaji)", bawaan: dari("owner") },
       { key: "keuangan.riwayat_perubahan", label: "Lihat tab Riwayat Perubahan Keuangan", bawaan: tak },
+      { key: "keuangan.pulihkan_transaksi", label: "Memulihkan transaksi Keuangan yang terhapus (tombol Pulihkan di tab Riwayat Perubahan; role ini juga harus boleh melihat tab itu)", bawaan: tak },
     ],
   },
   {

@@ -55,6 +55,7 @@ import { daftarBukti } from "../lib/bukti";
 import { AntarEntitas, Konsolidasi, RingkasanGrup, KelolaPerusahaan } from "./Holding";
 import PenarikanPemilik from "./PenarikanPemilik";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
+import { pulihkanTransaksiKeuangan, idTransaksiMasihAda } from "../lib/pulihkanKeuangan";
 import { generateLaporanBulananPdf, generateLaporanTahunanPdf } from "../lib/LaporanKeuanganPdf";
 
 // Bikin 1 sel CSV aman: kalau isinya mengandung pemisah (;), tanda kutip,
@@ -295,7 +296,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
       return (
         <div>
           {barTab}
-          <RiwayatPerubahan master={master} session={session} />
+          <RiwayatPerubahan master={master} session={session} reload={reload} showToast={showToast} />
         </div>
       );
     }
@@ -3715,7 +3716,7 @@ function perluDicek(r) {
   );
 }
 
-function RiwayatPerubahan({ master = {}, session }) {
+function RiwayatPerubahan({ master = {}, session, reload, showToast }) {
   const [dari, setDari] = useState(awalBulanIni());
   const [sampai, setSampai] = useState(hariIniIso());
   const [rows, setRows] = useState([]);
@@ -3725,8 +3726,13 @@ function RiwayatPerubahan({ master = {}, session }) {
   const [pengguna, setPengguna] = useState("");
   const [q, setQ] = useState("");
   const [hanyaDicek, setHanyaDicek] = useState(false);
+  // Pemulihan transaksi terhapus
+  const [idAda, setIdAda] = useState(new Set()); // id transaksi (dari catatan hapus) yang sekarang sudah ada lagi
+  const [targetPulih, setTargetPulih] = useState(null);
+  const [memulihkan, setMemulihkan] = useState(false);
 
   const bolehLihat = bisa(session?.role, "keuangan.riwayat_perubahan");
+  const bolehPulih = bisa(session?.role, "keuangan.pulihkan_transaksi");
 
   const muat = async () => {
     if (!bolehLihat) return;
@@ -3739,6 +3745,10 @@ function RiwayatPerubahan({ master = {}, session }) {
         `keuangan_audit_log?select=*&waktu=gte.${dariTs}&waktu=lte.${sampaiTs}&order=waktu.desc&limit=1000`
       );
       setRows(data || []);
+      if (bolehPulih) {
+        const idHapus = (data || []).filter((r) => r.aksi === "DELETE").map((r) => r.transaksi_id);
+        setIdAda(idHapus.length ? await idTransaksiMasihAda(idHapus) : new Set());
+      }
     } catch (e) {
       const pesan = String(e?.message || e);
       setError(
@@ -3783,6 +3793,39 @@ function RiwayatPerubahan({ master = {}, session }) {
   if (!bolehLihat) {
     return <EmptyState label="Halaman ini khusus untuk role superappa." />;
   }
+
+  // Catatan TERBARU per transaksi (rows sudah urut waktu menurun). Tombol Pulihkan hanya muncul di
+  // catatan hapus yang masih jadi catatan terakhir transaksinya — kalau sudah pernah dipulihkan
+  // (ada catatan "Ditambah" sesudahnya) atau barisnya ada lagi, tombolnya diganti penanda.
+  const catatanTerbaru = new Map();
+  rows.forEach((r) => {
+    const k = String(r.transaksi_id);
+    if (!catatanTerbaru.has(k)) catatanTerbaru.set(k, r.id);
+  });
+  const bisaDipulihkan = (r) =>
+    bolehPulih &&
+    r.aksi === "DELETE" &&
+    !!r.data_lama &&
+    catatanTerbaru.get(String(r.transaksi_id)) === r.id &&
+    !idAda.has(String(r.transaksi_id));
+  const sudahKembali = (r) =>
+    r.aksi === "DELETE" && (idAda.has(String(r.transaksi_id)) || catatanTerbaru.get(String(r.transaksi_id)) !== r.id);
+
+  const jalankanPulih = async () => {
+    if (!targetPulih) return;
+    setMemulihkan(true);
+    try {
+      await pulihkanTransaksiKeuangan(targetPulih);
+      showToast?.("Transaksi dipulihkan");
+      setTargetPulih(null);
+      await reload?.();
+      await muat();
+    } catch (e) {
+      showToast?.(e?.message || "Gagal memulihkan transaksi", "err");
+    } finally {
+      setMemulihkan(false);
+    }
+  };
 
   const jmlDicek = rows.filter(perluDicek).length;
   const aksiMeta = {
@@ -3914,11 +3957,81 @@ function RiwayatPerubahan({ master = {}, session }) {
                     {fmtRp(d.jumlah)}
                   </div>
                 )}
+
+                {r.aksi === "DELETE" && bolehPulih && (
+                  <div className="mt-2">
+                    {bisaDipulihkan(r) ? (
+                      <button
+                        onClick={() => setTargetPulih(r)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                      >
+                        <RotateCcw size={13} /> Pulihkan
+                      </button>
+                    ) : sudahKembali(r) ? (
+                      <Badge color="emerald">Sudah dipulihkan / ada kembali di Keuangan</Badge>
+                    ) : null}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
+
+      {targetPulih && (() => {
+        const dp = targetPulih.data_lama || {};
+        return (
+          <ModalShell title="Pulihkan Transaksi" onClose={() => (memulihkan ? null : setTargetPulih(null))}>
+            <div className="text-sm text-slate-300 mb-3">
+              Transaksi yang dihapus oleh <span className="font-semibold">{namaPelaku(targetPulih) || "pengguna"}</span> pada{" "}
+              {waktuWib(targetPulih.waktu)} WIB akan dimasukkan lagi ke Keuangan:
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-xs text-slate-300 mb-3 space-y-1">
+              <div>
+                <span className="text-slate-500">Jenis / Kategori: </span>
+                {nilaiTampil("tipe", dp.tipe, master)} · {nilaiTampil("kategori", dp.kategori, master)}
+              </div>
+              <div>
+                <span className="text-slate-500">Rekening: </span>
+                {nilaiTampil("rekening", dp.rekening, master)}
+                {dp.rekening_tujuan ? ` → ${nilaiTampil("rekening_tujuan", dp.rekening_tujuan, master)}` : ""}
+              </div>
+              <div>
+                <span className="text-slate-500">Tanggal: </span>
+                {nilaiTampil("tanggal", dp.tanggal, master)}
+              </div>
+              {dp.keterangan ? (
+                <div>
+                  <span className="text-slate-500">Keterangan: </span>
+                  {dp.keterangan}
+                </div>
+              ) : null}
+              <div className="text-sm font-semibold text-emerald-300 pt-1">{fmtRp(dp.jumlah)}</div>
+            </div>
+            <div className="text-[11px] text-slate-500 mb-4">
+              Saldo rekening dan laporan akan kembali ikut menghitung transaksi ini. Kalau transaksi ini dulu tertaut ke Marketplace
+              (pencairan / top-up iklan), tautannya tidak dipasang ulang otomatis. Pemulihan ini akan tercatat di Riwayat Perubahan
+              sebagai "Ditambah" atas nama Anda.
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setTargetPulih(null)}
+                disabled={memulihkan}
+                className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={jalankanPulih}
+                disabled={memulihkan}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50"
+              >
+                <RotateCcw size={14} className={memulihkan ? "animate-spin" : ""} /> {memulihkan ? "Memulihkan…" : "Ya, Pulihkan"}
+              </button>
+            </div>
+          </ModalShell>
+        );
+      })()}
     </div>
   );
 }
