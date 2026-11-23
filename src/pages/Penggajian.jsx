@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { bisa } from "../lib/constants";
 import QRCode from "qrcode";
-import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator, Send, FileText, FileSpreadsheet } from "lucide-react";
+import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator, Send, FileText, FileSpreadsheet, Paperclip } from "lucide-react";
 import {
   PageHeader, EmptyState, Badge, Field, ModalShell, InputRupiah,
   inputClass, btnFilled, btnTonal, btnOutlined, btnText,
@@ -12,7 +12,9 @@ import {
   namaUsahaEntitas, alamatEntitas,
 } from "../lib/api";
 import { kodePengajuanDana } from "./PengajuanDana";
-import { unggahBukti } from "./AlurKas";
+import { unggahBukti, unggahBuktiBanyak } from "./AlurKas";
+import { BUKTI_ACCEPT, urlAdalahPdf } from "../lib/bukti";
+import { muatBuktiGaji, simpanBuktiGaji, hapusBuktiGaji, sinkronBuktiKeKeuangan, sinkronBuktiTertunda } from "../lib/buktiGaji";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
 import { hitungGajiOtomatis, daftarPengaturanGaji } from "../lib/gajiOtomatis";
 import PengaturanGaji from "../components/PengaturanGaji";
@@ -237,6 +239,9 @@ export default function Penggajian({ session, master, showToast }) {
   const [filterKaryawan, setFilterKaryawan] = useState("");
   const [qr, setQr] = useState(null); // { nama, periode, nominal, token, kedaluwarsa }
   const [bayarPusat, setBayarPusat] = useState(null); // gaji yang akan dibayar oleh Pusat
+  const [buktiGaji, setBuktiGaji] = useState(new Map()); // gaji_id -> [url bukti transfer]
+  const [buktiSiap, setBuktiSiap] = useState(true); // false = tabel gaji_bukti belum dibuat di database
+  const [buktiTarget, setBuktiTarget] = useState(null); // gaji yang buktinya sedang dibuka
   const [diajukan, setDiajukan] = useState(() => new Map()); // id gaji -> kode pengajuan yang masih menunggu Pusat
   const rekeningPusat = useMemo(
     () => (kodeHolding ? lingkupEntitas([], master || {}, kodeHolding).master.rekening || [] : []),
@@ -280,6 +285,16 @@ export default function Penggajian({ session, master, showToast }) {
         daftarPengaturanGaji(kata, ent).catch(() => []), // gagal = daftar tidak difilter per tipe
       ]);
       setGaji(g || []);
+      try {
+        const { peta: petaBukti, belumSinkron } = await muatBuktiGaji((g || []).map((x) => x.id));
+        setBuktiGaji(petaBukti);
+        setBuktiSiap(true);
+        // Gaji yang sudah diterima tapi buktinya belum menempel di transaksi Keuangan: tempelkan diam-diam.
+        if (!readOnly && belumSinkron.size) sinkronBuktiTertunda(g || [], petaBukti, belumSinkron).catch(() => {});
+      } catch {
+        setBuktiGaji(new Map());
+        setBuktiSiap(false); // migrasi 20261123_gaji_bukti.sql belum dijalankan
+      }
       setKaryawan(k || []);
       setTipeKaryawan(new Map((pg || []).map((r) => [r.karyawan_id, r.tipe_gaji])));
       try {
@@ -295,7 +310,7 @@ export default function Penggajian({ session, master, showToast }) {
     } finally {
       setMemuat(false);
     }
-  }, [pw, tanganiError, ent]);
+  }, [pw, tanganiError, ent, readOnly]);
 
   const gantiPT = (kode) => {
     pilihEntitasAbsensi(kode);
@@ -481,7 +496,9 @@ export default function Penggajian({ session, master, showToast }) {
       ? "Gaji ini SUDAH DITERIMA. Menghapusnya juga menghapus transaksi pengeluaran di menu Keuangan. Lanjutkan?"
       : "Hapus gaji ini?";
     if (!window.confirm(peringatan)) return;
-    jalankan(g, () => hapusGaji(pw, g.id), "Gaji dihapus.");
+    jalankan(g, () => hapusGaji(pw, g.id), "Gaji dihapus.").then((r) => {
+      if (r) hapusBuktiGaji(g.id).catch(() => {}); // bersihkan catatan bukti (tabel gaji_bukti)
+    });
   };
 
   const tandaiDiterima = (g) => {
@@ -693,7 +710,14 @@ export default function Penggajian({ session, master, showToast }) {
   };
 
   const AksiGaji = ({ g }) => {
-    if (readOnly) return null;
+    const jmlBukti = (buktiGaji.get(g.id) || []).length;
+    const tombolBukti =
+      g.status === "diserahkan" || g.status === "diterima" ? (
+        <button className={btnText} onClick={() => setBuktiTarget(g)} title="Bukti transfer gaji">
+          <Paperclip size={14} /> Bukti{jmlBukti ? ` (${jmlBukti})` : ""}
+        </button>
+      ) : null;
+    if (readOnly) return jmlBukti ? <div className="flex justify-end">{tombolBukti}</div> : null;
     const proses = sibuk === g.id;
     const kedaluwarsa = g.status === "diserahkan" && sudahKedaluwarsa(g.token_kedaluwarsa);
     return (
@@ -719,6 +743,7 @@ export default function Penggajian({ session, master, showToast }) {
             <CheckCircle2 size={14} /> Tandai diterima
           </button>
         )}
+        {tombolBukti}
         {bolehBayarPusat && (g.status === "draft" || g.status === "diserahkan") && (
           <button disabled={proses} className={btnText} onClick={() => setBayarPusat(g)} title="Pusat membayar langsung ke karyawan, tanpa QR">
             <CheckCircle2 size={14} /> Dibayar Pusat
@@ -1188,6 +1213,33 @@ export default function Penggajian({ session, master, showToast }) {
       )}
 
       {qr && <ModalQr data={qr} onClose={() => setQr(null)} />}
+      {buktiTarget && (
+        <ModalBuktiGaji
+          g={buktiTarget}
+          nama={peta.get(buktiTarget.karyawan_id)?.nama || "—"}
+          urls={buktiGaji.get(buktiTarget.id) || []}
+          bisaUbah={!readOnly}
+          siap={buktiSiap}
+          showToast={showToast}
+          onClose={() => setBuktiTarget(null)}
+          onSimpan={async (urls, perubahan) => {
+            // Gaji yang sudah diterima punya transaksi di Keuangan: tempel/lepas bukti di sana juga.
+            // Gagal menempel tidak membatalkan penyimpanan bukti; dicoba lagi otomatis saat halaman dimuat.
+            let tersinkron = false;
+            if (buktiTarget.status === "diterima") {
+              try {
+                await sinkronBuktiKeKeuangan(buktiTarget, perubahan);
+                tersinkron = true;
+              } catch {
+                tersinkron = false;
+              }
+            }
+            await simpanBuktiGaji(buktiTarget.id, urls, { tersinkron });
+            setBuktiGaji((m) => new Map(m).set(buktiTarget.id, urls));
+            return buktiTarget.status !== "diterima" || tersinkron;
+          }}
+        />
+      )}
       {bayarPusat && (
         <ModalBayarPusat
           g={bayarPusat}
@@ -1273,6 +1325,106 @@ function ModalBayarPusat({ g, nama, namaPT, rekeningList, sibuk, onClose, onOk }
           </button>
         </div>
       </div>
+    </ModalShell>
+  );
+}
+
+// Bukti transfer gaji: foto/PDF, boleh banyak. Bisa ditambah kapan saja setelah gaji diserahkan/diterima.
+function ModalBuktiGaji({ g, nama, urls, bisaUbah, siap, showToast, onClose, onSimpan }) {
+  const [files, setFiles] = useState([]);
+  const [proses, setProses] = useState(false);
+
+  const unggah = async () => {
+    if (!files.length) return;
+    setProses(true);
+    try {
+      const baru = await unggahBuktiBanyak(files, `gaji-${g.id}`);
+      const kePusat = await onSimpan([...urls, ...baru], { tambah: baru, lepas: [] });
+      setFiles([]);
+      showToast?.(kePusat === false ? "Bukti tersimpan, tapi belum menempel di transaksi Keuangan (dicoba lagi otomatis saat halaman dimuat)." : "Bukti transfer disimpan.", kePusat === false ? "err" : undefined);
+    } catch (e) {
+      showToast?.(e?.message || "Gagal menyimpan bukti transfer.", "err");
+    } finally {
+      setProses(false);
+    }
+  };
+
+  const lepas = async (u) => {
+    if (!window.confirm("Lepas bukti ini dari gaji? (File-nya tidak dihapus dari penyimpanan.)")) return;
+    setProses(true);
+    try {
+      const kePusat = await onSimpan(urls.filter((x) => x !== u), { tambah: [], lepas: [u] });
+      showToast?.(kePusat === false ? "Bukti dilepas dari gaji, tapi belum terlepas dari transaksi Keuangan." : "Bukti dilepas.", kePusat === false ? "err" : undefined);
+    } catch (e) {
+      showToast?.(e?.message || "Gagal melepas bukti.", "err");
+    } finally {
+      setProses(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Bukti Transfer Gaji" onClose={onClose}>
+      <div className="text-sm text-md-on-surface mb-1 font-medium">{nama}</div>
+      <div className="text-xs text-md-on-surface-variant mb-4">
+        {labelPeriode(g.periode)} · {fmtRp(g.nominal)}
+      </div>
+
+      {g.status === "diterima" ? (
+        <div className="mb-4 text-xs text-md-on-surface-variant">Bukti juga ditampilkan di transaksi gaji ini di menu Keuangan.</div>
+      ) : (
+        <div className="mb-4 text-xs text-md-on-surface-variant">Bukti akan otomatis menempel di transaksi Keuangan begitu gaji ini diterima.</div>
+      )}
+
+      {!siap && (
+        <div className="mb-4 text-xs rounded-lg border border-red-500/30 bg-red-500/10 text-red-300 px-3 py-2">
+          Tabel bukti belum dibuat di database. Jalankan (ulang) file supabase/migrations/20261123_gaji_bukti.sql di Supabase &gt; SQL Editor, lalu muat ulang halaman.
+        </div>
+      )}
+
+      {urls.length === 0 ? (
+        <div className="text-sm text-md-on-surface-variant mb-4">Belum ada bukti transfer.</div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+          {urls.map((u, i) => (
+            <div key={u} className="rounded-lg border border-md-outline-variant overflow-hidden">
+              <a href={u} target="_blank" rel="noreferrer" className="block">
+                {urlAdalahPdf(u) ? (
+                  <div className="h-24 flex items-center justify-center text-xs text-md-on-surface-variant gap-1">
+                    <FileText size={16} /> PDF {i + 1}
+                  </div>
+                ) : (
+                  <img src={u} alt={`Bukti ${i + 1}`} className="w-full h-24 object-cover" />
+                )}
+              </a>
+              {bisaUbah && (
+                <button disabled={proses} className={btnText + " w-full !justify-center !py-1"} onClick={() => lepas(u)}>
+                  <Trash2 size={13} /> Lepas
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {bisaUbah && siap && (
+        <div className="space-y-3">
+          <input
+            type="file"
+            multiple
+            accept={BUKTI_ACCEPT}
+            onChange={(e) => setFiles(Array.from(e.target.files || []))}
+            className="block w-full text-xs text-md-on-surface-variant"
+          />
+          <div className="flex gap-2 justify-end">
+            <button className={btnOutlined} onClick={onClose} disabled={proses}>
+              Tutup
+            </button>
+            <button className={btnFilled} onClick={unggah} disabled={proses || files.length === 0}>
+              {proses ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />} Simpan bukti{files.length ? ` (${files.length})` : ""}
+            </button>
+          </div>
+        </div>
+      )}
     </ModalShell>
   );
 }
