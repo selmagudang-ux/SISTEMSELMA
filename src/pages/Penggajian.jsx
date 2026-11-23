@@ -242,6 +242,9 @@ export default function Penggajian({ session, master, showToast }) {
     [master?.rekening, master?.rekening_entitas, master?.entitas, master?.entitas_set, kodeHolding]
   );
   const bolehBayarPusat = bisa(session?.role, "holding.bayar_gaji_pusat") && !!kodeHolding && ent !== kodeHolding;
+  // Gaji cabang: cabang hanya menyiapkan draft lalu mengajukan ke Pusat. Pembayaran + pencatatan Keuangan dilakukan Pusat;
+  // di cabang tidak ada transaksi (tanpa QR, tanpa rekening sumber).
+  const gajiCabang = !!kodeHolding && ent !== kodeHolding;
   // Cabang mengajukan gaji ke Pusat langsung dari sini (jadi Pengajuan Dana jenis gaji, disetujui Pusat di Antar Entitas).
   const bolehAjukanPusat = !readOnly && bisa(session?.role, "holding.ajukan_dana") && !!kodeHolding && ent !== kodeHolding;
 
@@ -472,19 +475,14 @@ export default function Penggajian({ session, master, showToast }) {
         showToast?.("Tidak ada gaji draft yang bisa diajukan (kosong atau sudah diajukan).", "err");
         return;
       }
-      if (daftar.some((g) => !g.rekening_sumber && !rekening)) {
-        showToast?.("Pilih rekening sumber di atas dulu — dipakai untuk mencatat gaji di perusahaan ini.", "err");
-        return;
-      }
       const rincian = daftar.map((g) => ({
         id: g.id,
         nama: peta.get(g.karyawan_id)?.nama || "—",
         nominal: Number(g.nominal) || 0,
         periode: g.periode,
-        rekening: g.rekening_sumber || rekening,
       }));
       const total = rincian.reduce((a, x) => a + x.nominal, 0);
-      if (!window.confirm(`Ajukan gaji ${rincian.length} karyawan (${fmtRp(total)}) ke Pusat untuk periode ${labelPeriode(periode)}?\n\nPusat akan membayar langsung ke karyawan.`)) return;
+      if (!window.confirm(`Ajukan gaji ${rincian.length} karyawan (${fmtRp(total)}) ke Pusat untuk periode ${labelPeriode(periode)}?\n\nPusat akan membayar langsung ke karyawan dan mencatatnya di pembukuan Pusat. Tidak ada transaksi di ${namaPT}.`)) return;
       const ringkas = rincian.slice(0, 3).map((x) => x.nama).join(", ") + (rincian.length > 3 ? ` +${rincian.length - 3} lainnya` : "");
       await sb("pengajuan_dana", {
         method: "POST",
@@ -518,7 +516,7 @@ export default function Penggajian({ session, master, showToast }) {
 
   const konfirmasiBayarPusat = async (g, rekPusat) => {
     await jalankan(g, () => tandaiGajiDiterimaAdmin(pw, g.id, { dibayarPusat: true, rekeningPusat: rekPusat }),
-      "Gaji dicatat dibayar oleh Pusat: modal Pusat → cabang dan beban gaji cabang tercatat.");
+      "Gaji dicatat dibayar oleh Pusat (pengeluaran di Pusat, tidak ada transaksi di cabang).");
     setBayarPusat(null);
   };
 
@@ -579,7 +577,7 @@ export default function Penggajian({ session, master, showToast }) {
     return (
       <div className="flex flex-wrap items-center justify-end gap-1">
         {proses && <Loader2 size={16} className="animate-spin text-md-primary" />}
-        {(g.status === "draft" || g.status === "diserahkan") && !diajukan.has(g.id) && (
+        {(g.status === "draft" || g.status === "diserahkan") && !diajukan.has(g.id) && !gajiCabang && (
           <button disabled={proses} className={btnTonal + " !px-3 !py-1.5"} onClick={() => serahkan(g)}>
             <QrCode size={14} /> {g.status === "draft" ? "Serahkan" : "QR baru"}
           </button>
@@ -599,7 +597,7 @@ export default function Penggajian({ session, master, showToast }) {
             <CheckCircle2 size={14} /> Tandai diterima
           </button>
         )}
-        {bolehBayarPusat && (g.status === "draft" || g.status === "diserahkan") && g.rekening_sumber && (
+        {bolehBayarPusat && (g.status === "draft" || g.status === "diserahkan") && (
           <button disabled={proses} className={btnText} onClick={() => setBayarPusat(g)} title="Pusat membayar langsung ke karyawan, tanpa QR">
             <CheckCircle2 size={14} /> Dibayar Pusat
           </button>
@@ -759,6 +757,11 @@ export default function Penggajian({ session, master, showToast }) {
             {periode && <p className="text-xs text-md-on-surface-variant">Periode terpilih: {labelPeriode(periode)}</p>}
           </div>
 
+          {gajiCabang ? (
+            <p className="text-xs text-md-on-surface-variant mb-4">
+              Gaji {namaPT} dibayar oleh Pusat. Di sini cukup siapkan gajinya lalu tekan <b>Ajukan ke Pusat</b>. Pembayaran dan pencatatan Keuangan dilakukan Pusat; di {namaPT} tidak ada transaksinya.
+            </p>
+          ) : (
           <div className="grid gap-3 sm:grid-cols-2 mb-4">
             <Field label="Rekening sumber">
               <select value={rekening} onChange={(e) => setRekening(e.target.value)} className={inputClass} disabled={readOnly}>
@@ -774,6 +777,7 @@ export default function Penggajian({ session, master, showToast }) {
               </Field>
             )}
           </div>
+          )}
 
           {!readOnly && daftarTampil.length > 0 && periode && (
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -882,7 +886,7 @@ export default function Penggajian({ session, master, showToast }) {
               </div>
             )}
           </div>
-          {!readOnly && !rekening && (
+          {!readOnly && !gajiCabang && !rekening && (
             <p className="text-xs text-md-on-surface-variant mt-2">
               Pilih rekening sumber sebelum menyerahkan gaji — tanpa rekening, gaji tidak bisa diserahkan.
             </p>
@@ -1017,8 +1021,8 @@ function ModalQr({ data, onClose }) {
 }
 
 // Gaji dibayar langsung oleh Pusat ke karyawan cabang. Pembukuan otomatis (server):
-//   Pusat  : Pemberian Modal ke cabang (kas Pusat berkurang) — BUKAN beban Pusat.
-//   Cabang : beban Gaji (laba rugi cabang) dari rekening yang sama; saldo kas cabang tidak berubah.
+//   Pusat  : pengeluaran gaji (per komponen) dari rekening Pusat, diberi tanda untuk cabang mana.
+//   Cabang : TIDAK ada transaksi apa pun.
 function ModalBayarPusat({ g, nama, namaPT, rekeningList, sibuk, onClose, onOk }) {
   const [rek, setRek] = useState("");
   return (
@@ -1033,8 +1037,8 @@ function ModalBayarPusat({ g, nama, namaPT, rekeningList, sibuk, onClose, onOk }
           </select>
         </Field>
         <p className="text-[11px] text-md-on-surface-variant mt-3">
-          Pastikan pembayaran ke karyawan sudah dilakukan Pusat. Sistem mencatat Pemberian Modal Pusat → {namaPT} sebesar{" "}
-          {fmtRp(g.nominal)} (bukan laba rugi) dan beban gaji di {namaPT}. Beban gaji hanya muncul di {namaPT}, tidak di Pusat.
+          Pastikan pembayaran ke karyawan sudah dilakukan Pusat. Sistem mencatat pengeluaran gaji sebesar {fmtRp(g.nominal)} dari
+          rekening Pusat untuk {namaPT}. Di {namaPT} tidak ada transaksi.
         </p>
         <div className="flex justify-end gap-2 mt-4">
           <button className={btnOutlined} onClick={onClose} disabled={sibuk}>Batal</button>

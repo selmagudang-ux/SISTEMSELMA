@@ -13,9 +13,9 @@ import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 //   -> Pemberi: "Setujui & Transfer" (Holding.jsx membuka form Transfer Antar Entitas yang sudah terisi;
 //      setelah transfer tersimpan, pengajuan ditandai "disetujui" + transaksi_id) atau "Tolak" (wajib alasan)
 //   -> Peminta boleh "Batalkan" selama masih menunggu.
-// JENIS "GAJI" (jenis = "gaji", rincian_gaji = [{id, nama, nominal, periode, rekening, selesai}]): cabang mengajukan
+// JENIS "GAJI" (jenis = "gaji", rincian_gaji = [{id, nama, nominal, periode, selesai}]): cabang mengajukan
 //   gaji karyawan yang sudah disiapkan (draft) di Penggajian. Saat Pusat "Setujui & Bayar Gaji", setiap gaji dicatat
-//   "Dibayar Pusat" lewat edge function gaji-admin (Pemberian Modal Pusat -> cabang + beban gaji di cabang).
+//   "Dibayar Pusat" lewat edge function gaji-admin: pengeluaran gaji dari rekening Pusat, TANPA transaksi di cabang.
 //   Migrasi: supabase/migrations/20261121_pengajuan_dana_gaji.sql
 // Tabel ini tidak menggerakkan uang — uang hanya bergerak lewat keuangan_transaksi (transfer biasa).
 // Tabel: pengajuan_dana (supabase/migrations/20261119_pengajuan_dana.sql).
@@ -182,7 +182,7 @@ export default function PengajuanDana({
       for (const it of daftar) {
         if (it.selesai) continue;
         try {
-          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekPusat, rekeningCabang: it.rekening });
+          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekPusat });
           it.selesai = true;
         } catch (e) {
           gagal.push(`${it.nama || "gaji"}: ${e.message}`);
@@ -475,7 +475,7 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
 
   const jumlahNum = mode === "gaji" ? totalGaji : Number(jumlah) || 0;
   const valid = mode === "gaji"
-    ? !!(peminta && pemberi && peminta !== pemberi && gajiTerpilih.length > 0 && gajiTerpilih.every((g) => g.rekening_sumber || rekening))
+    ? !!(peminta && pemberi && peminta !== pemberi && gajiTerpilih.length > 0)
     : peminta && pemberi && peminta !== pemberi && jumlahNum > 0 && keperluan.trim().length >= 3;
 
   const kirim = async () => {
@@ -493,7 +493,7 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
       setMengunggah(false);
     }
     if (mode === "gaji") {
-      const rincianGaji = gajiTerpilih.map((g) => ({ id: g.id, nama: g.nama, nominal: Number(g.nominal) || 0, periode: g.periode, rekening: g.rekening_sumber || rekening }));
+      const rincianGaji = gajiTerpilih.map((g) => ({ id: g.id, nama: g.nama, nominal: Number(g.nominal) || 0, periode: g.periode }));
       const ringkas = rincianGaji.slice(0, 3).map((x) => x.nama).join(", ") + (rincianGaji.length > 3 ? ` +${rincianGaji.length - 3} lainnya` : "");
       onSubmit({ peminta, pemberi, jenis: "modal", jumlah: jumlahNum, keperluan: `Gaji karyawan: ${ringkas}`, tanggalDibutuhkan, rekening: "", catatan: catatan.trim(), bukti, rincianGaji });
       return;
@@ -541,8 +541,8 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
       {mode === "gaji" ? (
         <div className="mb-3">
           <div className="text-[11px] text-slate-500 mb-2">
-            Pusat membayar gaji langsung ke karyawan. Pembukuan: Pemberian Modal Pusat → cabang dan beban gaji tercatat di cabang (tidak ganda).
-            Siapkan dulu gajinya sebagai <b>draft</b> di menu Penggajian. Rekening sumber boleh dikosongkan, dipilih di bawah.
+            Pusat membayar gaji langsung ke karyawan dan mencatatnya di pembukuan Pusat. Di cabang tidak ada transaksi.
+            Siapkan dulu gajinya sebagai <b>draft</b> di menu Penggajian.
           </div>
           <Field label="Password akun Anda (untuk membaca data gaji)">
             <div className="flex gap-2">
@@ -559,19 +559,11 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
               {draftGaji.map((g) => (
                 <label key={g.id} className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer">
                   <input type="checkbox" checked={!!pilihGaji[g.id]} onChange={(e) => setPilihGaji((m) => ({ ...m, [g.id]: e.target.checked }))} />
-                  <span className="text-slate-200 flex-1">{g.nama} <span className="text-slate-500">· {labelPeriodeGaji(g.periode)}{g.rekening_sumber ? ` · rek. ${g.rekening_sumber}` : ""}</span></span>
+                  <span className="text-slate-200 flex-1">{g.nama} <span className="text-slate-500">· {labelPeriodeGaji(g.periode)}</span></span>
                   <span className="text-slate-300">{fmtRp(g.nominal)}</span>
                 </label>
               ))}
             </div>
-          )}
-          {gajiTerpilih.some((g) => !g.rekening_sumber) && (
-            <Field label={`Rekening ${labelEnt(peminta)} untuk pencatatan gaji (untuk gaji yang belum punya rekening)`}>
-              <select className={inputClass} value={rekening} onChange={(e) => setRekening(e.target.value)}>
-                <option value="">— pilih rekening cabang —</option>
-                {rekeningPilihan.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
-              </select>
-            </Field>
           )}
           <div className="text-sm text-slate-200 mt-2">Total diajukan: <b className="text-sky-400">{fmtRp(totalGaji)}</b> ({gajiTerpilih.length} gaji)</div>
         </div>
@@ -691,7 +683,7 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
         <input type="password" className={inputClass} value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" />
       </Field>
       <div className="text-[11px] text-slate-500 mb-3">
-        Pusat: Pemberian Modal ke {namaEnt(p.entitas_peminta)} (kas Pusat berkurang, bukan beban Pusat). {namaEnt(p.entitas_peminta)}: beban Gaji. Saldo kas cabang tidak berubah.
+        Pusat: pengeluaran gaji dari rekening Pusat (kas Pusat berkurang), ditandai untuk {namaEnt(p.entitas_peminta)}. {namaEnt(p.entitas_peminta)}: tidak ada transaksi.
       </div>
       <button
         disabled={!bolehBayar || !rek || !pw || saving || sisa.length === 0}
