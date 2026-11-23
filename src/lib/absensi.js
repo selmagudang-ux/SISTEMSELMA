@@ -211,6 +211,33 @@ export async function hapusKaryawan(id) {
   return sb(`karyawan?id=eq.${id}`, { method: "DELETE" });
 }
 
+// Ubah ID Karyawan (ID yang dipakai karyawan untuk login absen). ID harus unik di dalam satu PT. Riwayat `absensi`
+// menyimpan id_karyawan sebagai teks (bukan JOIN), jadi barisnya ikut diganti supaya rekap lama tetap tersambung.
+export async function updateIdKaryawan(id, idBaru) {
+  const baru = (idBaru || "").trim();
+  if (!baru) throw new Error("ID Karyawan tidak boleh kosong.");
+  const rows = await sb(`karyawan?id=eq.${id}&select=id_karyawan,entitas`);
+  if (!rows?.length) throw new Error("Karyawan tidak ditemukan.");
+  const lama = rows[0].id_karyawan;
+  if (lama === baru) return false;
+  const ent = rows[0].entitas || entitasAbsensi();
+  const bentrok = await sb(`karyawan?select=id&id_karyawan=eq.${encodeURIComponent(baru)}&entitas=eq.${encodeURIComponent(ent)}&id=neq.${id}&limit=1`);
+  if ((bentrok || []).length > 0) throw new Error(`ID Karyawan "${baru}" sudah dipakai karyawan lain.`);
+
+  await sb(`karyawan?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ id_karyawan: baru }) });
+  try {
+    await sb(`absensi?id_karyawan=eq.${encodeURIComponent(lama)}&entitas=eq.${encodeURIComponent(ent)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ id_karyawan: baru }),
+    });
+  } catch (e) {
+    // Riwayat gagal ikut diganti -> kembalikan ID lama supaya data tidak setengah berubah.
+    await sb(`karyawan?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ id_karyawan: lama }) }).catch(() => {});
+    throw e;
+  }
+  return true;
+}
+
 // ---- Pengaturan absensi (lokasi kantor, radius, jam standar) ----
 // Satu baris pengaturan per perusahaan. Selma (OPS) memakai baris lama (id=1); perusahaan
 // lain belum punya baris sampai pertama kali disimpan di Absensi > Pengaturan (null = belum diatur).

@@ -10,6 +10,7 @@ import {
   setAktifKaryawan,
   hapusKaryawan,
   updateNamaKaryawan,
+  updateIdKaryawan,
   listAbsensi,
   hapusAbsensiHarian,
   simpanAbsensiManual,
@@ -939,18 +940,27 @@ function DataKaryawan({ showToast, role }) {
   };
 
   const simpanEditNama = async () => {
-    if (!editNamaFor?.value?.trim()) {
+    const namaBaru = editNamaFor?.value?.trim();
+    const idBaru = editNamaFor?.idKarBaru?.trim();
+    if (!namaBaru) {
       showToast?.("Nama tidak boleh kosong", "err");
+      return;
+    }
+    if (!idBaru) {
+      showToast?.("ID Karyawan tidak boleh kosong", "err");
       return;
     }
     setSavingNama(true);
     try {
-      await updateNamaKaryawan(editNamaFor.id, editNamaFor.value.trim());
-      showToast?.(`Nama berhasil diubah menjadi "${editNamaFor.value.trim()}".`);
+      // Nama dulu (memakai ID lama untuk menyelaraskan riwayat), baru ID.
+      if (namaBaru !== editNamaFor.nama) await updateNamaKaryawan(editNamaFor.id, namaBaru);
+      const idBerubah = idBaru !== editNamaFor.idKar ? await updateIdKaryawan(editNamaFor.id, idBaru) : false;
+      showToast?.(idBerubah ? `Data "${namaBaru}" disimpan. ID Karyawan baru: ${idBaru} (pakai ID ini untuk login absen).` : `Data "${namaBaru}" disimpan.`);
       setEditNamaFor(null);
       load(true);
     } catch (e) {
-      showToast?.(e.message || "Gagal mengubah nama", "err");
+      showToast?.(e.message || "Gagal menyimpan data karyawan", "err");
+      load(true);
     } finally {
       setSavingNama(false);
     }
@@ -1006,8 +1016,8 @@ function DataKaryawan({ showToast, role }) {
                     <div className="flex justify-end gap-1.5">
                       {bolehEditNama && (
                         <button
-                          title="Edit Nama"
-                          onClick={() => setEditNamaFor({ id: k.id, nama: k.nama, value: k.nama })}
+                          title="Edit Nama & ID Karyawan"
+                          onClick={() => setEditNamaFor({ id: k.id, nama: k.nama, value: k.nama, idKar: k.id_karyawan, idKarBaru: k.id_karyawan })}
                           className="p-1.5 rounded-md text-slate-400 hover:text-amber-400 hover:bg-slate-800"
                         >
                           <Pencil size={14} />
@@ -1069,7 +1079,15 @@ function DataKaryawan({ showToast, role }) {
       {editNamaFor && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-sm p-5">
-            <div className="text-sm font-semibold mb-3">Edit Nama Karyawan</div>
+            <div className="text-sm font-semibold mb-3">Edit Data Karyawan</div>
+            <div className="text-xs text-slate-400 mb-1">ID Karyawan</div>
+            <input
+              placeholder="ID karyawan"
+              className={inputClass + " mb-3"}
+              value={editNamaFor.idKarBaru}
+              onChange={(e) => setEditNamaFor((f) => ({ ...f, idKarBaru: e.target.value }))}
+            />
+            <div className="text-xs text-slate-400 mb-1">Nama</div>
             <input
               autoFocus
               placeholder="Nama karyawan"
@@ -1077,6 +1095,9 @@ function DataKaryawan({ showToast, role }) {
               value={editNamaFor.value}
               onChange={(e) => setEditNamaFor((f) => ({ ...f, value: e.target.value }))}
             />
+            <p className="text-[11px] text-slate-500 mt-2">
+              ID dipakai karyawan untuk login absen. Kalau ID diganti, beri tahu karyawannya; riwayat absen ikut berpindah ke ID baru.
+            </p>
             <div className="flex gap-2 mt-3.5">
               <button
                 disabled={savingNama}
