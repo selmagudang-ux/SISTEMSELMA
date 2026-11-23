@@ -174,7 +174,7 @@ export default function PengajuanDana({
 
   // Jalankan "Dibayar Pusat" untuk tiap gaji. Gaji yang sudah berhasil ditandai (selesai) dan dilewati saat dicoba lagi,
   // jadi aman diulang kalau ada yang gagal di tengah (mis. password salah / gaji sudah diubah).
-  const setujuiGaji = async (p, pw, rekPusat) => {
+  const setujuiGaji = async (p, pw, rekPusat, rekBaris = {}) => {
     setProses(true);
     try {
       const daftar = (Array.isArray(p.rincian_gaji) ? p.rincian_gaji : []).map((x) => ({ ...x }));
@@ -182,7 +182,7 @@ export default function PengajuanDana({
       for (const it of daftar) {
         if (it.selesai) continue;
         try {
-          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekPusat });
+          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekBaris[it.id] || rekPusat });
           it.selesai = true;
         } catch (e) {
           gagal.push(`${it.nama || "gaji"}: ${e.message}`);
@@ -391,7 +391,7 @@ export default function PengajuanDana({
           bolehBayar={bisa(session?.role, "holding.bayar_gaji_pusat")}
           saving={proses}
           onClose={() => setModal(null)}
-          onSubmit={(pw, rek) => setujuiGaji(modal.p, pw, rek)}
+          onSubmit={(pw, rek, rekBaris) => setujuiGaji(modal.p, pw, rek, rekBaris)}
         />
       )}
       {modal?.jenis === "tolak" && (
@@ -667,8 +667,11 @@ function FormTolak({ p, namaEnt, saving, onClose, onSubmit }) {
 function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose, onSubmit }) {
   const [pw, setPw] = useState("");
   const [rek, setRek] = useState("");
+  const [rekBaris, setRekBaris] = useState({}); // id gaji -> rekening khusus karyawan itu (mis. sebagian cash, sebagian transfer)
   const daftar = Array.isArray(p.rincian_gaji) ? p.rincian_gaji : [];
   const sisa = daftar.filter((x) => !x.selesai);
+  const rekDipakai = (it) => rekBaris[it.id] || rek;
+  const semuaAdaRek = sisa.length > 0 && sisa.every((x) => !!rekDipakai(x));
   const total = sisa.reduce((a, x) => a + (Number(x.nominal) || 0), 0);
   return (
     <ModalShell title={`Bayar gaji ${p.kode}`} onClose={onClose} maxWidth="max-w-xl">
@@ -677,14 +680,27 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
       </div>
       <div className="rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800 mb-3">
         {daftar.map((it) => (
-          <div key={it.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+          <div key={it.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 text-xs">
             <span className="text-slate-200">{it.nama}{it.periode ? <span className="text-slate-500"> · {labelPeriodeGaji(it.periode)}</span> : null}</span>
-            <span className="text-slate-300">{fmtRp(it.nominal)}{it.selesai ? " ✓ sudah dicatat" : ""}</span>
+            <span className="flex items-center gap-2 text-slate-300">
+              {fmtRp(it.nominal)}
+              {it.selesai ? " ✓ sudah dicatat" : (
+                <select
+                  className="bg-slate-900 border border-slate-700 rounded-md text-[11px] text-slate-200 px-1.5 py-1 max-w-[11rem]"
+                  value={rekBaris[it.id] || ""}
+                  onChange={(e) => setRekBaris((m) => ({ ...m, [it.id]: e.target.value }))}
+                  title="Rekening untuk karyawan ini (kosong = ikut rekening bawaan di bawah)"
+                >
+                  <option value="">Rekening bawaan</option>
+                  {rekeningList.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
+                </select>
+              )}
+            </span>
           </div>
         ))}
       </div>
       <div className="text-sm text-slate-200 mb-3">Dicatat sekarang: <b className="text-sky-400">{fmtRp(total)}</b> ({sisa.length} gaji). Nominal mengikuti data gaji di Penggajian saat ini.</div>
-      <Field label="Rekening Pusat yang dipakai membayar">
+      <Field label="Rekening Pusat bawaan (dipakai untuk karyawan yang rekeningnya tidak diganti di atas)">
         <select className={inputClass} value={rek} onChange={(e) => setRek(e.target.value)}>
           <option value="">— pilih rekening Pusat —</option>
           {rekeningList.map((r) => <option key={r.kode} value={r.kode}>{r.label}</option>)}
@@ -697,8 +713,8 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
         Pusat: pengeluaran gaji dari rekening Pusat (kas Pusat berkurang), ditandai untuk {namaEnt(p.entitas_peminta)}. {namaEnt(p.entitas_peminta)}: tidak ada transaksi.
       </div>
       <button
-        disabled={!bolehBayar || !rek || !pw || saving || sisa.length === 0}
-        onClick={() => onSubmit(pw, rek)}
+        disabled={!bolehBayar || !semuaAdaRek || !pw || saving}
+        onClick={() => onSubmit(pw, rek, rekBaris)}
         className="w-full flex items-center justify-center gap-2 text-sm font-semibold py-2.5 rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40"
       >
         {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} {saving ? "Memproses…" : "Setujui & catat dibayar Pusat"}
