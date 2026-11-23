@@ -44,7 +44,7 @@ const satuanItem = (it) => (it?.jenis === "habis_pakai" ? it.satuan || "pcs" : "
 // t: baris transfer_barang { kode, created_at, catatan, items:[{sku, qty, hpp?}] }
 // Kalau ada barang yang punya hpp (dicatat saat transfer dibuat), tabel menampilkan kolom HPP & Nilai + total nilai.
 // Kalau ada barang yang punya kode_harga (kode harga label: grosir+tengah+ecer dalam ribuan, mis. "334488"), tabel
-// menampilkan kolom Kode Harga di antara SKU dan HPP.
+// menampilkan kolom Kode Harga tepat sesudah kolom HPP (sebelum Qty).
 // ---------------------------------------------------------
 export function buatSuratJalan({ t, pengirim, penerima }) {
   const W = 148;
@@ -136,7 +136,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   const rp = (n) => Math.round(Number(n) || 0).toLocaleString("id-ID");
   const kol = adaHpp
     ? (adaKode
-        ? { no: M, sku: M + 8, kode: 76, hpp: 89, qty: 103, nilai: 124, cek: W - M, kotak: 12 }
+        ? { no: M, sku: M + 8, hpp: 72, kode: 91, qty: 104, nilai: 124, cek: W - M, kotak: 12 }
         : { no: M, sku: M + 8, hpp: 84, qty: 99, nilai: 124, cek: W - M, kotak: 12 })
     : { no: M, sku: M + 8, kode: 100, qty: W - M - 22, cek: W - M, kotak: 14 };
   const kepalaTabel = () => {
@@ -144,8 +144,8 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
     doc.setFont("helvetica", "bold").setFontSize(8.5);
     teks("No", kol.no + 1);
     teks(items.some((x) => x.jenis === "habis_pakai") ? "SKU / Barang" : "SKU", kol.sku);
-    if (adaKode) teks("Kode Harga", kol.kode, { align: "right" });
     if (adaHpp) teks("HPP", kol.hpp, { align: "right" });
+    if (adaKode) teks("Kode Harga", kol.kode, { align: "right" });
     teks("Qty", kol.qty, { align: "right" });
     if (adaHpp) teks("Nilai", kol.nilai, { align: "right" });
     teks(adaHpp ? "Terima" : "Diterima", kol.cek - 1, { align: "right" });
@@ -165,14 +165,15 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
     totalQty += Number(it.qty) || 0;
     teks(i + 1, kol.no + 1);
     teks(it.sku, kol.sku);
-    if (adaKode) teks(it.kode_harga || "-", kol.kode, { align: "right" });
     if (adaHpp) {
       const nilai = it.hpp != null ? (Number(it.hpp) || 0) * (Number(it.qty) || 0) : null;
       if (nilai != null) totalNilai += nilai;
       teks(it.hpp != null ? rp(it.hpp) : "-", kol.hpp, { align: "right" });
+      if (adaKode) teks(it.kode_harga || "-", kol.kode, { align: "right" });
       teks(`${it.qty} ${satuanItem(it)}`, kol.qty, { align: "right" });
       teks(nilai != null ? rp(nilai) : "-", kol.nilai, { align: "right" });
     } else {
+      if (adaKode) teks(it.kode_harga || "-", kol.kode, { align: "right" });
       teks(`${it.qty} ${satuanItem(it)}`, kol.qty, { align: "right" });
     }
     // kotak kosong untuk dicentang / diisi penerima saat mengecek barang
