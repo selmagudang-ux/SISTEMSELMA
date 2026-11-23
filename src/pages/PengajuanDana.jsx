@@ -6,6 +6,7 @@ import { listKaryawan } from "../lib/absensi";
 import { bisa } from "../lib/constants";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
 import { unggahBuktiBanyak, unggahBukti, fileCls } from "./AlurKas";
+import { simpanBuktiGaji, sinkronBuktiKeKeuangan } from "../lib/buktiGaji";
 
 // =========================================================
 // PENGAJUAN DANA ANTAR ENTITAS (tab di Keuangan > Perusahaan Grup > Antar Entitas, lihat Holding.jsx)
@@ -174,16 +175,35 @@ export default function PengajuanDana({
 
   // Jalankan "Dibayar Pusat" untuk tiap gaji. Gaji yang sudah berhasil ditandai (selesai) dan dilewati saat dicoba lagi,
   // jadi aman diulang kalau ada yang gagal di tengah (mis. password salah / gaji sudah diubah).
-  const setujuiGaji = async (p, pw, rekPusat, rekBaris = {}) => {
+  const setujuiGaji = async (p, pw, rekPusat, rekBaris = {}, buktiBaris = {}) => {
     setProses(true);
     try {
       const daftar = (Array.isArray(p.rincian_gaji) ? p.rincian_gaji : []).map((x) => ({ ...x }));
       const gagal = [];
+      const gagalBukti = [];
       for (const it of daftar) {
         if (it.selesai) continue;
         try {
-          await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekBaris[it.id] || rekPusat });
+          // Bukti transfer karyawan ini diunggah DULU: kalau gagal, gajinya belum dicatat sehingga aman diulang.
+          // URL-nya disimpan di it.bukti (ikut tersimpan di rincian_gaji), jadi percobaan ulang tidak mengunggah dobel.
+          const berkas = buktiBaris[it.id] || [];
+          if (!(it.bukti || []).length && berkas.length) it.bukti = await unggahBuktiBanyak(berkas, `gaji-${it.id}`);
+          const hasil = await tandaiGajiDiterimaAdmin(pw, it.id, { dibayarPusat: true, rekeningPusat: rekBaris[it.id] || rekPusat });
           it.selesai = true;
+          if ((it.bukti || []).length) {
+            // Simpan ke tabel gaji_bukti (tombol Bukti di Penggajian) lalu tempel ke transaksi gaji di Keuangan.
+            // Gagal di sini tidak membatalkan pencatatan gaji; Penggajian menempelkan sisanya otomatis saat dibuka.
+            try {
+              await simpanBuktiGaji(it.id, it.bukti, { tersinkron: false });
+              await sinkronBuktiKeKeuangan(
+                { keuangan_transaksi_id: hasil?.keuangan_transaksi_id, keuangan_transaksi_ids: hasil?.keuangan_transaksi_ids },
+                { tambah: it.bukti }
+              );
+              await simpanBuktiGaji(it.id, it.bukti, { tersinkron: true });
+            } catch {
+              gagalBukti.push(it.nama || "gaji");
+            }
+          }
         } catch (e) {
           gagal.push(`${it.nama || "gaji"}: ${e.message}`);
         }
@@ -200,7 +220,11 @@ export default function PengajuanDana({
           }),
         });
         if (!klaim?.length) throw new Error("Gaji sudah tercatat dibayar Pusat, tetapi status pengajuan tidak berubah. Muat ulang.");
-        showToast?.(`Gaji ${daftar.length} karyawan dicatat dibayar Pusat`);
+        showToast?.(
+          `Gaji ${daftar.length} karyawan dicatat dibayar Pusat` +
+            (gagalBukti.length ? `. Bukti transfer ${gagalBukti.join(", ")} belum menempel di Keuangan (dicoba lagi otomatis saat Penggajian dibuka).` : ""),
+          gagalBukti.length ? "err" : undefined
+        );
         setModal(null);
       } else {
         try { await sb(`pengajuan_dana?id=eq.${p.id}&status=eq.menunggu`, { method: "PATCH", body: JSON.stringify({ rincian_gaji: daftar }) }); } catch { /* abaikan */ }
@@ -286,7 +310,14 @@ export default function PengajuanDana({
                       {p.rincian_gaji.map((it) => (
                         <div key={it.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
                           <span className="text-slate-200">{it.nama}{it.periode ? <span className="text-slate-500"> · {labelPeriodeGaji(it.periode)}</span> : null}</span>
-                          <span className="text-slate-300">{fmtRp(it.nominal)}{it.selesai ? " ✓" : ""}</span>
+                          <span className="flex items-center gap-2 text-slate-300">
+                            {(Array.isArray(it.bukti) ? it.bukti : []).map((u, i) => (
+                              <a key={u} href={u} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-[11px] text-emerald-400/90 hover:text-emerald-300" title="Bukti transfer">
+                                <Paperclip size={11} /> Bukti{it.bukti.length > 1 ? ` ${i + 1}` : ""}
+                              </a>
+                            ))}
+                            {fmtRp(it.nominal)}{it.selesai ? " ✓" : ""}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -391,7 +422,7 @@ export default function PengajuanDana({
           bolehBayar={bisa(session?.role, "holding.bayar_gaji_pusat")}
           saving={proses}
           onClose={() => setModal(null)}
-          onSubmit={(pw, rek, rekBaris) => setujuiGaji(modal.p, pw, rek, rekBaris)}
+          onSubmit={(pw, rek, rekBaris, buktiBaris) => setujuiGaji(modal.p, pw, rek, rekBaris, buktiBaris)}
         />
       )}
       {modal?.jenis === "tolak" && (
@@ -667,6 +698,7 @@ function FormTolak({ p, namaEnt, saving, onClose, onSubmit }) {
 function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose, onSubmit }) {
   const [pw, setPw] = useState("");
   const [rek, setRek] = useState("");
+  const [buktiBaris, setBuktiBaris] = useState({}); // id gaji -> [File] bukti transfer karyawan itu (opsional)
   const [rekBaris, setRekBaris] = useState({}); // id gaji -> rekening khusus karyawan itu (mis. sebagian cash, sebagian transfer)
   const daftar = Array.isArray(p.rincian_gaji) ? p.rincian_gaji : [];
   const sisa = daftar.filter((x) => !x.selesai);
@@ -696,6 +728,23 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
                 </select>
               )}
             </span>
+            {!it.selesai && (
+              <div className="w-full flex items-center gap-2 text-[11px] text-slate-400">
+                <Paperclip size={12} className="flex-shrink-0" />
+                {(it.bukti || []).length ? (
+                  <span className="text-emerald-400">Bukti transfer sudah terunggah ({it.bukti.length})</span>
+                ) : (
+                  <input
+                    type="file"
+                    multiple
+                    accept={BUKTI_ACCEPT}
+                    className={fileCls}
+                    onChange={(e) => setBuktiBaris((m) => ({ ...m, [it.id]: Array.from(e.target.files || []) }))}
+                    title="Bukti transfer ke karyawan ini (foto/PDF, opsional)"
+                  />
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -714,10 +763,10 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
       </div>
       <button
         disabled={!bolehBayar || !semuaAdaRek || !pw || saving}
-        onClick={() => onSubmit(pw, rek, rekBaris)}
+        onClick={() => onSubmit(pw, rek, rekBaris, buktiBaris)}
         className="w-full flex items-center justify-center gap-2 text-sm font-semibold py-2.5 rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40"
       >
-        {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} {saving ? "Memproses…" : "Setujui & catat dibayar Pusat"}
+        {saving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} {saving ? "Memproses / mengunggah bukti…" : "Setujui & catat dibayar Pusat"}
       </button>
     </ModalShell>
   );
