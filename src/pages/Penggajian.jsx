@@ -12,6 +12,7 @@ import {
   namaUsahaEntitas, alamatEntitas,
 } from "../lib/api";
 import { kodePengajuanDana } from "./PengajuanDana";
+import { unggahBukti } from "./AlurKas";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
 import { hitungGajiOtomatis, daftarPengaturanGaji } from "../lib/gajiOtomatis";
 import PengaturanGaji from "../components/PengaturanGaji";
@@ -484,6 +485,15 @@ export default function Penggajian({ session, master, showToast }) {
       }));
       const total = rincian.reduce((a, x) => a + x.nominal, 0);
       if (!window.confirm(`Ajukan gaji ${rincian.length} karyawan (${fmtRp(total)}) ke Pusat untuk periode ${labelPeriode(periode)}?\n\nPusat akan membayar langsung ke karyawan dan mencatatnya di pembukuan Pusat. Tidak ada transaksi di ${namaPT}.`)) return;
+      // Slip gaji semua karyawan yang diajukan dilampirkan otomatis (satu PDF) supaya Pusat bisa memeriksa rinciannya.
+      let buktiSlip = [];
+      try {
+        const { slipGajiSebagaiFile } = await import("../lib/PdfGaji");
+        const file = slipGajiSebagaiFile({ daftar: daftar.map((g) => ({ gaji: g, karyawan: peta.get(g.karyawan_id) })), identitas: identitasGaji() });
+        buktiSlip = [await unggahBukti(file, `slip-gaji-${ent}`)];
+      } catch {
+        showToast?.("Slip gaji gagal dilampirkan, pengajuan tetap dikirim tanpa lampiran.", "err");
+      }
       const ringkas = rincian.slice(0, 3).map((x) => x.nama).join(", ") + (rincian.length > 3 ? ` +${rincian.length - 3} lainnya` : "");
       await sb("pengajuan_dana", {
         method: "POST",
@@ -499,8 +509,8 @@ export default function Penggajian({ session, master, showToast }) {
           tanggal_dibutuhkan: null,
           rekening_tujuan: null,
           catatan: null,
-          bukti_url: null,
-          bukti_urls: [],
+          bukti_url: buktiSlip[0] || null,
+          bukti_urls: buktiSlip,
           dibuat_oleh: session?.username || null,
           dibuat_oleh_nama: session?.nama || session?.username || null,
         }),

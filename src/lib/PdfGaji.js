@@ -349,3 +349,9 @@ export function buatPdfLaporanGaji({ baris, identitas, keterangan = "" }) {
 export function simpanPdfLaporanGaji(data) {
   buatPdfLaporanGaji(data).save(`Laporan-Gaji-${hariIniWib()}.pdf`);
 }
+
+// Slip gaji sebagai File PDF (untuk dilampirkan ke Pengajuan Dana). Satu file, satu halaman per karyawan.
+export function slipGajiSebagaiFile({ daftar, identitas }) {
+  const blob = buatPdfSlipGaji({ daftar, identitas }).output("blob");
+  return new File([blob], namaFileSlip(daftar), { type: "application/pdf" });
+}

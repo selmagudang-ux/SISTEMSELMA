@@ -5,7 +5,7 @@ import { sb, fmtRp, PENANDA_ANTAR_ENTITAS, penandaUntukArah, daftarGaji, tandaiG
 import { listKaryawan } from "../lib/absensi";
 import { bisa } from "../lib/constants";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
-import { unggahBuktiBanyak, fileCls } from "./AlurKas";
+import { unggahBuktiBanyak, unggahBukti, fileCls } from "./AlurKas";
 
 // =========================================================
 // PENGAJUAN DANA ANTAR ENTITAS (tab di Keuangan > Perusahaan Grup > Antar Entitas, lihat Holding.jsx)
@@ -493,6 +493,17 @@ function FormAjukan({ entitasList, kodeHolding, entPemintaBoleh: entPemintaSemua
       setMengunggah(false);
     }
     if (mode === "gaji") {
+      // Lampirkan slip gaji karyawan yang dipilih (satu PDF) di samping lampiran yang diunggah manual.
+      try {
+        const { slipGajiSebagaiFile } = await import("../lib/PdfGaji");
+        const file = slipGajiSebagaiFile({
+          daftar: gajiTerpilih.map((g) => ({ gaji: g, karyawan: { nama: g.nama, id_karyawan: g.id_karyawan } })),
+          identitas: { nama: labelEnt(peminta), alamat: [] },
+        });
+        bukti = [await unggahBukti(file, `slip-gaji-${peminta}`), ...bukti];
+      } catch {
+        window.alert("Slip gaji gagal dilampirkan otomatis. Pengajuan tetap dikirim tanpa slip.");
+      }
       const rincianGaji = gajiTerpilih.map((g) => ({ id: g.id, nama: g.nama, nominal: Number(g.nominal) || 0, periode: g.periode }));
       const ringkas = rincianGaji.slice(0, 3).map((x) => x.nama).join(", ") + (rincianGaji.length > 3 ? ` +${rincianGaji.length - 3} lainnya` : "");
       onSubmit({ peminta, pemberi, jenis: "modal", jumlah: jumlahNum, keperluan: `Gaji karyawan: ${ringkas}`, tanggalDibutuhkan, rekening: "", catatan: catatan.trim(), bukti, rincianGaji });
