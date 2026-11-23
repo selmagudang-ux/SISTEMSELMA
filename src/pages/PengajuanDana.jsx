@@ -4,7 +4,8 @@ import { Badge, EmptyState, ModalShell, Field, inputClass, InputRupiah, InputTan
 import { sb, fmtRp, PENANDA_ANTAR_ENTITAS, penandaUntukArah, daftarGaji, tandaiGajiDiterimaAdmin, labelPeriodeGaji } from "../lib/api";
 import { listKaryawan } from "../lib/absensi";
 import { bisa } from "../lib/constants";
-import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
+import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti, urlAdalahPdf } from "../lib/bukti";
+import PratinjauBerkas from "../components/PratinjauBerkas";
 import { unggahBuktiBanyak, unggahBukti, fileCls } from "./AlurKas";
 import { simpanBuktiGaji, sinkronBuktiKeKeuangan } from "../lib/buktiGaji";
 
@@ -311,11 +312,17 @@ export default function PengajuanDana({
                         <div key={it.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
                           <span className="text-slate-200">{it.nama}{it.periode ? <span className="text-slate-500"> · {labelPeriodeGaji(it.periode)}</span> : null}</span>
                           <span className="flex items-center gap-2 text-slate-300">
-                            {(Array.isArray(it.bukti) ? it.bukti : []).map((u, i) => (
-                              <a key={u} href={u} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-[11px] text-emerald-400/90 hover:text-emerald-300" title="Bukti transfer">
-                                <Paperclip size={11} /> Bukti{it.bukti.length > 1 ? ` ${i + 1}` : ""}
-                              </a>
-                            ))}
+                            {(Array.isArray(it.bukti) ? it.bukti : []).map((u, i) =>
+                              urlAdalahPdf(u) ? (
+                                <a key={u} href={u} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-[11px] text-emerald-400/90 hover:text-emerald-300" title="Bukti transfer (PDF)">
+                                  <Paperclip size={11} /> Bukti PDF{it.bukti.length > 1 ? ` ${i + 1}` : ""}
+                                </a>
+                              ) : (
+                                <a key={u} href={u} target="_blank" rel="noreferrer" title="Bukti transfer — klik untuk memperbesar">
+                                  <img src={u} alt={`Bukti ${i + 1}`} className="w-8 h-8 rounded object-cover border border-slate-700" />
+                                </a>
+                              )
+                            )}
                             {fmtRp(it.nominal)}{it.selesai ? " ✓" : ""}
                           </span>
                         </div>
@@ -729,20 +736,36 @@ function FormSetujuiGaji({ p, namaEnt, rekeningList, bolehBayar, saving, onClose
               )}
             </span>
             {!it.selesai && (
-              <div className="w-full flex items-center gap-2 text-[11px] text-slate-400">
-                <Paperclip size={12} className="flex-shrink-0" />
-                {(it.bukti || []).length ? (
-                  <span className="text-emerald-400">Bukti transfer sudah terunggah ({it.bukti.length})</span>
-                ) : (
-                  <input
-                    type="file"
-                    multiple
-                    accept={BUKTI_ACCEPT}
-                    className={fileCls}
-                    onChange={(e) => setBuktiBaris((m) => ({ ...m, [it.id]: Array.from(e.target.files || []) }))}
-                    title="Bukti transfer ke karyawan ini (foto/PDF, opsional)"
-                  />
-                )}
+              <div className="w-full flex items-start gap-2 text-[11px] text-slate-400">
+                <Paperclip size={12} className="flex-shrink-0 mt-1" />
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  {(it.bukti || []).length ? (
+                    <>
+                      <span className="text-emerald-400">Bukti transfer sudah terunggah ({it.bukti.length})</span>
+                      <div className="flex flex-wrap gap-2">
+                        {it.bukti.map((u, i) => (
+                          <a key={u} href={u} target="_blank" rel="noreferrer" className="block w-16 h-16 rounded-md border border-slate-500/40 overflow-hidden bg-slate-500/10">
+                            {urlAdalahPdf(u) ? <div className="w-full h-full flex items-center justify-center text-[10px]">PDF {i + 1}</div> : <img src={u} alt={`Bukti ${i + 1}`} className="w-full h-full object-cover" />}
+                          </a>
+                        ))}
+                      </div>
+                    </>
+                  ) : (buktiBaris[it.id] || []).length ? (
+                    <PratinjauBerkas
+                      files={buktiBaris[it.id]}
+                      onHapus={(idx) => setBuktiBaris((m) => ({ ...m, [it.id]: (m[it.id] || []).filter((_, k) => k !== idx) }))}
+                    />
+                  ) : (
+                    <input
+                      type="file"
+                      multiple
+                      accept={BUKTI_ACCEPT}
+                      className={fileCls}
+                      onChange={(e) => setBuktiBaris((m) => ({ ...m, [it.id]: Array.from(e.target.files || []) }))}
+                      title="Bukti transfer ke karyawan ini (foto/PDF, opsional)"
+                    />
+                  )}
+                </div>
               </div>
             )}
           </div>

@@ -14,6 +14,7 @@ import {
 import { kodePengajuanDana } from "./PengajuanDana";
 import { unggahBukti, unggahBuktiBanyak } from "./AlurKas";
 import { BUKTI_ACCEPT, urlAdalahPdf } from "../lib/bukti";
+import PratinjauBerkas from "../components/PratinjauBerkas";
 import { muatBuktiGaji, simpanBuktiGaji, hapusBuktiGaji, sinkronBuktiKeKeuangan, sinkronBuktiTertunda } from "../lib/buktiGaji";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
 import { hitungGajiOtomatis, daftarPengaturanGaji } from "../lib/gajiOtomatis";
@@ -1408,13 +1409,17 @@ function ModalBuktiGaji({ g, nama, urls, bisaUbah, siap, showToast, onClose, onS
 
       {bisaUbah && siap && (
         <div className="space-y-3">
-          <input
-            type="file"
-            multiple
-            accept={BUKTI_ACCEPT}
-            onChange={(e) => setFiles(Array.from(e.target.files || []))}
-            className="block w-full text-xs text-md-on-surface-variant"
-          />
+          {files.length ? (
+            <PratinjauBerkas files={files} onHapus={(idx) => setFiles((f) => f.filter((_, k) => k !== idx))} />
+          ) : (
+            <input
+              type="file"
+              multiple
+              accept={BUKTI_ACCEPT}
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              className="block w-full text-xs text-md-on-surface-variant"
+            />
+          )}
           <div className="flex gap-2 justify-end">
             <button className={btnOutlined} onClick={onClose} disabled={proses}>
               Tutup
