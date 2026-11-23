@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { bisa } from "../lib/constants";
 import QRCode from "qrcode";
-import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator, Send } from "lucide-react";
+import { Lock, Save, Loader2, QrCode, Ban, Trash2, CheckCircle2, RefreshCw, Download, Calculator, Send, FileText, FileSpreadsheet } from "lucide-react";
 import {
   PageHeader, EmptyState, Badge, Field, ModalShell, InputRupiah,
   inputClass, btnFilled, btnTonal, btnOutlined, btnText,
@@ -9,6 +9,7 @@ import {
 import {
   fmtRp, cekPasswordAdmin, daftarGaji, simpanDraftGaji, serahkanGaji,
   batalkanGaji, hapusGaji, tandaiGajiDiterimaAdmin, lingkupEntitas, kodeHoldingPasti, sb,
+  namaUsahaEntitas, alamatEntitas,
 } from "../lib/api";
 import { kodePengajuanDana } from "./PengajuanDana";
 import { listKaryawan, entitasAbsensi, pilihEntitasAbsensi } from "../lib/absensi";
@@ -570,6 +571,93 @@ export default function Penggajian({ session, master, showToast }) {
     }
   };
 
+  // ---------- Laporan gaji & slip gaji ----------
+  const [lapPeriode, setLapPeriode] = useState(""); // "" = semua periode
+  const [lapStatus, setLapStatus] = useState("aktif"); // aktif (tanpa batal) | diterima | belum | semua
+  const [lapKaryawan, setLapKaryawan] = useState("");
+  const periodeAda = useMemo(() => [...new Set(gaji.map((g) => g.periode))].sort().reverse(), [gaji]);
+  const lapBaris = useMemo(() => {
+    const cocokStatus = (g) =>
+      lapStatus === "semua" ? true
+      : lapStatus === "diterima" ? g.status === "diterima"
+      : lapStatus === "belum" ? g.status === "draft" || g.status === "diserahkan"
+      : g.status !== "batal";
+    return gaji
+      .filter((g) => (!lapPeriode || g.periode === lapPeriode) && (!lapKaryawan || g.karyawan_id === lapKaryawan) && cocokStatus(g))
+      .map((g) => ({ gaji: g, nama: peta.get(g.karyawan_id)?.nama || "—", id_karyawan: peta.get(g.karyawan_id)?.id_karyawan || "" }))
+      .sort((a, b) => (a.gaji.periode === b.gaji.periode ? a.nama.localeCompare(b.nama, "id") : a.gaji.periode < b.gaji.periode ? 1 : -1));
+  }, [gaji, peta, lapPeriode, lapStatus, lapKaryawan]);
+  const lapTotal = useMemo(() => {
+    const t = { gaji_pokok: 0, premi_jabatan: 0, premi_kehadiran: 0, bonus: 0, total: 0, diterima: 0 };
+    lapBaris.forEach(({ gaji: g }) => {
+      const k = komponenDariGaji(g);
+      KOMPONEN.forEach((c) => { t[c.k] += angka(k[c.k]); });
+      t.total += angka(g.nominal);
+      if (g.status === "diterima") t.diterima += angka(g.nominal);
+    });
+    return t;
+  }, [lapBaris]);
+  const ketLaporan = () => {
+    const st = { aktif: "Semua kecuali batal", diterima: "Sudah diterima", belum: "Belum diterima (draft/diserahkan)", semua: "Semua termasuk batal" }[lapStatus];
+    return `${namaPT} | Periode: ${lapPeriode ? labelPeriode(lapPeriode) : "Semua"} | Status: ${st}${lapKaryawan ? ` | Karyawan: ${peta.get(lapKaryawan)?.nama || ""}` : ""}`;
+  };
+  const identitasGaji = () => ({ nama: namaUsahaEntitas(master, ent), alamat: alamatEntitas(master, ent) || [] });
+
+  const unduhSlip = async (daftarGajiSlip) => {
+    const daftar = daftarGajiSlip.filter((g) => g.status !== "batal").map((g) => ({ gaji: g, karyawan: peta.get(g.karyawan_id) }));
+    if (daftar.length === 0) { showToast?.("Tidak ada gaji yang bisa dibuatkan slip.", "err"); return; }
+    setSibuk("slip");
+    try {
+      const { simpanPdfSlipGaji } = await import("../lib/PdfGaji");
+      simpanPdfSlipGaji({ daftar, identitas: identitasGaji() });
+    } catch {
+      showToast?.("Gagal membuat slip gaji.", "err");
+    } finally {
+      setSibuk(null);
+    }
+  };
+  const unduhLaporanPdf = async () => {
+    setSibuk("lap-pdf");
+    try {
+      const { simpanPdfLaporanGaji } = await import("../lib/PdfGaji");
+      simpanPdfLaporanGaji({ baris: lapBaris, identitas: identitasGaji(), keterangan: ketLaporan() });
+    } catch {
+      showToast?.("Gagal membuat laporan PDF.", "err");
+    } finally {
+      setSibuk(null);
+    }
+  };
+  const unduhLaporanExcel = async () => {
+    setSibuk("lap-xlsx");
+    try {
+      const XLSX = await import("xlsx");
+      const rows = lapBaris.map(({ gaji: g, nama, id_karyawan }) => {
+        const k = komponenDariGaji(g);
+        return {
+          Periode: labelPeriode(g.periode),
+          "ID Karyawan": id_karyawan,
+          Karyawan: nama,
+          "Gaji Pokok": angka(k.gaji_pokok),
+          "Premi Jabatan": angka(k.premi_jabatan),
+          "Premi Kehadiran": angka(k.premi_kehadiran),
+          Bonus: angka(k.bonus),
+          Total: angka(g.nominal),
+          Status: STATUS_LABEL[g.status] || g.status,
+          Diterima: g.diterima_pada ? fmtWaktu(g.diterima_pada) : "",
+          Catatan: g.catatan || "",
+        };
+      });
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Laporan Gaji");
+      XLSX.writeFile(wb, `Laporan-Gaji-${hariIni()}.xlsx`);
+    } catch {
+      showToast?.("Gagal membuat file Excel.", "err");
+    } finally {
+      setSibuk(null);
+    }
+  };
+
   const AksiGaji = ({ g }) => {
     if (readOnly) return null;
     const proses = sibuk === g.id;
@@ -665,9 +753,10 @@ export default function Penggajian({ session, master, showToast }) {
         }
       />
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4">
         <button className={tab === "siapkan" ? btnFilled : btnOutlined} onClick={() => setTab("siapkan")}>Siapkan Gaji</button>
         <button className={tab === "riwayat" ? btnFilled : btnOutlined} onClick={() => setTab("riwayat")}>Riwayat</button>
+        <button className={tab === "laporan" ? btnFilled : btnOutlined} onClick={() => setTab("laporan")}>Laporan &amp; Slip</button>
         <button className={tab === "pengaturan" ? btnFilled : btnOutlined} onClick={() => setTab("pengaturan")}>Pengaturan Gaji</button>
       </div>
 
@@ -906,6 +995,100 @@ export default function Penggajian({ session, master, showToast }) {
         />
       )}
 
+      {tab === "laporan" && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Periode">
+              <select value={lapPeriode} onChange={(e) => setLapPeriode(e.target.value)} className={inputClass}>
+                <option value="">Semua periode</option>
+                {periodeAda.map((p) => <option key={p} value={p}>{labelPeriode(p)}</option>)}
+              </select>
+            </Field>
+            <Field label="Status">
+              <select value={lapStatus} onChange={(e) => setLapStatus(e.target.value)} className={inputClass}>
+                <option value="aktif">Semua kecuali batal</option>
+                <option value="diterima">Sudah diterima</option>
+                <option value="belum">Belum diterima</option>
+                <option value="semua">Semua termasuk batal</option>
+              </select>
+            </Field>
+            <Field label="Karyawan">
+              <select value={lapKaryawan} onChange={(e) => setLapKaryawan(e.target.value)} className={inputClass}>
+                <option value="">Semua karyawan</option>
+                {karyawan.map((k) => <option key={k.id} value={k.id}>{k.nama}{k.aktif ? "" : " (nonaktif)"}</option>)}
+              </select>
+            </Field>
+          </div>
+
+          <div className="grid gap-2 grid-cols-2 lg:grid-cols-5 my-4">
+            {[
+              ["Total gaji", lapTotal.total],
+              ["Gaji pokok", lapTotal.gaji_pokok],
+              ["Premi (jabatan + kehadiran)", lapTotal.premi_jabatan + lapTotal.premi_kehadiran],
+              ["Bonus", lapTotal.bonus],
+              ["Sudah diterima", lapTotal.diterima],
+            ].map(([l, v]) => (
+              <div key={l} className="bg-md-container-high rounded-md-xl px-4 py-3">
+                <div className="text-[11px] text-md-on-surface-variant">{l}</div>
+                <div className="text-md-on-surface font-medium">{fmtRp(v)}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <button className={btnFilled} onClick={unduhLaporanPdf} disabled={lapBaris.length === 0 || !!sibuk}>
+              {sibuk === "lap-pdf" ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />} Laporan PDF
+            </button>
+            <button className={btnTonal} onClick={unduhLaporanExcel} disabled={lapBaris.length === 0 || !!sibuk}>
+              {sibuk === "lap-xlsx" ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />} Excel
+            </button>
+            <button className={btnTonal} onClick={() => unduhSlip(lapBaris.map((b) => b.gaji))} disabled={lapBaris.length === 0 || !!sibuk}>
+              {sibuk === "slip" ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />} Slip semua ({lapBaris.filter((b) => b.gaji.status !== "batal").length})
+            </button>
+          </div>
+
+          {lapBaris.length === 0 ? (
+            <EmptyState label="Tidak ada data gaji untuk filter ini." />
+          ) : (
+            <div className="overflow-x-auto bg-md-container-high rounded-md-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-md-on-surface-variant">
+                    <th className="px-4 py-3">Periode</th>
+                    <th className="px-2 py-3">Karyawan</th>
+                    {KOMPONEN.map((c) => <th key={c.k} className="px-2 py-3 text-right">{c.l}</th>)}
+                    <th className="px-2 py-3 text-right">Total</th>
+                    <th className="px-2 py-3">Status</th>
+                    <th className="px-4 py-3 text-right">Slip</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lapBaris.map(({ gaji: g, nama }) => {
+                    const k = komponenDariGaji(g);
+                    return (
+                      <tr key={g.id} className="border-t border-md-outline-variant align-middle">
+                        <td className="px-4 py-2 whitespace-nowrap">{labelPeriode(g.periode)}</td>
+                        <td className="px-2 py-2">{nama}</td>
+                        {KOMPONEN.map((c) => <td key={c.k} className="px-2 py-2 text-right whitespace-nowrap">{angka(k[c.k]) ? fmtRp(k[c.k]) : "—"}</td>)}
+                        <td className="px-2 py-2 text-right font-medium text-md-on-surface whitespace-nowrap">{fmtRp(g.nominal)}</td>
+                        <td className="px-2 py-2"><Badge color={STATUS_WARNA[g.status]}>{STATUS_LABEL[g.status]}</Badge></td>
+                        <td className="px-4 py-2 text-right">
+                          {g.status !== "batal" && (
+                            <button className={btnText} disabled={!!sibuk} onClick={() => unduhSlip([g])}>
+                              <FileText size={14} /> Slip
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
       {tab === "riwayat" && (
         <>
           <div className="max-w-xs">
@@ -951,7 +1134,16 @@ export default function Penggajian({ session, master, showToast }) {
                       <td className="px-2 py-2 text-md-on-surface-variant">
                         {g.diterima_pada ? `${fmtWaktu(g.diterima_pada)} (${g.cara_diterima === "admin" ? "oleh admin" : "scan QR"})` : "—"}
                       </td>
-                      <td className="px-4 py-2"><AksiGaji g={g} /></td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          {g.status !== "batal" && (
+                            <button className={btnText} disabled={sibuk === "slip"} onClick={() => unduhSlip([g])}>
+                              <FileText size={14} /> Slip
+                            </button>
+                          )}
+                          <AksiGaji g={g} />
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
