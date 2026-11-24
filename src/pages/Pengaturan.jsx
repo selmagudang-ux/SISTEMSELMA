@@ -4,6 +4,7 @@ import { PageHeader, EmptyState, Field, SearchableSelect, inputClass } from "../
 import { sb, sbAll, RUMUS_HARGA_BAWAAN, rumusHargaEntitas, daftarkanProfilEntitas, entitasSesi } from "../lib/api";
 import { ROLES, bisa, GRUP_AKSI, aksiBawaan, roleLabel, isSuperadminLike, ROLE_BOLEH_KASIR, ROLE_HANYA_LIHAT_BAWAAN, NAV, allowedMenus, allowedSubMenus, allowedSubMenusBawaan, menuBawaanRole, aksesRoleTersimpan, bolehKasir, setAksesRole, filterNavByAllowed, fiturMatiEntitas } from "../lib/constants";
 import { listUsers, createUser, updateUserPassword, updateUserNama, deleteUser } from "../lib/auth";
+import KoneksiMarketplace from "../components/KoneksiMarketplace";
 
 export default function Pengaturan({ settings, reload, showToast, session }) {
   // Mode Perbaikan & pembersih data HANYA untuk role "superappa" (Super Admin tersembunyi) —
@@ -39,6 +40,8 @@ export default function Pengaturan({ settings, reload, showToast, session }) {
       {bolehRumus && (
         <PengaturanPerPT settings={settings} session={session} isSuperappa={isSuperappa} showToast={showToast} />
       )}
+
+      {bolehAtur && <KoneksiMarketplace showToast={showToast} />}
 
       {bolehPembersih && <SkuYatimCleaner reload={reload} showToast={showToast} />}
 
