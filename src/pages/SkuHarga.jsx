@@ -9,6 +9,7 @@ import MasterData from "./MasterData";
 import Rusak from "./Rusak";
 import BarangToko from "./kasir/BarangToko";
 import KodeLiveTiktok from "./KodeLiveTiktok";
+import BarangTiktok from "./kasir/BarangTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
 import ImporSkuMaster from "../components/ImporSkuMaster";
 
@@ -90,9 +91,9 @@ function TigaMaster(props) {
         <div>
           <PageHeader
             title="Barang TikTok (Kode Live)"
-            description="Satu kode live = satu SKU di Master Barang (contoh: c11 = TDCC-DUB-1-PER-SIZE9). Dipakai untuk mencari SKU dan HPP di penjualan TikTok."
+            description="Barang yang dijual di TikTok: stok sendiri, kode live, harga, dan HPP. Bisa diambil dari Master Barang, dan stoknya bisa dikirim ke Barang Toko. Satu kode live = satu SKU di Master Barang."
           />
-          <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />
+          {bolehToko ? <BarangTiktok onBerubah={() => reload?.()} /> : <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />}
         </div>
       )}
       {tab === "toko" && bolehToko && (

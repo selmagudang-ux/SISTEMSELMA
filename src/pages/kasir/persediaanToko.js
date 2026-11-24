@@ -69,15 +69,46 @@ export async function muatPersediaanGudang() {
   return hitungPersediaanGudang((await sbAll("sku_master?select=sku,hpp,nonaktif")) || []);
 }
 
-// Persediaan Barang di Neraca = toko + gudang. data = { nilai (total), toko: {...}, gudang: {...} }.
+// =========================================================
+// NILAI PERSEDIAAN BARANG TIKTOK = stok master_tiktok x HPP satuan (HPP kosong dilengkapi dari Master Barang lewat sku_gudang).
+// Stok yang sudah dipindah dari gudang ke TikTok keluar dari stok gudang, jadi HARUS dihitung di sini supaya tidak hilang dari Neraca.
+// Tabel belum dibuat (migrasi 20261124 belum dijalankan) / gagal dimuat -> dianggap kosong, Neraca tetap tampil.
+// =========================================================
+export async function muatPersediaanTiktok() {
+  try {
+    const [tt, master] = await Promise.all([
+      sbAll("master_tiktok?select=kode,sku_gudang,hpp,stok,nonaktif&stok=gt.0"),
+      sbAll("sku_master?select=sku,hpp").catch(() => []),
+    ]);
+    const hppMaster = new Map((master || []).map((m) => [m.sku, num(m.hpp)]));
+    let pcs = 0;
+    let nilai = 0;
+    let jenis = 0;
+    let tanpaHpp = 0;
+    for (const r of tt || []) {
+      const stok = num(r.stok);
+      if (stok <= 0) continue;
+      const hpp = num(r.hpp) > 0 ? num(r.hpp) : hppMaster.get(r.sku_gudang) || 0;
+      pcs += stok;
+      jenis += 1;
+      if (hpp > 0) nilai += stok * hpp;
+      else tanpaHpp += 1;
+    }
+    return { pcs, jenis, nilai: Math.round(nilai), tanpaHpp };
+  } catch {
+    return { pcs: 0, jenis: 0, nilai: 0, tanpaHpp: 0 };
+  }
+}
+
+// Persediaan Barang di Neraca = toko + gudang + TikTok. data = { nilai (total), toko: {...}, gudang: {...}, tiktok: {...} }.
 export function usePersediaanBarang(aktif = true, versi = 0) {
   const [state, setState] = useState({ memuat: false, data: null, error: "" });
   useEffect(() => {
     if (!aktif) return undefined;
     let batal = false;
     setState((s) => ({ ...s, memuat: true, error: "" }));
-    Promise.all([muatPersediaanToko(), muatPersediaanGudang()])
-      .then(([toko, gudang]) => !batal && setState({ memuat: false, data: { nilai: toko.nilai + gudang.nilai, toko, gudang }, error: "" }))
+    Promise.all([muatPersediaanToko(), muatPersediaanGudang(), muatPersediaanTiktok()])
+      .then(([toko, gudang, tiktok]) => !batal && setState({ memuat: false, data: { nilai: toko.nilai + gudang.nilai + tiktok.nilai, toko, gudang, tiktok }, error: "" }))
       .catch((e) => !batal && setState({ memuat: false, data: null, error: String(e?.message || e) }));
     return () => {
       batal = true;

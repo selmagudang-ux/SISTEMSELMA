@@ -3,6 +3,7 @@ import { Loader2, Check, AlertCircle, FileDown } from "lucide-react";
 import { sb, sbAll, entitasSesi, fmtRp } from "../../lib/api";
 import { getSession } from "../../lib/auth";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
+import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 
 // =========================================================
 // PINDAHKAN SKU DARI MASTER BARANG (gudang) KE BARANG TOKO (kasir).
@@ -19,7 +20,21 @@ import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 // Dipanggil dari Master Barang (role superappa) dan dari Barang Toko > "Dari Master".
 // =========================================================
 
-export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, fotoPerSku, onClose, onSelesai }) {
+// Tujuan & sumber (default = perilaku lama: Master Barang -> Barang Toko):
+//   tujuan "toko"   + sumber "gudang" : Master Barang -> Barang Toko   (kode ENT-0001)
+//   tujuan "tiktok" + sumber "gudang" : Master Barang -> Barang TikTok (kode ENT-TT-0001, plus kode live)
+//   tujuan "toko"   + sumber "tiktok" : Barang TikTok -> Barang Toko   (daftar[].stok = stok TIKTOK, daftar[].kodeTiktok = kode barang TikTok)
+// Kolom harga/HPP/kategori/nama tetap diambil dari Master Barang (daftar = baris sku_master).
+const KONFIG = {
+  toko: { tabel: "master_toko", label: "Barang Toko", awalan: (e) => e, rpcDariGudang: "rpc/toko_mutasi_dari_gudang", labelKode: "Kode Toko" },
+  tiktok: { tabel: "master_tiktok", label: "Barang TikTok", awalan: (e) => `${e}-TT`, rpcDariGudang: "rpc/tiktok_mutasi_dari_gudang", labelKode: "Kode TikTok" },
+};
+
+export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, fotoPerSku, onClose, onSelesai, tujuan = "toko", sumber = "gudang" }) {
+  const K = KONFIG[tujuan] || KONFIG.toko;
+  const dariTiktok = sumber === "tiktok";
+  const namaSumber = dariTiktok ? "TikTok" : "gudang";
+  const [kodeLive, setKodeLive] = useState({}); // sku -> kode live (hanya tujuan tiktok)
   const tunggal = daftar.length === 1 ? daftar[0] : null;
   const [sudahAda, setSudahAda] = useState(null); // Map sku_gudang -> kode toko yang sudah ada
   const [semuaToko, setSemuaToko] = useState([]); // { kode, nama } seluruh barang toko (untuk nomor urut)
@@ -34,8 +49,8 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
   useEffect(() => {
     const daftarSku = daftar.map((s) => `"${String(s.sku).replace(/"/g, "")}"`).join(",");
     Promise.all([
-      sb(`master_toko?select=kode,sku_gudang&sku_gudang=in.(${encodeURIComponent(daftarSku)})`),
-      sbAll("master_toko?select=kode,nama"),
+      sb(`${K.tabel}?select=kode,sku_gudang&sku_gudang=in.(${encodeURIComponent(daftarSku)})`),
+      sbAll(`${K.tabel}?select=kode,nama`),
     ])
       .then(([ada, semua]) => {
         setSudahAda(new Map((ada || []).map((x) => [x.sku_gudang, x.kode])));
@@ -48,7 +63,7 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
     const n = qty === "" ? 0 : parseInt(qty, 10);
     if (qty !== "" && !(n > 0)) return setError("Jumlah harus lebih dari 0, atau kosongkan.");
     if (n > 0 && tunggal && n > (Number(tunggal.stok) || 0)) {
-      return setError(`Stok gudang ${tunggal.sku} hanya ${Number(tunggal.stok) || 0}.`);
+      return setError(`Stok ${namaSumber} ${tunggal.sku} hanya ${Number(tunggal.stok) || 0}.`);
     }
     if (!tunggal) {
       for (const s of daftar) {
@@ -57,13 +72,13 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
         const j = parseInt(v, 10);
         const stokG = Math.floor(Number(s.stok) || 0);
         if (!(j >= 0)) return setError(`Jumlah ${s.sku} tidak valid.`);
-        if (j > stokG) return setError(`Stok gudang ${s.sku} hanya ${stokG}.`);
+        if (j > stokG) return setError(`Stok ${namaSumber} ${s.sku} hanya ${stokG}.`);
       }
     }
     setSaving(true);
     setError("");
-    const out = { dibuat: 0, dilewati: 0, gagal: [], dipindah: 0, rincian: [], waktu: new Date(), catatan: catatan.trim() };
-    const prefix = String(entitasSesi()).toUpperCase();
+    const out = { dibuat: 0, dilewati: 0, gagal: [], dipindah: 0, rincian: [], waktu: new Date(), catatan: catatan.trim(), info: [] };
+    const prefix = K.awalan(String(entitasSesi()).toUpperCase());
     // Nomor urut kode toko: lanjut dari nomor terbesar yang sudah ada untuk entitas ini.
     let nomorKode = 0;
     for (const t of semuaToko) {
@@ -102,13 +117,18 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
           out.dilewati += 1;
         } else {
           if (!(Number(s.ecer) > 0)) throw new Error("Harga Ecer kosong/0 — isi harga dulu di Master Barang.");
-          const labelSub = (labelSubkategori ? labelSubkategori(s.subkategori) : "") || "";
+          // Subkategori kosong/tidak ada di Master Data -> labelFor mengembalikan "—": jangan dipakai jadi nama ("— 1").
+          // Barang TikTok: nama = SKU (permintaan), tanpa nomor urut subkategori.
+          const labelSubMentah = (labelSubkategori ? labelSubkategori(s.subkategori) : "") || "";
+          const labelSub = tujuan === "tiktok" || labelSubMentah === "—" ? "" : labelSubMentah;
           kodeToko = `${prefix}-${String(nomorKode + 1).padStart(4, "0")}`;
-          const nama = labelSub ? `${labelSub} ${urutNama(labelSub)}` : (s.nama || "").trim() || s.sku;
-          await sb("master_toko", {
+          const nama = tujuan === "tiktok" ? s.sku : labelSub ? `${labelSub} ${urutNama(labelSub)}` : (s.nama || "").trim() || s.sku;
+          const live = tujuan === "tiktok" ? rapikanKodeLive(kodeLive[s.sku]) : "";
+          await sb(K.tabel, {
             method: "POST",
             body: JSON.stringify({
               kode: kodeToko,
+              ...(tujuan === "tiktok" ? { kode_live: live || null } : {}),
               nama,
               kategori: labelKategori(s.kategori) || null,
               barcode: s.sku, // barang dari Master Barang: barcode = SKU gudang (bukan kode toko)
@@ -122,15 +142,28 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
           });
           nomorKode += 1; // naik hanya kalau berhasil disimpan
           out.dibuat += 1;
+          if (live) {
+            // kode live ikut dicatat di daftar Kode Live TikTok (dipakai Rincian Penjualan). Gagal di sini tidak membatalkan apa pun.
+            try {
+              const r = await sinkronAliasKodeLive(live, s.sku);
+              if (r.status === "beda") out.info.push(`Kode live ${live} di daftar Kode Live TikTok sudah dipetakan ke ${r.skuLama} (tidak ditimpa).`);
+            } catch {
+              out.info.push(`Kode live ${live} belum tercatat di daftar Kode Live TikTok.`);
+            }
+          }
           rin.nama = nama;
           catat();
         }
         const jml = tunggal ? n : parseInt(qtyMap[s.sku] || "0", 10) || 0;
         if (jml > 0) {
           catat();
-          await sb("rpc/toko_mutasi_dari_gudang", {
+          await sb(dariTiktok ? "rpc/toko_ambil_dari_tiktok" : K.rpcDariGudang, {
             method: "POST",
-            body: JSON.stringify({ p: { entitas: entitasSesi(), kode: kodeToko, qty: jml, catatan: catatan.trim() || null } }),
+            body: JSON.stringify({
+              p: dariTiktok
+                ? { entitas: entitasSesi(), kode: kodeToko, kode_tiktok: s.kodeTiktok, qty: jml, catatan: catatan.trim() || null }
+                : { entitas: entitasSesi(), kode: kodeToko, qty: jml, catatan: catatan.trim() || null },
+            }),
           });
           out.dipindah += jml;
           rin.qty = jml;
@@ -155,7 +188,15 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
       }
       const ses = getSession();
       const { buatPdfPemindahanToko } = await import("../../lib/PdfPemindahanToko");
-      buatPdfPemindahanToko({ namaUsaha, petugas: ses?.nama || ses?.username || "", waktu: hasil.waktu, catatan: hasil.catatan, baris: hasil.rincian });
+      buatPdfPemindahanToko({
+        namaUsaha,
+        petugas: ses?.nama || ses?.username || "",
+        waktu: hasil.waktu,
+        catatan: hasil.catatan,
+        baris: hasil.rincian,
+        labelKode: K.labelKode,
+        judul: dariTiktok ? "BARANG DIAMBIL DARI BARANG TIKTOK KE BARANG TOKO" : tujuan === "tiktok" ? "BARANG DIAMBIL DARI MASTER BARANG KE BARANG TIKTOK" : "",
+      });
     } catch (e) {
       setErrPdf(`Gagal membuat PDF: ${e?.message || e}`);
     }
@@ -163,11 +204,12 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
 
   if (hasil) {
     return (
-      <Kerangka judul="Hasil pemindahan ke Barang Toko" onClose={() => onSelesai(hasil)}>
+      <Kerangka judul={`Hasil pemindahan ke ${K.label}`} onClose={() => onSelesai(hasil)}>
         <div className="space-y-1.5 text-sm">
-          <div className="flex items-center gap-2 text-emerald-300"><Check size={15} /> {hasil.dibuat} barang ditambahkan ke Barang Toko</div>
-          {hasil.dilewati > 0 && <div className="text-slate-400">{hasil.dilewati} sudah ada di Barang Toko (tidak dibuat dobel)</div>}
-          {hasil.dipindah > 0 && <div className="text-slate-300">{hasil.dipindah} stok dipindah dari gudang ke toko</div>}
+          <div className="flex items-center gap-2 text-emerald-300"><Check size={15} /> {hasil.dibuat} barang ditambahkan ke {K.label}</div>
+          {hasil.dilewati > 0 && <div className="text-slate-400">{hasil.dilewati} sudah ada di {K.label} (tidak dibuat dobel)</div>}
+          {hasil.dipindah > 0 && <div className="text-slate-300">{hasil.dipindah} stok dipindah dari {namaSumber} ke {tujuan === "tiktok" ? "TikTok" : "toko"}</div>}
+          {hasil.info.map((t) => <div key={t} className="text-xs text-amber-300">{t}</div>)}
         </div>
         {hasil.gagal.length > 0 && (
           <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
@@ -189,13 +231,13 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
   }
 
   return (
-    <Kerangka judul={tunggal ? `Pindahkan ke Barang Toko — ${tunggal.sku}` : `Pindahkan ${daftar.length} SKU ke Barang Toko`} onClose={onClose}>
+    <Kerangka judul={tunggal ? `Pindahkan ke ${K.label} — ${tunggal.sku}` : `Pindahkan ${daftar.length} SKU ke ${K.label}`} onClose={onClose}>
       {tunggal ? (
         <>
           <div className="text-sm text-slate-300">{tunggal.nama || tunggal.sku}</div>
           <div className="grid grid-cols-3 gap-2 text-sm">
             <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-              <div className="text-[11px] text-slate-500">Harga jual toko</div>
+              <div className="text-[11px] text-slate-500">Harga jual {tujuan === "tiktok" ? "(Ecer)" : "toko"}</div>
               <div className="font-semibold text-amber-400">{fmtRp(tunggal.ecer)}</div>
             </div>
             <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
@@ -203,15 +245,21 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
               <div className="font-semibold">{fmtRp(tunggal.hpp)}</div>
             </div>
             <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
-              <div className="text-[11px] text-slate-500">Stok gudang</div>
+              <div className="text-[11px] text-slate-500">Stok {namaSumber}</div>
               <div className="font-semibold">{Number(tunggal.stok) || 0}</div>
             </div>
           </div>
           {sudahAda?.has(tunggal.sku) && (
-            <div className="text-xs text-sky-300">Sudah ada di Barang Toko — isi jumlah di bawah untuk menambah stok toko.</div>
+            <div className="text-xs text-sky-300">Sudah ada di {K.label} — isi jumlah di bawah untuk menambah stoknya.</div>
+          )}
+          {tujuan === "tiktok" && !sudahAda?.has(tunggal.sku) && (
+            <label className="block">
+              <div className="text-xs text-slate-400 mb-1">Kode live (opsional, bisa diisi nanti lewat Ubah)</div>
+              <input value={kodeLive[tunggal.sku] || ""} onChange={(e) => setKodeLive((m) => ({ ...m, [tunggal.sku]: e.target.value }))} className={`${inp} font-mono`} placeholder="mis. A-11" />
+            </label>
           )}
           <label className="block">
-            <div className="text-xs text-slate-400 mb-1">Jumlah stok dipindah ke toko (kosongkan kalau hanya mendaftarkan barang)</div>
+            <div className="text-xs text-slate-400 mb-1">Jumlah stok dipindah ke {tujuan === "tiktok" ? "TikTok" : "toko"} (kosongkan kalau hanya mendaftarkan barang)</div>
             <input value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className={inp} placeholder="0" />
           </label>
           <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={200} placeholder="Catatan (opsional)" className={inp} />
@@ -219,10 +267,10 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
       ) : (
         <div className="text-sm text-slate-300 space-y-2">
           <div>
-            {daftar.length} SKU akan didaftarkan ke Barang Toko dengan harga jual = Ecer dan HPP dari Master Barang.
-            {sudahAda && sudahAda.size > 0 && ` ${sudahAda.size} di antaranya sudah ada di Barang Toko (tidak dibuat dobel).`}
+            {daftar.length} SKU akan didaftarkan ke {K.label} dengan harga jual = Ecer dan HPP dari Master Barang.
+            {sudahAda && sudahAda.size > 0 && ` ${sudahAda.size} di antaranya sudah ada di ${K.label} (tidak dibuat dobel).`}
           </div>
-          <div className="text-xs text-slate-400">Ketik jumlah stok gudang yang diambil untuk tiap barang. Kosong / 0 = barangnya saja yang didaftarkan (stok toko 0).</div>
+          <div className="text-xs text-slate-400">Ketik jumlah stok {namaSumber} yang diambil untuk tiap barang. Kosong / 0 = barangnya saja yang didaftarkan (stok 0).{tujuan === "tiktok" ? " Kode live boleh dikosongkan dulu." : ""}</div>
           <div className="max-h-[40vh] overflow-y-auto space-y-1.5 -mx-1 px-1">
             {daftar.map((s) => {
               const stokG = Math.floor(Number(s.stok) || 0);
@@ -231,10 +279,18 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
                   <div className="min-w-0 flex-1">
                     <div className="text-xs font-semibold text-slate-200 truncate">{s.nama || s.sku}</div>
                     <div className="text-[11px] text-slate-500 font-mono truncate">
-                      {s.sku} · stok gudang {stokG}
-                      {sudahAda?.has(s.sku) ? " · sudah di Barang Toko (stok ditambah)" : ""}
+                      {s.sku} · stok {namaSumber} {stokG}
+                      {sudahAda?.has(s.sku) ? ` · sudah di ${K.label} (stok ditambah)` : ""}
                     </div>
                   </div>
+                  {tujuan === "tiktok" && !sudahAda?.has(s.sku) && (
+                    <input
+                      value={kodeLive[s.sku] || ""}
+                      onChange={(e) => setKodeLive((m) => ({ ...m, [s.sku]: e.target.value }))}
+                      placeholder="kode live"
+                      className={`${inp} !w-24 font-mono`}
+                    />
+                  )}
                   <input
                     value={qtyMap[s.sku] ?? ""}
                     onChange={(e) => setQtyMap((m) => ({ ...m, [s.sku]: e.target.value.replace(/\D/g, "") }))}

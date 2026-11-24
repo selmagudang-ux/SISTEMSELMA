@@ -594,6 +594,12 @@ function TabNeraca({ nilai, memuat, statusEkuitas, tanggalAwal, labaDitahanSaatI
             <span>Toko (Barang Toko) · {rincianPersediaan.toko.pcs} pcs, {rincianPersediaan.toko.jenis} jenis</span>
             <span className="text-md-on-surface whitespace-nowrap">{fmtRp(rincianPersediaan.toko.nilai)}</span>
           </div>
+          {rincianPersediaan.tiktok && rincianPersediaan.tiktok.pcs > 0 && (
+            <div className="flex justify-between gap-3 text-md-on-surface-variant">
+              <span>TikTok (Barang TikTok) · {rincianPersediaan.tiktok.pcs} pcs, {rincianPersediaan.tiktok.jenis} jenis</span>
+              <span className="text-md-on-surface whitespace-nowrap">{fmtRp(rincianPersediaan.tiktok.nilai)}</span>
+            </div>
+          )}
           {(rincianPersediaan.gudang.tanpaHpp > 0 || rincianPersediaan.toko.tanpaHpp > 0) && (
             <div className="text-amber-500">
               Ber-stok tapi tanpa HPP (dihitung Rp 0): {rincianPersediaan.gudang.tanpaHpp} SKU gudang, {rincianPersediaan.toko.tanpaHpp} barang toko.

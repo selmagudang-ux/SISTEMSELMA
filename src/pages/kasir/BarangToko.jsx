@@ -44,6 +44,10 @@ export function pesanError(e) {
       return `SKU gudang ${a} tidak ditemukan di Master Barang gudang.`;
     case "BARANG_TOKO_TIDAK_ADA":
       return `Barang toko ${a} tidak ditemukan.`;
+    case "STOK_TIKTOK_KURANG":
+      return `Stok TikTok ${a} hanya ${b}.`;
+    case "BARANG_TIKTOK_TIDAK_ADA":
+      return `Barang TikTok ${a} tidak ditemukan.`;
     case "QTY_TIDAK_VALID":
       return "Jumlah tidak valid.";
     default:
@@ -699,6 +703,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [fotoMassal, setFotoMassal] = useState(false);
   const [riwayat, setRiwayat] = useState(false); // riwayat pemindahan toko <-> gudang + PDF (RiwayatPemindahan.jsx)
   const [dariMaster, setDariMaster] = useState(false); // tambah barang toko dari Master Barang (TambahDariMaster.jsx)
+  const [dariTiktok, setDariTiktok] = useState(false); // ambil stok dari Barang TikTok (TambahDariMaster.jsx, sumber "tiktok")
   const [filter, setFilter] = useState("semua");
   const [kategori, setKategori] = useState("");
   const [urut, setUrut] = useState("kode");
@@ -823,6 +828,13 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
             className="flex items-center gap-1.5 border border-amber-500/50 hover:bg-amber-500/10 text-amber-300 font-semibold text-sm px-3 py-2 rounded-lg"
           >
             <ArrowDownToLine size={15} /> Dari Master
+          </button>
+          <button
+            onClick={() => setDariTiktok(true)}
+            title="Ambil barang & stok dari Barang TikTok"
+            className="flex items-center gap-1.5 border border-sky-500/50 hover:bg-sky-500/10 text-sky-300 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <ArrowDownToLine size={15} /> Dari TikTok
           </button>
           <button
             onClick={() => setForm({ barang: {} })}
@@ -957,6 +969,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
       {fotoMassal && <FotoMassalToko barangAda={rows || []} onSelesai={() => { setFotoMassal(false); muat(); }} onClose={() => setFotoMassal(false)} />}
       {riwayat && <RiwayatPemindahan onClose={() => setRiwayat(false)} />}
       {dariMaster && <TambahDariMaster onSelesai={() => { setDariMaster(false); muat(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
+      {dariTiktok && <TambahDariMaster sumber="tiktok" onSelesai={() => { setDariTiktok(false); muat(); onBerubah?.(); }} onClose={() => setDariTiktok(false)} />}
       {form && <FormBarang barang={form.barang} onSimpan={selesai} onClose={() => setForm(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {hapus && <FormHapus barang={hapus} onSelesai={selesai} onClose={() => setHapus(null)} />}

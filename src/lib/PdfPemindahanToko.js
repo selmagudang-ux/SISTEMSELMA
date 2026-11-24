@@ -13,7 +13,8 @@ const NAVY = [31, 56, 100];
 const SOFT = [237, 242, 250];
 const GREY = [210, 216, 224];
 
-export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = new Date(), catatan = "", baris = [], arah = "ke_toko", periode = "" }) {
+// judul / labelKode (opsional): dipakai Barang TikTok supaya judul & kepala kolom sesuai (mis. "Kode TikTok").
+export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = new Date(), catatan = "", baris = [], arah = "ke_toko", periode = "", judul = "", labelKode = "Kode Toko" }) {
   const campur = arah === "campur";
   const keGudang = arah === "ke_gudang";
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -42,7 +43,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
     doc.text("No", K.no, y + 5.3);
     if (campur) doc.text("Waktu", K.waktu, y + 5.3);
     doc.text("SKU Gudang", K.sku, y + 5.3);
-    doc.text("Kode Toko", K.kode, y + 5.3);
+    doc.text(labelKode, K.kode, y + 5.3);
     doc.text("Nama Barang", K.nama, y + 5.3);
     if (campur) doc.text("Arah", K.arah, y + 5.3);
     doc.text("Jumlah", K.qty, y + 5.3, { align: "right" });
@@ -51,7 +52,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
 
   // Judul
   doc.setTextColor(20, 20, 20).setFont("helvetica", "bold").setFontSize(14);
-  doc.text(campur ? "RIWAYAT PERPINDAHAN BARANG TOKO - GUDANG" : keGudang ? "BARANG DIKEMBALIKAN DARI BARANG TOKO KE GUDANG" : "BARANG DIAMBIL DARI MASTER BARANG KE BARANG TOKO", M, y + 5);
+  doc.text(judul || (campur ? "RIWAYAT PERPINDAHAN BARANG TOKO - GUDANG" : keGudang ? "BARANG DIKEMBALIKAN DARI BARANG TOKO KE GUDANG" : "BARANG DIAMBIL DARI MASTER BARANG KE BARANG TOKO"), M, y + 5);
   y += 9;
   doc.setFont("helvetica", "normal").setFontSize(10);
   if (namaUsaha) {

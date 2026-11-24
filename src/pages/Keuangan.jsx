@@ -2203,9 +2203,12 @@ function LaporanKeuangan({ keuanganTransaksi, pesananMasuk = [], marketplaceTran
           <div className="text-slate-300 font-medium">Rincian Persediaan Barang (stok × HPP)</div>
           <div className="flex justify-between gap-3"><span>Gudang (Master Barang): {persediaanToko.data.gudang.pcs} pcs, {persediaanToko.data.gudang.jenis} SKU</span><span className="text-slate-200">{fmtRp(persediaanToko.data.gudang.nilai)}</span></div>
           <div className="flex justify-between gap-3"><span>Toko (Barang Toko): {persediaanToko.data.toko.pcs} pcs, {persediaanToko.data.toko.jenis} jenis</span><span className="text-slate-200">{fmtRp(persediaanToko.data.toko.nilai)}</span></div>
-          {(persediaanToko.data.gudang.tanpaHpp > 0 || persediaanToko.data.toko.tanpaHpp > 0) && (
+          {persediaanToko.data.tiktok && persediaanToko.data.tiktok.pcs > 0 && (
+            <div className="flex justify-between gap-3"><span>TikTok (Barang TikTok): {persediaanToko.data.tiktok.pcs} pcs, {persediaanToko.data.tiktok.jenis} jenis</span><span className="text-slate-200">{fmtRp(persediaanToko.data.tiktok.nilai)}</span></div>
+          )}
+          {(persediaanToko.data.gudang.tanpaHpp > 0 || persediaanToko.data.toko.tanpaHpp > 0 || (persediaanToko.data.tiktok?.tanpaHpp || 0) > 0) && (
             <div className="text-amber-400">
-              Barang ber-stok tanpa HPP dihitung Rp 0: {persediaanToko.data.gudang.tanpaHpp} SKU gudang, {persediaanToko.data.toko.tanpaHpp} barang toko. Isi HPP-nya supaya persediaan akurat.
+              Barang ber-stok tanpa HPP dihitung Rp 0: {persediaanToko.data.gudang.tanpaHpp} SKU gudang, {persediaanToko.data.toko.tanpaHpp} barang toko{(persediaanToko.data.tiktok?.tanpaHpp || 0) > 0 ? `, ${persediaanToko.data.tiktok.tanpaHpp} barang TikTok` : ""}. Isi HPP-nya supaya persediaan akurat.
             </div>
           )}
         </div>
