@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link2, Unlink, RefreshCw, Loader2, AlertTriangle } from "lucide-react";
+import { Link2, Unlink, RefreshCw, Loader2, AlertTriangle, Save } from "lucide-react";
 import { panggilTiktok } from "../lib/tiktokApi";
 
 // Panel Pengaturan: hubungkan / perbarui / putuskan toko marketplace tanpa menyentuh kode.
@@ -19,7 +19,10 @@ function statusToko(t) {
 
 export default function KoneksiMarketplace({ showToast }) {
   const [toko, setToko] = useState(null);
-  const [app, setApp] = useState([]);
+  const [app, setApp] = useState([]); // app yang linknya sudah terisi (untuk tombol Hubungkan)
+  const [appSemua, setAppSemua] = useState([]); // semua app (untuk editor link)
+  const [bolehEditLink, setBolehEditLink] = useState(false);
+  const [linkInput, setLinkInput] = useState({});
   const [appDipilih, setAppDipilih] = useState("");
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState("");
@@ -29,7 +32,11 @@ export default function KoneksiMarketplace({ showToast }) {
     try {
       const [a, b] = await Promise.all([panggilTiktok("daftar-koneksi", {}, 30000), panggilTiktok("daftar-app-koneksi", {}, 30000)]);
       setToko(a.toko || []);
-      const bisa = (b.app || []).filter((x) => x.punya_link);
+      const semua = b.app || [];
+      const bisa = semua.filter((x) => x.punya_link);
+      setAppSemua(semua);
+      setBolehEditLink(!!b.boleh_edit_link);
+      setLinkInput(Object.fromEntries(semua.filter((x) => x.id != null).map((x) => [String(x.id), x.link ?? ""])));
       setApp(bisa);
       setAppDipilih((cur) => (cur !== "" || bisa.length === 0 ? cur : String(bisa[0].id ?? "bawaan")));
     } catch (e) {
@@ -51,6 +58,19 @@ export default function KoneksiMarketplace({ showToast }) {
       window.location.assign(url);
     } catch (e) {
       showToast?.(e?.message || "Gagal membuat link otorisasi.", "err");
+      setSibuk("");
+    }
+  };
+
+  const simpanLink = async (a) => {
+    setSibuk(`link-${a.id}`);
+    try {
+      const r = await panggilTiktok("simpan-link", { app_id: a.id, link: linkInput[String(a.id)] ?? "" }, 30000);
+      showToast?.(r.kosong ? `Link "${a.nama}" dikosongkan.` : `Link "${a.nama}" disimpan.`);
+      await muat();
+    } catch (e) {
+      showToast?.(e?.message || "Gagal menyimpan link.", "err");
+    } finally {
       setSibuk("");
     }
   };
@@ -130,8 +150,10 @@ export default function KoneksiMarketplace({ showToast }) {
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
-            Tombol Hubungkan belum aktif: link otorisasi aplikasi TikTok belum diisi. Salin link dari Partner Center ke kolom
-            <span className="font-mono"> tiktok_app.link_otorisasi</span> (atau secret <span className="font-mono">TIKTOK_LINK_OTORISASI</span>).
+            Tombol Hubungkan belum aktif: link otorisasi aplikasi TikTok belum diisi.{" "}
+            {bolehEditLink
+              ? "Isi di bagian \"Link otorisasi aplikasi\" di bawah (salin dari Partner Center)."
+              : "Minta Super Admin utama untuk mengisinya di panel ini."}
           </div>
         </div>
       )}
@@ -184,6 +206,48 @@ export default function KoneksiMarketplace({ showToast }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {bolehEditLink && (
+        <div className="mt-5 border-t border-slate-800 pt-4">
+          <div className="text-xs font-semibold mb-1">Link otorisasi aplikasi</div>
+          <p className="text-[11px] text-slate-500 mb-3 max-w-xl">
+            Satu aplikasi TikTok = satu link. Salin dari Partner Center, bagian Authorization aplikasinya, lalu tempel di sini.
+            Link ini bukan rahasia; App Secret tidak pernah diisi lewat panel.
+          </p>
+          <div className="space-y-2">
+            {appSemua
+              .filter((a) => a.id != null)
+              .map((a) => (
+                <div key={a.id} className="flex flex-wrap items-center gap-2">
+                  <div className="text-xs text-slate-300 w-40 truncate" title={a.nama}>
+                    {a.nama}
+                  </div>
+                  <input
+                    value={linkInput[String(a.id)] ?? ""}
+                    onChange={(e) => setLinkInput((m) => ({ ...m, [String(a.id)]: e.target.value }))}
+                    placeholder="https://services.tiktokshop.com/open/authorize?service_id=..."
+                    className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono"
+                  />
+                  <button
+                    onClick={() => simpanLink(a)}
+                    disabled={!!sibuk || (linkInput[String(a.id)] ?? "") === (a.link ?? "")}
+                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-[11px] px-2 py-2 rounded-lg border border-slate-700"
+                  >
+                    {sibuk === `link-${a.id}` ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Simpan
+                  </button>
+                </div>
+              ))}
+            {appSemua.some((a) => a.id == null) && (
+              <div className="text-[11px] text-slate-500">
+                "App bawaan" memakai secret <span className="font-mono">TIKTOK_LINK_OTORISASI</span> di server, tidak bisa diubah dari sini.
+              </div>
+            )}
+            {appSemua.filter((a) => a.id != null).length === 0 && (
+              <div className="text-[11px] text-slate-500">Belum ada aplikasi di tabel tiktok_app.</div>
+            )}
+          </div>
         </div>
       )}
 
