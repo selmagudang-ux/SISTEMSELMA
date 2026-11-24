@@ -306,8 +306,10 @@ export default function ImporSkuMaster({ skuMaster, master, settings, onSelesai,
           method: "POST",
           body: JSON.stringify({
             sku: b.sku,
-            bahan: b.bahan || undefined, peruntukan: b.peruntukan || undefined, kategori: b.kategori || undefined, subkategori: b.subkategori || undefined,
-            model: b.model || undefined, warna: b.warna || undefined, ukuran: b.ukuran || undefined,
+            // Kolom rincian di sku_master wajib terisi (NOT NULL). SKU yang polanya tidak dikenali Master Data
+            // (mis. bukan 5 bagian, atau kode warna/ukuran belum ada) dikirim dengan teks kosong, bukan dihilangkan.
+            bahan: b.bahan || "", peruntukan: b.peruntukan || "", kategori: b.kategori || "", subkategori: b.subkategori || "",
+            model: b.model || "", warna: b.warna || "", ukuran: b.ukuran || "",
             harga_asli: harga.hargaAsli,
             harga_dasar: harga.hargaDasar, hpp: harga.hpp, grosir: harga.grosir, tengah: harga.tengah, ecer: harga.ecer,
             stok: b.stok,
