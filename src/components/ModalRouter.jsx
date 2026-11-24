@@ -5,7 +5,7 @@ import { STAGE_META, COLOR, STAGE_ROLE, canAdvanceStage, roleLabel, isSuperadmin
 import {
   sb, sbAll, sbUploadFoto, kompresFotoProduk, calcHarga, fmtRp, labelFor, downloadFotos, nextKode, resolveHargaSku,
   totalDibayarPesanan, sisaHutangPesanan, hitungStatusBayar, saldoDepositPelanggan, rincianDepositPelanggan, todayDDMMYYYY,
-  detailModelPesanan, cariTujuanPencairan, ingatTujuanPencairan, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT, rekeningEntitasSesi,
+  detailModelPesanan, cariTujuanPencairan, ingatTujuanPencairan, statusKonfirmasiDatang, lingkupEntitas, cariAtauBuatRekeningTetap, identitasNotaEntitas, entitasSesi, ENTITAS_DEFAULT, rekeningEntitasSesi, gantiNamaSku,
 } from "../lib/api";
 import {
   BarangMasukForm, SkuEntryForm, BuatSkuBanyakForm, TempatkanRakForm, PindahRakForm, VerifikasiForm, VerifikasiBanyakForm, TambahRakForm, EditRakForm, AturZonaForm, BarangKeluarForm,
@@ -412,6 +412,50 @@ function PilihHargaModal({ item, settings, saving, onClose, onConfirm }) {
 // Modal edit harga langsung dari Master Barang — khusus superadmin (tombol
 // pensil di SkuHarga.jsx hanya muncul untuk role itu, tapi modal ini juga
 // dijaga sendiri lewat pengecekan session di ModalRouter sebelum dirender).
+function GantiNamaSkuModal({ item, saving, onClose, onConfirm }) {
+  const [skuBaru, setSkuBaru] = useState(item.sku || "");
+  const bersih = skuBaru.trim();
+  const siap = bersih !== "" && bersih !== item.sku;
+  return (
+    <ModalShell title="Ganti Nama SKU" onClose={onClose}>
+      <div className="mb-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
+        <div className="text-[11px] text-slate-500">SKU sekarang</div>
+        <div className="font-mono text-sm text-amber-400 break-all">{item.sku}</div>
+      </div>
+      <label className="block text-xs text-slate-400 mb-1">SKU baru</label>
+      <input
+        value={skuBaru}
+        onChange={(e) => setSkuBaru(e.target.value)}
+        autoFocus
+        className={`${inputClass} font-mono mb-3`}
+      />
+      <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-4">
+        <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+        <div>
+          Nama baru ikut dipakai di stok, rak, riwayat stok, barang, pesanan grosir, dan kode live marketplace PT ini.
+          Barcode/label yang sudah dicetak dengan SKU lama perlu dicetak ulang.
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={onClose}
+          disabled={saving}
+          className="flex-1 py-2.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-300 hover:border-slate-700 disabled:opacity-50"
+        >
+          Batal
+        </button>
+        <button
+          disabled={saving || !siap}
+          onClick={() => onConfirm(bersih)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-900 disabled:opacity-50"
+        >
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />} Simpan
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
 function EditHargaModal({ item, settings, saving, onClose, onConfirm }) {
   const [hargaAsli, setHargaAsli] = useState(String(item.harga_asli ?? ""));
   const [otomatis, setOtomatis] = useState(true);
@@ -3573,6 +3617,29 @@ export default function ModalRouter({
         close={close}
         session={session}
         quickAdvance={quickAdvance}
+      />
+    );
+  }
+
+  if (modal.type === "ganti-sku") {
+    const s = modal.item;
+    if (!bisa(session?.role, "sku.kelola_master")) {
+      return (
+        <ModalShell title="Tidak Diizinkan" onClose={close}>
+          <p className="text-xs text-slate-400">Mengganti nama SKU butuh izin \"Kelola Master Barang\".</p>
+        </ModalShell>
+      );
+    }
+    return (
+      <GantiNamaSkuModal
+        item={s}
+        saving={saving}
+        onClose={close}
+        onConfirm={(skuBaru) =>
+          run(async () => {
+            await gantiNamaSku({ id: s.id, skuLama: s.sku, skuBaru });
+          }, `SKU diganti jadi ${skuBaru}`)
+        }
       />
     );
   }

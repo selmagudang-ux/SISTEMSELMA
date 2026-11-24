@@ -879,6 +879,51 @@ export async function resolveHargaSku(sku, hargaBerubah, hargaLama, hargaBaru) {
 // yang lagi diganti, maupun bentrok dengan SKU lain yang sudah ada), seluruh
 // operasi DIBATALKAN dari awal (tidak ada satupun PATCH yang dikirim) dan
 // melempar Error — supaya tidak ada data yang kepalang berubah separuh.
+// Ganti nama (kode) SATU SKU secara manual dari Master Barang.
+// Aturan:
+//  - SKU baru tidak boleh kosong, tidak boleh sama dengan SKU lama, dan tidak boleh sudah dipakai SKU lain.
+//  - Master Barang adalah katalog bersama. Kalau SKU ini juga punya stok/riwayat di PT lain, ganti nama DITOLAK
+//    (data PT lain tidak bisa ikut diubah dari akun PT ini dan akan putus dari katalog).
+//  - Urutan sama dengan renameMasterKode: tabel-tabel yang menyimpan teks SKU dulu, sku_master terakhir.
+//    Kalau sku_master gagal diubah, tabel-tabel tadi dikembalikan ke SKU lama.
+const TABEL_SKU_PER_PT = ["marketplace_sku_alias", "marketplace_penjualan"];
+
+export async function gantiNamaSku({ id, skuLama, skuBaru }) {
+  const baru = String(skuBaru || "").trim();
+  if (!baru) throw new Error("SKU baru tidak boleh kosong.");
+  if (baru === skuLama) throw new Error("SKU baru sama dengan SKU lama.");
+  if (/[\s,()"]/.test(baru)) throw new Error("SKU tidak boleh mengandung spasi, koma, kurung, atau tanda kutip.");
+
+  const ent = entitasSesi();
+  const dipakai = await sbDasar(`sku_master?sku=eq.${encodeURIComponent(baru)}&select=id`);
+  if (dipakai?.length) throw new Error(`SKU "${baru}" sudah dipakai SKU lain. Pilih nama yang berbeda.`);
+
+  const diPTLain = await sbDasar(`sku_stok?sku=eq.${encodeURIComponent(skuLama)}&entitas=neq.${encodeURIComponent(ent)}&select=entitas`);
+  if (diPTLain?.length) {
+    throw new Error("SKU ini juga dipakai di PT lain, jadi namanya tidak bisa diganti dari sini. Nama SKU di katalog bersama harus diganti saat tidak ada PT lain yang memakainya.");
+  }
+
+  const kembalikan = async () => {
+    try { await renameSkuEverywhere(baru, skuLama); } catch { /* upaya terbaik */ }
+    for (const t of TABEL_SKU_PER_PT) {
+      try { await sb(`${t}?sku=eq.${encodeURIComponent(baru)}`, { method: "PATCH", body: JSON.stringify({ sku: skuLama }) }); } catch { /* upaya terbaik */ }
+    }
+    try { await sbDasar(`sku_stok?sku=eq.${encodeURIComponent(baru)}&entitas=eq.${encodeURIComponent(ent)}`, { method: "PATCH", body: JSON.stringify({ sku: skuLama }) }); } catch { /* upaya terbaik */ }
+  };
+
+  try {
+    await renameSkuEverywhere(skuLama, baru);
+    for (const t of TABEL_SKU_PER_PT) {
+      await sb(`${t}?sku=eq.${encodeURIComponent(skuLama)}`, { method: "PATCH", body: JSON.stringify({ sku: baru }) });
+    }
+    await sbDasar(`sku_stok?sku=eq.${encodeURIComponent(skuLama)}&entitas=eq.${encodeURIComponent(ent)}`, { method: "PATCH", body: JSON.stringify({ sku: baru }) });
+    await sbDasar(`sku_master?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ sku: baru }) });
+  } catch (e) {
+    await kembalikan();
+    throw new Error(`Gagal mengganti nama SKU, perubahan dibatalkan. ${e?.message || ""}`.trim());
+  }
+}
+
 export async function renameMasterKode({ masterDataId, tipe, oldKode, newKode, newLabel, skuMaster }) {
   const affected = (skuMaster || []).filter((s) => s[tipe] === oldKode);
 

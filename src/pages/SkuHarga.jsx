@@ -1025,6 +1025,19 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  setModal({ type: "ganti-sku", item: s });
+                                }}
+                                title="Ganti nama SKU"
+                                className="absolute top-[6.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
+                              >
+                                <Pencil size={12} />
+                              </button>
+                            )}
+                            {bolehKelola && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setModal({ type: "hapus-sku", item: s });
                                 }}
                                 title="Hapus SKU ini"
