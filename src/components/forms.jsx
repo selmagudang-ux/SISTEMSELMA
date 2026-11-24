@@ -4214,13 +4214,7 @@ export function BayarHutangForm({ pesanan, sisaHutang, saldoDeposit, master, onC
       <InputWaktuBayar waktu={waktu} />
 
       <Field label="Jumlah Dibayar">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlah}
-          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
-        />
+        <InputRupiah value={jumlah} onChange={setJumlah} />
       </Field>
 
       {kelebihan > 0 && (
@@ -4366,13 +4360,7 @@ export function EditPembayaranForm({ pembayaran, pesanan, keuanganRow, master, o
       </Field>
 
       <Field label="Jumlah Dibayar (nominal baru untuk baris ini)">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlah}
-          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
-        />
+        <InputRupiah value={jumlah} onChange={setJumlah} />
       </Field>
 
       <Field label="Catatan (opsional)">
@@ -4524,13 +4512,7 @@ export function BayarHutangPelangganForm({
       )}
 
       <Field label="Jumlah Dibayar">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlah}
-          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
-        />
+        <InputRupiah value={jumlah} onChange={setJumlah} />
       </Field>
 
       {kelebihan > 0 && (
@@ -4776,13 +4758,7 @@ export function CairkanDepositForm({
       )}
 
       <Field label="Jumlah Dicairkan">
-        <input
-          type="number"
-          min="1"
-          className={inputClass}
-          value={jumlah}
-          onChange={(e) => setJumlah(e.target.value === "" ? "" : Number(e.target.value))}
-        />
+        <InputRupiah value={jumlah} onChange={setJumlah} />
       </Field>
 
       {melebihi && (
