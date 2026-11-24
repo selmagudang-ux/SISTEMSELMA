@@ -3,6 +3,7 @@ import { Link2, Unlink, RefreshCw, Loader2, AlertTriangle, Save } from "lucide-r
 import { panggilTiktok } from "../lib/tiktokApi";
 
 // Panel Pengaturan: hubungkan / perbarui / putuskan toko marketplace tanpa menyentuh kode.
+// Semua tulisan yang tampil di layar memakai bahasa biasa (tanpa istilah teknis).
 // Sekarang untuk TikTok Shop. Token TIDAK pernah sampai ke browser — server hanya mengirim
 // status. Hak akses diperiksa di server (peran + PT), tombol di sini hanya kemudahan.
 
@@ -64,10 +65,10 @@ export default function KoneksiMarketplace({ showToast }) {
     try {
       const idApp = appDipilih === "bawaan" ? null : appDipilih === "" ? null : Number(appDipilih);
       const { url } = await panggilTiktok("buat-link", { app_id: idApp }, 30000);
-      if (!/^https:\/\//i.test(url)) throw new Error("Link otorisasi tidak valid.");
+      if (!/^https:\/\//i.test(url)) throw new Error("Link izin tidak valid.");
       window.location.assign(url);
     } catch (e) {
-      showToast?.(e?.message || "Gagal membuat link otorisasi.", "err");
+      showToast?.(e?.message || "Gagal membuka halaman izin TikTok.", "err");
       setSibuk("");
     }
   };
@@ -100,10 +101,10 @@ export default function KoneksiMarketplace({ showToast }) {
     setSibuk(`refresh-${t.shop_id}`);
     try {
       await panggilTiktok("refresh", { shop_id: String(t.shop_id) }, 60000);
-      showToast?.(`Token "${t.shop_name || t.shop_id}" diperbarui.`);
+      showToast?.(`Koneksi toko "${t.shop_name || t.shop_id}" diperbarui.`);
       await muat();
     } catch (e) {
-      showToast?.(e?.message || "Gagal memperbarui token.", "err");
+      showToast?.(e?.message || "Gagal memperbarui koneksi.", "err");
     } finally {
       setSibuk("");
     }
@@ -113,7 +114,7 @@ export default function KoneksiMarketplace({ showToast }) {
     const nama = t.shop_name || t.shop_id;
     if (
       !window.confirm(
-        `Putuskan toko "${nama}"?\n\nToken toko ini dihapus dari SISTEMSELMA, jadi sistem tidak bisa lagi menarik pesanan atau mengatur pengiriman untuk toko ini. Izin di sisi TikTok tidak ikut dicabut. Kamu bisa menghubungkan lagi kapan saja.`
+        `Putuskan toko "${nama}"?\n\nSetelah diputus, SISTEMSELMA tidak bisa lagi mengambil pesanan atau mengatur pengiriman toko ini. Izin di akun TikTok tidak ikut dicabut. Kamu bisa menghubungkannya lagi kapan saja.`
       )
     )
       return;
@@ -138,7 +139,7 @@ export default function KoneksiMarketplace({ showToast }) {
       <div className="text-sm font-semibold mb-1">Koneksi Marketplace — TikTok Shop</div>
       <p className="text-xs text-slate-500 mb-3 max-w-xl">
         Hubungkan toko TikTok ke SISTEMSELMA lewat tombol di bawah. Kamu akan diarahkan ke halaman izin TikTok, lalu kembali
-        otomatis. Token disimpan aman di server dan tidak pernah tampil di sini.
+        otomatis. Data koneksi disimpan aman dan tidak pernah ditampilkan di sini.
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -175,9 +176,9 @@ export default function KoneksiMarketplace({ showToast }) {
         <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs px-3 py-2 rounded-lg mb-3">
           <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" />
           <div>
-            Tombol Hubungkan belum aktif: link otorisasi aplikasi TikTok belum diisi.{" "}
+            Tombol Hubungkan belum bisa dipakai: data aplikasi TikTok belum diisi.{" "}
             {bolehEditLink
-              ? "Isi di bagian \"Aplikasi TikTok\" di bawah (salin dari Partner Center)."
+              ? "Isi di bagian \"Aplikasi TikTok\" di bawah (salin dari Partner Center TikTok)."
               : "Minta Super Admin utama untuk mengisinya di panel ini."}
           </div>
         </div>
@@ -215,7 +216,7 @@ export default function KoneksiMarketplace({ showToast }) {
                       disabled={!!sibuk}
                       className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-[11px] px-2 py-1.5 rounded-lg border border-slate-700"
                     >
-                      {sibuk === `refresh-${t.shop_id}` ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Perbarui token
+                      {sibuk === `refresh-${t.shop_id}` ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Perbarui koneksi
                     </button>
                   )}
                   {aktif && (
@@ -244,13 +245,13 @@ export default function KoneksiMarketplace({ showToast }) {
         <div className="mt-5 border-t border-slate-800 pt-4">
           <div className="text-xs font-semibold mb-1">Aplikasi TikTok (dari Partner Center)</div>
           <p className="text-[11px] text-slate-500 mb-3 max-w-xl">
-            Satu aplikasi TikTok = satu baris di sini. Semua isiannya disalin dari Partner Center, jadi tidak perlu SQL atau kode.
+            Salin dari Partner Center TikTok, lalu tempel di sini. Satu aplikasi TikTok = satu isian.
           </p>
 
           <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 mb-4">
             <div className="text-[11px] font-semibold text-slate-300 mb-1">Dari SISTEMSELMA → tempel ke TikTok</div>
             <div className="text-[11px] text-slate-500 mb-2">
-              Di Partner Center, buka pengaturan aplikasi lalu isi kolom <b>Redirect URL</b> dengan alamat ini:
+              Di Partner Center, buka pengaturan aplikasi lalu isi kolom <b>Redirect URL</b> (alamat tujuan setelah izin diberikan) dengan alamat ini:
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input readOnly value={urlCallback} className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
@@ -274,17 +275,17 @@ export default function KoneksiMarketplace({ showToast }) {
                   <div key={a.id} className="rounded-lg border border-slate-800 p-3 grid gap-2">
                     <div className="grid sm:grid-cols-2 gap-2">
                       <input value={f.nama} onChange={(e) => set("nama", e.target.value)} placeholder="Nama (mis. nama toko)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs" />
-                      <input value={f.app_key} onChange={(e) => set("app_key", e.target.value)} placeholder="App Key" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+                      <input value={f.app_key} onChange={(e) => set("app_key", e.target.value)} placeholder="Kunci Aplikasi (App Key)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
                     </div>
                     <input
                       type="password"
                       autoComplete="new-password"
                       value={f.app_secret}
                       onChange={(e) => set("app_secret", e.target.value)}
-                      placeholder={a.ada_secret ? "App Secret tersimpan — isi hanya kalau mau menggantinya" : "App Secret (belum ada)"}
+                      placeholder={a.ada_secret ? "Kata Sandi Aplikasi (App Secret) tersimpan — isi hanya kalau mau menggantinya" : "Kata Sandi Aplikasi (App Secret)"}
                       className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono"
                     />
-                    <input value={f.link} onChange={(e) => set("link", e.target.value)} placeholder="Link otorisasi (https://services.tiktokshop.com/...)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+                    <input value={f.link} onChange={(e) => set("link", e.target.value)} placeholder="Link izin dari Partner Center (https://services.tiktokshop.com/...)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
                     <div>
                       <button
                         onClick={() => simpanApp(`app-${a.id}`, { id: a.id, nama: f.nama, app_key: f.app_key, app_secret: f.app_secret, link: f.link })}
@@ -302,17 +303,17 @@ export default function KoneksiMarketplace({ showToast }) {
               <div className="text-[11px] font-semibold text-slate-300">Tambah aplikasi TikTok</div>
               <div className="grid sm:grid-cols-2 gap-2">
                 <input value={baru.nama} onChange={(e) => setBaru({ ...baru, nama: e.target.value })} placeholder="Nama (mis. nama toko)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs" />
-                <input value={baru.app_key} onChange={(e) => setBaru({ ...baru, app_key: e.target.value })} placeholder="App Key" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+                <input value={baru.app_key} onChange={(e) => setBaru({ ...baru, app_key: e.target.value })} placeholder="Kunci Aplikasi (App Key)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
               </div>
               <input
                 type="password"
                 autoComplete="new-password"
                 value={baru.app_secret}
                 onChange={(e) => setBaru({ ...baru, app_secret: e.target.value })}
-                placeholder="App Secret"
+                placeholder="Kata Sandi Aplikasi (App Secret)"
                 className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono"
               />
-              <input value={baru.link} onChange={(e) => setBaru({ ...baru, link: e.target.value })} placeholder="Link otorisasi (https://services.tiktokshop.com/...)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+              <input value={baru.link} onChange={(e) => setBaru({ ...baru, link: e.target.value })} placeholder="Link izin dari Partner Center (https://services.tiktokshop.com/...)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
               <div>
                 <button
                   onClick={() => simpanApp("app-baru", baru, () => setBaru({ nama: "", app_key: "", app_secret: "", link: "" }))}
@@ -326,14 +327,14 @@ export default function KoneksiMarketplace({ showToast }) {
           </div>
 
           <p className="text-[11px] text-slate-500 max-w-xl">
-            App Secret hanya bisa ditulis, tidak pernah ditampilkan lagi setelah disimpan. Kalau aplikasimu sekarang masih "App bawaan"
-            (dari secret server), tambahkan di sini dengan App Key yang sama; toko tersambung ulang akan otomatis pindah ke baris ini.
+            Kata sandi aplikasi hanya bisa diisi, tidak akan ditampilkan lagi setelah disimpan. Kalau tokomu sudah tersambung sebelum
+            panel ini ada, tambahkan aplikasinya di sini dengan Kunci Aplikasi yang sama, lalu hubungkan ulang tokonya.
           </p>
         </div>
       )}
 
       <p className="text-[11px] text-slate-500 mt-3 max-w-xl">
-        "Putuskan" menghapus token di SISTEMSELMA. Izin aplikasi di sisi TikTok tetap tercatat sampai dicabut di Seller Center.
+        "Putuskan" menghentikan koneksi toko dari SISTEMSELMA. Izin di akun TikTok tetap tercatat sampai kamu mencabutnya di Seller Center.
       </p>
     </div>
   );

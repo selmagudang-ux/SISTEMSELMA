@@ -36,7 +36,7 @@ export default function TiktokCallback() {
 
     if (!kode) {
       setStatus("gagal");
-      setPesan(galat ? `TikTok menolak otorisasi: ${galat}` : "Alamat ini tidak membawa kode otorisasi dari TikTok.");
+      setPesan(galat ? `TikTok menolak izinnya: ${galat}` : "Halaman ini dibuka tanpa melalui TikTok. Mulai dari tombol Hubungkan di Pengaturan SISTEMSELMA.");
       return;
     }
 
@@ -89,7 +89,7 @@ export default function TiktokCallback() {
               ))}
             </ul>
             <p className="text-xs text-slate-500 mb-6">
-              Toko baru otomatis ditandai sebagai <b>percobaan</b> di database.
+              Toko baru otomatis ditandai sebagai <b>percobaan</b>.
             </p>
             <a href="/" className="text-xs font-medium bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700">
               Kembali ke SISTEMSELMA
@@ -103,7 +103,7 @@ export default function TiktokCallback() {
             <div className="font-bold text-lg mb-2">Gagal menghubungkan toko</div>
             <p className="text-sm text-slate-300 mb-2 break-words">{pesan}</p>
             <p className="text-xs text-slate-500 mb-6">
-              Kode otorisasi hanya berlaku sekali dan singkat. Kalau sudah terpakai, ulangi otorisasi dari Partner Center.
+              Kalau halaman ini sempat dimuat ulang atau sudah terlalu lama, penyambungan perlu diulang dari tombol Hubungkan di Pengaturan SISTEMSELMA.
             </p>
             <a href="/" className="text-xs font-medium bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-lg border border-slate-700">
               Kembali ke SISTEMSELMA
