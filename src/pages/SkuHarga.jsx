@@ -8,6 +8,7 @@ import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
 import Rusak from "./Rusak";
 import BarangToko from "./kasir/BarangToko";
+import KodeLiveTiktok from "./KodeLiveTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
 import ImporSkuMaster from "../components/ImporSkuMaster";
 
@@ -37,7 +38,7 @@ export default function SkuHarga({
   }
   if (sub === "reject") return <Rusak barangRusak={barangRusak} pesananMasuk={pesananMasuk} setModal={setModal} />;
   return (
-    <MasterBarang
+    <TigaMaster
       skuMaster={skuMaster}
       items={items}
       master={master}
@@ -48,6 +49,62 @@ export default function SkuHarga({
       showToast={showToast}
       settings={settings}
     />
+  );
+}
+
+// Master Barang punya 3 tab: (1) Master Barang (katalog SKU), (2) Barang TikTok (kode live -> SKU),
+// (3) Barang Toko (barang yang dijual di POS/kasir, khusus superappa).
+// Tab Master Barang sengaja tetap dipasang (hanya disembunyikan) saat pindah tab, supaya pencarian,
+// filter, dan pilihan SKU tidak hilang — daftarnya ribuan kartu dan lama kalau dimuat ulang.
+function TigaMaster(props) {
+  const { skuMaster, session, reload, showToast } = props;
+  const bolehToko = session?.role === "superappa";
+  const [tab, setTab] = useState("master");
+  const daftarTab = [
+    { key: "master", label: "Master Barang" },
+    { key: "tiktok", label: "Barang TikTok (Kode Live)" },
+    ...(bolehToko ? [{ key: "toko", label: "Barang Toko (POS)" }] : []),
+  ];
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5 mb-4 border-b border-slate-800 pb-2">
+        {daftarTab.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`text-xs font-medium px-3 py-2 rounded-lg border transition ${
+              tab === t.key
+                ? "bg-amber-500 text-slate-950 border-amber-500"
+                : "border-slate-700 text-slate-300 hover:border-amber-500/50"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className={tab === "master" ? "" : "hidden"}>
+        <MasterBarang {...props} />
+      </div>
+      {tab === "tiktok" && (
+        <div>
+          <PageHeader
+            title="Barang TikTok (Kode Live)"
+            description="Satu kode live = satu SKU di Master Barang (contoh: c11 = TDCC-DUB-1-PER-SIZE9). Dipakai untuk mencari SKU dan HPP di penjualan TikTok."
+          />
+          <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />
+        </div>
+      )}
+      {tab === "toko" && bolehToko && (
+        <div>
+          <PageHeader
+            title="Barang Toko (POS)"
+            description="Barang yang dijual di aplikasi kasir: harga jual, HPP, dan stok toko. Stok berubah lewat mutasi dari gudang, penjualan kasir, atau opname."
+          />
+          <BarangToko inline onBerubah={() => reload?.()} />
+        </div>
+      )}
+    </div>
   );
 }
 
