@@ -25,6 +25,7 @@ export default function KoneksiMarketplace({ showToast }) {
   const [edit, setEdit] = useState({}); // id -> {nama, app_key, app_secret, link}
   const [baru, setBaru] = useState({ nama: "", app_key: "", app_secret: "", link: "" });
   const [tersalin, setTersalin] = useState(false);
+  const [tampilDiputus, setTampilDiputus] = useState(false);
   const urlCallback = `${window.location.origin}/tiktok-callback`;
   const [appDipilih, setAppDipilih] = useState("");
   const [galat, setGalat] = useState("");
@@ -128,6 +129,10 @@ export default function KoneksiMarketplace({ showToast }) {
     }
   };
 
+  // Toko yang sudah diputus disembunyikan dari daftar (datanya tetap aman di database).
+  const jumlahDiputus = (toko || []).filter((t) => t.aktif === false).length;
+  const tokoTampil = (toko || []).filter((t) => tampilDiputus || t.aktif !== false);
+
   return (
     <div className="rounded-xl border border-slate-800 p-4 max-w-3xl mt-6">
       <div className="text-sm font-semibold mb-1">Koneksi Marketplace — TikTok Shop</div>
@@ -182,11 +187,11 @@ export default function KoneksiMarketplace({ showToast }) {
 
       {toko === null ? (
         <div className="text-xs text-slate-500">Memuat…</div>
-      ) : toko.length === 0 && !galat ? (
+      ) : tokoTampil.length === 0 && !galat ? (
         <div className="text-xs text-slate-500">Belum ada toko TikTok yang terhubung.</div>
       ) : (
         <div className="border border-slate-800 rounded-lg divide-y divide-slate-800">
-          {toko.map((t) => {
+          {tokoTampil.map((t) => {
             const st = statusToko(t);
             const aktif = t.aktif !== false;
             return (
@@ -227,6 +232,12 @@ export default function KoneksiMarketplace({ showToast }) {
             );
           })}
         </div>
+      )}
+
+      {jumlahDiputus > 0 && (
+        <button onClick={() => setTampilDiputus((v) => !v)} className="text-[11px] text-sky-400 hover:text-sky-300 mt-2">
+          {tampilDiputus ? "Sembunyikan toko yang diputus" : `Tampilkan ${jumlahDiputus} toko yang diputus`}
+        </button>
       )}
 
       {bolehEditLink && (
