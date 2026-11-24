@@ -22,7 +22,10 @@ export default function KoneksiMarketplace({ showToast }) {
   const [app, setApp] = useState([]); // app yang linknya sudah terisi (untuk tombol Hubungkan)
   const [appSemua, setAppSemua] = useState([]); // semua app (untuk editor link)
   const [bolehEditLink, setBolehEditLink] = useState(false);
-  const [linkInput, setLinkInput] = useState({});
+  const [edit, setEdit] = useState({}); // id -> {nama, app_key, app_secret, link}
+  const [baru, setBaru] = useState({ nama: "", app_key: "", app_secret: "", link: "" });
+  const [tersalin, setTersalin] = useState(false);
+  const urlCallback = `${window.location.origin}/tiktok-callback`;
   const [appDipilih, setAppDipilih] = useState("");
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState("");
@@ -36,7 +39,13 @@ export default function KoneksiMarketplace({ showToast }) {
       const bisa = semua.filter((x) => x.punya_link);
       setAppSemua(semua);
       setBolehEditLink(!!b.boleh_edit_link);
-      setLinkInput(Object.fromEntries(semua.filter((x) => x.id != null).map((x) => [String(x.id), x.link ?? ""])));
+      setEdit(
+        Object.fromEntries(
+          semua
+            .filter((x) => x.id != null)
+            .map((x) => [String(x.id), { nama: x.nama ?? "", app_key: x.app_key ?? "", app_secret: "", link: x.link ?? "" }])
+        )
+      );
       setApp(bisa);
       setAppDipilih((cur) => (cur !== "" || bisa.length === 0 ? cur : String(bisa[0].id ?? "bawaan")));
     } catch (e) {
@@ -62,16 +71,27 @@ export default function KoneksiMarketplace({ showToast }) {
     }
   };
 
-  const simpanLink = async (a) => {
-    setSibuk(`link-${a.id}`);
+  const simpanApp = async (kunci, data, sesudah) => {
+    setSibuk(kunci);
     try {
-      const r = await panggilTiktok("simpan-link", { app_id: a.id, link: linkInput[String(a.id)] ?? "" }, 30000);
-      showToast?.(r.kosong ? `Link "${a.nama}" dikosongkan.` : `Link "${a.nama}" disimpan.`);
+      const r = await panggilTiktok("simpan-app", data, 30000);
+      showToast?.(r.dibuat ? `Aplikasi "${data.nama}" ditambahkan.` : `Aplikasi "${data.nama}" disimpan.`);
+      sesudah?.();
       await muat();
     } catch (e) {
-      showToast?.(e?.message || "Gagal menyimpan link.", "err");
+      showToast?.(e?.message || "Gagal menyimpan aplikasi.", "err");
     } finally {
       setSibuk("");
+    }
+  };
+
+  const salinCallback = async () => {
+    try {
+      await navigator.clipboard.writeText(urlCallback);
+      setTersalin(true);
+      setTimeout(() => setTersalin(false), 2000);
+    } catch {
+      showToast?.("Tidak bisa menyalin otomatis. Salin manual dari kotak.", "err");
     }
   };
 
@@ -152,7 +172,7 @@ export default function KoneksiMarketplace({ showToast }) {
           <div>
             Tombol Hubungkan belum aktif: link otorisasi aplikasi TikTok belum diisi.{" "}
             {bolehEditLink
-              ? "Isi di bagian \"Link otorisasi aplikasi\" di bawah (salin dari Partner Center)."
+              ? "Isi di bagian \"Aplikasi TikTok\" di bawah (salin dari Partner Center)."
               : "Minta Super Admin utama untuk mengisinya di panel ini."}
           </div>
         </div>
@@ -211,43 +231,93 @@ export default function KoneksiMarketplace({ showToast }) {
 
       {bolehEditLink && (
         <div className="mt-5 border-t border-slate-800 pt-4">
-          <div className="text-xs font-semibold mb-1">Link otorisasi aplikasi</div>
+          <div className="text-xs font-semibold mb-1">Aplikasi TikTok (dari Partner Center)</div>
           <p className="text-[11px] text-slate-500 mb-3 max-w-xl">
-            Satu aplikasi TikTok = satu link. Salin dari Partner Center, bagian Authorization aplikasinya, lalu tempel di sini.
-            Link ini bukan rahasia; App Secret tidak pernah diisi lewat panel.
+            Satu aplikasi TikTok = satu baris di sini. Semua isiannya disalin dari Partner Center, jadi tidak perlu SQL atau kode.
           </p>
-          <div className="space-y-2">
+
+          <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 mb-4">
+            <div className="text-[11px] font-semibold text-slate-300 mb-1">Dari SISTEMSELMA → tempel ke TikTok</div>
+            <div className="text-[11px] text-slate-500 mb-2">
+              Di Partner Center, buka pengaturan aplikasi lalu isi kolom <b>Redirect URL</b> dengan alamat ini:
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input readOnly value={urlCallback} className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+              <button
+                onClick={salinCallback}
+                className="text-[11px] bg-slate-800 hover:bg-slate-700 px-2 py-2 rounded-lg border border-slate-700"
+              >
+                {tersalin ? "Tersalin ✓" : "Salin"}
+              </button>
+            </div>
+          </div>
+
+          <div className="text-[11px] font-semibold text-slate-300 mb-2">Dari TikTok → tempel ke SISTEMSELMA</div>
+          <div className="space-y-3 mb-4">
             {appSemua
               .filter((a) => a.id != null)
-              .map((a) => (
-                <div key={a.id} className="flex flex-wrap items-center gap-2">
-                  <div className="text-xs text-slate-300 w-40 truncate" title={a.nama}>
-                    {a.nama}
+              .map((a) => {
+                const f = edit[String(a.id)] || { nama: "", app_key: "", app_secret: "", link: "" };
+                const set = (k, v) => setEdit((m) => ({ ...m, [String(a.id)]: { ...f, [k]: v } }));
+                return (
+                  <div key={a.id} className="rounded-lg border border-slate-800 p-3 grid gap-2">
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      <input value={f.nama} onChange={(e) => set("nama", e.target.value)} placeholder="Nama (mis. nama toko)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs" />
+                      <input value={f.app_key} onChange={(e) => set("app_key", e.target.value)} placeholder="App Key" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+                    </div>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={f.app_secret}
+                      onChange={(e) => set("app_secret", e.target.value)}
+                      placeholder={a.ada_secret ? "App Secret tersimpan — isi hanya kalau mau menggantinya" : "App Secret (belum ada)"}
+                      className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono"
+                    />
+                    <input value={f.link} onChange={(e) => set("link", e.target.value)} placeholder="Link otorisasi (https://services.tiktokshop.com/...)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+                    <div>
+                      <button
+                        onClick={() => simpanApp(`app-${a.id}`, { id: a.id, nama: f.nama, app_key: f.app_key, app_secret: f.app_secret, link: f.link })}
+                        disabled={!!sibuk}
+                        className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-[11px] px-3 py-2 rounded-lg border border-slate-700"
+                      >
+                        {sibuk === `app-${a.id}` ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Simpan perubahan
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    value={linkInput[String(a.id)] ?? ""}
-                    onChange={(e) => setLinkInput((m) => ({ ...m, [String(a.id)]: e.target.value }))}
-                    placeholder="https://services.tiktokshop.com/open/authorize?service_id=..."
-                    className="flex-1 min-w-[220px] bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono"
-                  />
-                  <button
-                    onClick={() => simpanLink(a)}
-                    disabled={!!sibuk || (linkInput[String(a.id)] ?? "") === (a.link ?? "")}
-                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-[11px] px-2 py-2 rounded-lg border border-slate-700"
-                  >
-                    {sibuk === `link-${a.id}` ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Simpan
-                  </button>
-                </div>
-              ))}
-            {appSemua.some((a) => a.id == null) && (
-              <div className="text-[11px] text-slate-500">
-                "App bawaan" memakai secret <span className="font-mono">TIKTOK_LINK_OTORISASI</span> di server, tidak bisa diubah dari sini.
+                );
+              })}
+
+            <div className="rounded-lg border border-dashed border-slate-700 p-3 grid gap-2">
+              <div className="text-[11px] font-semibold text-slate-300">Tambah aplikasi TikTok</div>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <input value={baru.nama} onChange={(e) => setBaru({ ...baru, nama: e.target.value })} placeholder="Nama (mis. nama toko)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs" />
+                <input value={baru.app_key} onChange={(e) => setBaru({ ...baru, app_key: e.target.value })} placeholder="App Key" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
               </div>
-            )}
-            {appSemua.filter((a) => a.id != null).length === 0 && (
-              <div className="text-[11px] text-slate-500">Belum ada aplikasi di tabel tiktok_app.</div>
-            )}
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={baru.app_secret}
+                onChange={(e) => setBaru({ ...baru, app_secret: e.target.value })}
+                placeholder="App Secret"
+                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono"
+              />
+              <input value={baru.link} onChange={(e) => setBaru({ ...baru, link: e.target.value })} placeholder="Link otorisasi (https://services.tiktokshop.com/...)" className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-2 text-xs font-mono" />
+              <div>
+                <button
+                  onClick={() => simpanApp("app-baru", baru, () => setBaru({ nama: "", app_key: "", app_secret: "", link: "" }))}
+                  disabled={!!sibuk || !baru.nama.trim() || !baru.app_key.trim() || !baru.app_secret.trim()}
+                  className="flex items-center gap-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white text-[11px] font-semibold px-3 py-2 rounded-lg"
+                >
+                  {sibuk === "app-baru" ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Tambah aplikasi
+                </button>
+              </div>
+            </div>
           </div>
+
+          <p className="text-[11px] text-slate-500 max-w-xl">
+            App Secret hanya bisa ditulis, tidak pernah ditampilkan lagi setelah disimpan. Kalau aplikasimu sekarang masih "App bawaan"
+            (dari secret server), tambahkan di sini dengan App Key yang sama; toko tersambung ulang akan otomatis pindah ke baris ini.
+          </p>
         </div>
       )}
 
