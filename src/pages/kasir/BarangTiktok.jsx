@@ -21,6 +21,8 @@ import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 // Stok TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi / opname / scan resi (trigger di
 // supabase/migrations/20261126_scan_resi_potong_stok_tiktok.sql: scan memotong, retur menambah, kode live baru dibuat otomatis,
 // ditandai dari_scan_resi) supaya selalu ada catatannya.
+// UKURAN: satu barang TikTok = kode live + ukuran (mis. "CI-72, 7" di kolom Variation orderan -> kode live CI-72, ukuran 7;
+// supabase/migrations/20261127_barang_tiktok_ukuran.sql). Ukuran kosong = barang tanpa ukuran. Set tidak punya ukuran.
 // Hanya role dengan izin "sku.barang_tiktok" (Super Appa selalu boleh; dijaga di SkuHarga.jsx, tab "Barang TikTok (Kode Live)" di Master Barang).
 // =========================================================
 
@@ -28,6 +30,9 @@ const TABEL = "master_tiktok";
 const PER_TAHAP = 50;
 const kolator = new Intl.Collator("id", { numeric: true, sensitivity: "base" });
 const stokAngka = (r) => Number(r.stok) || 0;
+// Sama dengan ttscan_ukuran_dari_variasi di database: huruf besar, tanpa awalan SIZE/UKURAN, spasi dirapikan.
+const rapikanUkuran = (v) =>
+  String(v ?? "").toUpperCase().trim().replace(/^(SIZE|UKURAN)\s*[:\-]?\s*/, "").replace(/\s*,\s*/g, ",").replace(/\s+/g, " ").trim();
 
 const FILTER = [
   ["semua", "Semua"],
@@ -57,7 +62,7 @@ const URUTAN = [
 ];
 const PEMBANDING = {
   kode: (a, b) => kolator.compare(a.kode || "", b.kode || ""),
-  live: (a, b) => kolator.compare(a.kode_live || "\uffff", b.kode_live || "\uffff"),
+  live: (a, b) => kolator.compare(a.kode_live || "\uffff", b.kode_live || "\uffff") || kolator.compare(a.ukuran || "", b.ukuran || ""),
   nama: (a, b) => kolator.compare(a.nama || "", b.nama || ""),
   "stok-asc": (a, b) => stokAngka(a) - stokAngka(b) || kolator.compare(a.nama || "", b.nama || ""),
   "stok-desc": (a, b) => stokAngka(b) - stokAngka(a) || kolator.compare(a.nama || "", b.nama || ""),
@@ -66,7 +71,7 @@ const KOLOM = "lg:grid-cols-[1.25rem_3rem_minmax(0,1fr)_7rem_6rem_6.5rem_4rem_11
 
 const pesan = (e) => {
   const m = String(e?.message || e || "");
-  if (/master_tiktok_kode_live_uq|duplicate key/i.test(m)) return "Kode live ini sudah dipakai barang TikTok lain.";
+  if (/master_tiktok_kode_live_(ukuran_)?uq|duplicate key/i.test(m)) return "Kode live + ukuran ini sudah dipakai barang TikTok lain.";
   if (/master_tiktok|tiktok_(mutasi|kembalikan|opname)|toko_ambil_dari_tiktok|PGRST20[24]|does not exist|schema cache/i.test(m) && !/[A-Z_]{4,}\|/.test(m)) {
     return "Fitur Barang TikTok belum aktif di database. Jalankan supabase/migrations/20261124_barang_tiktok.sql di Supabase > SQL Editor.";
   }
@@ -114,6 +119,7 @@ function FormBarang({ barang, kodeSaran, onSimpan, onClose }) {
   const [f, setF] = useState({
     kode: barang.kode || kodeSaran || "",
     kode_live: barang.kode_live || "",
+    ukuran: barang.ukuran || "",
     nama: barang.nama || "",
     kategori: barang.kategori || "",
     harga_jual: barang.harga_jual ?? "",
@@ -144,11 +150,14 @@ function FormBarang({ barang, kodeSaran, onSimpan, onClose }) {
     setSaving(true);
     setError("");
     const live = rapikanKodeLive(f.kode_live);
+    const ukuran = rapikanUkuran(f.ukuran);
+    if (ukuran && !live) return setError("Ukuran hanya bisa diisi kalau kode live diisi.");
     const sku = f.sku_gudang.trim();
     const data = {
       nama: f.nama.trim(),
       kategori: f.kategori.trim() || null,
       kode_live: live || null,
+      ukuran: ukuran || null,
       barcode: sku || (baru ? kode : barang.barcode || barang.kode),
       harga_jual: Math.round(Number(f.harga_jual) || 0),
       hpp: Math.round(Number(f.hpp) || 0),
@@ -172,7 +181,10 @@ function FormBarang({ barang, kodeSaran, onSimpan, onClose }) {
     }
     // Catat kode live ke daftar Kode Live TikTok (butuh SKU gudang). Gagal di sini tidak membatalkan simpan barang.
     let catatan = "";
-    if (live && sku) {
+    if (live && ukuran) {
+      // Daftar Kode Live TikTok memetakan satu kode live ke satu SKU, tidak per ukuran -> tidak disinkronkan untuk barang bersize.
+      catatan = `Barang tersimpan. Barang bersize tidak dicatat otomatis ke daftar Kode Live TikTok (satu kode live hanya bisa satu SKU di sana).`;
+    } else if (live && sku) {
       try {
         const r = await sinkronAliasKodeLive(live, sku);
         if (r.status === "beda") catatan = `Barang tersimpan. Tapi kode live ${live} di daftar Kode Live TikTok sudah dipetakan ke SKU ${r.skuLama}, jadi tidak ditimpa. Ubah di tab Kode Live kalau memang perlu.`;
@@ -208,6 +220,11 @@ function FormBarang({ barang, kodeSaran, onSimpan, onClose }) {
           <input value={f.kode_live} onChange={(e) => set("kode_live")(e.target.value)} className={`${inp} font-mono`} placeholder="mis. A-11" />
         </label>
       </div>
+      <label className="block">
+        <div className="text-xs text-amber-300 mb-1">Ukuran (kosongkan kalau barang tanpa ukuran)</div>
+        <input value={f.ukuran} onChange={(e) => set("ukuran")(e.target.value)} className={`${inp} font-mono`} placeholder="mis. 7 — sama dengan yang tertulis setelah koma di Variation TikTok" />
+        <div className="text-[11px] text-slate-500 mt-1">Satu kode live bisa punya banyak barang, satu per ukuran. Saat scan resi, stok yang dipotong adalah barang dengan kode live dan ukuran yang sama.</div>
+      </label>
       <label className="block">
         <div className="text-xs text-slate-400 mb-1">Nama barang</div>
         <input value={f.nama} onChange={(e) => set("nama")(e.target.value)} className={inp} />
@@ -291,7 +308,7 @@ function FormSet({ barang, semua, kodeSaran, onSimpan, onClose }) {
     return biasa
       .filter((r) => !sudah.has(r.kode))
       .filter((r) => {
-        const j = [r.kode, r.kode_live, r.nama, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
+        const j = [r.kode, r.kode_live, r.ukuran, r.nama, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
         return kata.every((x) => j.includes(x));
       })
       .slice(0, 8);
@@ -361,7 +378,7 @@ function FormSet({ barang, semua, kodeSaran, onSimpan, onClose }) {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm truncate">{c?.nama || k.kode}</div>
                   <div className="text-[11px] text-slate-500 font-mono truncate">
-                    {k.kode}{c?.kode_live ? ` · ${c.kode_live}` : ""}{c ? ` · stok ${stokAngka(c)}` : " · barang tidak ditemukan"}
+                    {k.kode}{c?.kode_live ? ` · ${c.kode_live}${c.ukuran ? ` / ${c.ukuran}` : ""}` : ""}{c ? ` · stok ${stokAngka(c)}` : " · barang tidak ditemukan"}
                   </div>
                 </div>
                 <input
@@ -387,7 +404,7 @@ function FormSet({ barang, semua, kodeSaran, onSimpan, onClose }) {
               <li key={r.kode}>
                 <button type="button" onClick={() => { setKomp((l) => [...l, { kode: r.kode, qty: "1" }]); setCari(""); }} className="w-full text-left px-3 py-2 hover:bg-slate-900">
                   <div className="text-sm truncate">{r.nama}</div>
-                  <div className="text-[11px] text-slate-500 font-mono truncate">{r.kode}{r.kode_live ? ` · ${r.kode_live}` : ""} · stok {stokAngka(r)}</div>
+                  <div className="text-[11px] text-slate-500 font-mono truncate">{r.kode}{r.kode_live ? ` · ${r.kode_live}${r.ukuran ? ` / ${r.ukuran}` : ""}` : ""} · stok {stokAngka(r)}</div>
                 </button>
               </li>
             ))}
@@ -621,7 +638,7 @@ function FormHapusTerpilih({ terpilih, semua, onSelesai, onClose }) {
   const [jalan, setJalan] = useState(false);
   const [hasil, setHasil] = useState(null);
 
-  const nama = (r) => r.kode_live || r.kode;
+  const nama = (r) => (r.kode_live ? `${r.kode_live}${r.ukuran ? ` / ${r.ukuran}` : ""}` : r.kode);
   const mulai = async () => {
     setJalan(true);
     let terhapus = 0;
@@ -691,10 +708,13 @@ function FotoBarang({ r }) {
   );
 }
 
-function KodeLive({ v }) {
+function KodeLive({ v, uk }) {
   return v ? (
-    <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-md px-1.5 py-0.5">
-      <Radio size={11} /> {v}
+    <span className="inline-flex items-center gap-1 flex-wrap">
+      <span className="inline-flex items-center gap-1 text-xs font-mono font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-md px-1.5 py-0.5">
+        <Radio size={11} /> {v}
+      </span>
+      {uk ? <span className="text-[11px] font-mono text-slate-300 bg-slate-800 border border-slate-700 rounded-md px-1.5 py-0.5">{uk}</span> : null}
     </span>
   ) : (
     <span className="text-[11px] text-slate-600">belum ada</span>
@@ -782,7 +802,7 @@ export default function BarangTiktok({ onBerubah }) {
       .filter((r) => {
         if (!cocokFilter(r, filter)) return false;
         if (!kata.length) return true;
-        const j = [r.kode, r.kode_live, r.nama, r.kategori, r.barcode, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
+        const j = [r.kode, r.kode_live, r.ukuran, r.nama, r.kategori, r.barcode, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
         return kata.every((k) => j.includes(k));
       })
       .sort(PEMBANDING[urut] || PEMBANDING.kode);
@@ -913,7 +933,7 @@ export default function BarangTiktok({ onBerubah }) {
                       <input type="checkbox" checked={pilih.has(r.id)} onChange={() => ubahPilih(r.id)} aria-label={`Pilih ${r.kode}`} />
                       <FotoBarang r={r} />
                       <InfoBarang r={r} />
-                      <div><KodeLive v={r.kode_live} /></div>
+                      <div><KodeLive v={r.kode_live} uk={r.ukuran} /></div>
                       <div className="text-right text-xs text-slate-400 tabular-nums">{r.hpp ? fmtRp(r.hpp) : "–"}</div>
                       <div className="text-right text-sm font-semibold text-amber-400 tabular-nums">{fmtRp(r.harga_jual)}</div>
                       <div className={`text-right text-sm tabular-nums ${habis ? "text-red-400 font-semibold" : "text-slate-200"}`}>{stokAngka(r)}</div>
@@ -925,7 +945,7 @@ export default function BarangTiktok({ onBerubah }) {
                         <FotoBarang r={r} />
                         <div className="min-w-0 flex-1">
                           <InfoBarang r={r} />
-                          <div className="mt-1"><KodeLive v={r.kode_live} /></div>
+                          <div className="mt-1"><KodeLive v={r.kode_live} uk={r.ukuran} /></div>
                         </div>
                         <div className="text-right flex-shrink-0">
                           <div className="text-sm font-semibold text-amber-400 tabular-nums">{fmtRp(r.harga_jual)}</div>
