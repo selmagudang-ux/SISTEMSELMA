@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Search, Camera, Download, Plus } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { STAGE_META } from "../lib/constants";
-import { downloadCsv } from "../lib/api";
+import { downloadCsv, sameProdukKecualiUkuran } from "../lib/api";
 import { rakForSku } from "./Rak";
 
 // Warna badge untuk jenis barang masuk (field "gudang" di tabel items menyimpan
@@ -22,6 +22,15 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
   // keduanya digabung (AND) di `filtered` di bawah.
   const [tahapFilter, setTahapFilter] = useState("");
   const [halaman, setHalaman] = useState(1);
+  // Barang di tahap "Rak" yang dicentang untuk ditempatkan ke SATU rak sekaligus (id item).
+  const [pilih, setPilih] = useState(() => new Set());
+  const ubahPilih = (id) =>
+    setPilih((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   // Kode rak diambil dari data penempatan terbaru (sumber yang sama dengan Peta Rak),
   // BUKAN dari field items.rak_code yang bisa basi kalau SKU-nya sudah dipindah rak.
@@ -58,6 +67,19 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
     const cocokTahap = !tahapFilter || i.stage === tahapFilter;
     return cocokTeks && cocokTahap;
   });
+
+  // Penempatan banyak sekaligus: hanya barang yang sedang di tahap "Rak".
+  const barisRak = filtered.filter((i) => i.stage === "rak");
+  const terpilihRak = items.filter((i) => i.stage === "rak" && pilih.has(i.id));
+  // Centang juga barang lain yang produknya sama dengan yang sudah dicentang (cuma beda ukuran).
+  const tambahSemuaUkuran = () =>
+    setPilih((p) => {
+      const n = new Set(p);
+      items.forEach((o) => {
+        if (o.stage === "rak" && terpilihRak.some((t) => sameProdukKecualiUkuran(t.sku, o.sku, skuMaster))) n.add(o.id);
+      });
+      return n;
+    });
 
   // Ganti pencarian/filter tahap -> balik ke halaman 1, biar tidak nyangkut
   // di halaman kosong kalau hasil filter barunya lebih sedikit halamannya.
@@ -160,11 +182,45 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
       {filtered.length === 0 ? (
         <EmptyState label={q || tahapFilter ? "Tidak ada barang yang cocok." : "Belum ada barang yang tercatat."} />
       ) : (
+        <>
+        {barisRak.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setPilih(terpilihRak.length === barisRak.length ? new Set() : new Set(barisRak.map((i) => i.id)))}
+              className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg"
+            >
+              {terpilihRak.length === barisRak.length ? "Batal pilih semua" : `Pilih semua yang menunggu rak (${barisRak.length})`}
+            </button>
+            {terpilihRak.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={tambahSemuaUkuran}
+                  className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg"
+                >
+                  + semua ukuran produk yang dipilih
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModal({ type: "advance-rak-banyak", items: terpilihRak, cekRole: true })}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                >
+                  Tempatkan {terpilihRak.length} terpilih ke 1 rak →
+                </button>
+                <button type="button" onClick={() => setPilih(new Set())} className="text-[11px] text-slate-500 hover:text-slate-300 underline">
+                  Batal pilih
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <div className="rounded-xl border border-slate-800">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[860px]">
+          <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="text-left text-[11px] uppercase text-slate-500 border-b border-slate-800">
+                <th className="px-2 py-2.5 w-8"></th>
                 <th className="px-4 py-2.5">Foto</th>
                 <th className="px-4 py-2.5">Tanggal</th>
                 <th className="px-4 py-2.5">SKU</th>
@@ -185,6 +241,17 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
                     className="border-b border-slate-800/60 last:border-0 hover:bg-slate-900/50 cursor-pointer"
                     onClick={() => setModal({ type: "detail-item", item: i })}
                   >
+                    <td className="px-2 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      {i.stage === "rak" && (
+                        <input
+                          type="checkbox"
+                          checked={pilih.has(i.id)}
+                          onChange={() => ubahPilih(i.id)}
+                          title="Pilih untuk ditempatkan ke satu rak bersama barang lain"
+                          aria-label={`Pilih ${i.sku || i.id}`}
+                        />
+                      )}
+                    </td>
                     <td className="px-4 py-2.5">
                       {i.foto_url ? (
                         <img src={i.foto_url} alt={i.sku} loading="lazy" decoding="async" className="w-9 h-9 object-cover rounded-md border border-slate-800" />
@@ -258,6 +325,7 @@ export default function DataBarang({ items, penempatan, skuMaster, setModal }) {
           </div>
         )}
         </div>
+        </>
       )}
     </div>
   );

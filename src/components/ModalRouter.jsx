@@ -5526,8 +5526,17 @@ export default function ModalRouter({
         skuMaster={skuMaster}
         onClose={close}
         saving={saving}
-        onSubmit={(rakCode, rows) =>
-          run(async () => {
+        onSubmit={(rakCode, rows) => {
+          // Dibuka dari Alur Barang (cekRole): sama seperti tombol "Lanjut ke Tahap Berikutnya" — hanya role pemilik tahap Rak
+          // (atau Owner/Superadmin) yang boleh. Dari halaman Rak > Tempatkan Barang tidak dicek lagi (menu itu sudah dijaga).
+          if (modal.cekRole && !canAdvanceStage(session?.role, "rak")) {
+            showToast(
+              `Anda tidak bisa melanjutkan ke tahap selanjutnya. Hanya role ${roleLabel(STAGE_ROLE.rak)} (atau Owner/Superadmin) yang bisa melanjutkan.`,
+              "err"
+            );
+            return;
+          }
+          return run(async () => {
             await sb("penempatan", {
               method: "POST",
               body: JSON.stringify(rows.map((r) => ({ sku: r.item.sku, rak_code: rakCode, qty: r.qty }))),
@@ -5544,8 +5553,8 @@ export default function ModalRouter({
                 body: JSON.stringify({ rak_code: rakCode, stage }),
               });
             }
-          }, `${rows.length} barang ditempatkan di rak ${rakCode}`)
-        }
+          }, `${rows.length} barang ditempatkan di rak ${rakCode}`);
+        }}
       />
     );
   }
