@@ -687,6 +687,16 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
       return ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
     }), [skuMaster, tampilkanNonaktif, hanyaPerubahan, q, kategori, subkategori, filterMp, mpAktif, sortBy, hanyaSet]);
 
+  // Pilih semua = semua SKU yang lolos filter/pencarian saat ini (bukan cuma yang kartunya sudah dirender).
+  const semuaDipilih = filtered.length > 0 && filtered.every((s) => selected.has(s.sku));
+  const pilihSemua = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (semuaDipilih) filtered.forEach((s) => next.delete(s.sku));
+      else filtered.forEach((s) => next.add(s.sku));
+      return next;
+    });
+
   // Jumlah SKU yang ada perubahan harga, dihitung dari cakupan yang sama
   // dengan toggle nonaktif (biar angkanya konsisten sama apa yang bisa
   // muncul kalau filter ini diaktifkan), tapi lepas dari filter q/kategori
@@ -1021,6 +1031,15 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           />
           Tampilkan yang nonaktif
         </label>
+        <button
+          type="button"
+          onClick={pilihSemua}
+          disabled={filtered.length === 0}
+          className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+        >
+          <Check size={13} className="text-amber-400" />
+          {semuaDipilih ? `Batal pilih semua (${filtered.length})` : `Pilih semua (${filtered.length})`}
+        </button>
         {jumlahSet > 0 && (
           <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
             <input
