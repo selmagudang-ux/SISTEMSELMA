@@ -18,7 +18,9 @@ import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 //  - Opname             : tiktok_opname
 //  - Kode live          : diisi di sini; otomatis dicatat juga di daftar Kode Live TikTok (marketplace_sku_alias) untuk Rincian Penjualan
 //  - Hapus              : hanya kalau stok 0
-// Stok TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi / opname supaya selalu ada catatannya.
+// Stok TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi / opname / scan resi (trigger di
+// supabase/migrations/20261126_scan_resi_potong_stok_tiktok.sql: scan memotong, retur menambah, kode live baru dibuat otomatis,
+// ditandai dari_scan_resi) supaya selalu ada catatannya.
 // Hanya role dengan izin "sku.barang_tiktok" (Super Appa selalu boleh; dijaga di SkuHarga.jsx, tab "Barang TikTok (Kode Live)" di Master Barang).
 // =========================================================
 
@@ -34,6 +36,7 @@ const FILTER = [
   ["habis", "Stok habis"],
   ["tanpalive", "Tanpa kode live"],
   ["tanpafoto", "Tanpa foto"],
+  ["dariscan", "Dibuat dari scan resi"],
   ["nonaktif", "Nonaktif"],
 ];
 const cocokFilter = (r, f) =>
@@ -42,6 +45,7 @@ const cocokFilter = (r, f) =>
   : f === "ada" ? stokAngka(r) > 0
   : f === "tanpalive" ? !r.kode_live
   : f === "tanpafoto" ? !r.foto_url
+  : f === "dariscan" ? !!r.dari_scan_resi
   : f === "nonaktif" ? !!r.nonaktif
   : true;
 const URUTAN = [
@@ -758,13 +762,14 @@ export default function BarangTiktok({ onBerubah }) {
   useEffect(() => { muat(); }, []);
 
   const hitung = useMemo(() => {
-    const h = { semua: 0, set: 0, ada: 0, habis: 0, tanpalive: 0, tanpafoto: 0, nonaktif: 0 };
+    const h = { semua: 0, set: 0, ada: 0, habis: 0, tanpalive: 0, tanpafoto: 0, dariscan: 0, nonaktif: 0 };
     for (const r of rows || []) {
       h.semua++;
       if (r.komponen) h.set++;
       if (stokAngka(r) > 0) h.ada++; else h.habis++;
       if (!r.kode_live) h.tanpalive++;
       if (!r.foto_url) h.tanpafoto++;
+      if (r.dari_scan_resi) h.dariscan++;
       if (r.nonaktif) h.nonaktif++;
     }
     return h;
