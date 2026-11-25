@@ -1338,6 +1338,11 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                               </div>
                             ) : (
                               ringkas ? (
+                            <>
+                            <div className="flex justify-between text-[11px] mb-2">
+                              <span className="text-slate-500">HPP</span>
+                              <span className="text-slate-400">{fmtRp(s.hpp)}</span>
+                            </div>
                             <div className="grid grid-cols-3 gap-2 text-center">
                               <div>
                                 <div className="text-[10px] text-slate-500">Grosir</div>
@@ -1352,6 +1357,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 <div className="text-sm font-semibold text-amber-400">{fmtRp(s.ecer)}</div>
                               </div>
                             </div>
+                            </>
                               ) : (
                               <>
                             <div className="flex justify-between text-sm mb-1.5">
