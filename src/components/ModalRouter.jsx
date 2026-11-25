@@ -5648,10 +5648,27 @@ export default function ModalRouter({
             const extAkhir = (fotoDikompres.name.split(".").pop() || "jpg").toLowerCase();
             const path = `${skuSafe}.${extAkhir}`;
             const url = await sbUploadFoto(fotoDikompres, path);
-            await sb(`items?id=eq.${modal.item.id}`, {
-              method: "PATCH",
-              body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
-            });
+            if (modal.item._virtualInduk) {
+              // SKU Induk belum punya baris barang (tidak lewat alur barang masuk): buat satu baris (jumlah 0) sebagai
+              // pembawa foto, langsung ke tahap Marketplace (lihat FotoProduk.jsx).
+              await sb("items", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  gudang: "Pembelian",
+                  jumlah: 0,
+                  sku: modal.item.sku,
+                  foto_url: url,
+                  stage: "marketplace",
+                  perlu_foto_ulang: false,
+                }),
+              });
+            } else {
+              await sb(`items?id=eq.${modal.item.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
+              });
+            }
           }, "Foto verifikasi tersimpan")
         }
       />

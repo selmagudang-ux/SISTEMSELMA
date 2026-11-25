@@ -1180,7 +1180,9 @@ function MainApp({ session, onLogout }) {
       acc[s] = items.filter((i) => i.stage === s).length;
       return acc;
     }, {});
-    const totalStok = skuMaster.reduce((a, s) => a + (s.stok || 0), 0);
+    // Set / SKU Induk (kolom komponen terisi) tidak punya stok sendiri -> jangan ikut hitungan & notifikasi stok.
+    const skuReal = skuMaster.filter((s) => !Array.isArray(s.komponen));
+    const totalStok = skuReal.reduce((a, s) => a + (s.stok || 0), 0);
 
     // SKU yang sudah tuntas alur barangnya (stage "selesai" — sama dengan sudah
     // diupload ke marketplace, lihat quickAdvance) — inilah barang yang boleh
@@ -1211,15 +1213,15 @@ function MainApp({ session, onLogout }) {
     // berubah, dikurangi yang sudah dikonfirmasi (marketplace_notif_ack).
     const ackedKeys = new Set((marketplaceNotifAck || []).map((a) => a.notif_key));
     const historyMap = latestHistoryBySku(stockHistory);
-    const notifTipis = computeStokTipisNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
-    const notifTambah = computeStokTambahNotifs(skuMaster, historyMap).filter((n) => !ackedKeys.has(n.key));
+    const notifTipis = computeStokTipisNotifs(skuReal, historyMap).filter((n) => !ackedKeys.has(n.key));
+    const notifTambah = computeStokTambahNotifs(skuReal, historyMap).filter((n) => !ackedKeys.has(n.key));
     const notifRak = computeRakBerubahNotifs(skuMaster, rak, penempatan).filter((n) => !ackedKeys.has(n.key));
     const notifRakPindah = computeRakPindahNotifs(rakEvents).filter((n) => !ackedKeys.has(n.key));
     const notifRakKosong = computeRakKosongNotifs(rak, penempatan, rakEvents).filter((n) => !ackedKeys.has(n.key));
     const cekMarketplaceCount =
       notifTipis.length + notifTambah.length + notifRak.length + notifRakPindah.length + notifRakKosong.length;
 
-    const stokMenipisCount = skuMaster.filter(
+    const stokMenipisCount = skuReal.filter(
       (s) => !s.nonaktif && Number(s.stok || 0) <= AMBANG_MENIPIS_RESTOCK
     ).length;
 

@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ShoppingBag, CheckCircle2, AlertTriangle, PackagePlus, ArrowRightLeft, Search, MapPin, PackageX } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtTgl } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
+import { olahSetMaster, adalahInduk } from "../lib/setMaster";
 
 export default function Marketplace({
   sub,
   items,
+  skuMaster,
   quickAdvance,
   setModal,
   navigate,
@@ -32,7 +34,7 @@ export default function Marketplace({
         isSuperadmin={bisa(session?.role, "marketplace.tindak_notif_massal")}
       />
     );
-  return <BelumUpload items={items} quickAdvance={quickAdvance} setModal={setModal} />;
+  return <BelumUpload items={items} skuMaster={skuMaster} quickAdvance={quickAdvance} setModal={setModal} />;
 }
 
 // Lima notifikasi yang perlu dikonfirmasi admin marketplace: (1) stok tipis/
@@ -381,8 +383,21 @@ function CekSection({ title, description, icon: Icon, color, count, children }) 
   );
 }
 
-function BelumUpload({ items, quickAdvance, setModal }) {
+function BelumUpload({ items, skuMaster, quickAdvance, setModal }) {
   const [q, setQ] = useState("");
+  // SKU Induk (pengelompokan) ikut diupload ke marketplace BERSAMA isinya: kartu induk menampilkan status upload tiap SKU
+  // isinya, dan tombol "Sudah upload" induk baru aktif kalau semua isinya sudah diupload.
+  const skuOlah = useMemo(() => olahSetMaster(skuMaster || []), [skuMaster]);
+  const petaSku = useMemo(() => new Map(skuOlah.map((s) => [s.sku, s])), [skuOlah]);
+  const sudahUpload = useMemo(() => new Set((items || []).filter((i) => i.marketplace_status === "sudah").map((i) => i.sku)), [items]);
+  const indukDariIsi = useMemo(() => {
+    const m = new Map(); // sku isi -> [sku induk]
+    for (const s of skuOlah) {
+      if (!adalahInduk(s)) continue;
+      for (const k of s.komponen) m.set(k.sku, [...(m.get(k.sku) || []), s.sku]);
+    }
+    return m;
+  }, [skuOlah]);
   const list = items
     .filter((i) => i.stage === "marketplace")
     .filter((i) => i.sku.toLowerCase().includes(q.toLowerCase()));
@@ -405,7 +420,12 @@ function BelumUpload({ items, quickAdvance, setModal }) {
         <EmptyState label={q ? `Tidak ada SKU yang cocok dengan "${q}".` : "Semua barang sudah diupload."} />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {list.map((item) => (
+          {list.map((item) => {
+            const induk = petaSku.get(item.sku);
+            const isiInduk = adalahInduk(induk) ? induk.komponen.map((k) => ({ sku: k.sku, ada: petaSku.has(k.sku), sudah: sudahUpload.has(k.sku) })) : null;
+            const belumIsi = isiInduk ? isiInduk.filter((k) => !k.sudah).length : 0;
+            const milikInduk = indukDariIsi.get(item.sku);
+            return (
             <div key={item.id} className="bg-slate-900 border border-slate-800 rounded-lg p-3">
               {item.foto_url ? (
                 <img
@@ -421,7 +441,28 @@ function BelumUpload({ items, quickAdvance, setModal }) {
               )}
               <ShoppingBag size={14} className="text-teal-400 mb-1" />
               <div className="text-xs font-mono text-slate-300 truncate">{item.sku}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">{item.jumlah}x</div>
+              {isiInduk ? (
+                <>
+                  <div className="text-[11px] text-violet-300 mt-0.5">Induk · {isiInduk.length} SKU isi</div>
+                  <div className="mt-1.5 space-y-0.5 max-h-28 overflow-y-auto">
+                    {isiInduk.map((k) => (
+                      <div key={k.sku} className="flex items-center justify-between gap-1.5 text-[10px]">
+                        <span className={`font-mono truncate ${k.ada ? "text-slate-400" : "text-red-400"}`} title={k.sku}>{k.sku}</span>
+                        <span className={k.sudah ? "text-emerald-400 flex-shrink-0" : "text-amber-400 flex-shrink-0"}>
+                          {k.sudah ? "sudah" : k.ada ? "belum" : "tidak ada"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="text-[11px] text-slate-500 mt-0.5">{item.jumlah}x</div>
+              )}
+              {milikInduk && (
+                <div className="text-[10px] text-violet-300 mt-0.5 truncate" title={milikInduk.join(", ")}>
+                  Isi induk: {milikInduk.join(", ")}
+                </div>
+              )}
               <div className="flex items-center gap-1.5 mt-2">
                 <button
                   onClick={() => setModal({ type: "detail-item", item })}
@@ -431,13 +472,16 @@ function BelumUpload({ items, quickAdvance, setModal }) {
                 </button>
                 <button
                   onClick={() => quickAdvance(item, "marketplace")}
-                  className="flex-1 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md py-1.5"
+                  disabled={belumIsi > 0}
+                  title={belumIsi > 0 ? `Upload dulu ${belumIsi} SKU isinya` : undefined}
+                  className="flex-1 text-[11px] font-medium bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 text-slate-200 rounded-md py-1.5"
                 >
-                  Sudah upload →
+                  {belumIsi > 0 ? `Isi belum upload (${belumIsi})` : "Sudah upload →"}
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

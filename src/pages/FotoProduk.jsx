@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ImageOff, RotateCcw, Camera, Search, CheckCircle2, Circle, X } from "lucide-react";
 import { PageHeader, EmptyState } from "../components/ui";
 import { calcHarga, fmtRp } from "../lib/api";
+import { olahSetMaster, adalahInduk } from "../lib/setMaster";
 
 // Dua tab: "Foto Baru" (barang yang belum pernah difoto sama sekali) dan
 // "Foto Ulang" (barang yang sudah pernah difoto tapi ditarik balik ke sini
@@ -16,7 +17,17 @@ const TABS = [
 ];
 
 export default function FotoProduk({ items, setModal, skuMaster, settings }) {
-  const list = items.filter((i) => i.stage === "verifikasi");
+  // SKU Induk tidak punya stok/barang masuk, jadi tidak lewat alur Buat SKU -> Rak -> Verifikasi. Tapi induk WAJIB difoto
+  // sendiri: induk yang belum punya baris barang sama sekali ditampilkan di sini (baris "virtual"), dan baris barangnya
+  // baru dibuat waktu fotonya diupload (lihat "advance-verifikasi" di ModalRouter) lalu lanjut ke Marketplace.
+  const skuOlah = useMemo(() => olahSetMaster(skuMaster || []), [skuMaster]);
+  const indukVirtual = useMemo(() => {
+    const punyaBaris = new Set((items || []).map((i) => i.sku));
+    return skuOlah
+      .filter((s) => adalahInduk(s) && !s.nonaktif && !punyaBaris.has(s.sku))
+      .map((s) => ({ id: `induk:${s.sku}`, sku: s.sku, jumlah: 0, stage: "verifikasi", _virtualInduk: true }));
+  }, [skuOlah, items]);
+  const list = [...items.filter((i) => i.stage === "verifikasi"), ...indukVirtual];
   // Barang yang ditarik balik ke sini gara-gara ada perubahan (mis. harga
   // SKU-nya baru saja diganti — lihat resolveHargaSku di lib/api.js)
   // — fotonya masih foto lama dan wajib difoto ulang karena sudah tidak
@@ -131,7 +142,8 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
             // cuma qty batch itu sendiri — makanya diambil dari sku_master.stok
             // (sumber kebenaran stok per SKU), dengan fallback ke item.jumlah
             // kalau SKU-nya entah kenapa tidak ketemu di skuMaster.
-            const skuRow = (skuMaster || []).find((s) => s.sku === item.sku);
+            const skuRow = skuOlah.find((s) => s.sku === item.sku);
+            const induk = adalahInduk(skuRow);
             const totalStok = skuRow?.stok != null ? skuRow.stok : item.jumlah;
 
             // Barang di tab "Foto Ulang" biasanya BELUM punya foto_url sendiri
@@ -161,6 +173,7 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                   : "border-slate-800"
               }`}
             >
+              {!induk && (
               <button
                 type="button"
                 onClick={() => toggleSelect(item.id)}
@@ -171,6 +184,7 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
               >
                 {selected.has(item.id) ? <CheckCircle2 size={18} /> : <Circle size={18} />}
               </button>
+              )}
               {item.perlu_foto_ulang && (
                 <div className="absolute -top-2 left-2 flex items-center gap-1 bg-amber-500 text-slate-950 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
                   <RotateCcw size={10} />
@@ -228,9 +242,15 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                 </div>
               )}
               <div className="text-xs font-mono text-slate-300 truncate">{item.sku}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                {totalStok}x {item.rak_code ? `· ${item.rak_code}` : ""}
-              </div>
+              {induk ? (
+                <div className="text-[11px] text-violet-300 mt-0.5">
+                  Induk · {skuRow.komponen.length} SKU · total stok {totalStok}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {totalStok}x {item.rak_code ? `· ${item.rak_code}` : ""}
+                </div>
+              )}
               <button
                 onClick={() => setModal({ type: "advance-verifikasi", item })}
                 className="mt-2 w-full text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md py-1.5"
