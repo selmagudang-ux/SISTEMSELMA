@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers, MoreVertical } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers, MoreVertical, ChevronDown } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
@@ -606,6 +606,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
     setRingkas(v);
     try { localStorage.setItem("sku_kartu_ringkas", v ? "1" : "0"); } catch { /* abaikan */ }
   };
+  const [menuHeader, setMenuHeader] = useState(null); // "tambah" | "unduh" — menu di kepala halaman
   const [menuAksi, setMenuAksi] = useState(null); // SKU yang menu aksinya (⋯) sedang terbuka
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
   const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
@@ -829,55 +830,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
         title="Master Barang"
         description="Data lengkap tiap SKU — foto, harga asli, HPP, dan harga jual (Grosir / Tengah / Ecer). Untuk ubah persentase markup, buka menu Pengaturan."
         action={
-          <div className="flex items-center gap-2">
-            {bolehKelola && (
-              <button
-                onClick={() => setFormSet({ jenis: "set", item: null })}
-                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-              >
-                <Layers size={14} /> Tambah Set
-              </button>
-            )}
-            {bolehKelola && (
-              <button
-                onClick={() => setFormSet({ jenis: "induk", item: null })}
-                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-              >
-                <Layers size={14} /> Tambah SKU Induk
-              </button>
-            )}
-            {bolehKelola && (
-              <button
-                onClick={() => setImporSku(true)}
-                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-              >
-                <Plus size={14} /> Import SKU (Excel)
-              </button>
-            )}
-            <button
-              onClick={handleDownloadCsv}
-              disabled={filtered.length === 0}
-              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-            >
-              <Download size={14} /> Download CSV
-            </button>
-            <button
-              onClick={handleDownloadFoto}
-              disabled={(selected.size === 0 && filtered.length === 0) || !!unduhFoto}
-              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-            >
-              {unduhFoto ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Mengunduh foto {unduhFoto.done}/{unduhFoto.total}…
-                </>
-              ) : (
-                <>
-                  <ImageDown size={14} />
-                  {selected.size > 0 ? `Download Foto Terpilih (${selected.size})` : "Download Foto"}
-                </>
-              )}
-            </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {bolehKelola && selected.size > 0 && (
               <button
                 onClick={() => setHapusTerpilih(true)}
@@ -902,22 +855,62 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                 Batal pilih
               </button>
             )}
-            <button
-              onClick={handleDownloadPdf}
-              disabled={filtered.length === 0 || !!cetak}
-              className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-            >
-              {cetak ? (
+            {bolehKelola && (
+              <div className="relative">
+                <button
+                  onClick={() => setMenuHeader(menuHeader === "tambah" ? null : "tambah")}
+                  className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+                >
+                  <Plus size={14} /> Tambah <ChevronDown size={13} />
+                </button>
+                {menuHeader === "tambah" && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setMenuHeader(null)} />
+                    <div className="absolute right-0 top-10 z-30 w-56 rounded-lg border border-slate-700 bg-slate-900 shadow-xl py-1">
+                      <ItemMenuSku ikon={Layers} label="Tambah Set" onClick={() => { setMenuHeader(null); setFormSet({ jenis: "set", item: null }); }} />
+                      <ItemMenuSku ikon={Layers} label="Tambah SKU Induk" onClick={() => { setMenuHeader(null); setFormSet({ jenis: "induk", item: null }); }} />
+                      <ItemMenuSku ikon={Plus} label="Import SKU (Excel)" onClick={() => { setMenuHeader(null); setImporSku(true); }} />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="relative">
+              <button
+                onClick={() => setMenuHeader(menuHeader === "unduh" ? null : "unduh")}
+                disabled={!!unduhFoto || !!cetak}
+                className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-60 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+              >
+                {unduhFoto ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Mengunduh foto {unduhFoto.done}/{unduhFoto.total}…
+                  </>
+                ) : cetak ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Memuat foto {cetak.done}/{cetak.total}…
+                  </>
+                ) : (
+                  <>
+                    <Download size={14} /> Unduh <ChevronDown size={13} />
+                  </>
+                )}
+              </button>
+              {menuHeader === "unduh" && (
                 <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Memuat foto {cetak.done}/{cetak.total}…
-                </>
-              ) : (
-                <>
-                  <FileDown size={14} /> Download PDF Katalog
+                  <div className="fixed inset-0 z-20" onClick={() => setMenuHeader(null)} />
+                  <div className="absolute right-0 top-10 z-30 w-60 rounded-lg border border-slate-700 bg-slate-900 shadow-xl py-1">
+                    <ItemMenuSku ikon={Download} label="Download CSV" disabled={filtered.length === 0} onClick={() => { setMenuHeader(null); handleDownloadCsv(); }} />
+                    <ItemMenuSku
+                      ikon={ImageDown}
+                      label={selected.size > 0 ? `Download Foto Terpilih (${selected.size})` : "Download Foto"}
+                      disabled={selected.size === 0 && filtered.length === 0}
+                      onClick={() => { setMenuHeader(null); handleDownloadFoto(); }}
+                    />
+                    <ItemMenuSku ikon={FileDown} label="Download PDF Katalog" disabled={filtered.length === 0} onClick={() => { setMenuHeader(null); handleDownloadPdf(); }} />
+                  </div>
                 </>
               )}
-            </button>
+            </div>
           </div>
         }
       />
@@ -1050,7 +1043,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
         reload={reload}
         showToast={showToast}
       />
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 max-w-sm flex-1 min-w-[200px]">
           <Search size={14} className="text-slate-500" />
           <input
@@ -1102,98 +1095,56 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
             <option value="kosong">HPP/Tengah kosong</option>
           </select>
         )}
-        <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={tampilkanNonaktif}
-            onChange={(e) => setTampilkanNonaktif(e.target.checked)}
-            className="accent-amber-500"
-          />
-          Tampilkan yang nonaktif
-        </label>
-        <div className="flex items-center rounded-lg border border-slate-800 overflow-hidden text-xs" title="Ubah kepadatan kartu">
-          <button
-            type="button"
-            onClick={() => ubahTampilan(true)}
-            className={`px-3 py-1.5 ${ringkas ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"}`}
-          >
-            Ringkas
-          </button>
-          <button
-            type="button"
-            onClick={() => ubahTampilan(false)}
-            className={`px-3 py-1.5 border-l border-slate-800 ${!ringkas ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"}`}
-          >
-            Lengkap
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={pilihSemua}
-          disabled={filtered.length === 0}
-          className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
-        >
-          <Check size={13} className="text-amber-400" />
-          {semuaDipilih ? `Batal pilih semua (${filtered.length})` : `Pilih semua (${filtered.length})`}
-        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 mb-5">
         {jumlahSet > 0 && (
-          <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={filterJenis === "set"}
-              onChange={(e) => setFilterJenis(e.target.checked ? "set" : "")}
-              className="accent-amber-500"
-            />
-            Hanya Set
-            <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5 py-0.5">
-              {jumlahSet}
-            </span>
-          </label>
+          <ChipFilter aktif={filterJenis === "set"} jumlah={jumlahSet} onClick={() => setFilterJenis(filterJenis === "set" ? "" : "set")}>
+            Set
+          </ChipFilter>
         )}
         {jumlahInduk > 0 && (
-          <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={filterJenis === "induk"}
-              onChange={(e) => setFilterJenis(e.target.checked ? "induk" : "")}
-              className="accent-amber-500"
-            />
-            Hanya SKU Induk
-            <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5 py-0.5">
-              {jumlahInduk}
-            </span>
-          </label>
+          <ChipFilter aktif={filterJenis === "induk"} jumlah={jumlahInduk} onClick={() => setFilterJenis(filterJenis === "induk" ? "" : "induk")}>
+            SKU Induk
+          </ChipFilter>
         )}
-        <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={hanyaPerubahan}
-            onChange={(e) => setHanyaPerubahan(e.target.checked)}
-            className="accent-red-500"
-          />
-          Ada perubahan harga
-          {jumlahPerubahan > 0 && (
-            <span className="text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full px-1.5 py-0.5">
-              {jumlahPerubahan}
-            </span>
-          )}
-        </label>
+        <ChipFilter aktif={hanyaPerubahan} jumlah={jumlahPerubahan} merah onClick={() => setHanyaPerubahan(!hanyaPerubahan)}>
+          Perubahan harga
+        </ChipFilter>
         {mpAktif && (
-          <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={filterMp === "rugi"}
-              onChange={(e) => setFilterMp(e.target.checked ? "rugi" : "")}
-              className="accent-red-500"
-            />
-            Tidak layak jual di MP
-            {hitunganMp.rugi > 0 && (
-              <span className="text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full px-1.5 py-0.5">
-                {hitunganMp.rugi}
-              </span>
-            )}
-          </label>
+          <ChipFilter aktif={filterMp === "rugi"} jumlah={hitunganMp.rugi} merah onClick={() => setFilterMp(filterMp === "rugi" ? "" : "rugi")}>
+            Tidak layak MP
+          </ChipFilter>
         )}
+        <ChipFilter aktif={tampilkanNonaktif} onClick={() => setTampilkanNonaktif(!tampilkanNonaktif)}>
+          Nonaktif
+        </ChipFilter>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={pilihSemua}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 disabled:opacity-40 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg"
+          >
+            <Check size={13} className="text-amber-400" />
+            {semuaDipilih ? `Batal pilih semua (${filtered.length})` : `Pilih semua (${filtered.length})`}
+          </button>
+          <div className="flex items-center rounded-lg border border-slate-800 overflow-hidden text-xs" title="Ubah kepadatan kartu">
+            <button
+              type="button"
+              onClick={() => ubahTampilan(true)}
+              className={`px-3 py-1.5 ${ringkas ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              Ringkas
+            </button>
+            <button
+              type="button"
+              onClick={() => ubahTampilan(false)}
+              className={`px-3 py-1.5 border-l border-slate-800 ${!ringkas ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              Lengkap
+            </button>
+          </div>
+        </div>
       </div>
       {filtered.length === 0 ? (
         <EmptyState
@@ -1499,15 +1450,35 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
 }
 
 // Satu baris di menu aksi (⋯) pada kartu Master Barang.
-function ItemMenuSku({ ikon: Ikon, label, onClick, bahaya }) {
+function ItemMenuSku({ ikon: Ikon, label, onClick, bahaya, disabled }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-slate-800 ${bahaya ? "text-red-400" : "text-slate-300"}`}
+      disabled={disabled}
+      className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-slate-800 disabled:opacity-40 disabled:hover:bg-transparent ${bahaya ? "text-red-400" : "text-slate-300"}`}
     >
       <Ikon size={13} />
       {label}
+    </button>
+  );
+}
+
+// Filter cepat berbentuk pil (pengganti checkbox) di bawah baris pencarian Master Barang.
+function ChipFilter({ aktif, onClick, children, jumlah, merah }) {
+  const warna = aktif
+    ? merah
+      ? "bg-red-500/15 border-red-500/50 text-red-300"
+      : "bg-amber-500/15 border-amber-500/50 text-amber-300"
+    : "border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-600";
+  return (
+    <button type="button" onClick={onClick} className={`flex items-center gap-1.5 text-xs rounded-full border px-3 py-1.5 ${warna}`}>
+      {children}
+      {jumlah > 0 && (
+        <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 ${merah ? "text-red-300 bg-red-500/15" : "text-amber-300 bg-amber-500/15"}`}>
+          {jumlah}
+        </span>
+      )}
     </button>
   );
 }
