@@ -24,8 +24,8 @@ export default function SkuHarga({
   // Barang Toko (kasir) — dijaga di sini juga (bukan cuma disembunyikan di sidebar),
   // supaya role lain tidak bisa membukanya lewat URL/state navigasi.
   if (sub === "master-toko") {
-    if (session?.role !== "superappa") {
-      return <EmptyState label="Halaman ini khusus untuk role superappa." />;
+    if (!bisa(session?.role, "sku.barang_toko")) {
+      return <EmptyState label="Halaman ini hanya untuk role yang diberi izin Barang Toko (POS) di Hak Akses." />;
     }
     return (
       <div>
@@ -59,7 +59,7 @@ export default function SkuHarga({
 // filter, dan pilihan SKU tidak hilang — daftarnya ribuan kartu dan lama kalau dimuat ulang.
 function TigaMaster(props) {
   const { skuMaster, session, reload, showToast } = props;
-  const bolehToko = session?.role === "superappa";
+  const bolehToko = bisa(session?.role, "sku.barang_toko"); // izin menu (Hak Akses role); Super Appa selalu boleh
   const bolehBarangTiktok = bisa(session?.role, "sku.barang_tiktok"); // izin menu (Hak Akses role); Super Appa selalu boleh
   const [tab, setTab] = useState("master");
   const daftarTab = [

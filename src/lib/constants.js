@@ -726,6 +726,8 @@ export const GRUP_AKSI = [
       { key: "sku.pindah_ke_toko", label: "Pindahkan SKU ke Barang Toko (kasir)", bawaan: tak },
       // Tab "Barang TikTok (Kode Live)" di Master Barang: stok TikTok, mutasi gudang <-> TikTok, kirim ke Toko, opname, ubah, hapus.
       // Tanpa izin ini, role hanya melihat daftar pemetaan kode live (tidak bisa mengubah stok). Super Appa selalu boleh.
+      // Tab "Barang Toko (POS)" di Master Barang (+ sub-menu Barang Toko). Dulu terkunci khusus Super Appa.
+      { key: "sku.barang_toko", label: "Membuka & mengelola Barang Toko (POS) di Master Barang", bawaan: tak },
       { key: "sku.barang_tiktok", label: "Kelola Barang TikTok (stok TikTok, kode live, mutasi, kirim ke toko, opname) di Master Barang", bawaan: tak },
       // Master Barang = katalog bersama milik Holding (1 SKU = 1 baris untuk semua PT). Membuat SKU BARU,
       // mengubah harga katalog, dan menonaktifkan/menghapus SKU hanya boleh akun yang diberi izin ini.
@@ -745,6 +747,9 @@ export const GRUP_AKSI = [
       { key: "grosir.simpan_pdf_nota", label: "Simpan nota Grosir sebagai PDF (tombol di preview Nota)", bawaan: semuaKecuali() },
       { key: "reseller.hapus_entri", label: "Hapus entri di Reseller", bawaan: dari("superadmin") },
       { key: "marketplace.tindak_notif_massal", label: "Tandai notifikasi Cek Marketplace (massal)", bawaan: dari("superadmin") },
+      // Barang Aset (Pengadaan Barang). Bawaan: semua role yang bisa membuka menunya boleh (sama seperti sebelum ada izin ini);
+      // matikan per role kalau role itu hanya boleh melihat.
+      { key: "aset.kelola", label: "Tambah / ubah / hapus Barang Aset", bawaan: semuaKecuali() },
       { key: "scan.hapus_massal", label: "Hapus massal data Scan Resi", bawaan: tak },
       { key: "scan.lihat_log_import", label: "Lihat riwayat import di Scan Resi", bawaan: tak },
     ],
@@ -786,6 +791,7 @@ export const GRUP_AKSI = [
     grup: "Kasir (/kasir)",
     aksi: [
       { key: "kasir.lihat_semua", label: "Melihat transaksi & shift SEMUA kasir (bukan hanya miliknya)", bawaan: semuaKecuali("kasir", "pramuniaga", "pramuniaga_grosir") },
+      { key: "kasir.hapus_shift", label: "Hapus shift kasir di Riwayat (tab Shift)", bawaan: tak },
       { key: "kasir.void", label: "Membatalkan seluruh transaksi (void)", bawaan: tak },
       { key: "kasir.hanya_keranjang", label: "Kasir HP: hanya mengisi keranjang lalu Simpan (tanpa buka shift & tanpa tombol Bayar)", bawaan: dari("pramuniaga", "pramuniaga_grosir") },
       { key: "kasir.pilih_mode", label: "Kasir boleh berpindah sendiri antara Barang Toko dan Master Barang (tombol Mode di header)", bawaan: tak },

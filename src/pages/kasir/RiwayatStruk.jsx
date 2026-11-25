@@ -49,7 +49,7 @@ const warnaSelisih = (n) => (n === 0 ? "text-emerald-400" : n > 0 ? "text-amber-
 export default function RiwayatStruk({ session, shift, onClose }) {
   const semuaKasir = bisa(session?.role, "kasir.lihat_semua");
   const bolehVoidRole = bisa(session?.role, "kasir.void");
-  const bolehHapusShift = session?.role === "superappa"; // hapus shift: khusus superappa (bukan lewat pengaturan izin)
+  const bolehHapusShift = bisa(session?.role, "kasir.hapus_shift"); // izin Hak Akses; Super Appa selalu boleh
 
   const [tab, setTab] = useState("transaksi");
   const [dari, setDari] = useState(() => tglInput(new Date()));

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Plus, Landmark, Pencil, Trash2, Search, ImageIcon, Wallet, TrendingDown, Coins, Boxes } from "lucide-react";
 import { PageHeader, EmptyState, StatCard, Badge, ModalShell, Field, inputClass, InputRupiah, InputTanggal, SearchableSelect, formatTanggalID } from "../components/ui";
 import { sb, fmtRp, sbUploadFoto, kompresFotoProduk } from "../lib/api";
+import { bisa } from "../lib/constants";
 import { KATEGORI_ASET, STATUS_ASET, asetMasihDimiliki, hitungPenyusutan, ringkasAset, kodeAsetBerikut } from "../lib/aset";
 
 // =========================================================
@@ -147,6 +148,7 @@ function FormAset({ awal, onSimpan, onClose, menyimpan }) {
 }
 
 export default function Aset({ session, showToast }) {
+  const bolehKelola = bisa(session?.role, "aset.kelola"); // izin Hak Akses (bawaan: semua role yang bisa membuka menu ini)
   const [rows, setRows] = useState([]);
   const [memuat, setMemuat] = useState(true);
   const [tabelAda, setTabelAda] = useState(true);
@@ -268,13 +270,15 @@ export default function Aset({ session, showToast }) {
         title="Barang Aset"
         description="Pencatatan aset perusahaan (komputer, rak, printer, kendaraan, dan sejenisnya). Penyusutan dihitung otomatis dengan metode garis lurus, tidak perlu diinput per bulan."
         action={
-          <button
-            onClick={bukaTambah}
-            disabled={!tabelAda}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
-          >
-            <Plus size={14} /> Tambah Aset
-          </button>
+          bolehKelola ? (
+            <button
+              onClick={bukaTambah}
+              disabled={!tabelAda}
+              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+            >
+              <Plus size={14} /> Tambah Aset
+            </button>
+          ) : null
         }
       />
 
@@ -387,12 +391,16 @@ export default function Aset({ session, showToast }) {
                           {redup && a.tanggal_lepas && <div className="text-[10px] text-slate-500 mt-0.5">{formatTanggalID(a.tanggal_lepas)}</div>}
                         </td>
                         <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                          <button onClick={() => bukaEdit(a)} title="Edit aset" className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800">
-                            <Pencil size={14} />
-                          </button>
-                          <button onClick={() => hapus(a)} title="Hapus aset" className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800">
-                            <Trash2 size={14} />
-                          </button>
+                          {bolehKelola && (
+                            <>
+                              <button onClick={() => bukaEdit(a)} title="Edit aset" className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-slate-800">
+                                <Pencil size={14} />
+                              </button>
+                              <button onClick={() => hapus(a)} title="Hapus aset" className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800">
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
