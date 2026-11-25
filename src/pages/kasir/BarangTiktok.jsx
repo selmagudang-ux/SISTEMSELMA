@@ -58,7 +58,7 @@ const PEMBANDING = {
   "stok-asc": (a, b) => stokAngka(a) - stokAngka(b) || kolator.compare(a.nama || "", b.nama || ""),
   "stok-desc": (a, b) => stokAngka(b) - stokAngka(a) || kolator.compare(a.nama || "", b.nama || ""),
 };
-const KOLOM = "lg:grid-cols-[3rem_minmax(0,1fr)_7rem_6rem_6.5rem_4rem_11rem]";
+const KOLOM = "lg:grid-cols-[1.25rem_3rem_minmax(0,1fr)_7rem_6rem_6.5rem_4rem_11rem]";
 
 const pesan = (e) => {
   const m = String(e?.message || e || "");
@@ -596,6 +596,83 @@ function FormHapus({ barang, dipakaiSet = [], onSelesai, onClose }) {
 }
 
 // ---------------------------------------------------------
+// Hapus beberapa barang yang dipilih. Hanya barang yang stoknya 0 (Set selalu boleh) dan tidak jadi isi Set lain di luar pilihan.
+function FormHapusTerpilih({ terpilih, semua, onSelesai, onClose }) {
+  const idPilih = useMemo(() => new Set(terpilih.map((r) => r.kode)), [terpilih]);
+  const { akan, stokAda, dipakai } = useMemo(() => {
+    const akan = [];
+    const stokAda = [];
+    const dipakai = [];
+    for (const r of terpilih) {
+      if (!r.komponen && stokAngka(r) !== 0) {
+        stokAda.push(r);
+        continue;
+      }
+      const set = semua.filter((x) => Array.isArray(x.komponen) && x.komponen.some((k) => k.kode === r.kode) && !idPilih.has(x.kode));
+      if (set.length) dipakai.push({ r, set });
+      else akan.push(r);
+    }
+    return { akan, stokAda, dipakai };
+  }, [terpilih, semua, idPilih]);
+  const [jalan, setJalan] = useState(false);
+  const [hasil, setHasil] = useState(null);
+
+  const nama = (r) => r.kode_live || r.kode;
+  const mulai = async () => {
+    setJalan(true);
+    let terhapus = 0;
+    let dilewati = 0;
+    const ditolak = [];
+    // Set dulu, lalu barang biasa (isi Set tidak boleh hilang lebih dulu)
+    for (const kelompok of [akan.filter((r) => r.komponen), akan.filter((r) => !r.komponen)]) {
+      for (let i = 0; i < kelompok.length; i += 50) {
+        const potong = kelompok.slice(i, i + 50);
+        try {
+          const res = await sb(`${TABEL}?id=in.(${potong.map((r) => r.id).join(",")})&stok=eq.0`, { method: "DELETE" });
+          const n = Array.isArray(res) ? res.length : potong.length;
+          terhapus += n;
+          dilewati += potong.length - n;
+        } catch {
+          ditolak.push(...potong.map(nama));
+        }
+      }
+    }
+    setJalan(false);
+    setHasil({ terhapus, dilewati, ditolak });
+  };
+
+  return (
+    <Kerangka judul={`Hapus ${terpilih.length} barang terpilih`} onClose={jalan ? () => {} : hasil ? onSelesai : onClose}>
+      {hasil ? (
+        <>
+          <div className="text-sm text-slate-200"><b className="text-emerald-300">{hasil.terhapus}</b> barang terhapus.</div>
+          {hasil.dilewati > 0 && <div className="text-xs text-slate-400">{hasil.dilewati} dilewati karena stoknya sudah berubah / barang sudah tidak ada.</div>}
+          {hasil.ditolak.length > 0 && <Galat pesan={`Ditolak database: ${hasil.ditolak.slice(0, 10).join(", ")}${hasil.ditolak.length > 10 ? ", …" : ""}`} />}
+          <button onClick={onSelesai} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold py-3.5 rounded-2xl">Selesai</button>
+        </>
+      ) : (
+        <>
+          <div className="text-sm text-slate-200"><b className="text-red-300">{akan.length}</b> barang akan dihapus.</div>
+          {stokAda.length > 0 && (
+            <div className="text-xs text-amber-300">
+              {stokAda.length} barang dilewati karena stok TikTok belum 0: {stokAda.slice(0, 8).map((r) => `${nama(r)} (${stokAngka(r)})`).join(", ")}{stokAda.length > 8 ? ", …" : ""}. Opname atau kembalikan ke gudang dulu.
+            </div>
+          )}
+          {dipakai.length > 0 && (
+            <div className="text-xs text-amber-300">
+              {dipakai.length} barang dilewati karena masih jadi isi Set yang tidak ikut dipilih: {dipakai.slice(0, 6).map((d) => `${nama(d.r)} → ${nama(d.set[0])}`).join(", ")}{dipakai.length > 6 ? ", …" : ""}.
+            </div>
+          )}
+          <div className="text-[11px] text-slate-500">Daftar Kode Live TikTok (pemetaan HPP) tidak ikut berubah. Penghapusan tidak bisa dibatalkan.</div>
+          <button onClick={mulai} disabled={jalan || akan.length === 0} className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl">
+            {jalan && <Loader2 size={15} className="animate-spin" />} Hapus {akan.length} Barang
+          </button>
+        </>
+      )}
+    </Kerangka>
+  );
+}
+
 function FotoBarang({ r }) {
   return (
     <div className="w-12 h-12 flex-shrink-0">
@@ -660,6 +737,8 @@ export default function BarangTiktok({ onBerubah }) {
   const [batas, setBatas] = useState(PER_TAHAP);
   const [form, setForm] = useState(null);
   const [formSet, setFormSet] = useState(null);
+  const [pilih, setPilih] = useState(() => new Set()); // id barang yang dicentang
+  const [hapusPilih, setHapusPilih] = useState(false);
   const [mutasi, setMutasi] = useState(null);
   const [opname, setOpname] = useState(null);
   const [hapus, setHapus] = useState(null);
@@ -705,6 +784,10 @@ export default function BarangTiktok({ onBerubah }) {
   }, [rows, q, filter, urut]);
   useEffect(() => { setBatas(PER_TAHAP); }, [q, filter, urut]);
   const terlihat = useMemo(() => tampil.slice(0, batas), [tampil, batas]);
+  const terpilih = useMemo(() => (rows || []).filter((r) => pilih.has(r.id)), [rows, pilih]);
+  const semuaTampilDipilih = tampil.length > 0 && tampil.every((r) => pilih.has(r.id));
+  const ubahPilih = (id) => setPilih((m) => { const n = new Set(m); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const pilihSemuaTampil = () => setPilih((m) => { const n = new Set(m); if (semuaTampilDipilih) tampil.forEach((r) => n.delete(r.id)); else tampil.forEach((r) => n.add(r.id)); return n; });
   const sisa = tampil.length - terlihat.length;
 
   // Kode saran untuk tambah manual: ENT-TT-nomor berikutnya
@@ -734,6 +817,7 @@ export default function BarangTiktok({ onBerubah }) {
   };
 
   const selesai = () => {
+    setPilih(new Set()); setHapusPilih(false);
     setForm(null); setFormSet(null); setMutasi(null); setOpname(null); setHapus(null); setDariMaster(false); setKeToko(null);
     muat();
   };
@@ -779,6 +863,22 @@ export default function BarangTiktok({ onBerubah }) {
 
       <div className="flex-1 p-3">
         {error && <Galat pesan={error} />}
+        {rows && tampil.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 mb-2 text-xs">
+            <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+              <input type="checkbox" checked={semuaTampilDipilih} onChange={pilihSemuaTampil} /> Pilih semua yang tampil ({tampil.length})
+            </label>
+            {terpilih.length > 0 && (
+              <>
+                <span className="text-slate-400">{terpilih.length} dipilih</span>
+                <button type="button" onClick={() => setPilih(new Set())} className="text-slate-400 hover:text-slate-200 underline">Batal pilih</button>
+                <button type="button" onClick={() => setHapusPilih(true)} className="ml-auto flex items-center gap-1.5 bg-red-500 hover:bg-red-400 text-white font-semibold px-3 py-1.5 rounded-lg">
+                  <Trash2 size={14} /> Hapus {terpilih.length} terpilih
+                </button>
+              </>
+            )}
+          </div>
+        )}
         {siapkan && <div className="text-xs text-slate-400 mb-2 flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Menyiapkan…</div>}
         {!rows ? (
           <div className="py-10 flex justify-center text-slate-500"><Loader2 className="animate-spin" size={20} /></div>
@@ -792,6 +892,7 @@ export default function BarangTiktok({ onBerubah }) {
             <ul className="rounded-xl border border-slate-800 divide-y divide-slate-800/70 overflow-hidden">
               <li className={`hidden lg:grid ${KOLOM} gap-3 items-center px-3 py-2 bg-slate-900/60 text-[11px] uppercase tracking-wide text-slate-500`}>
                 <span />
+                <span />
                 <span>Barang</span>
                 <span>Kode live</span>
                 <span className="text-right">HPP</span>
@@ -804,6 +905,7 @@ export default function BarangTiktok({ onBerubah }) {
                 return (
                   <li key={r.id} className={`hover:bg-slate-900/50 ${r.nonaktif ? "opacity-50" : ""}`}>
                     <div className={`hidden lg:grid ${KOLOM} gap-3 items-center px-3 py-2`}>
+                      <input type="checkbox" checked={pilih.has(r.id)} onChange={() => ubahPilih(r.id)} aria-label={`Pilih ${r.kode}`} />
                       <FotoBarang r={r} />
                       <InfoBarang r={r} />
                       <div><KodeLive v={r.kode_live} /></div>
@@ -814,6 +916,7 @@ export default function BarangTiktok({ onBerubah }) {
                     </div>
                     <div className="lg:hidden p-3">
                       <div className="flex items-start gap-3">
+                        <input type="checkbox" checked={pilih.has(r.id)} onChange={() => ubahPilih(r.id)} className="mt-4" aria-label={`Pilih ${r.kode}`} />
                         <FotoBarang r={r} />
                         <div className="min-w-0 flex-1">
                           <InfoBarang r={r} />
@@ -848,6 +951,7 @@ export default function BarangTiktok({ onBerubah }) {
       {dariMaster && <TambahDariMaster tujuan="tiktok" onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {form && <FormBarang barang={form.barang} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setForm(null)} />}
       {formSet && <FormSet barang={formSet.barang} semua={rows || []} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setFormSet(null)} />}
+      {hapusPilih && terpilih.length > 0 && <FormHapusTerpilih terpilih={terpilih} semua={rows || []} onSelesai={selesai} onClose={() => setHapusPilih(false)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {opname && <FormOpname barang={opname} onSelesai={selesai} onClose={() => setOpname(null)} />}
       {hapus && <FormHapus barang={hapus} dipakaiSet={(rows || []).filter((x) => Array.isArray(x.komponen) && x.komponen.some((k) => k.kode === hapus.kode))} onSelesai={selesai} onClose={() => setHapus(null)} />}

@@ -117,6 +117,10 @@ const KOLOM_SKU_MASTER = [
   "warna", "ukuran", "harga_asli", "harga_asli_baru", "hpp", "grosir", "tengah", "ecer",
   "stok", "barcode_supplier", "nonaktif",
 ].join(",");
+// Kolom Set (nama, komponen) baru ada setelah supabase/migrations/20261125_master_barang_set.sql dijalankan; sebelum itu
+// pemuatan jatuh ke daftar kolom lama supaya aplikasi tidak error.
+const KOLOM_SKU_MASTER_SET = KOLOM_SKU_MASTER + ",nama,pelengkap,komponen";
+const KOLOM_SKU_MASTER_SET_MINIM = KOLOM_SKU_MASTER + ",nama,komponen";
 const KOLOM_PENEMPATAN = ["id", "created_at", "sku", "rak_code", "qty"].join(",");
 // Audit pemakaian tabel "suppliers" di seluruh src/ (Sept 2026, lanjutan dari
 // audit items/sku_master/penempatan di atas) — cuma 7 kolom ini yang benar-
@@ -863,7 +867,11 @@ function MainApp({ session, onLogout }) {
       sbAll(`items?select=${KOLOM_ITEMS}&order=created_at.desc`),
       sbAll("pesanan_masuk?select=*&order=created_at.desc"),
       sbAll(`suppliers?select=${KOLOM_SUPPLIERS}&order=nama`),
-      sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`),
+      sbAll(`sku_master?select=${KOLOM_SKU_MASTER_SET}&order=created_at.desc`).catch(() =>
+        sbAll(`sku_master?select=${KOLOM_SKU_MASTER_SET_MINIM}&order=created_at.desc`).catch(() =>
+          sbAll(`sku_master?select=${KOLOM_SKU_MASTER}&order=created_at.desc`)
+        )
+      ),
       sbAll(`rak?select=${KOLOM_RAK}&order=code`),
       // Kalau kolom entitas belum ada (SQL belum dijalankan), jatuh ke bacaan lama tanpa kolom itu.
       sbAll(`master_data?select=${KOLOM_MASTER_DATA_PT}&order=label`).catch(() =>

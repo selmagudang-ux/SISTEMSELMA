@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
@@ -12,6 +12,8 @@ import KodeLiveTiktok from "./KodeLiveTiktok";
 import BarangTiktok from "./kasir/BarangTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
 import ImporSkuMaster from "../components/ImporSkuMaster";
+import { FormSetMaster, FormHapusSkuTerpilih } from "./FormSetMaster";
+import { olahSetMaster, adalahSet } from "../lib/setMaster";
 
 export default function SkuHarga({
   sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
@@ -537,8 +539,13 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
   );
 }
 
-function MasterBarang({ skuMaster, items, master, penempatan, setModal, session, reload, showToast, settings }) {
+function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, setModal, session, reload, showToast, settings }) {
   const [imporSku, setImporSku] = useState(false);
+  // Set = SKU berisi beberapa SKU lain: stok & HPP-nya dihitung dari isinya (lihat lib/setMaster.js).
+  const skuMaster = useMemo(() => olahSetMaster(skuMasterAsli), [skuMasterAsli]);
+  const [formSet, setFormSet] = useState(null); // { item } — item null = Set baru
+  const [hapusTerpilih, setHapusTerpilih] = useState(false);
+  const [hanyaSet, setHanyaSet] = useState(false);
   // Master Barang = katalog bersama: ubah harga / hapus SKU butuh izin "Kelola Master Barang".
   const bolehKelola = bisa(session?.role, "sku.kelola_master");
   const bolehEditHarga = bolehKelola && bisa(session?.role, "sku.edit_harga_langsung");
@@ -652,6 +659,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
     .filter((s) => {
       if (!tampilkanNonaktif && s.nonaktif) return false;
       if (hanyaPerubahan && !adaHargaBaruCheck(s)) return false;
+      if (hanyaSet && !adalahSet(s)) return false;
       const qLower = q.toLowerCase();
       const cocokQ =
         s.sku.toLowerCase().includes(qLower) ||
@@ -671,18 +679,19 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
       if (sortBy === "za") return b.sku.localeCompare(a.sku, "id", { numeric: true, sensitivity: "base" });
       // SKU pelengkap diketik manual (bukan format bahan-kategori-model-...),
       // jadi tidak punya "model" — ditaruh di akhir grupnya.
-      const ma = a.pelengkap ? "" : modelFromSku(a.sku);
-      const mb = b.pelengkap ? "" : modelFromSku(b.sku);
+      const ma = a.pelengkap || adalahSet(a) ? "" : modelFromSku(a.sku);
+      const mb = b.pelengkap || adalahSet(b) ? "" : modelFromSku(b.sku);
       if (!ma && !mb) return 0;
       if (!ma) return 1;
       if (!mb) return -1;
       return ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
-    }), [skuMaster, tampilkanNonaktif, hanyaPerubahan, q, kategori, subkategori, filterMp, mpAktif, sortBy]);
+    }), [skuMaster, tampilkanNonaktif, hanyaPerubahan, q, kategori, subkategori, filterMp, mpAktif, sortBy, hanyaSet]);
 
   // Jumlah SKU yang ada perubahan harga, dihitung dari cakupan yang sama
   // dengan toggle nonaktif (biar angkanya konsisten sama apa yang bisa
   // muncul kalau filter ini diaktifkan), tapi lepas dari filter q/kategori
   // supaya badge di checkbox selalu nunjukin total sebenarnya.
+  const jumlahSet = skuMaster.filter((s) => adalahSet(s) && (tampilkanNonaktif || !s.nonaktif)).length;
   const jumlahPerubahan = skuMaster.filter(
     (s) => (tampilkanNonaktif || !s.nonaktif) && adaHargaBaruCheck(s)
   ).length;
@@ -707,7 +716,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
   // Ganti filter/pencarian -> mulai lagi dari 60 kartu pertama.
   useEffect(() => {
     setBatas(60);
-  }, [q, kategori, subkategori, tampilkanNonaktif, hanyaPerubahan, filterMp, sortBy]);
+  }, [q, kategori, subkategori, tampilkanNonaktif, hanyaPerubahan, filterMp, sortBy, hanyaSet]);
 
   // Hitungan kelayakan MP untuk SKU aktif (lepas dari filter, supaya angkanya selalu total sebenarnya).
   const hitunganMp = useMemo(() => {
@@ -801,6 +810,14 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
           <div className="flex items-center gap-2">
             {bolehKelola && (
               <button
+                onClick={() => setFormSet({ item: null })}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+              >
+                <Layers size={14} /> Tambah Set
+              </button>
+            )}
+            {bolehKelola && (
+              <button
                 onClick={() => setImporSku(true)}
                 className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
               >
@@ -831,9 +848,17 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                 </>
               )}
             </button>
+            {bolehKelola && selected.size > 0 && (
+              <button
+                onClick={() => setHapusTerpilih(true)}
+                className="flex items-center gap-1.5 border border-red-500/50 text-red-400 hover:bg-red-500/10 text-xs font-medium px-3 py-2 rounded-lg"
+              >
+                <Trash2 size={14} /> Hapus Terpilih ({selected.size})
+              </button>
+            )}
             {bolehKeToko && selected.size > 0 && (
               <button
-                onClick={() => setPindah(skuMaster.filter((s) => selected.has(s.sku)))}
+                onClick={() => setPindah(skuMaster.filter((s) => selected.has(s.sku) && !adalahSet(s)))}
                 className="flex items-center gap-1.5 border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 text-xs font-medium px-3 py-2 rounded-lg"
               >
                 <Store size={14} /> Pindahkan ke Toko ({selected.size})
@@ -875,6 +900,35 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
           onSelesai={(n) => {
             showToast?.(`${n} SKU baru dibuat dari Excel`);
             reload?.();
+          }}
+        />
+      )}
+      {formSet && bolehKelola && (
+        <FormSetMaster
+          barang={formSet.item}
+          skuMaster={skuMaster}
+          settings={settings}
+          onClose={() => setFormSet(null)}
+          onSimpan={(pesan) => {
+            setFormSet(null);
+            showToast?.(pesan);
+            reload?.();
+          }}
+        />
+      )}
+      {hapusTerpilih && bolehKelola && (
+        <FormHapusSkuTerpilih
+          terpilih={skuMaster.filter((s) => selected.has(s.sku))}
+          skuMaster={skuMaster}
+          items={items}
+          onClose={() => setHapusTerpilih(false)}
+          onSelesai={(h) => {
+            setHapusTerpilih(false);
+            if (h && (h.terhapus > 0 || h.dinonaktifkan > 0)) {
+              setSelected(new Set());
+              showToast?.(`${h.terhapus} SKU dihapus${h.dinonaktifkan ? `, ${h.dinonaktifkan} dinonaktifkan` : ""}`);
+              reload?.();
+            }
           }}
         />
       )}
@@ -967,6 +1021,20 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
           />
           Tampilkan yang nonaktif
         </label>
+        {jumlahSet > 0 && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={hanyaSet}
+              onChange={(e) => setHanyaSet(e.target.checked)}
+              className="accent-amber-500"
+            />
+            Hanya Set
+            <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5 py-0.5">
+              {jumlahSet}
+            </span>
+          </label>
+        )}
         <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -1066,7 +1134,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 <Pencil size={12} />
                               </button>
                             )}
-                            {bolehKeToko && (
+                            {bolehKeToko && !adalahSet(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1092,6 +1160,19 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 <Pencil size={12} />
                               </button>
                             )}
+                            {bolehKelola && adalahSet(s) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFormSet({ item: s });
+                                }}
+                                title="Ubah isi & harga Set"
+                                className="absolute top-[8.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
+                              >
+                                <Layers size={12} />
+                              </button>
+                            )}
                             {bolehKelola && (
                               <button
                                 type="button"
@@ -1109,7 +1190,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                               <label
                                 onClick={(e) => e.stopPropagation()}
                                 className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md border border-slate-700 bg-slate-950 cursor-pointer"
-                                title="Pilih untuk download foto"
+                                title="Pilih (download foto / pindah ke toko / hapus)"
                               >
                                 <input
                                   type="checkbox"
@@ -1162,6 +1243,18 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                     {s.nama && <span className="text-[11px] text-slate-400 truncate">{s.nama}</span>}
                                   </div>
                                 )}
+                                {adalahSet(s) && (
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <Badge color="violet">Set · {s.komponen.length} SKU</Badge>
+                                      {s._komponenHilang && <Badge color="red">Isi tidak lengkap</Badge>}
+                                      {s.nama && <span className="text-[11px] text-slate-400 truncate">{s.nama}</span>}
+                                    </div>
+                                    <div className="font-mono text-[10px] text-slate-500 truncate" title={s.komponen.map((k) => `${k.sku} ×${k.qty}`).join(", ")}>
+                                      {s.komponen.map((k) => `${k.sku} ×${k.qty}`).join(", ")}
+                                    </div>
+                                  </div>
+                                )}
                                 {s.barcode_supplier && (
                                   <div
                                     className="font-mono text-[10px] text-slate-500 truncate"
@@ -1172,7 +1265,7 @@ function MasterBarang({ skuMaster, items, master, penempatan, setModal, session,
                                 )}
                                 <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                                   {s.stok <= 0 ? <Badge color="red">Habis</Badge> : (
-                                    <span className="text-[11px] text-slate-500">Stok {s.stok}</span>
+                                    <span className="text-[11px] text-slate-500">Stok {s.stok}{adalahSet(s) ? " (dari isi)" : ""}</span>
                                   )}
                                   {kodeRak && (
                                     <span className="text-[11px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded px-1.5 py-0.5">
