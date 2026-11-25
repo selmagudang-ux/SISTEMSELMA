@@ -19,7 +19,7 @@ import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 //  - Kode live          : diisi di sini; otomatis dicatat juga di daftar Kode Live TikTok (marketplace_sku_alias) untuk Rincian Penjualan
 //  - Hapus              : hanya kalau stok 0
 // Stok TIDAK bisa diketik langsung di form barang — hanya berubah lewat mutasi / opname supaya selalu ada catatannya.
-// Hanya role superappa (dijaga di SkuHarga.jsx, tab "Barang TikTok (Kode Live)" di Master Barang, sejajar Barang Toko).
+// Hanya role dengan izin "sku.barang_tiktok" (Super Appa selalu boleh; dijaga di SkuHarga.jsx, tab "Barang TikTok (Kode Live)" di Master Barang).
 // =========================================================
 
 const TABEL = "master_tiktok";

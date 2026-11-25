@@ -60,6 +60,7 @@ export default function SkuHarga({
 function TigaMaster(props) {
   const { skuMaster, session, reload, showToast } = props;
   const bolehToko = session?.role === "superappa";
+  const bolehBarangTiktok = bisa(session?.role, "sku.barang_tiktok"); // izin menu (Hak Akses role); Super Appa selalu boleh
   const [tab, setTab] = useState("master");
   const daftarTab = [
     { key: "master", label: "Master Barang" },
@@ -93,7 +94,7 @@ function TigaMaster(props) {
             title="Barang TikTok (Kode Live)"
             description="Barang yang dijual di TikTok: stok sendiri, kode live, harga, dan HPP. Bisa diambil dari Master Barang, dan stoknya bisa dikirim ke Barang Toko. Satu kode live = satu SKU di Master Barang."
           />
-          {bolehToko ? <BarangTiktok onBerubah={() => reload?.()} /> : <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />}
+          {bolehBarangTiktok ? <BarangTiktok onBerubah={() => reload?.()} /> : <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />}
         </div>
       )}
       {tab === "toko" && bolehToko && (

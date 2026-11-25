@@ -724,6 +724,9 @@ export const GRUP_AKSI = [
       { key: "sku.edit_harga_langsung", label: "Edit harga langsung (tombol \"Harga Baru\" / pensil di SKU & Harga)", bawaan: dari("superadmin") },
       { key: "sku.aturan_marketplace", label: "Ubah Aturan Harga Marketplace", bawaan: dari("superadmin") },
       { key: "sku.pindah_ke_toko", label: "Pindahkan SKU ke Barang Toko (kasir)", bawaan: tak },
+      // Tab "Barang TikTok (Kode Live)" di Master Barang: stok TikTok, mutasi gudang <-> TikTok, kirim ke Toko, opname, ubah, hapus.
+      // Tanpa izin ini, role hanya melihat daftar pemetaan kode live (tidak bisa mengubah stok). Super Appa selalu boleh.
+      { key: "sku.barang_tiktok", label: "Kelola Barang TikTok (stok TikTok, kode live, mutasi, kirim ke toko, opname) di Master Barang", bawaan: tak },
       // Master Barang = katalog bersama milik Holding (1 SKU = 1 baris untuk semua PT). Membuat SKU BARU,
       // mengubah harga katalog, dan menonaktifkan/menghapus SKU hanya boleh akun yang diberi izin ini.
       // Menambah stok SKU yang SUDAH ada di katalog tidak butuh izin ini.
