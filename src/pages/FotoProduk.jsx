@@ -252,13 +252,28 @@ export default function FotoProduk({ items, setModal, skuMaster, settings }) {
                 </div>
               )}
               <button
-                onClick={() => setModal({ type: "advance-verifikasi", item })}
+                onClick={() =>
+                  setModal(
+                    induk
+                      ? {
+                          type: "advance-verifikasi-induk",
+                          item,
+                          // SKU isi induk yang masih menunggu foto di tahap verifikasi
+                          anak: (items || []).filter(
+                            (i) => i.stage === "verifikasi" && skuRow.komponen.some((k) => k.sku === i.sku)
+                          ),
+                        }
+                      : { type: "advance-verifikasi", item }
+                  )
+                }
                 className="mt-2 w-full text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-md py-1.5"
               >
                 {item.perlu_foto_ulang
                   ? "Foto ulang →"
                   : item.foto_url
                   ? "Ganti foto verifikasi →"
+                  : induk
+                  ? "Foto induk + SKU isi →"
                   : "Upload foto verifikasi →"}
               </button>
             </div>

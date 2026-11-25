@@ -14,6 +14,7 @@ import {
   PesanBarangForm, KonfirmasiDatangForm, TandaiStatusKedatanganForm, EditBarangDatangForm, AjukanRestockForm, AjukanRestockZonaForm, ResponPengajuanForm, BatalkanPesananForm,
   MarketplaceTransaksiForm, MarketplaceIklanCatatForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
+import VerifikasiIndukForm from "./VerifikasiIndukForm";
 import { changeOwnPassword } from "../lib/auth";
 import { unggahBuktiBanyak } from "../pages/AlurKas";
 import { daftarBukti, urlAdalahPdf } from "../lib/bukti";
@@ -5670,6 +5671,63 @@ export default function ModalRouter({
               });
             }
           }, "Foto verifikasi tersimpan")
+        }
+      />
+    );
+  }
+
+  // VERIFIKASI FOTO LEWAT SKU INDUK. Foto induk disimpan seperti "advance-verifikasi", lalu SKU isi (anak) yang dipilih
+  // ikut memakai foto induk (salinan file sendiri supaya foto anak tidak ikut berubah kalau foto induk diganti nanti)
+  // atau memakai foto sendiri kalau diberikan. Anak yang tidak dipilih tidak disentuh.
+  if (modal.type === "advance-verifikasi-induk") {
+    return (
+      <VerifikasiIndukForm
+        item={modal.item}
+        anak={modal.anak || []}
+        onClose={close}
+        saving={saving}
+        onSubmit={({ indukFile, anakPilihan }) =>
+          run(async () => {
+            const aman = (t) => String(t || "").replace(/[^a-zA-Z0-9-_]/g, "-");
+            const fotoInduk = await kompresFotoProduk(indukFile);
+            const ext = (fotoInduk.name.split(".").pop() || "jpg").toLowerCase();
+            const urlInduk = await sbUploadFoto(fotoInduk, `${aman(modal.item.sku || modal.item.id)}.${ext}`);
+            if (modal.item._virtualInduk) {
+              await sb("items", {
+                method: "POST",
+                body: JSON.stringify({
+                  tanggal: new Date().toISOString().slice(0, 10),
+                  gudang: "Pembelian",
+                  jumlah: 0,
+                  sku: modal.item.sku,
+                  foto_url: urlInduk,
+                  stage: "marketplace",
+                  perlu_foto_ulang: false,
+                }),
+              });
+            } else {
+              await sb(`items?id=eq.${modal.item.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ foto_url: urlInduk, stage: "marketplace", perlu_foto_ulang: false }),
+              });
+            }
+            let urlBersama = null;
+            for (const { item: a, file } of anakPilihan) {
+              let url;
+              if (file) {
+                const kecil = await kompresFotoProduk(file);
+                const e2 = (kecil.name.split(".").pop() || "jpg").toLowerCase();
+                url = await sbUploadFoto(kecil, `${aman(a.sku || a.id)}.${e2}`);
+              } else {
+                if (!urlBersama) urlBersama = await sbUploadFoto(fotoInduk, `induk-${aman(modal.item.sku)}-${Date.now()}.${ext}`);
+                url = urlBersama;
+              }
+              await sb(`items?id=eq.${a.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ foto_url: url, stage: "marketplace", perlu_foto_ulang: false }),
+              });
+            }
+          }, anakPilihan.length ? `Foto induk tersimpan, ${anakPilihan.length} SKU isi ikut difoto` : "Foto induk tersimpan")
         }
       />
     );
