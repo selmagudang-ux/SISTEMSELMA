@@ -29,6 +29,7 @@ const stokAngka = (r) => Number(r.stok) || 0;
 
 const FILTER = [
   ["semua", "Semua"],
+  ["set", "Set"],
   ["ada", "Ada stok"],
   ["habis", "Stok habis"],
   ["tanpalive", "Tanpa kode live"],
@@ -36,7 +37,8 @@ const FILTER = [
   ["nonaktif", "Nonaktif"],
 ];
 const cocokFilter = (r, f) =>
-  f === "habis" ? stokAngka(r) <= 0
+  f === "set" ? !!r.komponen
+  : f === "habis" ? stokAngka(r) <= 0
   : f === "ada" ? stokAngka(r) > 0
   : f === "tanpalive" ? !r.kode_live
   : f === "tanpafoto" ? !r.foto_url
@@ -66,6 +68,31 @@ const pesan = (e) => {
   }
   return pesanError(e);
 };
+
+// SET = barang TikTok berisi beberapa barang TikTok lain (kolom komponen: [{kode, qty}]). Tidak punya stok sendiri:
+// stok = jumlah set yang bisa dipenuhi komponennya (yang paling sedikit), HPP = jumlah HPP komponen x qty.
+// Hasil hitung ini hanya untuk tampilan; kolom stok Set di database tetap 0 dan tidak pernah ditulis.
+function olahSet(rows) {
+  const peta = new Map(rows.map((r) => [r.kode, r]));
+  return rows.map((r) => {
+    if (!Array.isArray(r.komponen)) return r;
+    let stok = Infinity;
+    let hpp = 0;
+    let hilang = false;
+    for (const k of r.komponen) {
+      const c = peta.get(k.kode);
+      const q = Math.max(parseInt(k.qty, 10) || 1, 1);
+      if (!c || c.komponen) {
+        hilang = true;
+        stok = 0;
+        continue;
+      }
+      stok = Math.min(stok, Math.floor(Math.max(Number(c.stok) || 0, 0) / q));
+      hpp += (Number(c.hpp) || 0) * q;
+    }
+    return { ...r, stok: Number.isFinite(stok) ? stok : 0, hpp: Math.round(hpp), _komponenHilang: hilang };
+  });
+}
 
 async function namaUsahaSesi() {
   try {
@@ -235,6 +262,149 @@ function FormBarang({ barang, kodeSaran, onSimpan, onClose }) {
 }
 
 // ---------------------------------------------------------
+// Tambah / ubah SET. Komponen dipilih dari barang TikTok biasa (bukan Set lain); stok tiap komponen tetap di barangnya masing-masing.
+function FormSet({ barang, semua, kodeSaran, onSimpan, onClose }) {
+  const baru = !barang.id;
+  const biasa = useMemo(() => semua.filter((r) => !r.komponen), [semua]);
+  const peta = useMemo(() => new Map(biasa.map((r) => [r.kode, r])), [biasa]);
+  const [f, setF] = useState({
+    kode: barang.kode || kodeSaran || "",
+    kode_live: barang.kode_live || "",
+    nama: barang.nama || "",
+    harga_jual: barang.harga_jual ?? "",
+    nonaktif: !!barang.nonaktif,
+  });
+  const [komp, setKomp] = useState(() => (Array.isArray(barang.komponen) ? barang.komponen.map((k) => ({ kode: k.kode, qty: String(k.qty || 1) })) : []));
+  const [cari, setCari] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
+
+  const hasilCari = useMemo(() => {
+    const kata = cari.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!kata.length) return [];
+    const sudah = new Set(komp.map((k) => k.kode));
+    return biasa
+      .filter((r) => !sudah.has(r.kode))
+      .filter((r) => {
+        const j = [r.kode, r.kode_live, r.nama, r.sku_gudang].filter(Boolean).join(" ").toLowerCase();
+        return kata.every((x) => j.includes(x));
+      })
+      .slice(0, 8);
+  }, [cari, biasa, komp]);
+
+  const hppSet = komp.reduce((n, k) => n + (Number(peta.get(k.kode)?.hpp) || 0) * Math.max(parseInt(k.qty, 10) || 1, 1), 0);
+
+  const simpan = async () => {
+    const kode = f.kode.trim();
+    const live = rapikanKodeLive(f.kode_live);
+    if (!kode || !f.nama.trim()) return setError("Kode dan nama wajib diisi.");
+    if (!live) return setError("Kode live wajib diisi — dipakai saat scan resi untuk memotong stok komponen.");
+    if (komp.length < 2) return setError("Set minimal berisi 2 barang. Untuk 1 barang, pakai barang TikTok biasa.");
+    if (!(Number(f.harga_jual) > 0)) return setError("Harga jual harus lebih dari 0.");
+    const daftar = komp.map((k) => ({ kode: k.kode, qty: Math.max(parseInt(k.qty, 10) || 1, 1) }));
+    setSaving(true);
+    setError("");
+    const data = {
+      nama: f.nama.trim(),
+      kode_live: live,
+      barcode: kode,
+      harga_jual: Math.round(Number(f.harga_jual) || 0),
+      hpp: Math.round(hppSet),
+      sku_gudang: null,
+      komponen: daftar,
+      nonaktif: f.nonaktif,
+    };
+    try {
+      if (baru) await sb(TABEL, { method: "POST", body: JSON.stringify({ kode, stok: 0, ...data }) });
+      else await sb(`${TABEL}?id=eq.${barang.id}`, { method: "PATCH", body: JSON.stringify(data) });
+      onSimpan();
+    } catch (e) {
+      setError(pesan(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Kerangka judul={baru ? "Tambah Set" : `Ubah Set ${barang.kode}`} onClose={onClose}>
+      <div className="text-[11px] text-slate-500">Set = satu kode live berisi beberapa barang TikTok. Stok Set tidak disimpan sendiri: dihitung dari komponen, dan saat resi di-scan stok tiap komponen yang terpotong.</div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <div className="text-xs text-slate-400 mb-1">Kode {!baru && "(tidak bisa diubah)"}</div>
+          <input value={f.kode} onChange={(e) => set("kode")(e.target.value)} disabled={!baru} className={`${inp} font-mono disabled:opacity-60`} />
+        </label>
+        <label className="block">
+          <div className="text-xs text-amber-300 mb-1">Kode live Set</div>
+          <input value={f.kode_live} onChange={(e) => set("kode_live")(e.target.value)} className={`${inp} font-mono`} placeholder="mis. S-05" />
+        </label>
+      </div>
+      <label className="block">
+        <div className="text-xs text-slate-400 mb-1">Nama set</div>
+        <input value={f.nama} onChange={(e) => set("nama")(e.target.value)} className={inp} />
+      </label>
+      <label className="block">
+        <div className="text-xs text-slate-400 mb-1">Harga jual set</div>
+        <InputRupiah value={f.harga_jual} onChange={set("harga_jual")} className={inp} placeholder="0" />
+      </label>
+
+      <div>
+        <div className="text-xs text-slate-400 mb-1">Isi set (barang TikTok)</div>
+        <ul className="space-y-1.5 mb-2">
+          {komp.map((k, i) => {
+            const c = peta.get(k.kode);
+            return (
+              <li key={k.kode} className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm truncate">{c?.nama || k.kode}</div>
+                  <div className="text-[11px] text-slate-500 font-mono truncate">
+                    {k.kode}{c?.kode_live ? ` · ${c.kode_live}` : ""}{c ? ` · stok ${stokAngka(c)}` : " · barang tidak ditemukan"}
+                  </div>
+                </div>
+                <input
+                  value={k.qty}
+                  onChange={(e) => setKomp((l) => l.map((x, j) => (j === i ? { ...x, qty: e.target.value.replace(/\D/g, "") } : x)))}
+                  inputMode="numeric"
+                  className={`${inp} !w-14 text-center`}
+                  title="Jumlah per set"
+                />
+                <button type="button" onClick={() => setKomp((l) => l.filter((_, j) => j !== i))} className="p-1.5 text-slate-500 hover:text-red-400" title="Buang"><Trash2 size={15} /></button>
+              </li>
+            );
+          })}
+          {komp.length === 0 && <li className="text-xs text-slate-500">Belum ada. Cari barang di bawah.</li>}
+        </ul>
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari barang TikTok untuk ditambahkan (kode live, kode, nama, SKU)…" className={`${inp} pl-9`} />
+        </div>
+        {hasilCari.length > 0 && (
+          <ul className="mt-1 rounded-lg border border-slate-800 divide-y divide-slate-800 overflow-hidden">
+            {hasilCari.map((r) => (
+              <li key={r.kode}>
+                <button type="button" onClick={() => { setKomp((l) => [...l, { kode: r.kode, qty: "1" }]); setCari(""); }} className="w-full text-left px-3 py-2 hover:bg-slate-900">
+                  <div className="text-sm truncate">{r.nama}</div>
+                  <div className="text-[11px] text-slate-500 font-mono truncate">{r.kode}{r.kode_live ? ` · ${r.kode_live}` : ""} · stok {stokAngka(r)}</div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {cari.trim() && hasilCari.length === 0 && <div className="mt-1 text-[11px] text-slate-500">Tidak ada barang TikTok yang cocok (barang harus sudah ada di Barang TikTok).</div>}
+      </div>
+      <div className="text-xs text-slate-400">HPP set (jumlah HPP isi): <span className="text-slate-200 font-semibold">{fmtRp(hppSet)}</span></div>
+
+      <label className="flex items-center gap-2 text-sm text-slate-300">
+        <input type="checkbox" checked={f.nonaktif} onChange={(e) => set("nonaktif")(e.target.checked)} /> Nonaktif
+      </label>
+      <Galat pesan={error} />
+      <button onClick={simpan} disabled={saving} className="w-full flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-slate-950 font-semibold py-3.5 rounded-2xl">
+        {saving && <Loader2 size={15} className="animate-spin" />} Simpan Set
+      </button>
+    </Kerangka>
+  );
+}
+
+// ---------------------------------------------------------
 function FormMutasi({ barang, onSelesai, onClose }) {
   const [gudang, setGudang] = useState(null);
   const [arah, setArah] = useState("ke_tiktok"); // "ke_tiktok" (gudang -> TikTok) | "ke_gudang" (TikTok -> gudang)
@@ -389,12 +559,13 @@ function FormOpname({ barang, onSelesai, onClose }) {
 }
 
 // ---------------------------------------------------------
-function FormHapus({ barang, onSelesai, onClose }) {
+function FormHapus({ barang, dipakaiSet = [], onSelesai, onClose }) {
   const stok = stokAngka(barang);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const hapus = async () => {
     if (stok !== 0) return setError(`Stok TikTok masih ${stok}. Barang hanya bisa dihapus kalau stoknya 0.`);
+    if (dipakaiSet.length) return setError(`Barang ini masih jadi isi Set: ${dipakaiSet.map((x) => x.kode_live || x.kode).join(", ")}. Ubah / hapus Set itu dulu.`);
     setSaving(true);
     setError("");
     try {
@@ -415,8 +586,9 @@ function FormHapus({ barang, onSelesai, onClose }) {
       ) : (
         <Galat pesan={`Stok TikTok masih ${stok}. Barang hanya bisa dihapus kalau stoknya 0 — lakukan opname atau kembalikan ke gudang dulu.`} />
       )}
-      <Galat pesan={stok === 0 ? error : ""} />
-      <button onClick={hapus} disabled={saving || stok !== 0} className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl">
+      {dipakaiSet.length > 0 && <Galat pesan={`Barang ini masih jadi isi Set: ${dipakaiSet.map((x) => x.kode_live || x.kode).join(", ")}. Ubah / hapus Set itu dulu.`} />}
+      <Galat pesan={stok === 0 && !dipakaiSet.length ? error : ""} />
+      <button onClick={hapus} disabled={saving || stok !== 0 || dipakaiSet.length > 0} className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-semibold py-3.5 rounded-2xl">
         {saving && <Loader2 size={15} className="animate-spin" />} Hapus Barang
       </button>
     </Kerangka>
@@ -456,6 +628,7 @@ function InfoBarang({ r }) {
         {r.kode}
         {r.sku_gudang && r.sku_gudang !== r.kode ? ` ← ${r.sku_gudang}` : ""}
         {r.nonaktif ? <span className="ml-1.5 font-sans text-red-300">· nonaktif</span> : null}
+        {Array.isArray(r.komponen) ? <span className="ml-1.5 font-sans text-sky-300">· SET {r.komponen.length} barang{r._komponenHilang ? " · isi tidak lengkap" : ""}</span> : null}
       </div>
     </div>
   );
@@ -463,11 +636,14 @@ function InfoBarang({ r }) {
 
 function AksiBarang({ r, onMutasi, onKeToko, onOpname, onUbah, onHapus }) {
   const tombol = "p-2 rounded-lg text-slate-400 hover:bg-slate-800";
+  const adalahSet = Array.isArray(r.komponen);
   return (
     <div className="flex items-center gap-0.5 flex-shrink-0">
+      {!adalahSet && <>
       <button onClick={() => onMutasi(r)} title="Mutasi gudang ⇄ TikTok" className={`${tombol} hover:text-amber-400`}><ArrowDownToLine size={16} /></button>
       <button onClick={() => onKeToko(r)} title="Kirim stok ke Barang Toko" className={`${tombol} hover:text-sky-400`}><Send size={16} /></button>
       <button onClick={() => onOpname(r)} title="Opname" className={`${tombol} hover:text-amber-400`}><ClipboardCheck size={16} /></button>
+      </>}
       <button onClick={() => onUbah(r)} title="Ubah" className={`${tombol} hover:text-amber-400`}><Pencil size={16} /></button>
       <button onClick={() => onHapus(r)} title="Hapus (stok harus 0)" className={`${tombol} hover:text-red-400`}><Trash2 size={16} /></button>
     </div>
@@ -483,6 +659,7 @@ export default function BarangTiktok({ onBerubah }) {
   const [urut, setUrut] = useState("kode");
   const [batas, setBatas] = useState(PER_TAHAP);
   const [form, setForm] = useState(null);
+  const [formSet, setFormSet] = useState(null);
   const [mutasi, setMutasi] = useState(null);
   const [opname, setOpname] = useState(null);
   const [hapus, setHapus] = useState(null);
@@ -493,7 +670,7 @@ export default function BarangTiktok({ onBerubah }) {
   const muat = async () => {
     setError("");
     try {
-      setRows((await sbAll(`${TABEL}?select=*&order=kode`)) || []);
+      setRows(olahSet((await sbAll(`${TABEL}?select=*&order=kode`)) || []));
     } catch (e) {
       setError(pesan(e));
       setRows([]);
@@ -502,9 +679,10 @@ export default function BarangTiktok({ onBerubah }) {
   useEffect(() => { muat(); }, []);
 
   const hitung = useMemo(() => {
-    const h = { semua: 0, ada: 0, habis: 0, tanpalive: 0, tanpafoto: 0, nonaktif: 0 };
+    const h = { semua: 0, set: 0, ada: 0, habis: 0, tanpalive: 0, tanpafoto: 0, nonaktif: 0 };
     for (const r of rows || []) {
       h.semua++;
+      if (r.komponen) h.set++;
       if (stokAngka(r) > 0) h.ada++; else h.habis++;
       if (!r.kode_live) h.tanpalive++;
       if (!r.foto_url) h.tanpafoto++;
@@ -512,7 +690,7 @@ export default function BarangTiktok({ onBerubah }) {
     }
     return h;
   }, [rows]);
-  const totalStok = useMemo(() => (rows || []).reduce((n, r) => n + stokAngka(r), 0), [rows]);
+  const totalStok = useMemo(() => (rows || []).reduce((n, r) => n + (r.komponen ? 0 : stokAngka(r)), 0), [rows]); // Set tidak dihitung (stoknya turunan komponen)
 
   const tampil = useMemo(() => {
     const kata = q.toLowerCase().split(/\s+/).filter(Boolean);
@@ -556,11 +734,11 @@ export default function BarangTiktok({ onBerubah }) {
   };
 
   const selesai = () => {
-    setForm(null); setMutasi(null); setOpname(null); setHapus(null); setDariMaster(false); setKeToko(null);
+    setForm(null); setFormSet(null); setMutasi(null); setOpname(null); setHapus(null); setDariMaster(false); setKeToko(null);
     muat();
   };
 
-  const aksi = { onMutasi: setMutasi, onKeToko: mulaiKeToko, onOpname: setOpname, onUbah: (x) => setForm({ barang: x }), onHapus: setHapus };
+  const aksi = { onMutasi: setMutasi, onKeToko: mulaiKeToko, onOpname: setOpname, onUbah: (x) => (x.komponen ? setFormSet({ barang: x }) : setForm({ barang: x })), onHapus: setHapus };
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950 text-slate-100 flex flex-col min-h-[60vh]">
@@ -579,6 +757,9 @@ export default function BarangTiktok({ onBerubah }) {
           </div>
           <button onClick={() => setDariMaster(true)} title="Pilih barang dari Master Barang untuk dijadikan barang TikTok" className="flex items-center gap-1.5 border border-amber-500/50 hover:bg-amber-500/10 text-amber-300 font-semibold text-sm px-3 py-2 rounded-lg">
             <ArrowDownToLine size={15} /> Dari Master
+          </button>
+          <button onClick={() => setFormSet({ barang: {} })} title="Satu kode live berisi beberapa barang (dipasangkan saat dikirim)" className="flex items-center gap-1.5 border border-sky-500/50 hover:bg-sky-500/10 text-sky-300 font-semibold text-sm px-3 py-2 rounded-lg">
+            <Plus size={15} /> Set
           </button>
           <button onClick={() => setForm({ barang: {} })} className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg">
             <Plus size={15} /> Tambah
@@ -666,9 +847,10 @@ export default function BarangTiktok({ onBerubah }) {
 
       {dariMaster && <TambahDariMaster tujuan="tiktok" onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {form && <FormBarang barang={form.barang} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setForm(null)} />}
+      {formSet && <FormSet barang={formSet.barang} semua={rows || []} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setFormSet(null)} />}
       {mutasi && <FormMutasi barang={mutasi} onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setMutasi(null)} />}
       {opname && <FormOpname barang={opname} onSelesai={selesai} onClose={() => setOpname(null)} />}
-      {hapus && <FormHapus barang={hapus} onSelesai={selesai} onClose={() => setHapus(null)} />}
+      {hapus && <FormHapus barang={hapus} dipakaiSet={(rows || []).filter((x) => Array.isArray(x.komponen) && x.komponen.some((k) => k.kode === hapus.kode))} onSelesai={selesai} onClose={() => setHapus(null)} />}
       {keToko && (
         <PindahKeToko
           daftar={keToko.daftar}

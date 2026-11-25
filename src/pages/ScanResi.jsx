@@ -11,7 +11,7 @@ import { TombolScanKamera } from "../components/ScanKamera";
 import { sb, sbAll } from "../lib/api";
 import { allowedSubMenus, adaOverrideSub, bisa } from "../lib/constants";
 import { downloadXlsx } from "../lib/exportData";
-import { parseFileOrderan, ringkasBarang } from "../lib/resiOrderan";
+import { parseFileOrderan, ringkasBarang, kodeLiveBarang } from "../lib/resiOrderan";
 import { ambilInfoPerangkat } from "../lib/infoPerangkat";
 import {
   DAFTAR_EKSPEDISI, labelEkspedisi, normalisasiResi, deteksiEkspedisi, bukanResi,
@@ -218,8 +218,20 @@ function KartuHasil({ hasil }) {
           {hasil.barang.map((b, i) => (
             <div key={i} className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <div className="font-semibold text-base break-words">{[b.sku, b.variasi].filter(Boolean).join(" · ") || b.nama}</div>
-                {(b.sku || b.variasi) && <div className="text-xs opacity-80 break-words">{b.nama}</div>}
+                {kodeLiveBarang(b) ? (
+                  <>
+                    <div className="font-bold text-xl break-words">
+                      <span className="inline-block rounded-md bg-amber-400 text-slate-950 px-2 py-0.5 font-mono">{kodeLiveBarang(b)}</span>
+                      {b.sku && <span className="ml-2 text-sm font-semibold opacity-90">{b.sku}</span>}
+                    </div>
+                    <div className="text-xs opacity-80 break-words">{b.nama}{b.variasi && b.variasi !== kodeLiveBarang(b) ? ` · ${b.variasi}` : ""}</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="font-semibold text-base break-words">{[b.sku, b.variasi].filter(Boolean).join(" · ") || b.nama}</div>
+                    {(b.sku || b.variasi) && <div className="text-xs opacity-80 break-words">{b.nama}</div>}
+                  </>
+                )}
               </div>
               <div className="text-xl font-bold shrink-0">×{b.qty}</div>
             </div>
@@ -231,6 +243,25 @@ function KartuHasil({ hasil }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Barang pada satu resi di daftar scan: kode live tampil sebagai label (paling jelas), sisanya teks biasa.
+function BarangKodeLive({ barang }) {
+  return (
+    <div className="flex flex-wrap gap-x-2 gap-y-1">
+      {(barang || []).map((b, i) => {
+        const live = kodeLiveBarang(b);
+        return live ? (
+          <span key={i} className="inline-flex items-center gap-1" title={[b.sku, b.nama].filter(Boolean).join(" · ")}>
+            <span className="rounded bg-amber-400 text-slate-950 px-1.5 py-0.5 font-mono font-bold">{live}</span>
+            <span className="font-semibold text-md-on-surface">×{b.qty}</span>
+          </span>
+        ) : (
+          <span key={i} className="break-words">{[b.sku, b.variasi].filter(Boolean).join(" · ") || b.nama} ×{b.qty}</span>
+        );
+      })}
     </div>
   );
 }
@@ -2140,8 +2171,8 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
                           <span className="text-xs text-md-on-surface-variant">{labelEkspedisi(r.ekspedisi)}</span>
                         )}
                       </td>
-                      <td className="px-2 py-2 text-xs text-md-on-surface-variant hidden lg:table-cell max-w-[260px] truncate" title={r.orderan ? ringkasBarang(r.orderan.barang) : undefined}>
-                        {r.orderan ? ringkasBarang(r.orderan.barang) : ""}
+                      <td className="px-2 py-2 text-xs text-md-on-surface-variant max-w-[320px]" title={r.orderan ? ringkasBarang(r.orderan.barang) : undefined}>
+                        {r.orderan ? <BarangKodeLive barang={r.orderan.barang} /> : ""}
                       </td>
                       <td className="px-2 py-2">
                         {r.cancel ? (

@@ -8,6 +8,7 @@
 // Satu resi bisa punya banyak baris barang → digabung per resi.
 // =========================================================
 import { normalisasiResi, bukanResi } from "./resiEkspedisi";
+import { kodeLiveDariVariasi } from "./tiktokImport";
 
 const RE_RESI = /^(tracking\s*(id|number|code))$/i;
 const RE_ORDER = /^order\s*id$/i;
@@ -32,10 +33,18 @@ function perbaikiRef(XLSX, ws) {
   if (r2 >= 0) ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r2, c: c2 } });
 }
 
-// Ringkas daftar barang jadi satu teks, mis. "G4B-13/TDGL-GSN-4 · R-45 ×1, C-170, Size 9 ×2".
+// Kode live satu baris barang orderan (dari kolom Variation). "" kalau bukan bentuk kode live.
+// Stok Barang TikTok terpotong lewat kode ini saat resi di-scan (lihat supabase/migrations/20261125_*.sql).
+export const kodeLiveBarang = (b) => kodeLiveDariVariasi(b?.variasi);
+
+// Ringkas daftar barang jadi satu teks, kode live paling depan, mis. "A-11 · G4B-13/TDGL-GSN-4 ×1, C-170 ×2".
 export function ringkasBarang(barang) {
   return (barang || [])
-    .map((b) => `${[b.sku, b.variasi].filter(Boolean).join(" · ") || b.nama} ×${b.qty}`)
+    .map((b) => {
+      const live = kodeLiveBarang(b);
+      const sisaVariasi = live ? "" : b.variasi;
+      return `${[live, b.sku, sisaVariasi].filter(Boolean).join(" · ") || b.nama} ×${b.qty}`;
+    })
     .join(", ");
 }
 
