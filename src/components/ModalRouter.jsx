@@ -15,6 +15,7 @@ import {
   MarketplaceTransaksiForm, MarketplaceIklanCatatForm, MarketplacePencairanForm, MarketplaceTokoForm,
 } from "./forms";
 import VerifikasiIndukForm from "./VerifikasiIndukForm";
+import TempatkanRakBanyakForm from "./TempatkanRakBanyakForm";
 import { changeOwnPassword } from "../lib/auth";
 import { unggahBuktiBanyak } from "../pages/AlurKas";
 import { daftarBukti, urlAdalahPdf } from "../lib/bukti";
@@ -5509,6 +5510,41 @@ export default function ModalRouter({
               body: JSON.stringify(patchItem),
             });
           }, "Barang ditempatkan di rak")
+        }
+      />
+    );
+  }
+
+  // TEMPATKAN BANYAK BARANG KE SATU RAK (dipilih di Rak > Tempatkan Barang). Sama seperti "advance-rak" untuk tiap barang:
+  // satu baris penempatan per SKU + stage item lanjut sesuai stage_setelah_rak.
+  if (modal.type === "advance-rak-banyak") {
+    return (
+      <TempatkanRakBanyakForm
+        items={modal.items || []}
+        rakList={rakList}
+        penempatan={penempatan}
+        skuMaster={skuMaster}
+        onClose={close}
+        saving={saving}
+        onSubmit={(rakCode, rows) =>
+          run(async () => {
+            await sb("penempatan", {
+              method: "POST",
+              body: JSON.stringify(rows.map((r) => ({ sku: r.item.sku, rak_code: rakCode, qty: r.qty }))),
+            });
+            const perTahap = new Map(); // stage tujuan -> id item
+            for (const { item } of rows) {
+              const tujuan = item.stage_setelah_rak === "selesai" ? "selesai" : item.stage_setelah_rak === "menunggu-harga" ? "menunggu-harga" : "verifikasi";
+              if (!perTahap.has(tujuan)) perTahap.set(tujuan, []);
+              perTahap.get(tujuan).push(item.id);
+            }
+            for (const [stage, ids] of perTahap) {
+              await sb(`items?id=in.(${ids.join(",")})`, {
+                method: "PATCH",
+                body: JSON.stringify({ rak_code: rakCode, stage }),
+              });
+            }
+          }, `${rows.length} barang ditempatkan di rak ${rakCode}`)
         }
       />
     );

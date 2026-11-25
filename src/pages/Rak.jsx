@@ -374,11 +374,37 @@ function SisaGudang({ rak, penempatan, skuMaster, setModal }) {
 }
 
 function TempatkanRak({ items, skuMaster, penempatan, setModal }) {
-  const menungguRak = items.filter((i) => i.stage === "rak");
+  // Urut menurut SKU supaya satu produk beda ukuran berdekatan.
+  const menungguRak = useMemo(
+    () =>
+      items
+        .filter((i) => i.stage === "rak")
+        .sort((a, b) => (a.sku || "").localeCompare(b.sku || "", undefined, { numeric: true, sensitivity: "base" })),
+    [items]
+  );
   const perluUlang = useMemo(
     () => cariPerluDitempatkanUlang(skuMaster, penempatan),
     [skuMaster, penempatan]
   );
+  // Barang yang dicentang untuk ditempatkan ke SATU rak sekaligus (id item).
+  const [pilih, setPilih] = useState(() => new Set());
+  const terpilih = useMemo(() => menungguRak.filter((i) => pilih.has(i.id)), [menungguRak, pilih]);
+  const ubahPilih = (id) =>
+    setPilih((p) => {
+      const n = new Set(p);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  // Centang semua barang yang produknya sama dengan item ini (cuma beda ukuran).
+  const pilihSemuaUkuran = (item) =>
+    setPilih((p) => {
+      const n = new Set(p);
+      menungguRak.forEach((o) => {
+        if (sameProdukKecualiUkuran(item.sku, o.sku, skuMaster)) n.add(o.id);
+      });
+      return n;
+    });
 
   const totalKosong = menungguRak.length === 0 && perluUlang.length === 0;
 
@@ -386,24 +412,67 @@ function TempatkanRak({ items, skuMaster, penempatan, setModal }) {
     <div>
       <PageHeader
         title="Tempatkan Barang"
-        description="Barang yang sudah punya SKU tapi belum ditempatkan di rak, termasuk SKU yang rak lamanya sudah ditimpa SKU lain dan perlu rak baru."
+        description="Barang yang sudah punya SKU tapi belum ditempatkan di rak, termasuk SKU yang rak lamanya sudah ditimpa SKU lain dan perlu rak baru. Centang beberapa barang (mis. satu produk beda ukuran) untuk ditempatkan ke satu rak sekaligus."
       />
+      {menungguRak.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 sticky top-[64px] z-10 bg-slate-950/90 backdrop-blur py-2">
+          <button
+            type="button"
+            onClick={() => setPilih(terpilih.length === menungguRak.length ? new Set() : new Set(menungguRak.map((i) => i.id)))}
+            className="border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-3 py-1.5 rounded-lg"
+          >
+            {terpilih.length === menungguRak.length ? "Batal pilih semua" : `Pilih semua (${menungguRak.length})`}
+          </button>
+          {terpilih.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setModal({ type: "advance-rak-banyak", items: terpilih })}
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-1.5 rounded-lg"
+              >
+                Tempatkan {terpilih.length} terpilih ke 1 rak →
+              </button>
+              <button type="button" onClick={() => setPilih(new Set())} className="text-[11px] text-slate-500 hover:text-slate-300 underline">
+                Batal pilih
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {totalKosong ? (
         <EmptyState label="Tidak ada barang yang menunggu penempatan rak." />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {menungguRak.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setModal({ type: "advance-rak", item })}
-              className="text-left bg-slate-900 border border-slate-800 hover:border-amber-500/50 rounded-lg p-3 transition"
-            >
-              <PackagePlus size={16} className="text-sky-400 mb-2" />
-              <div className="text-xs font-mono text-slate-300">{item.sku || `#${item.id.slice(0, 8)}`}</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">{item.jumlah}x</div>
-              <div className="mt-2 text-[11px] font-medium text-sky-400">Tempatkan di rak →</div>
-            </button>
-          ))}
+          {menungguRak.map((item) => {
+            const dipilih = pilih.has(item.id);
+            return (
+              <div
+                key={item.id}
+                className={`relative bg-slate-900 border rounded-lg transition ${dipilih ? "border-amber-500/60 ring-1 ring-amber-500/30" : "border-slate-800 hover:border-amber-500/50"}`}
+              >
+                <label className="absolute top-2 right-2 z-10 flex items-center justify-center w-5 h-5 rounded-md border border-slate-700 bg-slate-950 cursor-pointer" title="Pilih untuk ditempatkan bersama">
+                  <input type="checkbox" checked={dipilih} onChange={() => ubahPilih(item.id)} className="sr-only" />
+                  {dipilih && <span className="text-amber-400 text-xs leading-none">✓</span>}
+                </label>
+                <button
+                  onClick={() => setModal({ type: "advance-rak", item })}
+                  className="block w-full text-left p-3"
+                >
+                  <PackagePlus size={16} className="text-sky-400 mb-2" />
+                  <div className="text-xs font-mono text-slate-300 pr-5 break-all">{item.sku || `#${item.id.slice(0, 8)}`}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{item.jumlah}x</div>
+                  <div className="mt-2 text-[11px] font-medium text-sky-400">Tempatkan di rak →</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pilihSemuaUkuran(item)}
+                  className="w-full text-left px-3 pb-2 text-[10px] text-slate-500 hover:text-amber-400"
+                >
+                  + pilih semua ukuran produk ini
+                </button>
+              </div>
+            );
+          })}
           {perluUlang.map((r) => (
             <button
               key={`ulang-${r.sku}`}
