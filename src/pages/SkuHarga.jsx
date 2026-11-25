@@ -541,7 +541,7 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
 
 function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, setModal, session, reload, showToast, settings }) {
   const [imporSku, setImporSku] = useState(false);
-  // Set = SKU berisi beberapa SKU lain: stok & HPP-nya dihitung dari isinya (lihat lib/setMaster.js).
+  // SKU Induk = pengelompokan SKU lain (tanpa harga/stok sendiri); stok induk = jumlah stok isinya (lihat lib/setMaster.js).
   const skuMaster = useMemo(() => olahSetMaster(skuMasterAsli), [skuMasterAsli]);
   const [formSet, setFormSet] = useState(null); // { item } — item null = Set baru
   const [hapusTerpilih, setHapusTerpilih] = useState(false);
@@ -668,7 +668,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
       if (!cocokQ) return false;
       if (kategori && s.kategori !== kategori) return false;
       if (subkategori && s.subkategori !== subkategori) return false;
-      if (filterMp && mpAktif && infoMp(s)?.status !== filterMp) return false;
+      if (filterMp && mpAktif && (adalahSet(s) || infoMp(s)?.status !== filterMp)) return false;
       return true;
     })
     // Urutan: per Model (segmen ke-3 di dalam SKU, numerik natural — 1, 2, 3,
@@ -733,7 +733,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
     const h = { layak: 0, rugi: 0, kosong: 0 };
     if (!mpAktif) return h;
     skuMaster.forEach((s) => {
-      if (s.nonaktif) return;
+      if (s.nonaktif || adalahSet(s)) return;
       const st = hitungMp(s, mpAktif)?.status;
       if (st) h[st] += 1;
     });
@@ -823,7 +823,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                 onClick={() => setFormSet({ item: null })}
                 className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
               >
-                <Layers size={14} /> Tambah Set
+                <Layers size={14} /> Tambah SKU Induk
               </button>
             )}
             {bolehKelola && (
@@ -917,7 +917,6 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
         <FormSetMaster
           barang={formSet.item}
           skuMaster={skuMaster}
-          settings={settings}
           onClose={() => setFormSet(null)}
           onSimpan={(pesan) => {
             setFormSet(null);
@@ -1048,7 +1047,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
               onChange={(e) => setHanyaSet(e.target.checked)}
               className="accent-amber-500"
             />
-            Hanya Set
+            Hanya SKU Induk
             <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5 py-0.5">
               {jumlahSet}
             </span>
@@ -1126,7 +1125,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 Nonaktif
                               </span>
                             )}
-                            {adaHargaBaru && bolehKelola && (
+                            {adaHargaBaru && bolehKelola && !adalahSet(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1140,7 +1139,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 Harga Baru
                               </button>
                             )}
-                            {bolehEditHarga && (
+                            {bolehEditHarga && !adalahSet(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1186,8 +1185,8 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                   e.stopPropagation();
                                   setFormSet({ item: s });
                                 }}
-                                title="Ubah isi & harga Set"
-                                className="absolute top-[8.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
+                                title="Ubah isi SKU induk"
+                                className="absolute top-[4.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
                               >
                                 <Layers size={12} />
                               </button>
@@ -1265,12 +1264,9 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 {adalahSet(s) && (
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5 min-w-0">
-                                      <Badge color="violet">Set · {s.komponen.length} SKU</Badge>
+                                      <Badge color="violet">Induk · {s.komponen.length} SKU</Badge>
                                       {s._komponenHilang && <Badge color="red">Isi tidak lengkap</Badge>}
                                       {s.nama && <span className="text-[11px] text-slate-400 truncate">{s.nama}</span>}
-                                    </div>
-                                    <div className="font-mono text-[10px] text-slate-500 truncate" title={s.komponen.map((k) => `${k.sku} ×${k.qty}`).join(", ")}>
-                                      {s.komponen.map((k) => `${k.sku} ×${k.qty}`).join(", ")}
                                     </div>
                                   </div>
                                 )}
@@ -1283,8 +1279,8 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                   </div>
                                 )}
                                 <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                  {s.stok <= 0 ? <Badge color="red">Habis</Badge> : (
-                                    <span className="text-[11px] text-slate-500">Stok {s.stok}{adalahSet(s) ? " (dari isi)" : ""}</span>
+                                  {s.stok <= 0 && !adalahSet(s) ? <Badge color="red">Habis</Badge> : (
+                                    <span className="text-[11px] text-slate-500">{adalahSet(s) ? `Total stok isi ${s.stok}` : `Stok ${s.stok}`}</span>
                                   )}
                                   {kodeRak && (
                                     <span className="text-[11px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded px-1.5 py-0.5">
@@ -1294,6 +1290,19 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 </div>
                               </div>
                             </div>
+                            {adalahSet(s) ? (
+                              <div className="space-y-1 max-h-40 overflow-y-auto">
+                                {(s._isi || []).map((k) => (
+                                  <div key={k.sku} className="flex items-center justify-between gap-2 text-[11px]">
+                                    <span className={`font-mono truncate ${k.ada ? "text-slate-300" : "text-red-400"}`} title={k.sku}>{k.sku}</span>
+                                    <span className={k.ada ? (k.stok > 0 ? "text-slate-500" : "text-red-400") : "text-red-400"}>
+                                      {k.ada ? (k.stok > 0 ? `Stok ${k.stok}` : "Habis") : "tidak ada"}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <>
                             <div className="flex justify-between text-sm mb-1.5">
                               <span className="text-slate-500 text-xs">Harga Asli</span>
                               <span className="text-slate-400">{fmtRp(s.harga_asli)}</span>
@@ -1316,8 +1325,10 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 <span className="text-amber-400 font-semibold">{fmtRp(s.ecer)}</span>
                               </div>
                             </div>
+                              </>
+                            )}
                             {(() => {
-                              const mp = mpAktif ? infoMp(s) : null;
+                              const mp = mpAktif && !adalahSet(s) ? infoMp(s) : null;
                               if (!mp) return null;
                               if (mp.status === "kosong") {
                                 return (
