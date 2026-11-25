@@ -119,8 +119,8 @@ const KOLOM_SKU_MASTER = [
 ].join(",");
 // Kolom Set (nama, komponen) baru ada setelah supabase/migrations/20261125_master_barang_set.sql dijalankan; sebelum itu
 // pemuatan jatuh ke daftar kolom lama supaya aplikasi tidak error.
-const KOLOM_SKU_MASTER_SET = KOLOM_SKU_MASTER + ",nama,pelengkap,komponen";
-const KOLOM_SKU_MASTER_SET_MINIM = KOLOM_SKU_MASTER + ",nama,komponen";
+const KOLOM_SKU_MASTER_SET = KOLOM_SKU_MASTER + ",nama,pelengkap,komponen,jenis_set";
+const KOLOM_SKU_MASTER_SET_MINIM = KOLOM_SKU_MASTER + ",nama,komponen,jenis_set";
 const KOLOM_PENEMPATAN = ["id", "created_at", "sku", "rak_code", "qty"].join(",");
 // Audit pemakaian tabel "suppliers" di seluruh src/ (Sept 2026, lanjutan dari
 // audit items/sku_master/penempatan di atas) — cuma 7 kolom ini yang benar-

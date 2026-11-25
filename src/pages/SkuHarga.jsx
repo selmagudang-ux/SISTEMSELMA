@@ -12,8 +12,8 @@ import KodeLiveTiktok from "./KodeLiveTiktok";
 import BarangTiktok from "./kasir/BarangTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
 import ImporSkuMaster from "../components/ImporSkuMaster";
-import { FormSetMaster, FormHapusSkuTerpilih } from "./FormSetMaster";
-import { olahSetMaster, adalahSet } from "../lib/setMaster";
+import { FormSetMaster, FormIndukMaster, FormHapusSkuTerpilih } from "./FormSetMaster";
+import { olahSetMaster, adalahSet, adalahInduk, adalahKelompok } from "../lib/setMaster";
 
 export default function SkuHarga({
   sub, items, skuMaster, master, penempatan, setModal, reload, showToast, session,
@@ -541,11 +541,11 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
 
 function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, setModal, session, reload, showToast, settings }) {
   const [imporSku, setImporSku] = useState(false);
-  // SKU Induk = pengelompokan SKU lain (tanpa harga/stok sendiri); stok induk = jumlah stok isinya (lihat lib/setMaster.js).
+  // Set = paket dijual (stok & HPP dari isi); SKU Induk = pengelompokan saja (tanpa harga, stok = jumlah stok isi). Lihat lib/setMaster.js.
   const skuMaster = useMemo(() => olahSetMaster(skuMasterAsli), [skuMasterAsli]);
-  const [formSet, setFormSet] = useState(null); // { item } — item null = Set baru
+  const [formSet, setFormSet] = useState(null); // { jenis: "set" | "induk", item } — item null = baru
   const [hapusTerpilih, setHapusTerpilih] = useState(false);
-  const [hanyaSet, setHanyaSet] = useState(false);
+  const [filterJenis, setFilterJenis] = useState(""); // "" | "set" | "induk"
   // Master Barang = katalog bersama: ubah harga / hapus SKU butuh izin "Kelola Master Barang".
   const bolehKelola = bisa(session?.role, "sku.kelola_master");
   const bolehEditHarga = bolehKelola && bisa(session?.role, "sku.edit_harga_langsung");
@@ -659,7 +659,8 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
     .filter((s) => {
       if (!tampilkanNonaktif && s.nonaktif) return false;
       if (hanyaPerubahan && !adaHargaBaruCheck(s)) return false;
-      if (hanyaSet && !adalahSet(s)) return false;
+      if (filterJenis === "set" && !adalahSet(s)) return false;
+      if (filterJenis === "induk" && !adalahInduk(s)) return false;
       const qLower = q.toLowerCase();
       const cocokQ =
         s.sku.toLowerCase().includes(qLower) ||
@@ -668,7 +669,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
       if (!cocokQ) return false;
       if (kategori && s.kategori !== kategori) return false;
       if (subkategori && s.subkategori !== subkategori) return false;
-      if (filterMp && mpAktif && (adalahSet(s) || infoMp(s)?.status !== filterMp)) return false;
+      if (filterMp && mpAktif && (adalahInduk(s) || infoMp(s)?.status !== filterMp)) return false;
       return true;
     })
     // Urutan: per Model (segmen ke-3 di dalam SKU, numerik natural — 1, 2, 3,
@@ -679,13 +680,13 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
       if (sortBy === "za") return b.sku.localeCompare(a.sku, "id", { numeric: true, sensitivity: "base" });
       // SKU pelengkap diketik manual (bukan format bahan-kategori-model-...),
       // jadi tidak punya "model" — ditaruh di akhir grupnya.
-      const ma = a.pelengkap || adalahSet(a) ? "" : modelFromSku(a.sku);
-      const mb = b.pelengkap || adalahSet(b) ? "" : modelFromSku(b.sku);
+      const ma = a.pelengkap || adalahKelompok(a) ? "" : modelFromSku(a.sku);
+      const mb = b.pelengkap || adalahKelompok(b) ? "" : modelFromSku(b.sku);
       if (!ma && !mb) return 0;
       if (!ma) return 1;
       if (!mb) return -1;
       return ma.localeCompare(mb, "id", { numeric: true, sensitivity: "base" });
-    }), [skuMaster, tampilkanNonaktif, hanyaPerubahan, q, kategori, subkategori, filterMp, mpAktif, sortBy, hanyaSet]);
+    }), [skuMaster, tampilkanNonaktif, hanyaPerubahan, q, kategori, subkategori, filterMp, mpAktif, sortBy, filterJenis]);
 
   // Pilih semua = semua SKU yang lolos filter/pencarian saat ini (bukan cuma yang kartunya sudah dirender).
   const semuaDipilih = filtered.length > 0 && filtered.every((s) => selected.has(s.sku));
@@ -702,6 +703,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
   // muncul kalau filter ini diaktifkan), tapi lepas dari filter q/kategori
   // supaya badge di checkbox selalu nunjukin total sebenarnya.
   const jumlahSet = skuMaster.filter((s) => adalahSet(s) && (tampilkanNonaktif || !s.nonaktif)).length;
+  const jumlahInduk = skuMaster.filter((s) => adalahInduk(s) && (tampilkanNonaktif || !s.nonaktif)).length;
   const jumlahPerubahan = skuMaster.filter(
     (s) => (tampilkanNonaktif || !s.nonaktif) && adaHargaBaruCheck(s)
   ).length;
@@ -726,14 +728,14 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
   // Ganti filter/pencarian -> mulai lagi dari 60 kartu pertama.
   useEffect(() => {
     setBatas(60);
-  }, [q, kategori, subkategori, tampilkanNonaktif, hanyaPerubahan, filterMp, sortBy, hanyaSet]);
+  }, [q, kategori, subkategori, tampilkanNonaktif, hanyaPerubahan, filterMp, sortBy, filterJenis]);
 
   // Hitungan kelayakan MP untuk SKU aktif (lepas dari filter, supaya angkanya selalu total sebenarnya).
   const hitunganMp = useMemo(() => {
     const h = { layak: 0, rugi: 0, kosong: 0 };
     if (!mpAktif) return h;
     skuMaster.forEach((s) => {
-      if (s.nonaktif || adalahSet(s)) return;
+      if (s.nonaktif || adalahInduk(s)) return;
       const st = hitungMp(s, mpAktif)?.status;
       if (st) h[st] += 1;
     });
@@ -820,7 +822,15 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           <div className="flex items-center gap-2">
             {bolehKelola && (
               <button
-                onClick={() => setFormSet({ item: null })}
+                onClick={() => setFormSet({ jenis: "set", item: null })}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
+              >
+                <Layers size={14} /> Tambah Set
+              </button>
+            )}
+            {bolehKelola && (
+              <button
+                onClick={() => setFormSet({ jenis: "induk", item: null })}
                 className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold px-3 py-2 rounded-lg"
               >
                 <Layers size={14} /> Tambah SKU Induk
@@ -868,7 +878,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
             )}
             {bolehKeToko && selected.size > 0 && (
               <button
-                onClick={() => setPindah(skuMaster.filter((s) => selected.has(s.sku) && !adalahSet(s)))}
+                onClick={() => setPindah(skuMaster.filter((s) => selected.has(s.sku) && !adalahKelompok(s)))}
                 className="flex items-center gap-1.5 border border-amber-500/50 text-amber-400 hover:bg-amber-500/10 text-xs font-medium px-3 py-2 rounded-lg"
               >
                 <Store size={14} /> Pindahkan ke Toko ({selected.size})
@@ -913,18 +923,22 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           }}
         />
       )}
-      {formSet && bolehKelola && (
-        <FormSetMaster
-          barang={formSet.item}
-          skuMaster={skuMaster}
-          onClose={() => setFormSet(null)}
-          onSimpan={(pesan) => {
-            setFormSet(null);
-            showToast?.(pesan);
-            reload?.();
-          }}
-        />
-      )}
+      {formSet && bolehKelola && (() => {
+        const Form = formSet.jenis === "induk" ? FormIndukMaster : FormSetMaster;
+        return (
+          <Form
+            barang={formSet.item}
+            skuMaster={skuMaster}
+            settings={settings}
+            onClose={() => setFormSet(null)}
+            onSimpan={(pesan) => {
+              setFormSet(null);
+              showToast?.(pesan);
+              reload?.();
+            }}
+          />
+        );
+      })()}
       {hapusTerpilih && bolehKelola && (
         <FormHapusSkuTerpilih
           terpilih={skuMaster.filter((s) => selected.has(s.sku))}
@@ -1043,13 +1057,27 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
             <input
               type="checkbox"
-              checked={hanyaSet}
-              onChange={(e) => setHanyaSet(e.target.checked)}
+              checked={filterJenis === "set"}
+              onChange={(e) => setFilterJenis(e.target.checked ? "set" : "")}
+              className="accent-amber-500"
+            />
+            Hanya Set
+            <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5 py-0.5">
+              {jumlahSet}
+            </span>
+          </label>
+        )}
+        {jumlahInduk > 0 && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-400 px-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={filterJenis === "induk"}
+              onChange={(e) => setFilterJenis(e.target.checked ? "induk" : "")}
               className="accent-amber-500"
             />
             Hanya SKU Induk
             <span className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/40 rounded-full px-1.5 py-0.5">
-              {jumlahSet}
+              {jumlahInduk}
             </span>
           </label>
         )}
@@ -1125,7 +1153,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 Nonaktif
                               </span>
                             )}
-                            {adaHargaBaru && bolehKelola && !adalahSet(s) && (
+                            {adaHargaBaru && bolehKelola && !adalahKelompok(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1139,7 +1167,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 Harga Baru
                               </button>
                             )}
-                            {bolehEditHarga && !adalahSet(s) && (
+                            {bolehEditHarga && !adalahKelompok(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1152,7 +1180,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 <Pencil size={12} />
                               </button>
                             )}
-                            {bolehKeToko && !adalahSet(s) && (
+                            {bolehKeToko && !adalahKelompok(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -1178,14 +1206,14 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 <Pencil size={12} />
                               </button>
                             )}
-                            {bolehKelola && adalahSet(s) && (
+                            {bolehKelola && adalahKelompok(s) && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setFormSet({ item: s });
+                                  setFormSet({ jenis: adalahInduk(s) ? "induk" : "set", item: s });
                                 }}
-                                title="Ubah isi SKU induk"
+                                title={adalahInduk(s) ? "Ubah isi SKU induk" : "Ubah isi & harga Set"}
                                 className="absolute top-[4.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
                               >
                                 <Layers size={12} />
@@ -1261,13 +1289,18 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                     {s.nama && <span className="text-[11px] text-slate-400 truncate">{s.nama}</span>}
                                   </div>
                                 )}
-                                {adalahSet(s) && (
+                                {adalahKelompok(s) && (
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5 min-w-0">
-                                      <Badge color="violet">Induk · {s.komponen.length} SKU</Badge>
+                                      <Badge color="violet">{adalahInduk(s) ? "Induk" : "Set"} · {s.komponen.length} SKU</Badge>
                                       {s._komponenHilang && <Badge color="red">Isi tidak lengkap</Badge>}
                                       {s.nama && <span className="text-[11px] text-slate-400 truncate">{s.nama}</span>}
                                     </div>
+                                    {adalahSet(s) && (
+                                      <div className="font-mono text-[10px] text-slate-500 truncate" title={s.komponen.map((k) => `${k.sku} ×${k.qty}`).join(", ")}>
+                                        {s.komponen.map((k) => `${k.sku} ×${k.qty}`).join(", ")}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 {s.barcode_supplier && (
@@ -1279,8 +1312,8 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                   </div>
                                 )}
                                 <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                  {s.stok <= 0 && !adalahSet(s) ? <Badge color="red">Habis</Badge> : (
-                                    <span className="text-[11px] text-slate-500">{adalahSet(s) ? `Total stok isi ${s.stok}` : `Stok ${s.stok}`}</span>
+                                  {s.stok <= 0 && !adalahInduk(s) ? <Badge color="red">Habis</Badge> : (
+                                    <span className="text-[11px] text-slate-500">{adalahInduk(s) ? `Total stok isi ${s.stok}` : `Stok ${s.stok}${adalahSet(s) ? " (dari isi)" : ""}`}</span>
                                   )}
                                   {kodeRak && (
                                     <span className="text-[11px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded px-1.5 py-0.5">
@@ -1290,7 +1323,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 </div>
                               </div>
                             </div>
-                            {adalahSet(s) ? (
+                            {adalahInduk(s) ? (
                               <div className="space-y-1 max-h-40 overflow-y-auto">
                                 {(s._isi || []).map((k) => (
                                   <div key={k.sku} className="flex items-center justify-between gap-2 text-[11px]">
@@ -1328,7 +1361,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                               </>
                             )}
                             {(() => {
-                              const mp = mpAktif && !adalahSet(s) ? infoMp(s) : null;
+                              const mp = mpAktif && !adalahInduk(s) ? infoMp(s) : null;
                               if (!mp) return null;
                               if (mp.status === "kosong") {
                                 return (
