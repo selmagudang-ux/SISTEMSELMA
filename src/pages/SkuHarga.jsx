@@ -7,7 +7,7 @@ import { generateKatalogPdf, fotoUntukSku } from "../lib/PdfKatalog";
 import { rakForSku } from "./Rak";
 import MasterData from "./MasterData";
 import Rusak from "./Rusak";
-import BarangToko from "./kasir/BarangToko";
+import BarangToko, { Kerangka } from "./kasir/BarangToko";
 import KodeLiveTiktok from "./KodeLiveTiktok";
 import BarangTiktok from "./kasir/BarangTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
@@ -546,6 +546,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
   const [formSet, setFormSet] = useState(null); // { jenis: "set" | "induk", item } — item null = baru
   const [hapusTerpilih, setHapusTerpilih] = useState(false);
   const [filterJenis, setFilterJenis] = useState(""); // "" | "set" | "induk"
+  const [isiInduk, setIsiInduk] = useState(null); // SKU induk yang isinya sedang dilihat
   // Master Barang = katalog bersama: ubah harga / hapus SKU butuh izin "Kelola Master Barang".
   const bolehKelola = bisa(session?.role, "sku.kelola_master");
   const bolehEditHarga = bolehKelola && bisa(session?.role, "sku.edit_harga_langsung");
@@ -939,6 +940,63 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           />
         );
       })()}
+      {isiInduk && (() => {
+        const induk = skuMaster.find((x) => x.sku === isiInduk);
+        if (!induk) return null;
+        return (
+          <Kerangka judul={`Isi SKU Induk — ${induk.sku}`} onClose={() => setIsiInduk(null)} lebar="sm:max-w-lg">
+            {induk.nama && <div className="text-xs text-slate-400">{induk.nama}</div>}
+            <div className="text-[11px] text-slate-500">
+              {(induk._isi || []).length} SKU di dalam induk ini · total stok {induk.stok}. Klik salah satu untuk melihat detail SKU-nya.
+            </div>
+            <div className="space-y-1.5">
+              {(induk._isi || []).map((k) => {
+                const c = k.ada ? skuMaster.find((x) => x.sku === k.sku) : null;
+                const foto = fotoPerSku.get(k.sku) || null;
+                const rak = rakPerSku.get(k.sku) || "";
+                return (
+                  <button
+                    key={k.sku}
+                    type="button"
+                    disabled={!c}
+                    onClick={() => {
+                      setIsiInduk(null);
+                      setModal({ type: "detail-sku", item: c });
+                    }}
+                    className="w-full flex items-center gap-3 text-left bg-slate-950/60 border border-slate-800 hover:border-amber-500/40 disabled:hover:border-slate-800 rounded-lg px-3 py-2"
+                  >
+                    {foto ? (
+                      <img src={foto} alt={k.sku} loading="lazy" className="w-10 h-10 rounded-lg object-cover border border-slate-800 flex-shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg border border-dashed border-slate-800 flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className={`font-mono text-xs truncate ${c ? "text-slate-200" : "text-red-400"}`}>{k.sku}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {c ? (k.stok > 0 ? `Stok ${k.stok}` : "Habis") : "SKU tidak ditemukan"}
+                        {rak && <span className="ml-2 font-mono text-sky-400">{rak}</span>}
+                      </div>
+                    </div>
+                    {c && <div className="text-xs text-amber-400 flex-shrink-0">{fmtRp(c.ecer)}</div>}
+                  </button>
+                );
+              })}
+            </div>
+            {bolehKelola && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsiInduk(null);
+                  setFormSet({ jenis: "induk", item: induk });
+                }}
+                className="w-full flex items-center justify-center gap-2 border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium py-2.5 rounded-lg"
+              >
+                <Layers size={14} /> Ubah isi induk
+              </button>
+            )}
+          </Kerangka>
+        );
+      })()}
       {hapusTerpilih && bolehKelola && (
         <FormHapusSkuTerpilih
           terpilih={skuMaster.filter((s) => selected.has(s.sku))}
@@ -1141,7 +1199,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                         return (
                           <div
                             key={s.id}
-                            onClick={() => setModal({ type: "detail-sku", item: s })}
+                            onClick={() => (adalahInduk(s) ? setIsiInduk(s.sku) : setModal({ type: "detail-sku", item: s }))}
                             className={`relative rounded-xl border bg-slate-900/50 p-4 cursor-pointer transition ${
                               s.nonaktif ? "opacity-60" : ""
                             } ${
