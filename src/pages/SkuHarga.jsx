@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers, MoreVertical } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
@@ -598,6 +598,15 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
     }
   };
   const [selected, setSelected] = useState(() => new Set()); // sku yang dipilih untuk download foto
+  // Tampilan kartu: ringkas (default, harga Grosir/Tengah/Ecer saja) atau lengkap (+ Harga Asli, HPP, rincian Marketplace).
+  const [ringkas, setRingkas] = useState(() => {
+    try { return localStorage.getItem("sku_kartu_ringkas") !== "0"; } catch { return true; }
+  });
+  const ubahTampilan = (v) => {
+    setRingkas(v);
+    try { localStorage.setItem("sku_kartu_ringkas", v ? "1" : "0"); } catch { /* abaikan */ }
+  };
+  const [menuAksi, setMenuAksi] = useState(null); // SKU yang menu aksinya (⋯) sedang terbuka
   const [tampilkanNonaktif, setTampilkanNonaktif] = useState(false); // SKU nonaktif (bekas dihapus) disembunyikan secara default
   const [hanyaPerubahan, setHanyaPerubahan] = useState(false); // filter cepat: cuma SKU dengan badge "Harga Baru"
   const [sortBy, setSortBy] = useState("model"); // "model" | "az" | "za"
@@ -1102,6 +1111,22 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           />
           Tampilkan yang nonaktif
         </label>
+        <div className="flex items-center rounded-lg border border-slate-800 overflow-hidden text-xs" title="Ubah kepadatan kartu">
+          <button
+            type="button"
+            onClick={() => ubahTampilan(true)}
+            className={`px-3 py-1.5 ${ringkas ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            Ringkas
+          </button>
+          <button
+            type="button"
+            onClick={() => ubahTampilan(false)}
+            className={`px-3 py-1.5 border-l border-slate-800 ${!ringkas ? "bg-amber-500/20 text-amber-300" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            Lengkap
+          </button>
+        </div>
         <button
           type="button"
           onClick={pilihSemua}
@@ -1190,7 +1215,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                     <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5 pl-1">
                       {subkategoriLabel(subkategori)}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 ${ringkas ? "xl:grid-cols-4" : ""}`}>
                       {subItems.map((s) => {
                         const adaHargaBaru = adaHargaBaruCheck(s);
                         const foto = fotoPerSku.get(s.sku) || null;
@@ -1206,91 +1231,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                               dipilih ? "border-amber-500/60 ring-1 ring-amber-500/30" : "border-slate-800 hover:border-amber-500/40"
                             }`}
                           >
-                            {s.nonaktif && (
-                              <span className="absolute top-2.5 left-2.5 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full px-2 py-0.5 z-10">
-                                Nonaktif
-                              </span>
-                            )}
-                            {adaHargaBaru && bolehKelola && !adalahKelompok(s) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setModal({ type: "pilih-harga", item: s });
-                                }}
-                                title="Ada perubahan harga asli — klik untuk pilih harga yang dipakai"
-                                className="absolute top-2.5 right-9 flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full pl-1.5 pr-2 py-0.5 hover:bg-red-500/25"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                Harga Baru
-                              </button>
-                            )}
-                            {bolehEditHarga && !adalahKelompok(s) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setModal({ type: "edit-harga", item: s });
-                                }}
-                                title="Edit harga (khusus superadmin)"
-                                className="absolute top-11 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
-                              >
-                                <Pencil size={12} />
-                              </button>
-                            )}
-                            {bolehKeToko && !adalahKelompok(s) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPindah([s]);
-                                }}
-                                title="Pindahkan ke Barang Toko (kasir)"
-                                className="absolute top-[4.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
-                              >
-                                <Store size={12} />
-                              </button>
-                            )}
-                            {bolehKelola && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setModal({ type: "ganti-sku", item: s });
-                                }}
-                                title="Ganti nama SKU"
-                                className="absolute top-[6.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
-                              >
-                                <Pencil size={12} />
-                              </button>
-                            )}
-                            {bolehKelola && adalahKelompok(s) && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFormSet({ jenis: adalahInduk(s) ? "induk" : "set", item: s });
-                                }}
-                                title={adalahInduk(s) ? "Ubah isi SKU induk" : "Ubah isi & harga Set"}
-                                className="absolute top-[4.5rem] right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-amber-400 hover:border-amber-500/40"
-                              >
-                                <Layers size={12} />
-                              </button>
-                            )}
-                            {bolehKelola && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setModal({ type: "hapus-sku", item: s });
-                                }}
-                                title="Hapus SKU ini"
-                                className="absolute top-2.5 right-2.5 p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-500 hover:text-red-400 hover:border-red-500/40"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            )}
-                            <div className="flex items-center gap-3 mb-3 pr-4">
+                            <div className="flex items-center gap-3 mb-3">
                               <label
                                 onClick={(e) => e.stopPropagation()}
                                 className="flex-shrink-0 flex items-center justify-center w-5 h-5 rounded-md border border-slate-700 bg-slate-950 cursor-pointer"
@@ -1339,8 +1280,9 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                   </>
                                 )}
                               </label>
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <div className="font-mono text-xs text-slate-300 truncate">{s.sku}</div>
+                                {s.nonaktif && <Badge color="red">Nonaktif</Badge>}
                                 {s.pelengkap && (
                                   <div className="flex items-center gap-1.5 min-w-0">
                                     <Badge color="violet">Pelengkap</Badge>
@@ -1380,6 +1322,57 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                   )}
                                 </div>
                               </div>
+                              <div className="flex-shrink-0 flex flex-col items-end gap-1.5 self-start" onClick={(e) => e.stopPropagation()}>
+                                {adaHargaBaru && bolehKelola && !adalahKelompok(s) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setModal({ type: "pilih-harga", item: s })}
+                                    title="Ada perubahan harga asli — klik untuk pilih harga yang dipakai"
+                                    className="flex items-center gap-1 text-[10px] font-semibold text-red-300 bg-red-500/15 border border-red-500/40 rounded-full pl-1.5 pr-2 py-0.5 hover:bg-red-500/25"
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                    Harga Baru
+                                  </button>
+                                )}
+                                {(bolehKelola || (bolehEditHarga && !adalahKelompok(s)) || (bolehKeToko && !adalahKelompok(s))) && (
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      onClick={() => setMenuAksi(menuAksi === s.sku ? null : s.sku)}
+                                      title="Aksi"
+                                      className="p-1.5 rounded-full bg-slate-950/80 border border-slate-800 text-slate-400 hover:text-amber-400 hover:border-amber-500/40"
+                                    >
+                                      <MoreVertical size={14} />
+                                    </button>
+                                    {menuAksi === s.sku && (
+                                      <>
+                                        <div className="fixed inset-0 z-20" onClick={() => setMenuAksi(null)} />
+                                        <div className="absolute right-0 top-9 z-30 w-52 rounded-lg border border-slate-700 bg-slate-900 shadow-xl py-1">
+                                          {bolehEditHarga && !adalahKelompok(s) && (
+                                            <ItemMenuSku ikon={Pencil} label="Edit harga" onClick={() => { setMenuAksi(null); setModal({ type: "edit-harga", item: s }); }} />
+                                          )}
+                                          {bolehKeToko && !adalahKelompok(s) && (
+                                            <ItemMenuSku ikon={Store} label="Pindahkan ke Barang Toko" onClick={() => { setMenuAksi(null); setPindah([s]); }} />
+                                          )}
+                                          {bolehKelola && adalahKelompok(s) && (
+                                            <ItemMenuSku
+                                              ikon={Layers}
+                                              label={adalahInduk(s) ? "Ubah isi SKU induk" : "Ubah isi & harga Set"}
+                                              onClick={() => { setMenuAksi(null); setFormSet({ jenis: adalahInduk(s) ? "induk" : "set", item: s }); }}
+                                            />
+                                          )}
+                                          {bolehKelola && (
+                                            <ItemMenuSku ikon={Pencil} label="Ganti nama SKU" onClick={() => { setMenuAksi(null); setModal({ type: "ganti-sku", item: s }); }} />
+                                          )}
+                                          {bolehKelola && (
+                                            <ItemMenuSku ikon={Trash2} label="Hapus SKU" bahaya onClick={() => { setMenuAksi(null); setModal({ type: "hapus-sku", item: s }); }} />
+                                          )}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             {adalahInduk(s) ? (
                               <div className="space-y-1 max-h-40 overflow-y-auto">
@@ -1393,6 +1386,22 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                 ))}
                               </div>
                             ) : (
+                              ringkas ? (
+                            <div className="grid grid-cols-3 gap-2 text-center">
+                              <div>
+                                <div className="text-[10px] text-slate-500">Grosir</div>
+                                <div className="text-sm text-slate-200">{fmtRp(s.grosir)}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] text-slate-500">Tengah</div>
+                                <div className="text-sm text-slate-200">{fmtRp(s.tengah)}</div>
+                              </div>
+                              <div>
+                                <div className="text-[10px] text-slate-500">Ecer</div>
+                                <div className="text-sm font-semibold text-amber-400">{fmtRp(s.ecer)}</div>
+                              </div>
+                            </div>
+                              ) : (
                               <>
                             <div className="flex justify-between text-sm mb-1.5">
                               <span className="text-slate-500 text-xs">Harga Asli</span>
@@ -1417,6 +1426,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                               </div>
                             </div>
                               </>
+                              )
                             )}
                             {(() => {
                               const mp = mpAktif && !adalahInduk(s) ? infoMp(s) : null;
@@ -1426,6 +1436,16 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                   <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
                                     <span className="text-slate-500">Marketplace</span>
                                     <Badge color="slate">HPP/Tengah kosong</Badge>
+                                  </div>
+                                );
+                              }
+                              if (ringkas) {
+                                return (
+                                  <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
+                                    <Badge color={mp.status === "layak" ? "emerald" : "red"}>{LABEL_STATUS_MP[mp.status]}</Badge>
+                                    <span className={mp.status === "layak" ? "text-slate-500" : "text-red-400"}>
+                                      {mp.status === "layak" ? "laba " : "selisih "}{fmtRp(Math.round(mp.laba))}
+                                    </span>
                                   </div>
                                 );
                               }
@@ -1475,5 +1495,19 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
         </div>
       )}
     </div>
+  );
+}
+
+// Satu baris di menu aksi (⋯) pada kartu Master Barang.
+function ItemMenuSku({ ikon: Ikon, label, onClick, bahaya }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-slate-800 ${bahaya ? "text-red-400" : "text-slate-300"}`}
+    >
+      <Ikon size={13} />
+      {label}
+    </button>
   );
 }
