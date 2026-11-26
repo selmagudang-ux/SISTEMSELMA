@@ -4,7 +4,7 @@ import { sb, sbAll, fmtRp, nextKode } from "../../lib/api";
 import { kasirModeMaster, kasirModeOtomatis, bisa } from "../../lib/constants";
 import { ScanKameraModal } from "../../components/ScanKamera";
 import { hitungItem, hitungKeranjang, buatJerami, namaTampil } from "./kasirHitung";
-import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, statusPaket, normKat } from "./kasirPromo";
+import { muatPromoKasir, petaPromoAktif, tanggalHariIni as tanggalHariIniKasir, hargaSetelahPromo, labelDiskon, tglPendek, muatDataPaket, paketKeBarisPromo, paketBerlaku, statusPaket, normKat } from "./kasirPromo";
 import ModalBayar from "./ModalBayar";
 import { buatKunci } from "./kasirApi";
 import { simpanKeranjangTersimpan, hapusKeranjangTersimpan, muatKeranjangTersimpan } from "./kasirKeranjang";
@@ -875,7 +875,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     (asal ? hapusKeranjangTersimpan(asal).catch(() => {}) : Promise.resolve()).then(() => muat(true));
   };
 
-  // Promo grosir (bagian dari promo paket): total pcs gabungan SELURUH keranjang >= minimal promo -> barang di kategori
+  // Promo grosir: total pcs gabungan SELURUH keranjang >= minimal promo -> barang di kategori/daftar barang
   // promo itu yang punya harga grosir dihitung harga grosir. Satu barang cukup masuk ke salah satu promo yang tercapai.
   const totalQty = items.reduce((a, it) => a + (Number(it.qty) || 0), 0);
   const hariIni = tanggalHariIniKasir();
@@ -887,7 +887,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
         const hg = grosirMap.get(it.sku);
         if (!(hg > 0)) return it;
         const kat = katSku.get(it.sku);
-        return grosirTercapai.some((p) => p.semua || p.kategori.some((k) => normKat(k) === kat)) ? { ...it, hargaGrosirAktif: hg } : it;
+        return grosirTercapai.some((p) => paketBerlaku(p, it.sku, kat)) ? { ...it, hargaGrosirAktif: hg } : it;
       })
     : items;
   const ringkas = hitungKeranjang(itemsH, diskonTrx);

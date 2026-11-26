@@ -117,12 +117,13 @@ export async function hapusPromo(id) {
 }
 
 // =========================================================
-// PROMO PAKET — "Promo A" = satu promo yang isinya daftar kategori barang (bisa ditambah/dikurangi kapan saja).
+// PROMO (dulu "Promo Paket", sekarang satu-satunya jenis promo baru) — satu promo yang sasarannya daftar KATEGORI dan/atau
+// daftar BARANG tertentu (SKU toko), atau semua kategori. Isinya bisa ditambah/dikurangi kapan saja.
 // Jenis: diskon % / diskon Rp per pcs / harga GROSIR (beli minimal N pcs, gabungan semua barang di keranjang ->
 // barang di kategori promo itu dihitung harga Grosir dari Master Barang).
 // Disimpan sebagai daftar JSON di master_data tipe "entitas_set" (kode "<PT>:kasir_promo_paket") — pola yang sama
 // dengan pengaturan per perusahaan lainnya, jadi tidak perlu tabel/SQL baru. Promo lama (kasir_promo, per SKU
-// atau per kategori) tetap berjalan seperti biasa berdampingan dengan promo paket.
+// atau per kategori) tetap berjalan seperti biasa berdampingan dengan promo ini, tapi tidak bisa dibuat baru lagi dari layar Promo.
 // Harga grosir per barang = kolom harga_grosir di Barang Toko (master_toko); kalau kosong dan barang tertaut ke
 // Master Barang (sku_gudang), dipakai sku_master.grosir. Barang tanpa harga grosir tetap harga biasa.
 // =========================================================
@@ -148,7 +149,18 @@ export function normPaket(d) {
     aktif: d.aktif !== false,
     semua: !!d.semua, // true = semua kategori
     kategori: Array.isArray(d.kategori) ? [...new Set(d.kategori.map((k) => String(k).trim()).filter(Boolean))] : [],
+    // Barang tertentu (kode SKU toko = master_toko.kode). Promo lama tanpa kolom ini = tidak ada barang khusus.
+    sku: Array.isArray(d.sku) ? [...new Set(d.sku.map((k) => String(k).trim()).filter(Boolean))] : [],
   };
+}
+
+// Apakah promo ini berlaku untuk barang (sku) dengan kategori (sudah dinormalisasi lewat normKat)?
+// Berlaku kalau "semua kategori", atau SKU-nya terdaftar, atau kategorinya terdaftar.
+export function paketBerlaku(p, sku, kategoriNorm) {
+  if (!p) return false;
+  if (p.semua) return true;
+  if ((p.sku || []).includes(sku)) return true;
+  return (p.kategori || []).some((k) => normKat(k) === kategoriNorm);
 }
 
 export function bacaPaket(label) {
@@ -205,6 +217,12 @@ export function paketKeBarisPromo(paket, semuaKategori, hari = tanggalHariIni())
     const daftar = p.semua ? semuaKategori || [] : p.kategori;
     for (const k of daftar) {
       out.push({ id: `paket:${p.id}:${normKat(k)}`, sku: null, kategori: k, nama: p.nama, tipe: p.jenis, nilai: p.nilai, mulai: p.mulai || "1900-01-01", selesai: p.selesai || "9999-12-31", aktif: true });
+    }
+    // Barang tertentu: satu baris promo per SKU (tidak perlu kalau promo sudah untuk semua kategori).
+    if (!p.semua) {
+      for (const s of p.sku || []) {
+        out.push({ id: `paket:${p.id}:sku:${s}`, sku: s, kategori: null, nama: p.nama, tipe: p.jenis, nilai: p.nilai, mulai: p.mulai || "1900-01-01", selesai: p.selesai || "9999-12-31", aktif: true });
+      }
     }
   }
   return out;

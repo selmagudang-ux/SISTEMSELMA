@@ -23,6 +23,9 @@ import { inp } from "./BarangToko";
 
 // =========================================================
 // KELOLA PROMO KASIR (hanya superappa) — dibuka dari tombol "Promo" di header kasir.
+// SATU jenis promo untuk dibuat: tombol "+ Promo" (dulu "Promo Paket") — sasarannya kategori dan/atau barang tertentu (atau semua
+// kategori), jenis diskon % / diskon Rp per pcs / harga grosir. Promo lama (tabel kasir_promo) yang masih ada tetap berjalan dan
+// tampil di bagian bawah untuk diubah/dinonaktifkan/dihapus, tapi promo lama tidak bisa dibuat baru lagi.
 // Promo per barang (SKU toko) ATAU per kategori (semua barang di kategori itu) + diskon % atau Rp per pcs + tanggal mulai & selesai (keduanya ikut berlaku).
 // Promo yang sedang berjalan otomatis terpasang di keranjang kasir; kasir bisa melepasnya per item.
 // Kalau satu SKU punya beberapa promo yang berjalan bersamaan, dipakai yang potongannya paling besar.
@@ -331,7 +334,7 @@ function KonfirmasiHapus({ promo, onClose, onSelesai }) {
 // PROMO PAKET — "Promo A": satu promo (diskon % / diskon Rp per pcs / harga grosir min. N pcs) yang berlaku untuk
 // banyak kategori sekaligus. Kategori bisa ditambah atau dikurangi kapan saja lewat tombol Ubah.
 // =========================================================
-function FormPaket({ paket, kategori, onClose, onSelesai }) {
+function FormPaket({ paket, kategori, barang, onClose, onSelesai }) {
   const baru = !paket?.id;
   const [nama, setNama] = useState(paket?.nama || "");
   const [jenis, setJenis] = useState(paket?.jenis || "persen");
@@ -341,6 +344,8 @@ function FormPaket({ paket, kategori, onClose, onSelesai }) {
   const [selesai, setSelesai] = useState(paket?.selesai || "");
   const [semua, setSemua] = useState(!!paket?.semua);
   const [pilih, setPilih] = useState(() => paket?.kategori || []);
+  const [skuPilih, setSkuPilih] = useState(() => paket?.sku || []);
+  const [cariSku, setCariSku] = useState("");
   const [cari, setCari] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -357,23 +362,40 @@ function FormPaket({ paket, kategori, onClose, onSelesai }) {
     const k = cari.trim().toLowerCase();
     return k ? daftar.filter((d) => d.nama.toLowerCase().includes(k)) : daftar;
   }, [daftar, cari]);
+  const petaB = useMemo(() => new Map((barang || []).map((b) => [b.kode, b])), [barang]);
+  const hasilSku = useMemo(() => {
+    const kata = cariSku.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!kata.length) return [];
+    return (barang || [])
+      .filter((b) => !b.nonaktif && !skuPilih.includes(b.kode) && kata.every((k) => `${b.kode} ${b.nama || ""}`.toLowerCase().includes(k)))
+      .slice(0, 8);
+  }, [cariSku, barang, skuPilih]);
   const terpilih = (nama) => pilih.some((k) => normKat(k) === normKat(nama));
   const toggle = (nama) => setPilih((p) => (terpilih(nama) ? p.filter((k) => normKat(k) !== normKat(nama)) : [...p, nama]));
 
   const simpan = async () => {
     const n = Number(nilai) || 0;
     const mq = Math.floor(Number(minQty) || 0);
-    if (!nama.trim()) return setError("Beri nama promo, mis. \"Promo A\".");
+    if (!nama.trim()) return setError("Beri nama promo, mis. \"Diskon Akhir Tahun\".");
     if (jenis !== "grosir") {
       if (!(n > 0)) return setError("Isi nilai diskon (lebih dari 0).");
       if (jenis === "persen" && n > 100) return setError("Diskon persen maksimal 100.");
     } else if (mq < 2) return setError("Minimal pembelian harus 2 pcs atau lebih.");
-    if (!semua && pilih.length === 0) return setError("Pilih minimal satu kategori, atau aktifkan \"Semua kategori\".");
+    if (!semua && pilih.length === 0 && skuPilih.length === 0) return setError("Pilih minimal satu kategori atau satu barang, atau aktifkan \"Semua kategori\".");
+    if (jenis === "rp" && !semua) {
+      // Potongan Rp per pcs tidak boleh sama atau lebih besar dari harga barang termurah yang kena promo.
+      for (const k of pilih) {
+        const murah = (barang || []).filter((b) => !b.nonaktif && normKat(b.kategori) === normKat(k) && Number(b.harga_jual) > 0).sort((a, b) => a.harga_jual - b.harga_jual)[0];
+        if (murah && n >= Number(murah.harga_jual)) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${murah.kode} (${fmtRp(murah.harga_jual)}) di kategori ${k}.`);
+      }
+      const kebesaran = skuPilih.find((k) => Number(petaB.get(k)?.harga_jual) > 0 && n >= Number(petaB.get(k).harga_jual));
+      if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${kebesaran} (${fmtRp(petaB.get(kebesaran).harga_jual)}).`);
+    }
     if (mulai && selesai && selesai < mulai) return setError("Tanggal selesai tidak boleh sebelum tanggal mulai.");
     setSaving(true);
     setError("");
     try {
-      const data = { nama: nama.trim(), jenis, nilai: jenis === "grosir" ? 0 : n, min_qty: mq || 24, mulai, selesai, semua, kategori: semua ? [] : pilih };
+      const data = { nama: nama.trim(), jenis, nilai: jenis === "grosir" ? 0 : n, min_qty: mq || 24, mulai, selesai, semua, kategori: semua ? [] : pilih, sku: semua ? [] : skuPilih };
       await ubahDaftarPaket((list) => (baru ? [...list, { ...data, aktif: true }] : list.map((x) => (x.id === paket.id ? { ...x, ...data } : x))));
       onSelesai();
     } catch (e) {
@@ -384,10 +406,10 @@ function FormPaket({ paket, kategori, onClose, onSelesai }) {
   };
 
   return (
-    <Kerangka judul={baru ? "Tambah promo paket" : `Ubah ${paket.nama || "promo paket"}`} onClose={onClose}>
+    <Kerangka judul={baru ? "Tambah promo" : `Ubah ${paket.nama || "promo"}`} onClose={onClose}>
       <label className="block text-xs text-slate-400">
         Nama promo
-        <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="Promo A" className={`${inp} mt-1`} />
+        <input value={nama} onChange={(e) => setNama(e.target.value)} placeholder="mis. Diskon Akhir Tahun" className={`${inp} mt-1`} />
       </label>
 
       <div>
@@ -431,7 +453,7 @@ function FormPaket({ paket, kategori, onClose, onSelesai }) {
 
       <div>
         <div className="flex items-center justify-between gap-2 mb-1.5">
-          <div className="text-xs text-slate-400">Kategori yang ikut promo {semua ? "" : `(${pilih.length} dipilih)`}</div>
+          <div className="text-xs text-slate-400">Sasaran promo: kategori {semua ? "" : `(${pilih.length} dipilih)`}</div>
           <button
             type="button"
             onClick={() => setSemua((v) => !v)}
@@ -474,6 +496,50 @@ function FormPaket({ paket, kategori, onClose, onSelesai }) {
           </>
         )}
       </div>
+
+      {!semua && (
+        <div>
+          <div className="text-xs text-slate-400 mb-1.5">
+            Dan/atau barang tertentu <span className="text-slate-600">(opsional){skuPilih.length ? ` — ${skuPilih.length} dipilih` : ""}</span>
+          </div>
+          {skuPilih.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2 max-h-32 overflow-y-auto">
+              {skuPilih.map((k) => (
+                <span key={k} className="inline-flex items-center gap-1.5 text-xs bg-slate-800 border border-slate-700 rounded-full pl-2.5 pr-1.5 py-1">
+                  <span className="font-mono">{k}</span>
+                  <button type="button" onClick={() => setSkuPilih((t) => t.filter((x) => x !== k))} className="text-slate-500 hover:text-red-400" title="Lepas barang">
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input value={cariSku} onChange={(e) => setCariSku(e.target.value)} placeholder="Cari kode atau nama barang toko…" className={`${inp} pl-9`} />
+          </div>
+          {hasilSku.length > 0 && (
+            <div className="mt-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
+              {hasilSku.map((b) => (
+                <button
+                  key={b.kode}
+                  type="button"
+                  onClick={() => {
+                    setSkuPilih((t) => [...t, b.kode]);
+                    setCariSku("");
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-slate-800 flex items-center justify-between gap-3"
+                >
+                  <span className="min-w-0 truncate">
+                    <span className="font-mono text-xs text-slate-400">{b.kode}</span> {b.nama}
+                  </span>
+                  <span className="text-xs text-slate-500 tabular-nums flex-shrink-0">{fmtRp(b.harga_jual)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
@@ -540,11 +606,11 @@ function PromoPaket({ barang }) {
     <div className="mx-3 mt-3 rounded-2xl border border-slate-800 bg-slate-900/50 p-3.5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-100">Promo Paket</div>
-          <div className="text-[11px] text-slate-500">Satu promo untuk banyak kategori — diskon %, diskon Rp, atau harga grosir (min. pcs). Kategori bisa ditambah/dikurangi lewat Ubah.</div>
+          <div className="text-sm font-semibold text-slate-100">Promo</div>
+          <div className="text-[11px] text-slate-500">Satu promo bisa untuk banyak kategori dan/atau barang tertentu — diskon %, diskon Rp, atau harga grosir (min. pcs). Isinya bisa ditambah/dikurangi lewat Ubah.</div>
         </div>
         <button onClick={() => setForm({ paket: {} })} className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg flex-shrink-0">
-          <Plus size={15} /> Promo paket
+          <Plus size={15} /> Promo
         </button>
       </div>
       {err && (
@@ -557,7 +623,7 @@ function PromoPaket({ barang }) {
           <Loader2 size={14} className="animate-spin" /> Memuat…
         </div>
       ) : tampil.length === 0 ? (
-        <div className="mt-3 text-xs text-slate-500">Belum ada promo paket. Tekan “Promo paket” untuk membuat “Promo A”.</div>
+        <div className="mt-3 text-xs text-slate-500">Belum ada promo. Tekan “+ Promo” untuk membuat promo pertama.</div>
       ) : (
         <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-2.5">
           {tampil.map((p) => {
@@ -575,11 +641,19 @@ function PromoPaket({ barang }) {
                   {p.semua ? (
                     <span className="text-[11px] bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5">Semua kategori</span>
                   ) : (
-                    p.kategori.map((k) => (
-                      <span key={k} className="text-[11px] bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5">
-                        {k}
-                      </span>
-                    ))
+                    <>
+                      {p.kategori.map((k) => (
+                        <span key={k} className="text-[11px] bg-slate-800 border border-slate-700 rounded-full px-2 py-0.5">
+                          {k}
+                        </span>
+                      ))}
+                      {(p.sku || []).slice(0, 10).map((k) => (
+                        <span key={`sku-${k}`} className="text-[11px] font-mono bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-full px-2 py-0.5">
+                          {k}
+                        </span>
+                      ))}
+                      {(p.sku || []).length > 10 && <span className="text-[11px] text-slate-500 px-1 py-0.5">+{p.sku.length - 10} barang lagi</span>}
+                    </>
                   )}
                 </div>
                 <div className="text-[11px] text-slate-400 mt-2 tabular-nums">
@@ -613,6 +687,7 @@ function PromoPaket({ barang }) {
         <FormPaket
           paket={form.paket}
           kategori={kategori}
+          barang={barang}
           onClose={() => setForm(null)}
           onSelesai={() => {
             setForm(null);
@@ -638,16 +713,13 @@ export default function PromoToko({ onClose, inline = false }) {
   const muat = async () => {
     setErr("");
     try {
-      const [p, b] = await Promise.all([muatSemuaPromo(), sbAll("master_toko?select=kode,nama,kategori,harga_jual,nonaktif&order=kode")]);
+      // Promo lama (tabel kasir_promo) opsional: kalau gagal dimuat, daftar barang untuk promo baru tetap dimuat.
+      const [p, b] = await Promise.all([muatSemuaPromo().catch(() => []), sbAll("master_toko?select=kode,nama,kategori,harga_jual,nonaktif&order=kode")]);
       setRows(p);
       setBarang(b || []);
     } catch (e) {
       setRows((r) => r || []);
-      setErr(
-        /kasir_promo|relation|does not exist|schema cache/i.test(String(e?.message))
-          ? "Tabel promo belum dibuat di database. Jalankan SQL 20261107_kasir_promo.sql di Supabase dulu."
-          : String(e?.message || e)
-      );
+      setErr(String(e?.message || e));
     }
   };
   useEffect(() => {
@@ -700,7 +772,7 @@ export default function PromoToko({ onClose, inline = false }) {
       <header className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
         <div>
           <div className="font-bold text-sm">Promo Kasir</div>
-          <div className="text-[11px] text-slate-500">{rows ? `${hitung.berjalan} berjalan · ${hitung.semua} promo lama (per barang / kategori)` : "Memuat…"} · promo paket ada di bagian atas</div>
+          <div className="text-[11px] text-slate-500">Diskon % / Rp atau harga grosir untuk kategori dan/atau barang tertentu</div>
         </div>
         {!inline && (
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200">
@@ -709,113 +781,120 @@ export default function PromoToko({ onClose, inline = false }) {
         )}
       </header>
 
-      <PromoPaket barang={barang} />
+      <div className="flex-1 overflow-y-auto">
+        <PromoPaket barang={barang} />
 
-      <div className="p-3 space-y-2.5 border-b border-slate-800">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[12rem]">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode, nama barang, nama promo…" className={`${inp} pl-9`} />
+        {err && (
+          <div className="mx-3 mt-3 flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> <span>{err}</span>
           </div>
-          <button
-            onClick={() => setForm({ promo: {} })}
-            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-sm px-3 py-2 rounded-lg"
-          >
-            <Plus size={15} /> Tambah promo
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {FILTER.map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilter(k)}
-              className={`text-xs px-3 py-1.5 rounded-full border ${
-                filter === k ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300 hover:border-amber-500/60"
-              }`}
-            >
-              {label}
-              {rows ? ` (${hitung[k]})` : ""}
-            </button>
-          ))}
-        </div>
-      </div>
+        )}
 
-      {err && (
-        <div className="mx-3 mt-3 flex items-start gap-2 bg-red-500/10 border border-red-500/30 text-red-300 text-xs px-3 py-2 rounded-lg">
-          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" /> <span>{err}</span>
-        </div>
-      )}
+        {rows && rows.length > 0 && (
+          <div className="mt-4 border-t border-slate-800">
+            <div className="px-4 pt-3">
+              <div className="text-sm font-semibold text-slate-100">Promo lama</div>
+              <div className="text-[11px] text-slate-500">
+                Dibuat sebelum promo digabung (per barang / per kategori, {hitung.berjalan} berjalan). Masih berjalan seperti biasa dan bisa diubah, dinonaktifkan, atau dihapus.
+                Untuk promo baru, pakai “+ Promo” di atas.
+              </div>
+            </div>
+          <div className="p-3 space-y-2.5 border-b border-slate-800">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[12rem]">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode, nama barang, nama promo…" className={`${inp} pl-9`} />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {FILTER.map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setFilter(k)}
+                  className={`text-xs px-3 py-1.5 rounded-full border ${
+                    filter === k ? "bg-amber-500 text-slate-950 border-amber-500 font-semibold" : "border-slate-700 text-slate-300 hover:border-amber-500/60"
+                  }`}
+                >
+                  {label}
+                  {rows ? ` (${hitung[k]})` : ""}
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
-        {rows === null ? (
-          <div className="mt-12 flex items-center justify-center gap-2 text-sm text-slate-500">
-            <Loader2 size={15} className="animate-spin" /> Memuat promo…
-          </div>
-        ) : tampil.length === 0 ? (
-          <div className="mt-12 text-center text-sm text-slate-400">
-            <BadgePercent size={28} className="mx-auto mb-2 text-slate-600" />
-            {rows.length === 0 ? "Belum ada promo." : "Tidak ada promo yang cocok."}
-            {rows.length === 0 && <div className="text-xs text-slate-500 mt-1">Tekan “Tambah promo” untuk membuat promo pertama.</div>}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-            {tampil.map((p) => {
-              const perKat = !p.sku && !!p.kategori;
-              const b = perKat ? null : peta.get(p.sku);
-              const jumlahBarang = perKat ? barang.filter((x) => !x.nonaktif && normKat(x.kategori) === normKat(p.kategori)).length : 0;
-              const harga = Number(b?.harga_jual) || 0;
-              const st = STATUS[p.status];
-              const potong = hitungDiskonPromo(harga, 1, p);
-              return (
-                <div key={p.id} className={`rounded-2xl p-3.5 border bg-slate-900/70 ${p.status === "berjalan" ? "border-emerald-500/40" : "border-slate-800"}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-100 leading-snug">
-                        {perKat ? `Kategori ${p.kategori}` : b?.nama || <span className="text-red-400">Barang tidak ditemukan</span>}
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        {perKat ? `${jumlahBarang} barang aktif` : p.sku}
-                        {p.nama ? ` · ${p.nama}` : ""}
-                      </div>
-                    </div>
-                    <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 flex-shrink-0 ${st.cls}`}>{st.label}</span>
-                  </div>
-                  <div className="flex items-end justify-between gap-3 mt-3">
-                    <div>
-                      <div className="text-base font-bold text-emerald-400 tabular-nums">Diskon {labelDiskon(p)}</div>
-                      {harga > 0 && (
-                        <div className="text-[11px] text-slate-500 tabular-nums">
-                          <span className="line-through">{fmtRp(harga)}</span> → <span className="text-slate-300">{fmtRp(harga - potong)}</span>
+          <div className="p-3">
+            {rows === null ? (
+              <div className="mt-12 flex items-center justify-center gap-2 text-sm text-slate-500">
+                <Loader2 size={15} className="animate-spin" /> Memuat promo…
+              </div>
+            ) : tampil.length === 0 ? (
+              <div className="mt-12 text-center text-sm text-slate-400">
+                <BadgePercent size={28} className="mx-auto mb-2 text-slate-600" />
+                {rows.length === 0 ? "Belum ada promo." : "Tidak ada promo yang cocok."}
+                {rows.length === 0 && <div className="text-xs text-slate-500 mt-1">Tekan “Tambah promo” untuk membuat promo pertama.</div>}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                {tampil.map((p) => {
+                  const perKat = !p.sku && !!p.kategori;
+                  const b = perKat ? null : peta.get(p.sku);
+                  const jumlahBarang = perKat ? barang.filter((x) => !x.nonaktif && normKat(x.kategori) === normKat(p.kategori)).length : 0;
+                  const harga = Number(b?.harga_jual) || 0;
+                  const st = STATUS[p.status];
+                  const potong = hitungDiskonPromo(harga, 1, p);
+                  return (
+                    <div key={p.id} className={`rounded-2xl p-3.5 border bg-slate-900/70 ${p.status === "berjalan" ? "border-emerald-500/40" : "border-slate-800"}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-100 leading-snug">
+                            {perKat ? `Kategori ${p.kategori}` : b?.nama || <span className="text-red-400">Barang tidak ditemukan</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                            {perKat ? `${jumlahBarang} barang aktif` : p.sku}
+                            {p.nama ? ` · ${p.nama}` : ""}
+                          </div>
                         </div>
-                      )}
+                        <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 flex-shrink-0 ${st.cls}`}>{st.label}</span>
+                      </div>
+                      <div className="flex items-end justify-between gap-3 mt-3">
+                        <div>
+                          <div className="text-base font-bold text-emerald-400 tabular-nums">Diskon {labelDiskon(p)}</div>
+                          {harga > 0 && (
+                            <div className="text-[11px] text-slate-500 tabular-nums">
+                              <span className="line-through">{fmtRp(harga)}</span> → <span className="text-slate-300">{fmtRp(harga - potong)}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 text-right tabular-nums">
+                          {tglPendek(p.mulai)}
+                          <br />s/d {tglPendek(p.selesai)}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-dashed border-slate-800">
+                        <button
+                          onClick={() => toggleAktif(p)}
+                          disabled={sibuk === p.id}
+                          title={p.aktif ? "Nonaktifkan promo" : "Aktifkan promo"}
+                          className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border disabled:opacity-50 ${
+                            p.aktif ? "border-slate-700 text-slate-300 hover:border-red-500/60 hover:text-red-300" : "border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                          }`}
+                        >
+                          {sibuk === p.id ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />} {p.aktif ? "Nonaktifkan" : "Aktifkan"}
+                        </button>
+                        <button onClick={() => setForm({ promo: p })} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-amber-500/60">
+                          <Pencil size={13} /> Ubah
+                        </button>
+                        <button onClick={() => setHapus(p)} className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10" title="Hapus promo">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-400 text-right tabular-nums">
-                      {tglPendek(p.mulai)}
-                      <br />s/d {tglPendek(p.selesai)}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-dashed border-slate-800">
-                    <button
-                      onClick={() => toggleAktif(p)}
-                      disabled={sibuk === p.id}
-                      title={p.aktif ? "Nonaktifkan promo" : "Aktifkan promo"}
-                      className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border disabled:opacity-50 ${
-                        p.aktif ? "border-slate-700 text-slate-300 hover:border-red-500/60 hover:text-red-300" : "border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                      }`}
-                    >
-                      {sibuk === p.id ? <Loader2 size={13} className="animate-spin" /> : <Power size={13} />} {p.aktif ? "Nonaktifkan" : "Aktifkan"}
-                    </button>
-                    <button onClick={() => setForm({ promo: p })} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-amber-500/60">
-                      <Pencil size={13} /> Ubah
-                    </button>
-                    <button onClick={() => setHapus(p)} className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10" title="Hapus promo">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
+          </div>
           </div>
         )}
       </div>
