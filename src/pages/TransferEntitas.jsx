@@ -849,6 +849,15 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
   const [cetakId, setCetakId] = useState(null);
+  // Kartu transfer: daftar barang dilipat (hanya beberapa baris pertama) supaya transfer berisi puluhan SKU tidak memanjang.
+  const [terbuka, setTerbuka] = useState(() => new Set());
+  const JUMLAH_RINGKAS = 4;
+  const toggleTerbuka = (id) =>
+    setTerbuka((p) => {
+      const n = new Set(p);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
   const cetak = async (jenis, t) => {
     if (cetakId) return;
     setCetakId(`${jenis}-${t.id}`);
@@ -970,7 +979,7 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                   </span>
                 </div>
                 <div className="px-4 py-2">
-                  {(t.items || []).map((it) => (
+                  {(terbuka.has(t.id) ? t.items || [] : (t.items || []).slice(0, JUMLAH_RINGKAS)).map((it) => (
                     <div key={it.sku} className="flex items-center justify-between py-1 text-xs">
                       <span className="text-slate-300 truncate">
                         <LabelItem it={it} />
@@ -981,6 +990,15 @@ export default function TransferEntitas({ skuMaster = [], penempatan = [], maste
                       </span>
                     </div>
                   ))}
+                  {(t.items || []).length > JUMLAH_RINGKAS && (
+                    <button
+                      type="button"
+                      onClick={() => toggleTerbuka(t.id)}
+                      className="text-[11px] font-semibold text-amber-300 hover:text-amber-200 py-1"
+                    >
+                      {terbuka.has(t.id) ? "Sembunyikan" : `Lihat ${(t.items || []).length - JUMLAH_RINGKAS} barang lainnya`}
+                    </button>
+                  )}
                   <div className="text-[11px] text-slate-500 mt-1">
                     {(t.items || []).some(adalahHP) ? `${(t.items || []).length} barang · total qty ${fmtQty(totalQty)}` : `${(t.items || []).length} SKU · ${totalQty} pcs`}
                     {nilaiHpp != null ? ` · ${(t.items || []).some(adalahHP) ? "Nilai" : "Nilai HPP"} ${fmtRp(nilaiHpp)}` : ""}
