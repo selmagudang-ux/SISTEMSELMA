@@ -310,13 +310,17 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
   const [jenisLainnya, setJenisLainnya] = useState("");
   const [harga, setHarga] = useState("");
   const [catatan, setCatatan] = useState(initial.catatan || "");
+  // Bukti pembayaran ke supplier (foto/PDF, boleh banyak, opsional). Hanya muncul kalau Total Harga diisi,
+  // karena bukti ini dilampirkan ke baris Pengeluaran di Keuangan yang baru dibuat kalau ada nominal.
+  // File tidak ikut draf otomatis (tidak bisa disimpan di browser), jadi harus dilampirkan lagi kalau form ditutup.
+  const [fotoList, setFotoList] = useState([]);
 
   const jenisFinal = jenis === "Lainnya" ? jenisLainnya.trim() : jenis;
   const valid = supplier.trim() && (jenis !== "Lainnya" || jenisLainnya.trim());
 
   // Draf otomatis: isian tersimpan di browser tiap berubah & dipulihkan kalau form dibuka lagi (lib/draftForm.js).
   // Pesanan dari restock punya draf sendiri per SKU supaya tidak tercampur dengan pesanan biasa.
-  const adaIsi = !!(supplier.trim() || harga || catatan.trim() || jenisLainnya.trim());
+  const adaIsi = !!(supplier.trim() || harga || catatan.trim() || jenisLainnya.trim() || fotoList.length);
   const draf = useDraftForm(
     initial.dariRestock ? `pesan-barang-restock-${initial.sku}` : "pesan-barang",
     { supplier, jenis, jenisLainnya, harga, catatan },
@@ -346,6 +350,7 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
           setJenisLainnya("");
           setHarga("");
           setCatatan(initial.catatan || "");
+          setFotoList([]);
         }}
       />
       {initial.dariRestock && (
@@ -397,6 +402,7 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
         TOTAL nilai pembayaran (bukan harga per pcs) — rincian model &amp; harga per pcs diisi
         belakangan lewat "Konfirmasi Datang".
       </p>
+      {Number(harga) > 0 && <BuktiBayarInput files={fotoList} setFiles={setFotoList} />}
       <Field label="Catatan (opsional)">
         <input
           className={inputClass}
@@ -415,6 +421,8 @@ export function PesanBarangForm({ onClose, onSubmit, saving, initial = {}, suppl
             supplier: supplier.trim(),
             jenis: jenisFinal || null,
             bonList: [{ totalHarga: Number(harga) || 0, catatan: catatan.trim() || null }],
+            // Bukti hanya dikirim kalau ada nominal (Total Harga > 0) — kalau nominal dikosongkan lagi, bukti tidak ikut.
+            fotoList: Number(harga) > 0 ? fotoList : [],
           });
           if (ok === true) draf.hapus();
         }}

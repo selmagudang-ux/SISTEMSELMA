@@ -3872,7 +3872,7 @@ export default function ModalRouter({
         saving={saving}
         initial={prefill || undefined}
         suppliers={suppliers}
-        onSubmit={({ tanggal, supplier, jenis, bonList }) =>
+        onSubmit={({ tanggal, supplier, jenis, bonList, fotoList }) =>
           run(async () => {
             await syncSupplierMaster(suppliers, supplier);
             // Satu toko/supplier bisa sekaligus input beberapa bon (lihat
@@ -3913,6 +3913,9 @@ export default function ModalRouter({
                 kategoriSupplier = await cariAtauBuatMasterTetap("kategori_keluar", KATEGORI_PEMBAYARAN_SUPPLIER);
                 rekeningSupplier = await cariAtauBuatRekeningTetap(master, REKENING_PEMBAYARAN_SUPPLIER, suggestKode, "pembayaran_supplier");
               }
+              // Bukti pembayaran (opsional) diunggah SEBELUM pesanan disimpan: kalau unggah gagal, belum ada baris
+              // pesanan/keuangan yang tersimpan, jadi tidak ada data setengah jadi. Hanya untuk bon yang ada nominalnya.
+              const buktiBayar = totalHarga > 0 && fotoList?.length ? await unggahBuktiBanyak(fotoList, `pesan-${kodePesan}`) : [];
               const [pesananBaru] = await sb("pesanan_masuk", {
                 method: "POST",
                 body: JSON.stringify({
@@ -3957,6 +3960,7 @@ export default function ModalRouter({
                   method: "POST",
                   body: JSON.stringify({
                     tanggal,
+                    ...(buktiBayar.length ? { bukti_urls: buktiBayar, bukti_url: buktiBayar[0] } : {}),
                     tipe: "keluar",
                     rekening: rekeningSupplier,
                     kategori: kategoriSupplier,
