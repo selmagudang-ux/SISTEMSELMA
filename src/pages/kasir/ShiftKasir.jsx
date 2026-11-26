@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { X, Loader2, AlertCircle, CheckCircle2, LockOpen, LogOut, Download, Archive } from "lucide-react";
-import { fmtRp } from "../../lib/api";
+import { fmtRp, sb } from "../../lib/api";
+import { BuktiBayarInput } from "../../components/ui";
+import { unggahBuktiBanyak } from "../AlurKas";
 import { bukaShift, ringkasShift, tutupShift, pesanErrorKasir, muatRincianShift, nomorShiftHarian, muatMaster } from "./kasirApi";
 import { tglJamId, identitasStruk } from "./kasirStruk";
 import { RincianShiftPanel, cetakRincianShift } from "./ShiftRincian";
@@ -14,6 +16,9 @@ import { bukaLaciSaatBukaKasir, bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_
 // Kas seharusnya = kas awal + penjualan cash - retur yang dikembalikan lewat cash.
 // Transfer & QRIS tidak masuk laci kas.
 // =========================================================
+
+// true = Tutup Kasir tidak bisa dilanjutkan kalau ada penjualan Transfer tapi bukti belum dilampirkan.
+const BUKTI_TRANSFER_WAJIB = false;
 
 const inputCls =
   "w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-3 text-base outline-none transition-colors focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10";
@@ -129,6 +134,8 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const [nomorHarian, setNomorHarian] = useState(null); // { nomor, tanggal } — nomor shift, reset tiap hari
   const [mencetak, setMencetak] = useState(false);
   const [membukaLaci, setMembukaLaci] = useState(false);
+  const [fotoTransfer, setFotoTransfer] = useState([]); // bukti transfer (foto/PDF) yang dilampirkan saat tutup kasir
+  const [buktiTersimpan, setBuktiTersimpan] = useState([]); // URL bukti yang sudah tersimpan di shift ini
 
   useEffect(() => {
     let batal = false;
@@ -191,14 +198,27 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const sistem = Number(ringkas?.kas_sistem) || 0;
   const selisih = kasAkhir === "" ? null : kasAkhir - sistem;
   const perluCatatan = selisih !== null && selisih !== 0;
-  const bisaTutup = ringkas && kasAkhir !== "" && (!perluCatatan || catatan.trim()) && !saving;
+  const adaTransfer = (Number(ringkas?.penjualan_transfer) || 0) > 0;
+  const buktiKurang = BUKTI_TRANSFER_WAJIB && adaTransfer && fotoTransfer.length === 0;
+  const bisaTutup = ringkas && kasAkhir !== "" && (!perluCatatan || catatan.trim()) && !buktiKurang && !saving;
 
   const tutup = async () => {
     if (!bisaTutup) return;
     setSaving(true);
     setError("");
     try {
+      // Bukti transfer diunggah & disimpan di shift SEBELUM kasir ditutup: kalau gagal (internet putus, kolom
+      // belum dibuat), kasir belum tertutup dan bisa dicoba lagi — tidak ada shift tertutup tanpa bukti.
+      let urlBukti = [];
+      if (adaTransfer && fotoTransfer.length) {
+        urlBukti = await unggahBuktiBanyak(fotoTransfer, `shift-${shift.id}`);
+        await sb(`kasir_shift?id=eq.${encodeURIComponent(shift.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ bukti_transfer_urls: urlBukti }),
+        });
+      }
       setHasil(await tutupShift({ shiftId: shift.id, kasAkhir, catatan }));
+      setBuktiTersimpan(urlBukti);
     } catch (e) {
       setError(pesanErrorKasir(e, "koreksi").pesan);
     } finally {
@@ -268,6 +288,16 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
                 </div>
                 {hasil.catatan && <div className="mt-2 text-xs text-slate-400">Catatan: {hasil.catatan}</div>}
               </div>
+              {buktiTersimpan.length > 0 && (
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs text-slate-300">
+                  Bukti transfer tersimpan:{" "}
+                  {buktiTersimpan.map((u, i) => (
+                    <a key={u} href={u} target="_blank" rel="noreferrer" className="text-emerald-400 underline mr-2">
+                      Berkas {i + 1}
+                    </a>
+                  ))}
+                </div>
+              )}
               {Number(hasil.pesanan_grosir) > 0 && (
                 <div className="rounded-2xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-xs text-violet-200">
                   {hasil.pesanan_grosir} transaksi grosir sudah masuk ke Pesanan Grosir (menu Penjualan &gt; Store Selma &gt; Grosir). Penjualan ecer tetap dibukukan ke Toko Offline.
@@ -305,6 +335,15 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
                     <div className={`mt-1.5 text-sm font-semibold ${warnaSelisih(selisih)}`}>Selisih: {teksSelisih(selisih)}</div>
                   )}
                 </div>
+
+                {adaTransfer && (
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">
+                      Penjualan transfer shift ini {fmtRp(ringkas.penjualan_transfer)}. Lampirkan bukti (mis. screenshot mutasi rekening).
+                    </div>
+                    <BuktiBayarInput files={fotoTransfer} setFiles={setFotoTransfer} wajib={BUKTI_TRANSFER_WAJIB} />
+                  </div>
+                )}
 
                 {perluCatatan && (
                   <div>
