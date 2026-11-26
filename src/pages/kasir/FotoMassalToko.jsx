@@ -7,7 +7,7 @@ import { Kerangka, Galat, pesanError } from "./BarangToko";
 // FOTO MASSAL BARANG TOKO (untuk barang hasil import / barang tanpa foto)
 // Pilih banyak foto sekaligus. Nama file dicocokkan dengan barang toko:
 //     <kode toko | barcode | SKU gudang | nama barang>.jpg
-//   mis. OPS-0001.jpg, 8991234567890.jpg, "Kemeja Flanel 1.jpg"
+//   mis. OPS-0001.jpg, 8991234567890.jpg, TDAN-ANK-215-PER-ALLSIZE.jpg
 // Pencocokan tidak membedakan huruf besar/kecil. Foto yang tidak cocok dilewati.
 // Kalau barang sudah punya foto, hanya diganti kalau kotak "Ganti foto yang sudah ada" dicentang.
 // Foto dikecilkan lalu diunggah (3 sekaligus) dan disimpan di kolom foto_url.
@@ -101,7 +101,7 @@ export default function FotoMassalToko({ barangAda, onSelesai, onClose }) {
     <Kerangka judul="Foto massal Barang Toko" onClose={proses ? () => {} : onClose}>
       <div className="text-xs text-slate-400 leading-relaxed">
         Pilih banyak foto sekaligus. Beri nama file sesuai <b className="text-slate-200">kode toko</b>, <b className="text-slate-200">barcode</b>, <b className="text-slate-200">SKU gudang</b>, atau <b className="text-slate-200">nama barang</b>
-        {" "}(contoh: <span className="font-mono">OPS-0001.jpg</span>, <span className="font-mono">Kemeja Flanel 1.jpg</span>).
+        {" "}(contoh: <span className="font-mono">OPS-0001.jpg</span>, <span className="font-mono">TDAN-ANK-215-PER-ALLSIZE.jpg</span>).
       </div>
 
       <label className="flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-semibold py-2.5 rounded-xl cursor-pointer">
