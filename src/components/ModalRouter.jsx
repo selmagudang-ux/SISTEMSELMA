@@ -4809,12 +4809,20 @@ export default function ModalRouter({
             // ada) — supaya di Keuangan langsung kelihatan No. Resi-nya,
             // bukan kode internal yang tidak berarti buat orang lain. Lihat
             // `keuangan_transaksi_id` yang disimpan di modal "pesan-barang".
+            // Ini hanya merapikan keterangan: kalau baris Keuangan-nya sudah tidak ada (mis. sudah dihapus
+            // dari menu Keuangan), dilewati saja — status kedatangan & ongkir tetap harus tersimpan.
+            const patchKeuanganAda = async (id, body) => {
+              try {
+                const h = await sb(`keuangan_transaksi?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(body) });
+                return Array.isArray(h) && h.length > 0 ? h[0] : null;
+              } catch (e) {
+                if (/transaksi tidak ditemukan/i.test(e?.message || "")) return null;
+                throw e;
+              }
+            };
             if (resi && p.keuangan_transaksi_id) {
-              await sb(`keuangan_transaksi?id=eq.${p.keuangan_transaksi_id}`, {
-                method: "PATCH",
-                body: JSON.stringify({
-                  keterangan: `Pesan Barang · ${resi}${p.supplier ? ` — ${p.supplier}` : ""}`,
-                }),
+              await patchKeuanganAda(p.keuangan_transaksi_id, {
+                keterangan: `Pesan Barang · ${resi}${p.supplier ? ` — ${p.supplier}` : ""}`,
               });
             }
 
@@ -4867,11 +4875,7 @@ export default function ModalRouter({
               // belum pernah / barisnya sudah tidak ada, baru dibuat baru.
               let barisOngkir = null;
               if (p.keuangan_ongkir_id) {
-                const hasil = await sb(`keuangan_transaksi?id=eq.${p.keuangan_ongkir_id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify(bodyOngkir),
-                });
-                if (Array.isArray(hasil) && hasil.length > 0) barisOngkir = hasil[0];
+                barisOngkir = await patchKeuanganAda(p.keuangan_ongkir_id, bodyOngkir);
               }
               if (!barisOngkir) {
                 const hasil = await sb("keuangan_transaksi", { method: "POST", body: JSON.stringify(bodyOngkir) });
