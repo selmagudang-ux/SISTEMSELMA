@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Loader2, Pencil, ArrowDownToLine, ClipboardCheck, Trash2, Camera, ImagePlus, FileDown, Check, Send, Radio } from "lucide-react";
+import { Search, Plus, Loader2, Pencil, ArrowDownToLine, ClipboardCheck, Trash2, Camera, ImagePlus, FileDown, Check, Send, Radio, History } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import { getSession } from "../../lib/auth";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 import TambahDariMaster, { muatKonteksDariTiktok } from "./TambahDariMaster";
 import PindahKeToko from "./PindahKeToko";
+import RiwayatPemindahan from "./RiwayatPemindahan";
 import { FotoZoom, FotoThumb } from "./FotoZoom";
 import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 
@@ -767,6 +768,7 @@ export default function BarangTiktok({ onBerubah }) {
   const [opname, setOpname] = useState(null);
   const [hapus, setHapus] = useState(null);
   const [dariMaster, setDariMaster] = useState(false);
+  const [riwayat, setRiwayat] = useState(false); // riwayat pemindahan gudang/toko/TikTok + PDF (RiwayatPemindahan.jsx)
   const [keToko, setKeToko] = useState(null); // konteks PindahKeToko (sumber TikTok)
   const [siapkan, setSiapkan] = useState(false);
 
@@ -866,6 +868,9 @@ export default function BarangTiktok({ onBerubah }) {
           </div>
           <button onClick={() => setDariMaster(true)} title="Pilih barang dari Master Barang untuk dijadikan barang TikTok" className="flex items-center gap-1.5 border border-amber-500/50 hover:bg-amber-500/10 text-amber-300 font-semibold text-sm px-3 py-2 rounded-lg">
             <ArrowDownToLine size={15} /> Dari Master
+          </button>
+          <button onClick={() => setRiwayat(true)} title="Riwayat pemindahan gudang, toko & TikTok (bisa unduh PDF)" className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg">
+            <History size={15} /> Riwayat
           </button>
           <button onClick={() => setFormSet({ barang: {} })} title="Satu kode live berisi beberapa barang (dipasangkan saat dikirim)" className="flex items-center gap-1.5 border border-sky-500/50 hover:bg-sky-500/10 text-sky-300 font-semibold text-sm px-3 py-2 rounded-lg">
             <Plus size={15} /> Set
@@ -973,6 +978,7 @@ export default function BarangTiktok({ onBerubah }) {
         )}
       </div>
 
+      {riwayat && <RiwayatPemindahan onClose={() => setRiwayat(false)} />}
       {dariMaster && <TambahDariMaster tujuan="tiktok" onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {form && <FormBarang barang={form.barang} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setForm(null)} />}
       {formSet && <FormSet barang={formSet.barang} semua={rows || []} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setFormSet(null)} />}
