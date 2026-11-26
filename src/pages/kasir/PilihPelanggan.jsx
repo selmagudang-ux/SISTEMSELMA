@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { X, Search, Loader2, Users, Check, UserPlus } from "lucide-react";
+import { X, Search, Loader2, Users, Check, UserPlus, Tag } from "lucide-react";
 
 // =========================================================
 // KASIR (mode Master Barang / grosir) — PILIH PELANGGAN
@@ -16,7 +16,7 @@ export const kunciHargaPelanggan = (p) => (p?.kategori === "tengah" || p?.katego
 export const warnaKategori = (k) =>
   k === "ecer" ? "bg-sky-500/15 text-sky-300" : k === "tengah" ? "bg-violet-500/15 text-violet-300" : "bg-amber-500/15 text-amber-300";
 
-export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPilih, onClose, bolehTambah = false, onTambah, ikutiHarga = true }) {
+export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPilih, onClose, bolehTambah = false, onTambah, ikutiHarga = true, bolehUbahKategori = false, onUbahKategori }) {
   const [q, setQ] = useState("");
   // Form pelanggan baru (hanya untuk role dengan izin "kasir.tambah_pelanggan").
   const [formBuka, setFormBuka] = useState(false);
@@ -25,6 +25,26 @@ export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPil
   const [kategori, setKategori] = useState("ecer");
   const [menyimpan, setMenyimpan] = useState(false);
   const [err, setErr] = useState("");
+  // Ganti kategori pelanggan (izin "kasir.ubah_kategori_pelanggan"): baris yang sedang dibuka pilihan kategorinya.
+  const [ubahId, setUbahId] = useState(null);
+  const [ubahProses, setUbahProses] = useState(false);
+  const [ubahErr, setUbahErr] = useState("");
+  const gantiKategori = async (p, kat) => {
+    if (ubahProses || kat === kunciHargaPelanggan(p)) {
+      setUbahId(null);
+      return;
+    }
+    setUbahProses(true);
+    setUbahErr("");
+    try {
+      await onUbahKategori(p.id, kat);
+      setUbahId(null);
+    } catch (e) {
+      setUbahErr(e?.message || "Gagal mengubah kategori.");
+    } finally {
+      setUbahProses(false);
+    }
+  };
   const simpanBaru = async () => {
     if (!nama.trim()) {
       setErr("Nama pelanggan wajib diisi.");
@@ -161,6 +181,7 @@ export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPil
                 const kat = kunciHargaPelanggan(p);
                 return (
                   <li key={p.id}>
+                    <div className="flex items-stretch gap-1">
                     <button
                       onClick={() => onPilih({ id: p.id, nama: p.nama, kategori: kat })}
                       className={`w-full flex items-center gap-3 text-left px-3 py-2.5 rounded-xl border transition-colors ${
@@ -174,6 +195,41 @@ export default function PilihPelanggan({ daftar, terpilih, memuat = false, onPil
                       {ikutiHarga && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${warnaKategori(kat)}`}>{LABEL_KATEGORI_PELANGGAN[kat]}</span>}
                       {aktif && <Check size={15} className="text-amber-400 flex-shrink-0" />}
                     </button>
+                    {bolehUbahKategori && onUbahKategori && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUbahErr("");
+                          setUbahId(ubahId === p.id ? null : p.id);
+                        }}
+                        className={`px-2.5 rounded-xl border text-slate-400 hover:text-amber-300 ${ubahId === p.id ? "border-amber-500/60 text-amber-300" : "border-transparent hover:bg-slate-800/60"}`}
+                        title="Ganti kategori pelanggan"
+                      >
+                        <Tag size={15} />
+                      </button>
+                    )}
+                    </div>
+                    {bolehUbahKategori && ubahId === p.id && (
+                      <div className="mt-1 mb-1 mx-1 p-2 rounded-xl border border-slate-800 bg-slate-950">
+                        <div className="text-[11px] text-slate-500 mb-1.5">Kategori {p.nama} (menentukan harga):</div>
+                        <div className="flex gap-1.5">
+                          {Object.entries(LABEL_KATEGORI_PELANGGAN).map(([k, lbl]) => (
+                            <button
+                              key={k}
+                              type="button"
+                              disabled={ubahProses}
+                              onClick={() => gantiKategori(p, k)}
+                              className={`flex-1 text-xs font-semibold py-2 rounded-lg border disabled:opacity-60 ${
+                                kat === k ? "border-amber-500 bg-amber-500/15 text-amber-300" : "border-slate-800 text-slate-400"
+                              }`}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                        {ubahErr && <div className="text-xs text-red-300 mt-1.5">{ubahErr}</div>}
+                      </div>
+                    )}
                   </li>
                 );
               })}

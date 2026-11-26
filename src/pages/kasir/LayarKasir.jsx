@@ -474,6 +474,20 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
     setPilihPelBuka(false);
   }, []);
 
+  // Ganti kategori pelanggan (Grosir / Tengah / Ecer) dari layar Pilih Pelanggan — izin "kasir.ubah_kategori_pelanggan", butuh internet.
+  // Disimpan ke grosir_pelanggan (sama dengan menu Grosir > Pelanggan); harga di keranjang ikut berubah karena pelangganAktif
+  // diturunkan dari daftarPelanggan.
+  const ubahKategoriPelanggan = useCallback(async (id, kategori) => {
+    if (statusSekarang().offline) throw new Error("Tidak ada koneksi internet. Kategori pelanggan hanya bisa diubah saat online.");
+    const kat = kategori === "tengah" || kategori === "ecer" ? kategori : "grosir";
+    await sb(`grosir_pelanggan?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ kategori: kat }) });
+    setDaftarPelanggan((d) => {
+      const baru = d.map((p) => (p.id === id ? { ...p, kategori: kat } : p));
+      simpanCacheEnt("pelanggan", baru);
+      return baru;
+    });
+  }, []);
+
   // Keranjang yang dikerjakan berganti (diambil / selesai): stok yang ditahan dihitung ulang tanpa memuat dari server.
   const asalTerakhir = useRef(asalId);
   useEffect(() => {
@@ -1409,6 +1423,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           ikutiHarga={modeMaster}
           bolehTambah={bisa(session?.role, "kasir.tambah_pelanggan")}
           onTambah={tambahPelanggan}
+          bolehUbahKategori={bisa(session?.role, "kasir.ubah_kategori_pelanggan")}
+          onUbahKategori={ubahKategoriPelanggan}
           onPilih={(p) => {
             setPelanggan(p);
             setPilihPelBuka(false);
