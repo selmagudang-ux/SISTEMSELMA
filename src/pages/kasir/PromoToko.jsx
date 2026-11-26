@@ -93,7 +93,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
     const kata = cari.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!kata.length) return [];
     return barang
-      .filter((b) => !b.nonaktif && !terpilih.includes(b.kode) && kata.every((k) => `${b.kode} ${b.nama || ""}`.toLowerCase().includes(k)))
+      .filter((b) => !b.nonaktif && b.sku_gudang && !terpilih.includes(b.kode) && kata.every((k) => String(b.sku_gudang).toLowerCase().includes(k)))
       .slice(0, 8);
   }, [cari, barang, terpilih]);
 
@@ -118,7 +118,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
         }
       } else {
         const kebesaran = terpilih.find((k) => n >= (Number(peta.get(k)?.harga_jual) || 0));
-        if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${kebesaran} (${fmtRp(peta.get(kebesaran)?.harga_jual)}).`);
+        if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${peta.get(kebesaran)?.sku_gudang || kebesaran} (${fmtRp(peta.get(kebesaran)?.harga_jual)}).`);
       }
     }
     setSaving(true);
@@ -189,7 +189,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
           <div className="flex flex-wrap gap-1.5 mb-2">
             {terpilih.map((k) => (
               <span key={k} className="inline-flex items-center gap-1.5 text-xs bg-slate-800 border border-slate-700 rounded-full pl-2.5 pr-1.5 py-1">
-                <span className="font-mono">{k}</span>
+                <span className="font-mono">{peta.get(k)?.sku_gudang || k}</span>
                 {(baru || terpilih.length > 1) && (
                   <button type="button" onClick={() => setTerpilih((t) => t.filter((x) => x !== k))} className="text-slate-500 hover:text-red-400">
                     <X size={12} />
@@ -202,7 +202,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
         {(baru || terpilih.length === 0) && (
           <div className="relative">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari kode atau nama barang toko…" className={`${inp} pl-9`} />
+            <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari kode SKU…" className={`${inp} pl-9`} />
             {hasilCari.length > 0 && (
               <div className="absolute z-10 left-0 right-0 mt-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden shadow-xl">
                 {hasilCari.map((b) => (
@@ -216,7 +216,7 @@ function FormPromo({ promo, barang, onClose, onSelesai }) {
                     className="w-full text-left px-3 py-2 text-sm hover:bg-slate-800 flex items-center justify-between gap-3"
                   >
                     <span className="min-w-0 truncate">
-                      <span className="font-mono text-xs text-slate-400">{b.kode}</span> {b.nama}
+                      <span className="font-mono text-xs text-slate-200">{b.sku_gudang}</span>
                     </span>
                     <span className="text-xs text-slate-500 tabular-nums flex-shrink-0">{fmtRp(b.harga_jual)}</span>
                   </button>
@@ -367,7 +367,7 @@ function FormPaket({ paket, kategori, barang, onClose, onSelesai }) {
     const kata = cariSku.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!kata.length) return [];
     return (barang || [])
-      .filter((b) => !b.nonaktif && !skuPilih.includes(b.kode) && kata.every((k) => `${b.kode} ${b.nama || ""}`.toLowerCase().includes(k)))
+      .filter((b) => !b.nonaktif && b.sku_gudang && !skuPilih.includes(b.kode) && kata.every((k) => String(b.sku_gudang).toLowerCase().includes(k)))
       .slice(0, 8);
   }, [cariSku, barang, skuPilih]);
   const terpilih = (nama) => pilih.some((k) => normKat(k) === normKat(nama));
@@ -389,7 +389,7 @@ function FormPaket({ paket, kategori, barang, onClose, onSelesai }) {
         if (murah && n >= Number(murah.harga_jual)) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${murah.kode} (${fmtRp(murah.harga_jual)}) di kategori ${k}.`);
       }
       const kebesaran = skuPilih.find((k) => Number(petaB.get(k)?.harga_jual) > 0 && n >= Number(petaB.get(k).harga_jual));
-      if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${kebesaran} (${fmtRp(petaB.get(kebesaran).harga_jual)}).`);
+      if (kebesaran) return setError(`Potongan ${fmtRp(n)} tidak boleh sama atau lebih besar dari harga ${petaB.get(kebesaran)?.sku_gudang || kebesaran} (${fmtRp(petaB.get(kebesaran).harga_jual)}).`);
     }
     if (mulai && selesai && selesai < mulai) return setError("Tanggal selesai tidak boleh sebelum tanggal mulai.");
     setSaving(true);
@@ -506,7 +506,7 @@ function FormPaket({ paket, kategori, barang, onClose, onSelesai }) {
             <div className="flex flex-wrap gap-1.5 mb-2 max-h-32 overflow-y-auto">
               {skuPilih.map((k) => (
                 <span key={k} className="inline-flex items-center gap-1.5 text-xs bg-slate-800 border border-slate-700 rounded-full pl-2.5 pr-1.5 py-1">
-                  <span className="font-mono">{k}</span>
+                  <span className="font-mono">{petaB.get(k)?.sku_gudang || k}</span>
                   <button type="button" onClick={() => setSkuPilih((t) => t.filter((x) => x !== k))} className="text-slate-500 hover:text-red-400" title="Lepas barang">
                     <X size={12} />
                   </button>
@@ -516,7 +516,7 @@ function FormPaket({ paket, kategori, barang, onClose, onSelesai }) {
           )}
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input value={cariSku} onChange={(e) => setCariSku(e.target.value)} placeholder="Cari kode atau nama barang toko…" className={`${inp} pl-9`} />
+            <input value={cariSku} onChange={(e) => setCariSku(e.target.value)} placeholder="Cari kode SKU…" className={`${inp} pl-9`} />
           </div>
           {hasilSku.length > 0 && (
             <div className="mt-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden">
@@ -531,7 +531,7 @@ function FormPaket({ paket, kategori, barang, onClose, onSelesai }) {
                   className="w-full text-left px-3 py-2 text-sm hover:bg-slate-800 flex items-center justify-between gap-3"
                 >
                   <span className="min-w-0 truncate">
-                    <span className="font-mono text-xs text-slate-400">{b.kode}</span> {b.nama}
+                    <span className="font-mono text-xs text-slate-200">{b.sku_gudang}</span>
                   </span>
                   <span className="text-xs text-slate-500 tabular-nums flex-shrink-0">{fmtRp(b.harga_jual)}</span>
                 </button>
@@ -585,6 +585,9 @@ function PromoPaket({ barang }) {
     });
     return [...m.values()].sort((a, b) => a.nama.localeCompare(b.nama));
   }, [barang]);
+
+  // kode toko -> SKU Master Barang, untuk tampilan (data promo tetap menyimpan kode toko)
+  const skuDari = useMemo(() => new Map((barang || []).map((b) => [b.kode, b.sku_gudang])), [barang]);
 
   const ubah = async (id, fn, pesanId = id) => {
     setSibuk(pesanId);
@@ -649,7 +652,7 @@ function PromoPaket({ barang }) {
                       ))}
                       {(p.sku || []).slice(0, 10).map((k) => (
                         <span key={`sku-${k}`} className="text-[11px] font-mono bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-full px-2 py-0.5">
-                          {k}
+                          {skuDari.get(k) || k}
                         </span>
                       ))}
                       {(p.sku || []).length > 10 && <span className="text-[11px] text-slate-500 px-1 py-0.5">+{p.sku.length - 10} barang lagi</span>}
@@ -741,7 +744,7 @@ export default function PromoToko({ onClose, inline = false }) {
       .filter((p) => filter === "semua" || p.status === filter)
       .filter((p) => {
         if (!kata.length) return true;
-        const j = `${p.sku || ""} ${p.kategori || ""} ${peta.get(p.sku)?.nama || ""} ${p.nama || ""}`.toLowerCase();
+        const j = `${peta.get(p.sku)?.sku_gudang || p.sku || ""} ${p.kategori || ""} ${peta.get(p.sku)?.nama || ""} ${p.nama || ""}`.toLowerCase();
         return kata.every((k) => j.includes(k));
       })
       .sort((a, b) => urut[a.status] - urut[b.status] || String(a.selesai).localeCompare(String(b.selesai)));
@@ -851,7 +854,7 @@ export default function PromoToko({ onClose, inline = false }) {
                             {perKat ? `Kategori ${p.kategori}` : b?.nama || <span className="text-red-400">Barang tidak ditemukan</span>}
                           </div>
                           <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                            {perKat ? `${jumlahBarang} barang aktif` : p.sku}
+                            {perKat ? `${jumlahBarang} barang aktif` : b?.sku_gudang || p.sku}
                             {p.nama ? ` · ${p.nama}` : ""}
                           </div>
                         </div>
