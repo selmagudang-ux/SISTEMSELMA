@@ -52,7 +52,7 @@ import {
   kodeEntitasHolding,
 } from "../lib/api";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
-import { BUKTI_ACCEPT, fileAdalahPdf, urlAdalahPdf, daftarBukti } from "../lib/bukti";
+import { BUKTI_ACCEPT, fileAdalahPdf, urlAdalahPdf, daftarBukti, BUKTI_MAKS_TANPA_GABUNG, gabungBuktiJadiPdf } from "../lib/bukti";
 
 // =========================================================
 // FASE 3 — ALUR KAS
@@ -85,6 +85,22 @@ export const fileCls =
 const BUKTI_PDF_MAKS = 10 * 1024 * 1024;
 // Upload BANYAK file sekaligus -> array URL (urut sama dengan urutan file).
 export async function unggahBuktiBanyak(files, tanda) {
+  // Lebih dari BUKTI_MAKS_TANPA_GABUNG (3) file sekaligus -> digabung otomatis jadi SATU PDF.
+  if (files.length > BUKTI_MAKS_TANPA_GABUNG) {
+    const bagian = [];
+    for (const f of files) {
+      if (fileAdalahPdf(f)) {
+        bagian.push({ jenis: "pdf", buf: await f.arrayBuffer() });
+      } else {
+        const kecil = await kompresFotoProduk(f, { maxDim: 1600, quality: 0.88 });
+        bagian.push({ jenis: "gambar", buf: await kecil.arrayBuffer(), tipe: kecil.type });
+      }
+    }
+    const bytes = await gabungBuktiJadiPdf(bagian);
+    const pdf = new File([bytes], `bukti-gabungan-${files.length}-berkas.pdf`, { type: "application/pdf" });
+    const url = await sbUploadFoto(pdf, `bukti-kas-${Date.now()}-${tanda}-gabungan.pdf`);
+    return [url];
+  }
   const urls = [];
   for (let i = 0; i < files.length; i++) urls.push(await unggahBukti(files[i], `${tanda}-${i + 1}`));
   return urls;
