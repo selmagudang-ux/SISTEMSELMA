@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Files, Loader2 } from "lucide-react";
-import { sb, kompresFotoProduk, sbUploadFoto } from "../lib/api";
-import { daftarBukti, urlAdalahPdf, gabungBuktiJadiPdf, BUKTI_MAKS_TANPA_GABUNG } from "../lib/bukti";
+import { Files, Download, Loader2 } from "lucide-react";
+import { sb } from "../lib/api";
+import { gabungUrlBuktiJadiPdf } from "../pages/AlurKas";
+import { daftarBukti, urlAdalahPdf, BUKTI_MAKS_TANPA_GABUNG } from "../lib/bukti";
 
-// Tombol "Gabung jadi PDF" di baris transaksi Keuangan yang buktinya LEBIH dari 3 (data lama yang diunggah satu per satu).
+// Tombol "Gabung jadi PDF" di baris transaksi Keuangan yang buktinya lebih dari 1 (data lama yang diunggah satu per satu).
 // Semua bukti diunduh, digabung jadi SATU PDF (satu foto per halaman A4), diunggah, lalu daftar bukti transaksi diganti
 // dengan PDF itu. Baris lain yang memakai daftar bukti yang sama persis (mis. satu transfer dipecah beberapa baris)
 // ikut diperbarui. File lama di storage dibiarkan (tidak dihapus).
@@ -17,26 +18,7 @@ export default function TombolGabungBukti({ t, reload, showToast }) {
     if (!window.confirm(`Gabungkan ${urls.length} bukti transaksi ini menjadi 1 file PDF?\n\nIkon bukti akan diganti dengan 1 PDF. Foto aslinya tidak dihapus dari penyimpanan.`)) return;
     setProses(true);
     try {
-      const bagian = [];
-      for (let i = 0; i < urls.length; i++) {
-        let resp;
-        try {
-          resp = await fetch(urls[i]);
-        } catch {
-          throw new Error(`Bukti ke-${i + 1} tidak bisa diunduh. Periksa koneksi lalu coba lagi.`);
-        }
-        if (!resp.ok) throw new Error(`Bukti ke-${i + 1} tidak bisa diunduh (kode ${resp.status}).`);
-        const blob = await resp.blob();
-        if (urlAdalahPdf(urls[i]) || blob.type === "application/pdf") {
-          bagian.push({ jenis: "pdf", buf: await blob.arrayBuffer() });
-        } else {
-          const kecil = await kompresFotoProduk(new File([blob], `bukti-${i + 1}`, { type: blob.type || "image/jpeg" }), { maxDim: 1600, quality: 0.88 });
-          bagian.push({ jenis: "gambar", buf: await kecil.arrayBuffer(), tipe: kecil.type });
-        }
-      }
-      const bytes = await gabungBuktiJadiPdf(bagian);
-      const pdf = new File([bytes], `bukti-gabungan-${urls.length}-berkas.pdf`, { type: "application/pdf" });
-      const urlBaru = await sbUploadFoto(pdf, `bukti-kas-${Date.now()}-${t.id}-gabungan.pdf`);
+      const urlBaru = await gabungUrlBuktiJadiPdf(urls, t.id);
 
       // Baris lain dengan daftar bukti yang sama persis ikut diganti (bukan hanya baris ini).
       let ids = [t.id];
@@ -70,6 +52,57 @@ export default function TombolGabungBukti({ t, reload, showToast }) {
     >
       {proses ? <Loader2 size={12} className="animate-spin" /> : <Files size={12} />}
       {proses ? "Menggabung…" : "Gabung jadi PDF"}
+    </button>
+  );
+}
+
+// Tombol unduh bukti di samping ikon paperclip: satu klik menyimpan file dengan nama rapi
+// "Bukti-<tanggal>-<jumlah>.pdf" (bukti lebih dari satu diberi nomor -1, -2, ...).
+// Hanya untuk transaksi dengan 1 bukti; kalau lebih, pakai "Gabung jadi PDF" dulu.
+export function TombolUnduhBukti({ t, showToast }) {
+  const [proses, setProses] = useState(false);
+  const urls = daftarBukti(t);
+  if (!urls.length || urls.length > BUKTI_MAKS_TANPA_GABUNG) return null;
+
+  const unduh = async () => {
+    if (proses) return;
+    setProses(true);
+    try {
+      const tgl = String(t.tanggal || "").slice(0, 10) || "tanpa-tanggal";
+      const jml = Math.round(Number(t.jumlah) || 0);
+      for (let i = 0; i < urls.length; i++) {
+        const u = urls[i];
+        const resp = await fetch(u);
+        if (!resp.ok) throw new Error(`kode ${resp.status}`);
+        const blob = await resp.blob();
+        const ext = urlAdalahPdf(u) || blob.type === "application/pdf" ? "pdf" : /png/i.test(blob.type) ? "png" : /webp/i.test(blob.type) ? "webp" : "jpg";
+        const nama = `Bukti-${tgl}-${jml}${urls.length > 1 ? `-${i + 1}` : ""}.${ext}`;
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objUrl;
+        a.download = nama;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
+        if (i < urls.length - 1) await new Promise((r) => setTimeout(r, 400)); // jeda supaya browser tidak memblokir unduhan beruntun
+      }
+    } catch (err) {
+      showToast?.(`Gagal mengunduh bukti (${err?.message || "koneksi"}). Buka lewat ikon paperclip lalu simpan manual.`, "err");
+    } finally {
+      setProses(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={unduh}
+      disabled={proses}
+      className="p-1.5 rounded-lg text-sky-400/80 hover:text-sky-300 hover:bg-slate-800 disabled:opacity-50"
+      title={urls.length > 1 ? `Unduh ${urls.length} bukti` : "Unduh bukti"}
+    >
+      {proses ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
     </button>
   );
 }

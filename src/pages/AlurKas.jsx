@@ -85,7 +85,7 @@ export const fileCls =
 const BUKTI_PDF_MAKS = 10 * 1024 * 1024;
 // Upload BANYAK file sekaligus -> array URL (urut sama dengan urutan file).
 export async function unggahBuktiBanyak(files, tanda) {
-  // Lebih dari BUKTI_MAKS_TANPA_GABUNG (3) file sekaligus -> digabung otomatis jadi SATU PDF.
+  // Lebih dari BUKTI_MAKS_TANPA_GABUNG (1) file, artinya 2 file atau lebih -> digabung otomatis jadi SATU PDF.
   if (files.length > BUKTI_MAKS_TANPA_GABUNG) {
     const bagian = [];
     for (const f of files) {
@@ -104,6 +104,30 @@ export async function unggahBuktiBanyak(files, tanda) {
   const urls = [];
   for (let i = 0; i < files.length; i++) urls.push(await unggahBukti(files[i], `${tanda}-${i + 1}`));
   return urls;
+}
+// Gabungkan bukti yang SUDAH tersimpan (daftar URL) jadi satu PDF baru lalu unggah. Mengembalikan URL PDF-nya.
+// Dipakai tombol "Gabung jadi PDF" dan saat bukti baru ditambahkan ke transaksi yang sudah punya bukti.
+export async function gabungUrlBuktiJadiPdf(urls, tanda) {
+  const bagian = [];
+  for (let i = 0; i < urls.length; i++) {
+    let resp;
+    try {
+      resp = await fetch(urls[i]);
+    } catch {
+      throw new Error(`Bukti ke-${i + 1} tidak bisa diunduh. Periksa koneksi lalu coba lagi.`);
+    }
+    if (!resp.ok) throw new Error(`Bukti ke-${i + 1} tidak bisa diunduh (kode ${resp.status}).`);
+    const blob = await resp.blob();
+    if (urlAdalahPdf(urls[i]) || blob.type === "application/pdf") {
+      bagian.push({ jenis: "pdf", buf: await blob.arrayBuffer() });
+    } else {
+      const kecil = await kompresFotoProduk(new File([blob], `bukti-${i + 1}`, { type: blob.type || "image/jpeg" }), { maxDim: 1600, quality: 0.88 });
+      bagian.push({ jenis: "gambar", buf: await kecil.arrayBuffer(), tipe: kecil.type });
+    }
+  }
+  const bytes = await gabungBuktiJadiPdf(bagian);
+  const pdf = new File([bytes], `bukti-gabungan-${urls.length}-berkas.pdf`, { type: "application/pdf" });
+  return sbUploadFoto(pdf, `bukti-kas-${Date.now()}-${tanda}-gabungan.pdf`);
 }
 export async function unggahBukti(file, tanda) {
   if (fileAdalahPdf(file)) {
@@ -203,7 +227,9 @@ export function TransaksiKas({ keuanganTransaksi = [], master = {}, reload, show
     setMengunggahId(t.id);
     try {
       const baru = await unggahBuktiBanyak(files, t.id);
-      const semua = [...daftarBukti(t), ...baru];
+      let semua = [...daftarBukti(t), ...baru];
+      // Transaksi sudah punya bukti + ada tambahan -> semuanya dijadikan satu PDF.
+      if (semua.length > BUKTI_MAKS_TANPA_GABUNG) semua = [await gabungUrlBuktiJadiPdf(semua, t.id)];
       await sb(`keuangan_transaksi?id=eq.${t.id}`, { method: "PATCH", body: JSON.stringify({ bukti_urls: semua, bukti_url: semua[0] }) });
       showToast?.(baru.length > 1 ? `${baru.length} bukti transfer dilampirkan` : "Bukti transfer dilampirkan");
       await reload?.();

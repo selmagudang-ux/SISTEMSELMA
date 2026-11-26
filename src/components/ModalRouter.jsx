@@ -17,8 +17,8 @@ import {
 import VerifikasiIndukForm from "./VerifikasiIndukForm";
 import TempatkanRakBanyakForm from "./TempatkanRakBanyakForm";
 import { changeOwnPassword } from "../lib/auth";
-import { unggahBuktiBanyak } from "../pages/AlurKas";
-import { daftarBukti, urlAdalahPdf } from "../lib/bukti";
+import { unggahBuktiBanyak, gabungUrlBuktiJadiPdf } from "../pages/AlurKas";
+import { daftarBukti, urlAdalahPdf, BUKTI_MAKS_TANPA_GABUNG } from "../lib/bukti";
 import { skuForRak, rakForSku, rencanaKurangiRak } from "../pages/Rak";
 
 // Lazy-load: EditPesananForm/BuatPesanan (pages/Grosir.jsx) dan
@@ -1418,7 +1418,9 @@ export default function ModalRouter({
             // Saat edit, bukti lama yang tidak dilepas ikut dipertahankan; kolom bukti_url
             // (lama) selalu diisi file PERTAMA supaya kode lain yang membacanya tetap jalan.
             const buktiBaru = data.fotoList?.length ? await unggahBuktiBanyak(data.fotoList, `trx-${data.tipe}`) : [];
-            const buktiSemua = [...(data.buktiLama || []), ...buktiBaru];
+            let buktiSemua = [...(data.buktiLama || []), ...buktiBaru];
+            // Bukti lama + bukti baru (2 atau lebih) dijadikan satu PDF.
+            if (buktiSemua.length > BUKTI_MAKS_TANPA_GABUNG) buktiSemua = [await gabungUrlBuktiJadiPdf(buktiSemua, `trx-${data.tipe}`)];
             if (t || buktiSemua.length) {
               body.bukti_urls = buktiSemua;
               body.bukti_url = buktiSemua[0] || null;

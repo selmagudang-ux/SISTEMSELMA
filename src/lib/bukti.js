@@ -12,9 +12,9 @@ export function daftarBukti(t) {
   return t.bukti_url ? [t.bukti_url] : [];
 }
 
-// Satu kali unggah dengan bukti LEBIH dari batas ini otomatis digabung jadi SATU file PDF
+// Bukti LEBIH dari batas ini (artinya 2 file atau lebih) otomatis digabung jadi SATU file PDF
 // (supaya baris transaksi tidak penuh ikon paperclip). Dipakai unggahBuktiBanyak (pages/AlurKas.jsx).
-export const BUKTI_MAKS_TANPA_GABUNG = 3;
+export const BUKTI_MAKS_TANPA_GABUNG = 1;
 
 // Gabungkan bukti jadi satu PDF, urut sama dengan urutan `bagian`.
 //   bagian = [{ jenis: "pdf" | "gambar", buf: ArrayBuffer, tipe?: "image/png" | ... }]
