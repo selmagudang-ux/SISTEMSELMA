@@ -17,7 +17,7 @@ import { bukaLaciSaatBukaKasir, bukaLaciManual, adalahAppDesktop, URL_UNDUH_APP_
 // Transfer & QRIS tidak masuk laci kas.
 // =========================================================
 
-// true = Tutup Kasir tidak bisa dilanjutkan kalau ada penjualan Transfer tapi bukti belum dilampirkan.
+// true = Tutup Kasir tidak bisa dilanjutkan kalau ada penjualan Transfer/QRIS tapi bukti belum dilampirkan.
 const BUKTI_TRANSFER_WAJIB = false;
 
 const inputCls =
@@ -198,7 +198,10 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
   const sistem = Number(ringkas?.kas_sistem) || 0;
   const selisih = kasAkhir === "" ? null : kasAkhir - sistem;
   const perluCatatan = selisih !== null && selisih !== 0;
-  const adaTransfer = (Number(ringkas?.penjualan_transfer) || 0) > 0;
+  // Transfer dan QRIS sama-sama uang non-tunai yang masuk rekening, jadi dua-duanya perlu bukti.
+  const totalTransfer = Number(ringkas?.penjualan_transfer) || 0;
+  const totalQris = Number(ringkas?.penjualan_qris) || 0;
+  const adaTransfer = totalTransfer + totalQris > 0;
   const buktiKurang = BUKTI_TRANSFER_WAJIB && adaTransfer && fotoTransfer.length === 0;
   const bisaTutup = ringkas && kasAkhir !== "" && (!perluCatatan || catatan.trim()) && !buktiKurang && !saving;
 
@@ -290,7 +293,7 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
               </div>
               {buktiTersimpan.length > 0 && (
                 <div className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3 text-xs text-slate-300">
-                  Bukti transfer tersimpan:{" "}
+                  Bukti transfer/QRIS tersimpan:{" "}
                   {buktiTersimpan.map((u, i) => (
                     <a key={u} href={u} target="_blank" rel="noreferrer" className="text-emerald-400 underline mr-2">
                       Berkas {i + 1}
@@ -339,7 +342,9 @@ export function ModalTutupShift({ shift, onSelesai, onClose }) {
                 {adaTransfer && (
                   <div>
                     <div className="text-xs text-slate-500 mb-1">
-                      Penjualan transfer shift ini {fmtRp(ringkas.penjualan_transfer)}. Lampirkan bukti (mis. screenshot mutasi rekening).
+                      Penjualan non-tunai shift ini {fmtRp(totalTransfer + totalQris)}
+                      {totalTransfer > 0 && totalQris > 0 ? ` (Transfer ${fmtRp(totalTransfer)} + QRIS ${fmtRp(totalQris)})` : totalQris > 0 ? " (QRIS)" : " (Transfer)"}.
+                      {" "}Lampirkan bukti (mis. screenshot mutasi rekening atau laporan QRIS).
                     </div>
                     <BuktiBayarInput files={fotoTransfer} setFiles={setFotoTransfer} wajib={BUKTI_TRANSFER_WAJIB} />
                   </div>
