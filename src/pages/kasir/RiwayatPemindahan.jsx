@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, FileDown } from "lucide-react";
+import { Loader2, FileDown, Trash2 } from "lucide-react";
 import { sb, sbAll, entitasSesi } from "../../lib/api";
 import { getSession } from "../../lib/auth";
+import { bisa } from "../../lib/constants";
 import { rentangWib } from "../../lib/rekapPerpindahan";
 import { Kerangka, Galat, inp } from "./BarangToko";
 
@@ -11,6 +12,8 @@ import { Kerangka, Galat, inp } from "./BarangToko";
 // ditulis oleh fungsi database toko_mutasi_dari_gudang & toko_kembalikan_ke_gudang. TIDAK ada perubahan database.
 //  - Filter tanggal (WIB) + filter arah.
 //  - PDF per baris, atau centang beberapa lalu satukan dalam satu PDF (lib/PdfPemindahanToko.js, arah "campur").
+//  - HAPUS catatan riwayat (satu per baris, atau yang dicentang) — hanya catatannya; stok toko & stok gudang TIDAK berubah.
+//    Lewat fungsi database toko_hapus_mutasi (supabase/migrations/20261114_toko_hapus_mutasi.sql), dijaga izin "stok.hapus_mutasi_toko".
 // Barang yang sudah dihapus dari Barang Toko tetap tampil (nama kosong, SKU gudang diambil dari kolom ref riwayat).
 // =========================================================
 
@@ -35,6 +38,8 @@ export default function RiwayatPemindahan({ onClose }) {
   const [error, setError] = useState("");
   const [pilih, setPilih] = useState(() => new Set());
   const [sibuk, setSibuk] = useState(false);
+  const [muatUlang, setMuatUlang] = useState(0); // dinaikkan setelah menghapus supaya daftar dimuat lagi
+  const bisaHapus = bisa(getSession()?.role, "stok.hapus_mutasi_toko");
 
   useEffect(() => {
     if (!dari || !sampai || dari > sampai) {
@@ -60,6 +65,7 @@ export default function RiwayatPemindahan({ onClose }) {
             const t = peta.get(m.kode);
             return {
               id: m.id ?? `${m.kode}-${m.created_at}`,
+              idAsli: m.id ?? null, // null = tidak bisa dihapus (tidak punya id)
               waktu: m.created_at,
               arah: m.jenis === "mutasi_masuk" ? "ke_toko" : "ke_gudang",
               kode: m.kode,
@@ -79,7 +85,7 @@ export default function RiwayatPemindahan({ onClose }) {
     return () => {
       batal = true;
     };
-  }, [dari, sampai]);
+  }, [dari, sampai, muatUlang]);
 
   const tampil = useMemo(() => (data || []).filter((r) => arah === "semua" || r.arah === arah), [data, arah]);
   const terpilih = useMemo(() => tampil.filter((r) => pilih.has(r.id)), [tampil, pilih]);
@@ -92,6 +98,58 @@ export default function RiwayatPemindahan({ onClose }) {
       else n.add(id);
       return n;
     });
+
+  // Hapus catatan riwayat (bukan stok). Satu per satu lewat fungsi database; berhenti dan lapor kalau ada yang gagal.
+  const hapus = async (daftar) => {
+    const bisaDihapus = daftar.filter((r) => r.idAsli != null);
+    if (!bisaHapus || sibuk || bisaDihapus.length === 0) return;
+    const ringkas =
+      bisaDihapus.length === 1
+        ? [`${bisaDihapus[0].kode} · ${bisaDihapus[0].nama}`, `${fmtWaktu(bisaDihapus[0].waktu)} · ${bisaDihapus[0].qty} pcs`].join("\n")
+        : `${bisaDihapus.length} catatan riwayat`;
+    const ok = window.confirm(
+      [
+        "Hapus catatan riwayat ini?",
+        "",
+        ringkas,
+        "",
+        "Yang dihapus HANYA catatan riwayatnya. Stok toko dan stok gudang tidak berubah. Tidak bisa dibatalkan.",
+      ].join("\n")
+    );
+    if (!ok) return;
+    setSibuk(true);
+    setError("");
+    let berhasil = 0;
+    try {
+      for (const r of bisaDihapus) {
+        try {
+          await sb("rpc/toko_hapus_mutasi", {
+            method: "POST",
+            body: JSON.stringify({ p_id: String(r.idAsli), p_entitas: entitasSesi() || null }),
+          });
+          berhasil++;
+        } catch (e) {
+          const pesan = String(e?.message || e);
+          // catatan yang sudah tidak ada dianggap beres
+          if (/MUTASI_TIDAK_DITEMUKAN/.test(pesan)) {
+            berhasil++;
+            continue;
+          }
+          throw e;
+        }
+      }
+    } catch (e) {
+      const pesan = String(e?.message || e);
+      setError(
+        /toko_hapus_mutasi|PGRST202|does not exist|404/i.test(pesan)
+          ? "Fungsi database belum dibuat. Jalankan supabase/migrations/20261114_toko_hapus_mutasi.sql di Supabase > SQL Editor."
+          : `Gagal menghapus (${berhasil} dari ${bisaDihapus.length} terhapus): ${pesan}`
+      );
+    } finally {
+      setSibuk(false);
+      if (berhasil > 0) setMuatUlang((n) => n + 1);
+    }
+  };
 
   const unduh = async (daftar) => {
     if (!daftar.length) return;
@@ -169,6 +227,15 @@ export default function RiwayatPemindahan({ onClose }) {
               Pilih semua ({tampil.length})
             </label>
             <div className="flex flex-wrap gap-2">
+              {bisaHapus && (
+                <button
+                  onClick={() => hapus(terpilih)}
+                  disabled={sibuk || terpilih.length === 0}
+                  className="flex items-center gap-1.5 border border-red-500/50 hover:bg-red-500/10 disabled:opacity-40 text-red-300 font-semibold px-3 py-2 rounded-lg"
+                >
+                  <Trash2 size={14} /> Hapus terpilih ({terpilih.length})
+                </button>
+              )}
               <button
                 onClick={() => unduh(terpilih)}
                 disabled={sibuk || terpilih.length === 0}
@@ -214,6 +281,16 @@ export default function RiwayatPemindahan({ onClose }) {
                 >
                   <FileDown size={16} />
                 </button>
+                {bisaHapus && r.idAsli != null && (
+                  <button
+                    onClick={() => hapus([r])}
+                    disabled={sibuk}
+                    title="Hapus catatan riwayat ini (stok tidak berubah)"
+                    className="p-2 text-red-400 hover:bg-red-500/10 disabled:opacity-40 rounded-lg flex-shrink-0"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
