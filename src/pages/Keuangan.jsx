@@ -52,6 +52,7 @@ import { DetailPesananKeuanganModal, petaPesananKeuangan } from "../components/D
 import { roleLabel, allowedSubMenus, SUB_KEUANGAN_LAMA, PERAN_REKENING, bisa, roleHanyaLihat } from "../lib/constants";
 import { TransaksiKas, BukuKas, RekonsiliasiKas } from "./AlurKas";
 import { daftarBukti } from "../lib/bukti";
+import TombolGabungBukti from "../components/GabungBukti";
 import { AntarEntitas, Konsolidasi, RingkasanGrup, KelolaPerusahaan } from "./Holding";
 import PenarikanPemilik from "./PenarikanPemilik";
 import { buatLaporanNarasi } from "../lib/laporanNarasi";
@@ -334,7 +335,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
         barTab
       );
     }
-    return bungkus(<Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} namaUsaha={namaUsahaEntitas(lingkup.master, kodeAktif || ENTITAS_DEFAULT)} />, barTab);
+    return bungkus(<Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} reload={reload} bolehGabungBukti={!bacaSaja || adaPengecualianOwner} namaUsaha={namaUsahaEntitas(lingkup.master, kodeAktif || ENTITAS_DEFAULT)} />, barTab);
   }
   if (modeGrup && sub === "grup") {
     return (
@@ -384,7 +385,7 @@ export default function Keuangan({ sub: subProp, keuanganTransaksi = [], pesanan
     return bungkus(<TransaksiKas keuanganTransaksi={lingkup.transaksi} master={lingkup.master} reload={reload} showToast={showToast} setModal={setModalAman} />, barTab);
   }
   return bungkus(
-    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} namaUsaha={namaUsahaEntitas(lingkup.master, kodeAktif || ENTITAS_DEFAULT)} />,
+    <Transaksi keuanganTransaksi={lingkup.transaksi} pesananMasuk={pesananMasuk} master={lingkup.master} setModal={setModalAman} showToast={showToast} reload={reload} bolehGabungBukti={!bacaSaja || adaPengecualianOwner} namaUsaha={namaUsahaEntitas(lingkup.master, kodeAktif || ENTITAS_DEFAULT)} />,
     barTab
   );
 }
@@ -1112,7 +1113,7 @@ export function LaporanLabaRugi({ pendapatan, beban, labaRugi, marginPersen, sub
   );
 }
 
-function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, showToast, namaUsaha = "SELMA" }) {
+function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, showToast, reload, bolehGabungBukti = false, namaUsaha = "SELMA" }) {
   const [detailPesanan, setDetailPesanan] = useState(null); // { transaksi, pesanan }
   const petaPesanan = useMemo(() => petaPesananKeuangan(pesananMasuk), [pesananMasuk]);
   const [dari, setDari] = useState(awalBulanIni());
@@ -1412,6 +1413,7 @@ function Transaksi({ keuanganTransaksi, pesananMasuk = [], master, setModal, sho
                       <Paperclip size={13} />
                     </a>
                   ))}
+                  {bolehGabungBukti && <TombolGabungBukti t={t} reload={reload} showToast={showToast} />}
                   {petaPesanan.get(t.id) && (
                     <button
                       onClick={() => setDetailPesanan({ transaksi: t, pesanan: petaPesanan.get(t.id) })}

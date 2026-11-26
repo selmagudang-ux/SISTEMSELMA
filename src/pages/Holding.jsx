@@ -7,6 +7,7 @@ import PengajuanDana, { usePengajuanDana } from "./PengajuanDana";
 import { useKeuanganRentang } from "../lib/useKeuanganRentang";
 import { useDataKas, hariIniLokal, awalBulanIni, unggahBuktiBanyak, fileCls } from "./AlurKas";
 import { BUKTI_ACCEPT, fileAdalahPdf, daftarBukti } from "../lib/bukti";
+import TombolGabungBukti from "../components/GabungBukti";
 
 // =========================================================
 // FASE 4 — HOLDING
@@ -983,6 +984,7 @@ export function AntarEntitas({ keuanganTransaksi = [], master = {}, reload, show
                       <Paperclip size={13} />
                     </a>
                   ))}
+                  {kelola && <TombolGabungBukti t={t} reload={reload} showToast={showToast} />}
                   {kelola && (
                     <>
                       <button onClick={() => setModal?.({ type: "keuangan-transaksi-form", item: t })} className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800" title="Edit">
