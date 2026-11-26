@@ -51,6 +51,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   const H = 210;
   const M = 10;
   const BOTTOM = H - 40; // sisakan ruang untuk tanda tangan di halaman terakhir
+  const BOTTOM_PENUH = H - 12; // batas bawah halaman yang BUKAN terakhir (tanpa ruang tanda tangan)
   const doc = new jsPDF({ unit: "mm", format: "a5" });
   let y = M;
   const teks = (s, x, opt) => doc.text(String(s ?? ""), x, y, opt);
@@ -157,7 +158,9 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   let totalQty = 0;
   let totalNilai = 0;
   items.forEach((it, i) => {
-    if (y + 6 > BOTTOM) {
+    // Baris terakhir harus muat bersama total + tanda tangan (BOTTOM); baris lain boleh sampai dekat tepi halaman.
+    const batas = i === items.length - 1 ? BOTTOM : BOTTOM_PENUH;
+    if (y + 6 > batas) {
       doc.addPage();
       y = M;
       kepalaTabel();
