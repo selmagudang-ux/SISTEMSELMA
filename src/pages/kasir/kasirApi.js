@@ -109,6 +109,8 @@ export function bangunPayload({ session, items, diskonTransaksi, hitungBayar, ke
       harga_satuan: it.harga,
       diskon: hitungItem(it).diskon,
       ...(it.manual ? { manual: true } : {}),
+      // Keranjang campuran: barang Toko di dalam transaksi Grosir (stok dipotong dari master_toko, harga = harga jual Toko).
+      ...(it.asal === "toko" ? { asal: "toko" } : {}),
     })),
     pembayaran: hitungBayar.pembayaran.map((p) => ({
       metode: p.metode,
