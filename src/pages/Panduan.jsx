@@ -112,7 +112,21 @@ const SECTIONS = [
         langkah: [
           `Buka Master Barang.`,
           `Di sini ada foto, harga asli, HPP (modal), dan harga jual Grosir, Tengah, dan Ecer.`,
+          `Kartu barang ada dua tampilan. Tekan Ringkas supaya kartunya kecil dan rapi (HPP, Grosir, Tengah, Ecer). Tekan Lengkap kalau mau lihat semua angka, termasuk Harga Asli dan hitungan Marketplace.`,
+          `Mau mengubah barang? Tekan tombol titik tiga di kartunya. Isinya: Edit harga, Pindahkan ke Barang Toko, Ganti nama SKU, dan Hapus SKU.`,
+          `Tombol Tambah membuka pilihan: Tambah Set, Tambah SKU Induk, atau Import SKU (Excel). Tombol Unduh membuka pilihan: Download CSV, Download Foto, atau Download PDF Katalog.`,
+          `Baris tombol bulat di bawah kotak cari (Set, SKU Induk, Perubahan harga, Tidak layak MP, Nonaktif) dipakai untuk menyaring barang. Tekan sekali untuk menyalakan, tekan lagi untuk mematikan.`,
           `Mau mengubah persentase naik harga (markup)? Itu diatur lewat menu Pengaturan.`,
+        ],
+      },
+      {
+        judul: "Barang TikTok (stok per kode live dan ukuran)",
+        langkah: [
+          `Buka tab Barang TikTok (Kode Live).`,
+          `Satu barang TikTok = satu kode live + satu ukuran. Contoh: CI-72 ukuran 7 dan CI-72 ukuran 8 itu dua barang, stoknya terpisah.`,
+          `Ukuran diambil dari tulisan di pesanan TikTok. Contoh "CI-72, 7" artinya kode live CI-72, ukuran 7. Kosongkan kolom Ukuran kalau barangnya tidak punya ukuran.`,
+          `Stok berkurang sendiri saat resi di-scan, dan bertambah lagi kalau paketnya balik (Retur Resi).`,
+          `Kalau kode live atau ukurannya belum ada, barangnya dibuat sendiri dan stoknya boleh minus. Cari dengan tombol "Dibuat dari scan resi", lalu lengkapi SKU gudang, harga, dan stoknya.`,
         ],
       },
       {
@@ -236,6 +250,10 @@ const SECTIONS = [
           `Di sini ada barang yang sudah punya SKU tapi belum ditaruh di rak.`,
           `Barang yang raknya sudah dipakai SKU lain juga ada di sini, karena perlu dicarikan rak baru.`,
           `Pilih barang, lalu pilih rak tempatnya.`,
+          `Mau menaruh banyak barang ke satu rak sekaligus? Beri tanda centang di pojok kartu barangnya. Tulisan "+ pilih semua ukuran produk ini" mencentang semua ukuran dari produk yang sama.`,
+          `Tekan "Tempatkan ... terpilih ke 1 rak". Pilih rak, isi jumlah tiap SKU, lalu Simpan.`,
+          `Satu rak boleh diisi satu produk yang cuma beda ukuran. Kalau produknya beda, sistem bertanya dulu karena isi rak lama akan tertimpa.`,
+          `Cara yang sama ada di menu Alur Barang. Pilih tahap Rak, centang barangnya, lalu tekan tombol tempatkan.`,
         ],
       },
       {
@@ -289,6 +307,7 @@ const SECTIONS = [
         langkah: [
           `Buka menu Foto Produk. Barang yang perlu difoto tampil di sini.`,
           `Ambil foto barangnya, atau unggah fotonya.`,
+          `Barang yang punya SKU induk punya tombol "Foto induk + SKU isi". Pilih foto untuk SKU induknya dulu. Lalu centang SKU isi yang mau ikut memakai foto itu. Kalau ada SKU isi yang fotonya beda, pilih foto sendiri di barisnya.`,
           `Setelah fotonya lengkap dan disetujui, barang otomatis pindah ke langkah Marketplace. Artinya siap diupload oleh admin marketplace.`,
         ],
       },
@@ -501,15 +520,20 @@ const SECTIONS = [
           `Isi daftar perpindahan barang antara gudang dan toko. Pilih rentang tanggal dan arahnya (gudang ke toko, atau toko ke gudang).`,
           `Klik PDF di satu baris untuk mencetak bukti pemindahan itu.`,
           `Atau centang beberapa baris lalu satukan dalam satu PDF.`,
+          `Mau menghapus catatan? Tekan tombol tempat sampah di barisnya, atau centang beberapa lalu tekan Hapus terpilih. Yang hilang hanya catatan riwayatnya. Stok toko dan stok gudang tidak berubah. Tombol ini hanya ada untuk akun yang diberi izin.`,
         ],
       },
       {
         judul: "POS: Promo",
         langkah: [
-          `Buka tab Promo.`,
-          `Promo bisa untuk satu barang atau satu kategori. Diskonnya persen atau rupiah per pcs.`,
-          `Isi tanggal mulai dan selesai. Keduanya ikut berlaku.`,
+          `Buka tab Promo, lalu tekan "+ Promo".`,
+          `Beri nama promo. Pilih jenisnya: Diskon persen, Diskon rupiah per pcs, atau Harga grosir.`,
+          `Pilih untuk siapa promonya. Bisa banyak kategori, bisa barang tertentu saja, bisa dua-duanya sekaligus. Atau tekan Semua kategori.`,
+          `Harga grosir artinya: kalau jumlah semua barang di keranjang sudah mencapai angka minimal, barang yang ikut promo dihitung harga grosirnya.`,
+          `Isi tanggal mulai dan selesai. Kosongkan kalau mau langsung dan tanpa batas.`,
+          `Isi promo bisa ditambah atau dikurangi kapan saja lewat tombol Ubah. Tombol Nonaktifkan menghentikan promo tanpa menghapusnya.`,
           `Kalau satu barang punya beberapa promo yang berjalan bersamaan, yang dipakai adalah potongan terbesar.`,
+          `Kalau masih ada promo lama (dibuat dulu per barang atau per kategori), promonya tampil di bagian bawah dengan judul Promo lama. Promo itu masih berjalan, tapi promo baru dibuat lewat "+ Promo".`,
         ],
       },
       {
@@ -643,6 +667,7 @@ const SECTIONS = [
           `Arahkan scanner barcode ke resi. Atau tekan tombol Kamera.`,
           `Lihat warnanya. HIJAU berarti OK. KUNING berarti resi itu sudah pernah di-scan. MERAH berarti pesanannya cancel, jadi JANGAN dikirim.`,
           `Ekspedisi terbaca sendiri dari nomor resi dan dihitung di tabel rekap.`,
+          `Untuk resi TikTok yang pesanannya sudah di-import, stok Barang TikTok berkurang sendiri sesuai kode live dan ukuran barangnya. Resi yang cancel tidak mengurangi stok. Scan yang dihapus mengembalikan stok.`,
         ],
       },
       {
@@ -664,6 +689,7 @@ const SECTIONS = [
           `Satu resi hanya bisa dicatat balik satu kali. Kalau di-scan lagi, muncul tulisan "SUDAH PERNAH DI-RETUR".`,
           `Lihat daftar "Menunggu balik". Kartu "Cancel terlanjur dikirim, belum balik" berisi paket yang sudah di-scan kirim sebelum cancel-nya diketahui. Paket itu harus balik ke gudang. Kartu "Semua cancel belum dikonfirmasi" berisi semua resi cancel yang belum dikonfirmasi balik.`,
           `Resi yang sudah balik diberi tanda "Sudah balik" di tabel.`,
+          `Stok Barang TikTok yang tadi berkurang karena resi itu ikut bertambah lagi.`,
           `Salah mencatat? Batalkan catatan retur resi itu. Resinya kembali berstatus belum balik.`,
         ],
       },
