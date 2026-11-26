@@ -13,6 +13,7 @@ import { allowedSubMenus, adaOverrideSub, bisa } from "../lib/constants";
 import { downloadXlsx } from "../lib/exportData";
 import { parseFileOrderan, ringkasBarang, kodeLiveBarang } from "../lib/resiOrderan";
 import { ambilInfoPerangkat } from "../lib/infoPerangkat";
+import RekapBarangScan from "./RekapBarangScan";
 import {
   DAFTAR_EKSPEDISI, labelEkspedisi, normalisasiResi, deteksiEkspedisi, bukanResi,
   parseTeksResi, parseFileCancel,
@@ -2517,6 +2518,7 @@ export default function ScanResi({ sub = "scan", session, showToast }) {
             <StatCard label="Cancel" value={totalCancel} accent={totalCancel ? "text-red-400" : undefined} />
           </div>
           {memuat ? <div className="text-sm text-md-on-surface-variant py-8 text-center">Memuat…</div> : <TabelRekap rows={rowsView} />}
+          {!memuat && rowsView.length > 0 && <RekapBarangScan rows={rowsView} dari={dari} sampai={sampai} />}
         </div>
       )}
     </div>

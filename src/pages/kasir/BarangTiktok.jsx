@@ -6,7 +6,6 @@ import { getSession } from "../../lib/auth";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 import TambahDariMaster, { muatKonteksDariTiktok } from "./TambahDariMaster";
 import PindahKeToko from "./PindahKeToko";
-import BarangKeluarScan from "./BarangKeluarScan";
 import { FotoZoom, FotoThumb } from "./FotoZoom";
 import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 
@@ -770,7 +769,6 @@ export default function BarangTiktok({ onBerubah }) {
   const [dariMaster, setDariMaster] = useState(false);
   const [keToko, setKeToko] = useState(null); // konteks PindahKeToko (sumber TikTok)
   const [siapkan, setSiapkan] = useState(false);
-  const [keluarScan, setKeluarScan] = useState(false); // laporan barang keluar dari scan resi
 
   const muat = async () => {
     setError("");
@@ -866,9 +864,6 @@ export default function BarangTiktok({ onBerubah }) {
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode live, kode, nama, SKU…" className={`${inp} pl-9`} />
           </div>
-          <button onClick={() => setKeluarScan(true)} title="Laporan barang keluar dari resi yang di-scan (per kode live)" className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg">
-            <ClipboardCheck size={15} /> Barang keluar (scan)
-          </button>
           <button onClick={() => setDariMaster(true)} title="Pilih barang dari Master Barang untuk dijadikan barang TikTok" className="flex items-center gap-1.5 border border-amber-500/50 hover:bg-amber-500/10 text-amber-300 font-semibold text-sm px-3 py-2 rounded-lg">
             <ArrowDownToLine size={15} /> Dari Master
           </button>
@@ -978,7 +973,6 @@ export default function BarangTiktok({ onBerubah }) {
         )}
       </div>
 
-      {keluarScan && <BarangKeluarScan onClose={() => setKeluarScan(false)} />}
       {dariMaster && <TambahDariMaster tujuan="tiktok" onSelesai={() => { selesai(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {form && <FormBarang barang={form.barang} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setForm(null)} />}
       {formSet && <FormSet barang={formSet.barang} semua={rows || []} kodeSaran={kodeSaran} onSimpan={selesai} onClose={() => setFormSet(null)} />}
