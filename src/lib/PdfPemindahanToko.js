@@ -80,6 +80,8 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
   let total = 0;
   let totalKeToko = 0;
   let totalKeGudang = 0;
+  let totalKeTiktok = 0;
+  let totalDariTiktok = 0;
   baris.forEach((b, i) => {
     if (y + 7 > H - M - 14) {
       doc.addPage();
@@ -98,12 +100,14 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
     if (campur) {
       const kg = b.arah === "ke_gudang";
       if (kg) totalKeGudang += q;
+      else if (b.arah === "ke_tiktok") totalKeTiktok += q;
+      else if (b.arah === "dari_tiktok") totalDariTiktok += q;
       else totalKeToko += q;
       doc.text(tglPendek(b.waktu), K.waktu, y + 4.8);
       doc.text(potong(b.sku, K.kode - K.sku - 2), K.sku, y + 4.8);
       doc.text(potong(b.kode, K.nama - K.kode - 2), K.kode, y + 4.8);
       doc.text(potong(b.nama, K.arah - K.nama - 2), K.nama, y + 4.8);
-      doc.text(kg ? "Ke Gudang" : "Ke Toko", K.arah, y + 4.8);
+      doc.text(b.arahLabel || (kg ? "Ke Gudang" : "Ke Toko"), K.arah, y + 4.8);
     } else {
       doc.text(potong(b.sku, 48), K.sku, y + 4.8);
       doc.text(potong(b.kode, 30), K.kode, y + 4.8);
@@ -117,7 +121,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
   doc.setFont("helvetica", "bold").setFontSize(10);
   doc.text(
     campur
-      ? `Total ${baris.length} pemindahan  |  ke gudang ${totalKeGudang} pcs  |  ke toko ${totalKeToko} pcs`
+      ? `Total ${baris.length} pemindahan  |  ke gudang ${totalKeGudang} pcs  |  ke toko ${totalKeToko} pcs${totalKeTiktok ? `  |  ke TikTok ${totalKeTiktok} pcs` : ""}${totalDariTiktok ? `  |  dari TikTok ${totalDariTiktok} pcs` : ""}`
       : `Total ${baris.length} barang  |  ${total} pcs ${keGudang ? "dikembalikan ke gudang" : "dipindah ke toko"}`,
     W - M,
     y,
