@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus, FileDown, Check, History } from "lucide-react";
+import { X, Search, Plus, Loader2, AlertCircle, Pencil, ArrowDownToLine, ClipboardCheck, FileUp, Trash2, Camera, ImagePlus, FileDown, Check, History, Tag } from "lucide-react";
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import { bisa } from "../../lib/constants";
 import { getSession } from "../../lib/auth";
 import ImporBarangToko from "./ImporBarangToko";
 import FotoMassalToko from "./FotoMassalToko";
+import HargaGrosirMassal from "./HargaGrosirMassal";
 import TambahDariMaster from "./TambahDariMaster";
 import RiwayatPemindahan from "./RiwayatPemindahan";
 import { FotoZoom, FotoThumb } from "./FotoZoom";
@@ -17,6 +18,7 @@ import { FotoZoom, FotoThumb } from "./FotoZoom";
 //  - Tambah / ubah barang toko (kode toko bebas; boleh ditautkan ke SKU gudang;
 //    barcode = SKU gudang kalau tertaut, selain itu bebas)
 //  - Foto barang         : bisa difoto / dipilih dari galeri saat tambah atau ubah (disimpan di kolom foto_url)
+//  - Harga grosir massal : tombol Harga Grosir di header (HargaGrosirMassal.jsx), pakai rumus (% / Rp) atau Excel
 //  - Foto massal         : tombol Foto di header (FotoMassalToko.jsx), cocokkan nama file dengan kode/barcode/nama
 //  - Mutasi dari gudang  : fungsi database toko_mutasi_dari_gudang (atomik)
 //  - Opname              : fungsi database toko_opname (koreksi stok hasil hitung fisik)
@@ -701,6 +703,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const bolehHapusSemua = bisa(getSession()?.role, "kasir.hapus_semua_barang_toko");
   const [impor, setImpor] = useState(false);
   const [fotoMassal, setFotoMassal] = useState(false);
+  const [grosirMassal, setGrosirMassal] = useState(false); // atur harga grosir massal (HargaGrosirMassal.jsx)
   const [riwayat, setRiwayat] = useState(false); // riwayat pemindahan toko <-> gudang + PDF (RiwayatPemindahan.jsx)
   const [dariMaster, setDariMaster] = useState(false); // tambah barang toko dari Master Barang (TambahDariMaster.jsx)
   const [dariTiktok, setDariTiktok] = useState(false); // ambil stok dari Barang TikTok (TambahDariMaster.jsx, sumber "tiktok")
@@ -797,6 +800,14 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
             className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
           >
             <FileUp size={15} /> Import
+          </button>
+          <button
+            onClick={() => setGrosirMassal(true)}
+            disabled={!rows || tampil.length === 0}
+            title="Atur harga grosir massal untuk barang yang sedang tampil (pakai rumus atau Excel)"
+            className="flex items-center gap-1.5 border border-slate-700 hover:border-amber-500 disabled:opacity-40 text-slate-200 font-semibold text-sm px-3 py-2 rounded-lg"
+          >
+            <Tag size={15} /> Harga Grosir
           </button>
           <button
             onClick={() => setRiwayat(true)}
@@ -967,6 +978,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
 
       {impor && <ImporBarangToko barangAda={rows || []} onSelesai={() => { setImpor(false); muat(); }} onClose={() => setImpor(false)} />}
       {fotoMassal && <FotoMassalToko barangAda={rows || []} onSelesai={() => { setFotoMassal(false); muat(); }} onClose={() => setFotoMassal(false)} />}
+      {grosirMassal && <HargaGrosirMassal daftar={tampil} semua={rows || []} onSelesai={() => { setGrosirMassal(false); muat(); onBerubah?.(); }} onClose={() => setGrosirMassal(false)} />}
       {riwayat && <RiwayatPemindahan onClose={() => setRiwayat(false)} />}
       {dariMaster && <TambahDariMaster onSelesai={() => { setDariMaster(false); muat(); onBerubah?.(); }} onClose={() => setDariMaster(false)} />}
       {dariTiktok && <TambahDariMaster sumber="tiktok" onSelesai={() => { setDariTiktok(false); muat(); onBerubah?.(); }} onClose={() => setDariTiktok(false)} />}
