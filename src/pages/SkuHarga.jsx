@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers, MoreVertical, ChevronDown } from "lucide-react";
+import { Search, Boxes, Download, FileDown, ImageDown, Loader2, Check, Trash2, Pencil, Store, Plus, X, Camera, Layers, MoreVertical, ChevronDown, History } from "lucide-react";
 import { PageHeader, EmptyState, Badge } from "../components/ui";
 import { fmtRp, downloadCsv, downloadFotos, groupByKategori, labelFor, sb, sbAll, pengaturanEntitas, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../lib/api";
 import { isSuperadminLike, bisa } from "../lib/constants";
@@ -11,6 +11,7 @@ import BarangToko, { Kerangka } from "./kasir/BarangToko";
 import KodeLiveTiktok from "./KodeLiveTiktok";
 import BarangTiktok from "./kasir/BarangTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
+import RiwayatPemindahan from "./kasir/RiwayatPemindahan";
 import ImporSkuMaster from "../components/ImporSkuMaster";
 import { FormSetMaster, FormIndukMaster, FormHapusSkuTerpilih } from "./FormSetMaster";
 import { olahSetMaster, adalahSet, adalahInduk, adalahKelompok } from "../lib/setMaster";
@@ -635,6 +636,9 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
   const [batas, setBatas] = useState(60);
   const bolehKeToko = bisa(session?.role, "sku.pindah_ke_toko"); // pindah SKU ke Barang Toko (kasir)
   const [pindah, setPindah] = useState(null); // array SKU yang akan dipindah ke Barang Toko
+  // Riwayat pemindahan gudang ⇄ toko (komponen yang sama dengan tombol "Riwayat" di Barang Toko).
+  const bolehLihatRiwayat = bolehKeToko || bisa(session?.role, "sku.barang_toko");
+  const [riwayat, setRiwayat] = useState(false);
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
   // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
@@ -875,6 +879,15 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                 )}
               </div>
             )}
+            {bolehLihatRiwayat && (
+              <button
+                onClick={() => setRiwayat(true)}
+                title="Riwayat pemindahan gudang ⇄ toko (bisa unduh PDF)"
+                className="flex items-center gap-1.5 border border-slate-800 hover:border-amber-500/50 text-slate-300 text-xs font-medium px-3 py-2 rounded-lg"
+              >
+                <History size={14} /> Riwayat
+              </button>
+            )}
             <div className="relative">
               <button
                 onClick={() => setMenuHeader(menuHeader === "unduh" ? null : "unduh")}
@@ -1015,6 +1028,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
           }}
         />
       )}
+      {riwayat && bolehLihatRiwayat && <RiwayatPemindahan onClose={() => setRiwayat(false)} />}
       {pindah && bolehKeToko && (
         <PindahKeToko
           daftar={pindah}
