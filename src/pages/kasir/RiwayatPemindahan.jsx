@@ -14,6 +14,9 @@ import { Kerangka, Galat, inp } from "./BarangToko";
 //  - PDF per baris, atau centang beberapa lalu satukan dalam satu PDF (lib/PdfPemindahanToko.js, arah "campur").
 //  - HAPUS catatan riwayat (satu per baris, atau yang dicentang) — hanya catatannya; stok toko & stok gudang TIDAK berubah.
 //    Lewat fungsi database toko_hapus_mutasi (supabase/migrations/20261114_toko_hapus_mutasi.sql), dijaga izin "stok.hapus_mutasi_toko".
+// TikTok -> Toko (fungsi toko_ambil_dari_tiktok) dikenali TANPA bergantung pada nama jenis: catatan di sisi toko & sisi TikTok yang
+// waktunya (sampai detik) dan jumlahnya sama dianggap satu perpindahan TikTok -> Toko, ditampilkan SATU baris (kode toko). Baris
+// seperti ini tidak bisa dihapus dari sini (supaya pasangannya di sisi TikTok tidak muncul sebagai catatan lain).
 // TikTok: perpindahan Gudang <-> TikTok (tabel tiktok_stok_mutasi, ditulis fungsi tiktok_mutasi_dari_gudang & tiktok_kembalikan_ke_gudang)
 // ikut tampil kalau akunnya punya izin "sku.barang_tiktok". Hanya baris jenis mutasi_masuk (Gudang -> TikTok) & mutasi_keluar
 // (TikTok -> Gudang) yang diambil; penjualan/scan resi/opname tidak ikut. Catatan TikTok belum bisa dihapus dari sini
@@ -34,15 +37,17 @@ const ARAH = [
   ["ke_toko", "Gudang → Toko"],
   ["ke_tiktok", "Gudang → TikTok"],
   ["dari_tiktok", "TikTok → Gudang"],
+  ["tiktok_ke_toko", "TikTok → Toko"],
 ];
-const LABEL_ARAH = { ke_gudang: "Toko → Gudang", ke_toko: "Gudang → Toko", ke_tiktok: "Gudang → TikTok", dari_tiktok: "TikTok → Gudang" };
-const WARNA_ARAH = { ke_gudang: "text-sky-300", ke_toko: "text-emerald-300", ke_tiktok: "text-pink-300", dari_tiktok: "text-violet-300" };
+const LABEL_ARAH = { ke_gudang: "Toko → Gudang", ke_toko: "Gudang → Toko", ke_tiktok: "Gudang → TikTok", dari_tiktok: "TikTok → Gudang", tiktok_ke_toko: "TikTok → Toko" };
+const WARNA_ARAH = { ke_gudang: "text-sky-300", ke_toko: "text-emerald-300", ke_tiktok: "text-pink-300", dari_tiktok: "text-violet-300", tiktok_ke_toko: "text-orange-300" };
 // Untuk PDF: arah dari sisi gudang (ke_gudang = barang kembali ke gudang; ke_toko = barang keluar dari gudang) + label di kolom Arah.
 const ARAH_PDF = {
   ke_gudang: { arah: "ke_gudang", label: "Ke Gudang" },
   ke_toko: { arah: "ke_toko", label: "Ke Toko" },
   ke_tiktok: { arah: "ke_tiktok", label: "Gudang > TikTok" },
   dari_tiktok: { arah: "dari_tiktok", label: "TikTok > Gudang" },
+  tiktok_ke_toko: { arah: "tiktok_ke_toko", label: "TikTok > Toko" },
 };
 
 export default function RiwayatPemindahan({ onClose }) {
@@ -73,7 +78,11 @@ export default function RiwayatPemindahan({ onClose }) {
     const q = `created_at=gte.${encodeURIComponent(r.dari)}&created_at=lt.${encodeURIComponent(r.sampai)}`;
     let gagalTiktok = "";
     Promise.all([
-      sbAll(`toko_stok_mutasi?select=*&jenis=in.(mutasi_masuk,mutasi_keluar)&${q}&order=created_at.desc`),
+      sbAll(
+        denganTiktok
+          ? `toko_stok_mutasi?select=*&or=(jenis.in.(mutasi_masuk,mutasi_keluar),jenis.ilike.*tiktok*)&${q}&order=created_at.desc`
+          : `toko_stok_mutasi?select=*&jenis=in.(mutasi_masuk,mutasi_keluar)&${q}&order=created_at.desc`
+      ),
       sbAll("master_toko?select=kode,nama,sku_gudang").catch(() => []),
       // TikTok: kalau gagal dimuat, riwayat toko tetap tampil dan muncul peringatan.
       denganTiktok
@@ -88,13 +97,21 @@ export default function RiwayatPemindahan({ onClose }) {
         if (batal) return;
         const peta = new Map((toko || []).map((t) => [t.kode, t]));
         const petaTt = new Map((tiktok || []).map((t) => [t.kode, t]));
+        const kunci = (m) => `${Math.abs(Number(m.qty_change) || 0)}|${String(m.created_at || "").slice(0, 19)}`;
+        // Sisi TikTok yang relevan: mutasi gudang (masuk/keluar) atau yang jenisnya menyebut toko.
+        const ttRelevan = (mutasiTt || []).filter((m) => m.jenis === "mutasi_masuk" || m.jenis === "mutasi_keluar" || /toko/i.test(String(m.jenis || "")));
+        const kunciTt = new Set(ttRelevan.map(kunci));
+        const kunciToko = new Set();
         const barisToko = (mutasi || []).map((m) => {
           const t = peta.get(m.kode);
+          // Pasangan di sisi TikTok (waktu & jumlah sama) atau jenis menyebut tiktok = TikTok -> Toko.
+          const dariTiktokKeToko = denganTiktok && (/tiktok/i.test(String(m.jenis || "")) || (m.jenis === "mutasi_masuk" && kunciTt.has(kunci(m))));
+          if (dariTiktokKeToko) kunciToko.add(kunci(m));
           return {
             id: m.id ?? `${m.kode}-${m.created_at}`,
-            idAsli: m.id ?? null, // null = tidak bisa dihapus (tidak punya id)
+            idAsli: dariTiktokKeToko ? null : m.id ?? null, // null = tidak bisa dihapus
             waktu: m.created_at,
-            arah: m.jenis === "mutasi_masuk" ? "ke_toko" : "ke_gudang",
+            arah: dariTiktokKeToko ? "tiktok_ke_toko" : m.jenis === "mutasi_masuk" ? "ke_toko" : "ke_gudang",
             kode: m.kode,
             nama: t?.nama || "(barang sudah dihapus)",
             sku: m.ref || t?.sku_gudang || "",
@@ -102,15 +119,15 @@ export default function RiwayatPemindahan({ onClose }) {
             catatan: m.catatan || "",
           };
         });
-        const barisTiktok = (mutasiTt || [])
-          .filter((m) => m.jenis === "mutasi_masuk" || m.jenis === "mutasi_keluar")
+        const barisTiktok = ttRelevan
+          .filter((m) => !kunciToko.has(kunci(m))) // sudah tampil lewat baris toko (TikTok -> Toko)
           .map((m) => {
             const t = petaTt.get(m.kode);
             return {
               id: `tt-${m.id ?? `${m.kode}-${m.created_at}`}`,
               idAsli: null, // belum ada fungsi hapus untuk riwayat TikTok
               waktu: m.created_at,
-              arah: m.jenis === "mutasi_masuk" ? "ke_tiktok" : "dari_tiktok",
+              arah: /toko/i.test(String(m.jenis || "")) ? "tiktok_ke_toko" : m.jenis === "mutasi_masuk" ? "ke_tiktok" : "dari_tiktok",
               kode: m.kode,
               nama: t?.nama || "(barang sudah dihapus)",
               sku: m.ref || t?.sku_gudang || "",
@@ -215,7 +232,7 @@ export default function RiwayatPemindahan({ onClose }) {
         petugas: ses?.nama || ses?.username || "",
         waktu: new Date(),
         arah: "campur",
-        ...(daftar.some((r) => r.arah === "ke_tiktok" || r.arah === "dari_tiktok") ? { judul: "RIWAYAT PERPINDAHAN BARANG GUDANG - TOKO / TIKTOK", labelKode: "Kode" } : {}),
+        ...(daftar.some((r) => r.arah === "ke_tiktok" || r.arah === "dari_tiktok" || r.arah === "tiktok_ke_toko") ? { judul: "RIWAYAT PERPINDAHAN BARANG GUDANG - TOKO - TIKTOK", labelKode: "Kode" } : {}),
         periode: dari === sampai ? fmtTgl(dari) : `${fmtTgl(dari)} s/d ${fmtTgl(sampai)}`,
         // urut dari yang paling lama ke paling baru supaya enak dibaca di kertas
         baris: [...daftar]
@@ -230,7 +247,7 @@ export default function RiwayatPemindahan({ onClose }) {
   };
 
   return (
-    <Kerangka judul={denganTiktok ? "Riwayat pemindahan gudang ⇄ toko & TikTok" : "Riwayat pemindahan toko ⇄ gudang"} onClose={onClose} lebar="sm:max-w-3xl">
+    <Kerangka judul={denganTiktok ? "Riwayat pemindahan gudang, toko & TikTok" : "Riwayat pemindahan toko ⇄ gudang"} onClose={onClose} lebar="sm:max-w-3xl">
       <div className="flex flex-wrap items-end gap-2">
         <label className="block">
           <div className="text-[11px] text-slate-500 mb-1">Dari tanggal</div>
@@ -241,7 +258,7 @@ export default function RiwayatPemindahan({ onClose }) {
           <input type="date" value={sampai} onChange={(e) => e.target.value && setSampai(e.target.value)} className={`${inp} !w-40`} />
         </label>
         <div className="flex gap-1 bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs">
-          {ARAH.filter(([v]) => denganTiktok || (v !== "ke_tiktok" && v !== "dari_tiktok")).map(([v, l]) => (
+          {ARAH.filter(([v]) => denganTiktok || (v !== "ke_tiktok" && v !== "dari_tiktok" && v !== "tiktok_ke_toko")).map(([v, l]) => (
             <button
               key={v}
               type="button"

@@ -82,6 +82,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
   let totalKeGudang = 0;
   let totalKeTiktok = 0;
   let totalDariTiktok = 0;
+  let totalTiktokKeToko = 0;
   baris.forEach((b, i) => {
     if (y + 7 > H - M - 14) {
       doc.addPage();
@@ -102,6 +103,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
       if (kg) totalKeGudang += q;
       else if (b.arah === "ke_tiktok") totalKeTiktok += q;
       else if (b.arah === "dari_tiktok") totalDariTiktok += q;
+      else if (b.arah === "tiktok_ke_toko") totalTiktokKeToko += q;
       else totalKeToko += q;
       doc.text(tglPendek(b.waktu), K.waktu, y + 4.8);
       doc.text(potong(b.sku, K.kode - K.sku - 2), K.sku, y + 4.8);
@@ -121,7 +123,7 @@ export function buatPdfPemindahanToko({ namaUsaha = "", petugas = "", waktu = ne
   doc.setFont("helvetica", "bold").setFontSize(10);
   doc.text(
     campur
-      ? `Total ${baris.length} pemindahan  |  ke gudang ${totalKeGudang} pcs  |  ke toko ${totalKeToko} pcs${totalKeTiktok ? `  |  ke TikTok ${totalKeTiktok} pcs` : ""}${totalDariTiktok ? `  |  dari TikTok ${totalDariTiktok} pcs` : ""}`
+      ? `Total ${baris.length} pemindahan  |  ke gudang ${totalKeGudang} pcs  |  ke toko ${totalKeToko} pcs${totalKeTiktok ? `  |  ke TikTok ${totalKeTiktok} pcs` : ""}${totalDariTiktok ? `  |  dari TikTok ${totalDariTiktok} pcs` : ""}${totalTiktokKeToko ? `  |  TikTok ke toko ${totalTiktokKeToko} pcs` : ""}`
       : `Total ${baris.length} barang  |  ${total} pcs ${keGudang ? "dikembalikan ke gudang" : "dipindah ke toko"}`,
     W - M,
     y,
