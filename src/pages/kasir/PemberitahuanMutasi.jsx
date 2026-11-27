@@ -180,18 +180,20 @@ export function useMutasiMaster(versi = 0) {
     setDibacaMs(nilai);
   }, [daftar]);
 
-  const jumlahBaru = useMemo(() => daftar.filter((d) => ms(d.waktu) > dibacaMs).length, [daftar, dibacaMs]);
+  // Yang sudah ditandai dibaca hilang dari panel dan dari chip di kartu SKU: hanya yang belum dibaca yang dikembalikan.
+  const belumDibaca = useMemo(() => daftar.filter((d) => ms(d.waktu) > dibacaMs), [daftar, dibacaMs]);
+  const jumlahBaru = belumDibaca.length;
 
   // SKU -> perpindahan TERBARU (daftar sudah urut terbaru dulu). Dipakai untuk chip di kartu SKU.
   const perSku = useMemo(() => {
     const peta = new Map();
-    daftar.forEach((d) => {
+    belumDibaca.forEach((d) => {
       if (!peta.has(d.sku)) peta.set(d.sku, d);
     });
     return peta;
-  }, [daftar]);
+  }, [belumDibaca]);
 
-  return { daftar, memuat, error, peringatan, dibacaMs, jumlahBaru, perSku, muat, tandaiDibaca };
+  return { daftar: belumDibaca, memuat, error, peringatan, dibacaMs, jumlahBaru, perSku, muat, tandaiDibaca };
 }
 
 // Chip kecil di kartu SKU: perpindahan terbaru SKU itu.
@@ -237,7 +239,7 @@ export function PanelMutasiMaster({ daftar, memuat, error, peringatan, dibacaMs,
             <span className="text-[10px] font-semibold text-slate-950 bg-amber-400 rounded-full px-2 py-0.5">{jumlahBaru} baru</span>
           )}
           <span className="text-[11px] text-slate-500 truncate">
-            {memuat ? "memuat…" : `Master Barang ⇄ Barang Toko / TikTok · ${HARI_DIBACA} hari terakhir · ${daftar.length} catatan`}
+            {memuat ? "memuat…" : `Master Barang ⇄ Barang Toko / TikTok · ${daftar.length} belum dibaca`}
           </span>
           {buka ? <ChevronUp size={14} className="text-slate-500 flex-shrink-0" /> : <ChevronDown size={14} className="text-slate-500 flex-shrink-0" />}
         </button>
@@ -266,7 +268,7 @@ export function PanelMutasiMaster({ daftar, memuat, error, peringatan, dibacaMs,
           {error && <div className="text-xs text-red-300">{error}</div>}
           {peringatan && <div className="text-xs text-amber-300">{peringatan}</div>}
           {!memuat && !error && daftar.length === 0 && (
-            <div className="text-xs text-slate-500">Belum ada barang yang diambil atau dikembalikan dalam {HARI_DIBACA} hari terakhir.</div>
+            <div className="text-xs text-slate-500">Tidak ada pemberitahuan baru.</div>
           )}
           {tampil.map((d) => {
             const info = INFO_ARAH[d.arah];
