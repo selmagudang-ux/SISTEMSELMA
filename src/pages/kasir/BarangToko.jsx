@@ -4,6 +4,8 @@ import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "
 import { InputRupiah } from "../../components/ui";
 import { bisa } from "../../lib/constants";
 import { getSession } from "../../lib/auth";
+import { catatanDenganPelaku } from "../../lib/mutasiPelaku";
+import { PanelMutasiMaster, useMutasiMaster } from "./PemberitahuanMutasi";
 import ImporBarangToko from "./ImporBarangToko";
 import FotoMassalToko from "./FotoMassalToko";
 import HargaGrosirMassal from "./HargaGrosirMassal";
@@ -287,7 +289,7 @@ function FormMutasi({ barang, onSelesai, onClose }) {
     try {
       await sb(arah === "ke_gudang" ? "rpc/toko_kembalikan_ke_gudang" : "rpc/toko_mutasi_dari_gudang", {
         method: "POST",
-        body: JSON.stringify({ p: { entitas: entitasSesi(), kode: barang.kode, qty: n, catatan: catatan.trim() || null } }),
+        body: JSON.stringify({ p: { entitas: entitasSesi(), kode: barang.kode, qty: n, catatan: catatanDenganPelaku("toko", catatan) } }),
       });
       setHasil({ arah, qty: n, catatan: catatan.trim(), waktu: new Date() });
     } catch (e) {
@@ -707,6 +709,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
   const [riwayat, setRiwayat] = useState(false); // riwayat pemindahan toko <-> gudang + PDF (RiwayatPemindahan.jsx)
   const [dariMaster, setDariMaster] = useState(false); // tambah barang toko dari Master Barang (TambahDariMaster.jsx)
   const [dariTiktok, setDariTiktok] = useState(false); // ambil stok dari Barang TikTok (TambahDariMaster.jsx, sumber "tiktok")
+  const notif = useMutasiMaster(0, "toko"); // pemberitahuan: barang yang dikirim / ditarik gudang
   const [filter, setFilter] = useState("semua");
   const [kategori, setKategori] = useState("");
   const [urut, setUrut] = useState("kode");
@@ -891,6 +894,7 @@ export default function BarangToko({ onClose, inline = false, onBerubah }) {
       </div>
 
       <div className={inline ? "flex-1 p-3" : "flex-1 overflow-y-auto p-3"}>
+        <PanelMutasiMaster {...notif} onPilihSku={(sku, d) => setQ(d?.kode || sku)} />
         {error && <Galat pesan={error} />}
         {!rows ? (
           <div className="py-10 flex justify-center text-slate-500">

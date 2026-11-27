@@ -1041,6 +1041,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
       {pindah && bolehKeToko && (
         <PindahKeToko
           daftar={pindah}
+          sisi="gudang"
           labelKategori={kategoriLabel}
           labelSubkategori={subkategoriLabel}
           fotoPerSku={fotoPerSku}

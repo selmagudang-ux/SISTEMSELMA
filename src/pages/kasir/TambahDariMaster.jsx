@@ -168,6 +168,7 @@ export default function TambahDariMaster({ onSelesai, onClose, tujuan = "toko", 
         fotoPerSku={lanjut.fotoPerSku}
         tujuan={tujuan}
         sumber={sumber}
+        sisi={tujuan === "tiktok" ? "tiktok" : "toko"}
         onClose={() => setLanjut(null)}
         onSelesai={(h) => onSelesai?.(h)}
       />

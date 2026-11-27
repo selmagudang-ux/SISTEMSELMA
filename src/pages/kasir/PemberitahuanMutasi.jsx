@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, CheckCheck, ChevronDown, ChevronUp, Loader2, RefreshCw } from "lucide-react";
 import { sb, entitasSesi } from "../../lib/api";
 import { getSession } from "../../lib/auth";
+import { bacaPelaku } from "../../lib/mutasiPelaku";
 
 // =========================================================
 // PEMBERITAHUAN PERPINDAHAN BARANG di Master Barang.
@@ -14,6 +15,12 @@ import { getSession } from "../../lib/auth";
 // dengan RiwayatPemindahan.jsx: jenis menyebut tiktok, atau catatan toko & TikTok dengan waktu (sampai detik) dan jumlah yang sama.
 // Hanya 3 hari terakhir yang dibaca (maks. 300 baris per tabel) supaya egress tetap kecil. Tidak ada polling: data dimuat
 // saat halaman dibuka, setelah ada mutasi dari tab Barang Toko / Barang TikTok, atau lewat tombol "Muat ulang".
+// SIAPA YANG MEMINDAHKAN dibaca dari kolom sisi / pelaku (lib/mutasiPelaku.js): "gudang" = dari Master Barang, "toko" / "tiktok" =
+// dari tab Barang Toko / Barang TikTok. Panel yang sama dipakai di tiga tempat (parameter `untuk`):
+//   "gudang" : di Master Barang, menampilkan yang dilakukan TOKO / TIKTOK (aksi gudang sendiri tidak dihitung baru)
+//   "toko"   : di Barang Toko,   menampilkan yang dilakukan GUDANG ke / dari Barang Toko
+//   "tiktok" : di Barang TikTok, menampilkan yang dilakukan GUDANG ke / dari Barang TikTok
+// Baris lama (sebelum ada kolom sisi) tidak diketahui pelakunya: tetap tampil di Master Barang dengan kata lama.
 // Status "sudah dibaca" disimpan per akun & per PT di perangkat ini (localStorage), jadi tidak perlu tabel baru.
 // =========================================================
 
@@ -48,6 +55,19 @@ const INFO_ARAH = {
   },
 };
 
+// Kata yang tampil menurut arah + sisi pelaku. Tanpa sisi (data lama) memakai kata lama dari INFO_ARAH.
+const KATA = {
+  ke_toko: { gudang: ["Dikirim oleh Gudang ke Barang Toko", "Dikirim ke Toko"], toko: ["Diambil oleh Toko", "Diambil Toko"] },
+  ke_tiktok: { gudang: ["Dikirim oleh Gudang ke Barang TikTok", "Dikirim ke TikTok"], tiktok: ["Diambil oleh TikTok", "Diambil TikTok"] },
+  ke_gudang: { gudang: ["Ditarik Gudang dari Barang Toko", "Ditarik dari Toko"], toko: ["Dikembalikan oleh Toko ke Gudang", "Balik dari Toko"] },
+  dari_tiktok: { gudang: ["Ditarik Gudang dari Barang TikTok", "Ditarik dari TikTok"], tiktok: ["Dikembalikan oleh TikTok ke Gudang", "Balik dari TikTok"] },
+};
+export function kataMutasi(d) {
+  const info = INFO_ARAH[d?.arah];
+  const k = KATA[d?.arah]?.[d?.sisi];
+  return { label: k ? k[0] : info?.label || "", pendek: k ? k[1] : info?.pendek || "" };
+}
+
 const ms = (iso) => {
   const t = new Date(iso).getTime();
   return Number.isFinite(t) ? t : 0;
@@ -70,11 +90,12 @@ export function waktuRelatif(iso) {
 const waktuLengkap = (iso) =>
   new Date(iso).toLocaleString("id-ID", { timeZone: WIB, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
-const kunciDibaca = () => `selma_notif_mutasi:${entitasSesi()}:${getSession()?.username || "anon"}`;
+const kunciDibaca = (untuk = "gudang") =>
+  `selma_notif_mutasi:${entitasSesi()}:${getSession()?.username || "anon"}${untuk === "gudang" ? "" : `:${untuk}`}`;
 
-function bacaDibaca() {
+function bacaDibaca(untuk = "gudang") {
   try {
-    const v = Number(localStorage.getItem(kunciDibaca()));
+    const v = Number(localStorage.getItem(kunciDibaca(untuk)));
     if (Number.isFinite(v) && v > 0) return v;
   } catch {
     /* abaikan */
@@ -100,6 +121,7 @@ function susunDaftar(mutasiToko, mutasiTt) {
       return; // TikTok -> Toko: tidak menyentuh Master Barang
     }
     if (m.jenis !== "mutasi_masuk" && m.jenis !== "mutasi_keluar") return;
+    const p = bacaPelaku(m);
     out.push({
       id: `toko-${m.id ?? `${m.kode}-${m.created_at}`}`,
       waktu: m.created_at,
@@ -107,13 +129,16 @@ function susunDaftar(mutasiToko, mutasiTt) {
       sku: m.ref || "",
       kode: m.kode || "",
       qty: Math.abs(Number(m.qty_change) || 0),
-      catatan: m.catatan || "",
+      catatan: p.catatan,
+      sisi: p.sisi,
+      pelaku: p.pelakuNama || p.pelaku,
     });
   });
 
   ttRelevan.forEach((m) => {
     if (kunciPasangan.has(kunci(m))) return; // sisi TikTok dari TikTok -> Toko
     if (m.jenis !== "mutasi_masuk" && m.jenis !== "mutasi_keluar") return; // jenis yang menyebut toko = TikTok -> Toko
+    const p = bacaPelaku(m);
     out.push({
       id: `tt-${m.id ?? `${m.kode}-${m.created_at}`}`,
       waktu: m.created_at,
@@ -121,7 +146,9 @@ function susunDaftar(mutasiToko, mutasiTt) {
       sku: m.ref || "",
       kode: m.kode || "",
       qty: Math.abs(Number(m.qty_change) || 0),
-      catatan: m.catatan || "",
+      catatan: p.catatan,
+      sisi: p.sisi,
+      pelaku: p.pelakuNama || p.pelaku,
     });
   });
 
@@ -129,12 +156,12 @@ function susunDaftar(mutasiToko, mutasiTt) {
 }
 
 // Hook: dipanggil sekali di Master Barang. `versi` dinaikkan oleh induk setiap kali ada mutasi dari tab Barang Toko / Barang TikTok.
-export function useMutasiMaster(versi = 0) {
+export function useMutasiMaster(versi = 0, untuk = "gudang") {
   const [daftar, setDaftar] = useState([]);
   const [memuat, setMemuat] = useState(true);
   const [error, setError] = useState("");
   const [peringatan, setPeringatan] = useState("");
-  const [dibacaMs, setDibacaMs] = useState(() => bacaDibaca());
+  const [dibacaMs, setDibacaMs] = useState(() => bacaDibaca(untuk));
   const urutan = useRef(0);
 
   const muat = useCallback(async () => {
@@ -145,16 +172,25 @@ export function useMutasiMaster(versi = 0) {
     const dari = new Date(Date.now() - HARI_DIBACA * 24 * 3600 * 1000).toISOString();
     const q = `created_at=gte.${encodeURIComponent(dari)}&order=created_at.desc&limit=${MAKS_BARIS}`;
     let gagalTiktok = "";
+    const qToko = `toko_stok_mutasi?select=*&or=(jenis.in.(mutasi_masuk,mutasi_keluar),jenis.ilike.*tiktok*)&${q}`;
+    const qTt = `tiktok_stok_mutasi?select=*&${q}`;
     try {
+      // Tiap panel hanya membaca tabel yang dibutuhkan: Barang Toko -> toko_stok_mutasi, Barang TikTok -> tiktok_stok_mutasi.
       const [toko, tt] = await Promise.all([
-        sb(`toko_stok_mutasi?select=*&or=(jenis.in.(mutasi_masuk,mutasi_keluar),jenis.ilike.*tiktok*)&${q}`),
-        sb(`tiktok_stok_mutasi?select=*&${q}`).catch((e) => {
-          gagalTiktok = e?.message || String(e);
-          return [];
-        }),
+        untuk === "tiktok" ? [] : sb(qToko),
+        untuk === "toko"
+          ? []
+          : sb(qTt).catch((e) => {
+              if (untuk === "tiktok") throw e;
+              gagalTiktok = e?.message || String(e);
+              return [];
+            }),
       ]);
       if (nomor !== urutan.current) return; // ada permintaan yang lebih baru
-      setDaftar(susunDaftar(toko, tt));
+      const semua = susunDaftar(toko, tt);
+      // gudang: semua perpindahan; yang dilakukan gudang sendiri ditandai `sendiri` (tetap tampil, tidak dihitung baru).
+      // toko / tiktok: hanya yang dilakukan gudang.
+      setDaftar(untuk === "gudang" ? semua.map((d) => ({ ...d, sendiri: d.sisi === "gudang" })) : semua.filter((d) => d.sisi === "gudang"));
       setPeringatan(gagalTiktok ? `Perpindahan TikTok tidak bisa dimuat (${gagalTiktok}). Perpindahan Toko tetap tampil.` : "");
     } catch (e) {
       if (nomor !== urutan.current) return;
@@ -170,19 +206,21 @@ export function useMutasiMaster(versi = 0) {
   }, [muat, versi]);
 
   const tandaiDibaca = useCallback(() => {
-    const terbaru = daftar.length ? Math.max(...daftar.map((d) => ms(d.waktu))) : Date.now();
+    const lawan = daftar.filter((d) => !d.sendiri);
+    const terbaru = lawan.length ? Math.max(...lawan.map((d) => ms(d.waktu))) : Date.now();
     const nilai = Math.max(terbaru, Date.now() - 1000);
     try {
-      localStorage.setItem(kunciDibaca(), String(nilai));
+      localStorage.setItem(kunciDibaca(untuk), String(nilai));
     } catch {
       /* abaikan: hanya status dibaca yang tidak tersimpan */
     }
     setDibacaMs(nilai);
-  }, [daftar]);
+  }, [daftar, untuk]);
 
   // Yang sudah ditandai dibaca hilang dari panel dan dari chip di kartu SKU: hanya yang belum dibaca yang dikembalikan.
-  const belumDibaca = useMemo(() => daftar.filter((d) => ms(d.waktu) > dibacaMs), [daftar, dibacaMs]);
-  const jumlahBaru = belumDibaca.length;
+  // Perpindahan yang dilakukan gudang sendiri tetap tampil (sampai lewat 3 hari) tapi tidak dihitung baru dan tidak ikut "Tandai sudah dibaca".
+  const belumDibaca = useMemo(() => daftar.filter((d) => d.sendiri || ms(d.waktu) > dibacaMs), [daftar, dibacaMs]);
+  const jumlahBaru = useMemo(() => belumDibaca.filter((d) => !d.sendiri && ms(d.waktu) > dibacaMs).length, [belumDibaca, dibacaMs]);
 
   // SKU -> perpindahan TERBARU (daftar sudah urut terbaru dulu). Dipakai untuk chip di kartu SKU.
   const perSku = useMemo(() => {
@@ -193,7 +231,7 @@ export function useMutasiMaster(versi = 0) {
     return peta;
   }, [belumDibaca]);
 
-  return { daftar: belumDibaca, memuat, error, peringatan, dibacaMs, jumlahBaru, perSku, muat, tandaiDibaca };
+  return { untuk, daftar: belumDibaca, memuat, error, peringatan, dibacaMs, jumlahBaru, perSku, muat, tandaiDibaca };
 }
 
 // Chip kecil di kartu SKU: perpindahan terbaru SKU itu.
@@ -201,20 +239,21 @@ export function ChipMutasiSku({ e, dibacaMs = 0 }) {
   if (!e) return null;
   const info = INFO_ARAH[e.arah];
   if (!info) return null;
-  const baru = ms(e.waktu) > dibacaMs;
+  const kata = kataMutasi(e);
+  const baru = !e.sendiri && ms(e.waktu) > dibacaMs;
   return (
     <span
-      title={`${info.label}: ${e.qty} pcs${e.kode ? ` (${e.kode})` : ""} · ${waktuLengkap(e.waktu)}${e.catatan ? ` · ${e.catatan}` : ""}`}
+      title={`${kata.label}${e.pelaku ? ` (${e.pelaku})` : ""}: ${e.qty} pcs${e.kode ? ` (${e.kode})` : ""} · ${waktuLengkap(e.waktu)}${e.catatan ? ` · ${e.catatan}` : ""}`}
       className={`inline-flex items-center gap-1 text-[10px] font-medium border rounded px-1.5 py-0.5 ${info.chip}`}
     >
       {baru && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
-      {info.pendek} {e.qty} pcs · {waktuRelatif(e.waktu)}
+      {kata.pendek} {e.qty} pcs · {waktuRelatif(e.waktu)}
     </span>
   );
 }
 
 // Panel di atas daftar Master Barang.
-export function PanelMutasiMaster({ daftar, memuat, error, peringatan, dibacaMs, jumlahBaru, muat, tandaiDibaca, onPilihSku }) {
+export function PanelMutasiMaster({ untuk = "gudang", daftar, memuat, error, peringatan, dibacaMs, jumlahBaru, muat, tandaiDibaca, onPilihSku }) {
   const [buka, setBuka] = useState(false);
   const [semua, setSemua] = useState(false);
   const sudahAutoBuka = useRef(false);
@@ -234,12 +273,14 @@ export function PanelMutasiMaster({ daftar, memuat, error, peringatan, dibacaMs,
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <button type="button" onClick={() => setBuka((v) => !v)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
           <Bell size={14} className={jumlahBaru > 0 ? "text-amber-400" : "text-slate-500"} />
-          <span className="text-xs font-semibold text-slate-200">Pemberitahuan perpindahan barang</span>
+          <span className="text-xs font-semibold text-slate-200">{untuk === "gudang" ? "Pemberitahuan perpindahan barang" : "Pemberitahuan barang dari gudang"}</span>
           {jumlahBaru > 0 && (
             <span className="text-[10px] font-semibold text-slate-950 bg-amber-400 rounded-full px-2 py-0.5">{jumlahBaru} baru</span>
           )}
           <span className="text-[11px] text-slate-500 truncate">
-            {memuat ? "memuat…" : `Master Barang ⇄ Barang Toko / TikTok · ${daftar.length} belum dibaca`}
+            {memuat
+              ? "memuat…"
+              : `${untuk === "toko" ? "Gudang ⇄ Barang Toko" : untuk === "tiktok" ? "Gudang ⇄ Barang TikTok" : "Master Barang ⇄ Barang Toko / TikTok"} · ${jumlahBaru} belum dibaca`}
           </span>
           {buka ? <ChevronUp size={14} className="text-slate-500 flex-shrink-0" /> : <ChevronDown size={14} className="text-slate-500 flex-shrink-0" />}
         </button>
@@ -272,21 +313,22 @@ export function PanelMutasiMaster({ daftar, memuat, error, peringatan, dibacaMs,
           )}
           {tampil.map((d) => {
             const info = INFO_ARAH[d.arah];
-            const baru = ms(d.waktu) > dibacaMs;
+            const baru = !d.sendiri && ms(d.waktu) > dibacaMs;
             return (
               <button
                 key={d.id}
                 type="button"
-                onClick={() => onPilihSku?.(d.sku)}
+                onClick={() => onPilihSku?.(d.sku, d)}
                 title="Klik untuk mencari SKU ini di daftar"
                 className="w-full flex flex-wrap items-center gap-x-2 gap-y-0.5 text-left bg-slate-950/60 border border-slate-800 hover:border-amber-500/40 rounded-lg px-3 py-2"
               >
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${baru ? "bg-amber-400" : "bg-transparent"}`} />
-                <span className={`text-[11px] font-semibold ${info.teks}`}>{info.label}</span>
+                <span className={`text-[11px] font-semibold ${info.teks}`}>{kataMutasi(d).label}</span>
                 <span className="font-mono text-xs text-slate-200 truncate">{d.sku}</span>
                 <span className="text-xs text-slate-300 tabular-nums">{d.qty} pcs</span>
                 <span className="text-[11px] text-slate-500 sm:ml-auto">
                   {d.kode ? `${d.kode} · ` : ""}
+                  {d.pelaku ? `oleh ${d.pelaku} · ` : ""}
                   {waktuLengkap(d.waktu)} ({waktuRelatif(d.waktu)})
                 </span>
                 {d.catatan && <span className="basis-full pl-3.5 text-[11px] text-slate-500 truncate">{d.catatan}</span>}

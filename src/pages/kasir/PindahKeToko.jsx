@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Check, AlertCircle, FileDown } from "lucide-react";
 import { sb, sbAll, entitasSesi, fmtRp } from "../../lib/api";
 import { getSession } from "../../lib/auth";
+import { catatanDenganPelaku } from "../../lib/mutasiPelaku";
 import { InputRupiah } from "../../components/ui";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
@@ -19,6 +20,8 @@ import { rapikanKodeLive, sinkronAliasKodeLive } from "./kodeLiveAlias";
 // - Beberapa SKU sekaligus: jumlah stok yang dipindah DIKETIK per SKU (maksimal stok gudang SKU itu). Kolom kosong / 0 =
 //   barangnya saja yang didaftarkan (stok toko 0).
 // Dipanggil dari Master Barang (role superappa) dan dari Barang Toko > "Dari Master".
+// Prop `sisi` = siapa yang memindahkan ("gudang" dari Master Barang, "toko" / "tiktok" dari tab Barang Toko / Barang TikTok); dicatat sebagai
+// pelaku perpindahan (lib/mutasiPelaku.js) supaya pemberitahuannya tepat sasaran.
 // =========================================================
 
 // Sama dengan rapikanUkuran di BarangTiktok.jsx (dan ttscan_ukuran_dari_variasi di database): huruf besar, tanpa awalan SIZE/UKURAN.
@@ -35,7 +38,7 @@ const KONFIG = {
   tiktok: { tabel: "master_tiktok", label: "Barang TikTok", awalan: (e) => `${e}-TT`, rpcDariGudang: "rpc/tiktok_mutasi_dari_gudang", labelKode: "Kode TikTok" },
 };
 
-export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, fotoPerSku, onClose, onSelesai, tujuan = "toko", sumber = "gudang" }) {
+export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, fotoPerSku, onClose, onSelesai, tujuan = "toko", sumber = "gudang", sisi = "gudang" }) {
   const K = KONFIG[tujuan] || KONFIG.toko;
   const dariTiktok = sumber === "tiktok";
   const namaSumber = dariTiktok ? "TikTok" : "gudang";
@@ -195,7 +198,7 @@ export default function PindahKeToko({ daftar, labelKategori, labelSubkategori, 
             body: JSON.stringify({
               p: dariTiktok
                 ? { entitas: entitasSesi(), kode: kodeToko, kode_tiktok: s.kodeTiktok, qty: jml, catatan: catatan.trim() || null }
-                : { entitas: entitasSesi(), kode: kodeToko, qty: jml, catatan: catatan.trim() || null },
+                : { entitas: entitasSesi(), kode: kodeToko, qty: jml, catatan: catatanDenganPelaku(sisi, catatan) },
             }),
           });
           out.dipindah += jml;

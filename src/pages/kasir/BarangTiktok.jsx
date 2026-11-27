@@ -3,6 +3,8 @@ import { Search, Plus, Loader2, Pencil, ArrowDownToLine, ClipboardCheck, Trash2,
 import { sb, sbAll, fmtRp, entitasSesi, sbUploadFoto, kompresFotoProduk } from "../../lib/api";
 import { InputRupiah } from "../../components/ui";
 import { getSession } from "../../lib/auth";
+import { catatanDenganPelaku } from "../../lib/mutasiPelaku";
+import { PanelMutasiMaster, useMutasiMaster } from "./PemberitahuanMutasi";
 import { Kerangka, Galat, inp, pesanError } from "./BarangToko";
 import TambahDariMaster, { muatKonteksDariTiktok } from "./TambahDariMaster";
 import PindahKeToko from "./PindahKeToko";
@@ -453,7 +455,7 @@ function FormMutasi({ barang, onSelesai, onClose }) {
     try {
       await sb(arah === "ke_gudang" ? "rpc/tiktok_kembalikan_ke_gudang" : "rpc/tiktok_mutasi_dari_gudang", {
         method: "POST",
-        body: JSON.stringify({ p: { entitas: entitasSesi(), kode: barang.kode, qty: n, catatan: catatan.trim() || null } }),
+        body: JSON.stringify({ p: { entitas: entitasSesi(), kode: barang.kode, qty: n, catatan: catatanDenganPelaku("tiktok", catatan) } }),
       });
       setHasil({ arah, qty: n, catatan: catatan.trim(), waktu: new Date() });
     } catch (e) {
@@ -757,6 +759,7 @@ export default function BarangTiktok({ onBerubah }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const notif = useMutasiMaster(0, "tiktok"); // pemberitahuan: barang yang dikirim / ditarik gudang
   const [filter, setFilter] = useState("semua");
   const [urut, setUrut] = useState("kode");
   const [batas, setBatas] = useState(PER_TAHAP);
@@ -892,6 +895,7 @@ export default function BarangTiktok({ onBerubah }) {
       </div>
 
       <div className="flex-1 p-3">
+        <PanelMutasiMaster {...notif} onPilihSku={(sku, d) => setQ(d?.kode || sku)} />
         {error && <Galat pesan={error} />}
         {rows && tampil.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 mb-2 text-xs">
