@@ -206,8 +206,7 @@ export function useMutasiMaster(versi = 0, untuk = "gudang") {
   }, [muat, versi]);
 
   const tandaiDibaca = useCallback(() => {
-    const lawan = daftar.filter((d) => !d.sendiri);
-    const terbaru = lawan.length ? Math.max(...lawan.map((d) => ms(d.waktu))) : Date.now();
+    const terbaru = daftar.length ? Math.max(...daftar.map((d) => ms(d.waktu))) : Date.now();
     const nilai = Math.max(terbaru, Date.now() - 1000);
     try {
       localStorage.setItem(kunciDibaca(untuk), String(nilai));
@@ -218,9 +217,9 @@ export function useMutasiMaster(versi = 0, untuk = "gudang") {
   }, [daftar, untuk]);
 
   // Yang sudah ditandai dibaca hilang dari panel dan dari chip di kartu SKU: hanya yang belum dibaca yang dikembalikan.
-  // Perpindahan yang dilakukan gudang sendiri tetap tampil (sampai lewat 3 hari) tapi tidak dihitung baru dan tidak ikut "Tandai sudah dibaca".
-  const belumDibaca = useMemo(() => daftar.filter((d) => d.sendiri || ms(d.waktu) > dibacaMs), [daftar, dibacaMs]);
-  const jumlahBaru = useMemo(() => belumDibaca.filter((d) => !d.sendiri && ms(d.waktu) > dibacaMs).length, [belumDibaca, dibacaMs]);
+  // Perpindahan yang dilakukan gudang sendiri tetap tampil di daftar tapi tidak dihitung baru (tanpa titik kuning); hilang bersama yang lain saat "Tandai sudah dibaca".
+  const belumDibaca = useMemo(() => daftar.filter((d) => ms(d.waktu) > dibacaMs), [daftar, dibacaMs]);
+  const jumlahBaru = useMemo(() => belumDibaca.filter((d) => !d.sendiri).length, [belumDibaca]);
 
   // SKU -> perpindahan TERBARU (daftar sudah urut terbaru dulu). Dipakai untuk chip di kartu SKU.
   const perSku = useMemo(() => {
@@ -284,7 +283,7 @@ export function PanelMutasiMaster({ untuk = "gudang", daftar, memuat, error, per
           </span>
           {buka ? <ChevronUp size={14} className="text-slate-500 flex-shrink-0" /> : <ChevronDown size={14} className="text-slate-500 flex-shrink-0" />}
         </button>
-        {jumlahBaru > 0 && (
+        {daftar.length > 0 && (
           <button
             type="button"
             onClick={tandaiDibaca}
