@@ -190,6 +190,9 @@ export default function Sidebar({
   // untuk role user yang sedang login.
   const visibleNavAsli = filterNavByAllowed(NAV, allowedMenuKeys, user?.role);
   // PT selain Selma (mis. Alivia): grup "Store Selma" tampil sebagai "Store <nama PT>".
+  // Role + entitas akun (mis. "Gudang · Alivia"). namaToko kosong = akun Holding, ditampilkan sebagai "Pusat".
+  const namaEntitasTampil = user?.entitas ? namaToko || "Pusat" : "";
+  const labelRole = user ? `${roleLabel(user.role)}${namaEntitasTampil ? ` · ${namaEntitasTampil}` : ""}` : "";
   const visibleNav = namaToko ? gantiLabelStore(visibleNavAsli, namaToko) : visibleNavAsli;
 
   return (
@@ -218,7 +221,7 @@ export default function Sidebar({
               {user ? (
                 <>
                   <div className="font-medium text-sm leading-none truncate text-md-on-surface">{user.nama || user.username}</div>
-                  <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5 truncate">{roleLabel(user.role)}</div>
+                  <div className="text-[11px] text-md-on-surface-variant leading-none mt-1.5 truncate">{labelRole}</div>
                 </>
               ) : (
                 <>
@@ -261,7 +264,7 @@ export default function Sidebar({
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-md-on-surface truncate">{user.nama || user.username}</div>
               <div className="text-[10px] text-md-on-surface-variant truncate flex items-center gap-1.5">
-                {roleLabel(user.role)}
+                {labelRole}
                 {user.role === "pemegang_saham" && (
                   <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-md-container-high text-md-primary leading-none">
                     Read-only
