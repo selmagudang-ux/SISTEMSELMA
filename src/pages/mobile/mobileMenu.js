@@ -14,6 +14,8 @@
 // =========================================================
 
 export const LAYAR_HP = {
+  // Dashboard Monitoring (4 tab: Operasional, Penjualan, Absensi, Keuangan): halaman komputer dipakai ulang lewat DashboardHp.jsx.
+  dashboard: { muat: () => import("./DashboardHp.jsx") },
   "stok/barang": { muat: () => import("./StokHp.jsx") },
   "stok/menipis": { muat: () => import("./StokHp.jsx") },
   // Operasional > Admin Gudang yang lain: memakai ulang halaman komputer + modalnya lewat GudangHp.jsx (nama ekspor per menu).

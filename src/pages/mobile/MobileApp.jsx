@@ -334,7 +334,15 @@ export default function MobileApp() {
           <LayarSegeraHadir label={judul} />
         ) : Komponen ? (
           <Suspense fallback={null}>
-            <Komponen key={kunci} session={session} sub={subKey} />
+            <Komponen
+              key={kunci}
+              session={session}
+              sub={subKey}
+              bukaMenu={(m, s) => {
+                const j = jalurKe(akar, m, s);
+                if (j) buka(j);
+              }}
+            />
           </Suspense>
         ) : layarMuat?.kunci === kunci ? (
           <LayarSegeraHadir label={judul} />
