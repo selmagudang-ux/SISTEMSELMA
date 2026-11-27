@@ -304,11 +304,20 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
 function TabStok({ stok, setModal }) {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("semua");
-  const filtered = stok.filter((p) => {
-    if (filter !== "semua" && statusStok(p).key !== filter) return false;
-    const s = q.trim().toLowerCase();
-    return !s || p.nama.toLowerCase().includes(s) || p.kode.toLowerCase().includes(s);
-  });
+  const [urut, setUrut] = useState("nama-az"); // nama-az | nama-za | stok-naik (sedikit -> banyak) | stok-turun (banyak -> sedikit)
+  const bandingNama = (a, b) => String(a.nama || "").localeCompare(String(b.nama || ""), "id", { numeric: true, sensitivity: "base" });
+  const filtered = stok
+    .filter((p) => {
+      if (filter !== "semua" && statusStok(p).key !== filter) return false;
+      const s = q.trim().toLowerCase();
+      return !s || p.nama.toLowerCase().includes(s) || p.kode.toLowerCase().includes(s);
+    })
+    .sort((a, b) => {
+      if (urut === "nama-za") return bandingNama(b, a);
+      if (urut === "stok-naik") return (Number(a.stok) || 0) - (Number(b.stok) || 0) || bandingNama(a, b);
+      if (urut === "stok-turun") return (Number(b.stok) || 0) - (Number(a.stok) || 0) || bandingNama(a, b);
+      return bandingNama(a, b);
+    });
   const jml = (k) => stok.filter((p) => statusStok(p).key === k).length;
   const totalNilai = stok.reduce((a, p) => a + (Number(p.nilai) || 0), 0);
 
@@ -336,6 +345,12 @@ function TabStok({ stok, setModal }) {
           <option value="menipis">Menipis</option>
           <option value="habis">Habis</option>
           <option value="aman">Aman</option>
+        </select>
+        <select value={urut} onChange={(e) => setUrut(e.target.value)} className={`${inputClass} w-auto`} title="Urutkan daftar">
+          <option value="nama-az">Nama A-Z</option>
+          <option value="nama-za">Nama Z-A</option>
+          <option value="stok-naik">Stok sedikit ke banyak</option>
+          <option value="stok-turun">Stok banyak ke sedikit</option>
         </select>
       </div>
 
