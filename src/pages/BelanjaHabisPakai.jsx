@@ -31,7 +31,11 @@ import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 // Stok dihitung dari mutasi (bukan angka tunggal) supaya aman dipakai banyak staff.
 // Saat pembelian DIBAYAR, otomatis tercatat sebagai pengeluaran di Keuangan
 // (kategori "Barang Habis Pakai"); rekening default-nya Kas Kecil.
-// Total pembelian (belanja_habis_pakai.total) = uang yang DIBAYAR; boleh beda dari jumlah × harga satuan (diskon/paket). Saat barang diterima, HPP persediaan dihitung dari total ini.
+// Total pembelian (belanja_habis_pakai.total) = uang yang DIBAYAR; boleh beda dari jumlah × harga satuan.
+//   - POTONGAN (total < jumlah × harga satuan): harga beli persediaan ikut turun (dibagi proporsional).
+//   - LEBIH BAYAR (total > jumlah × harga satuan, mis. admin / ongkir / biaya lain): TIDAK masuk harga beli. Harga beli tetap = harga satuan;
+//     selisihnya dicatat dengan keterangan (selisih_ket) dan saat dibayar jadi transaksi Keuangan TERPISAH (keuangan_selisih_id)
+//     dengan kategori yang dipilih (bukan "Barang Habis Pakai"). Kolom baru: sql/2026-11-27_belanja_selisih.sql.
 // PERSEDIAAN: tiap mutasi punya kolom `hpp` (isinya harga BELI per satuan; barang habis pakai tidak punya HPP). Pembelian/stok awal mencatat harga
 // belinya, pemakaian/koreksi/transfer mencatat HPP rata-rata saat itu (view perlengkapan_nilai).
 // Kategori "Barang Habis Pakai" di Keuangan diarahkan ke Neraca; bebannya masuk Laba Rugi
@@ -257,7 +261,7 @@ export default function BelanjaHabisPakai({ suppliers = [], master = {}, reload,
         />
       )}
       {modal?.type === "bayar" && (
-        <FormBayar belanja={modal.item} master={master} reload={reload} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
+        <FormBayar belanja={modal.item} itemBelanja={item.filter((x) => x.belanja_id === modal.item.id)} master={master} reload={reload} onClose={() => setModal(null)} onSaved={tutupDanMuat} showToast={showToast} />
       )}
       {modal?.type === "terima" && (
         <KonfirmasiTerima
@@ -456,6 +460,12 @@ function TabBelanja({ belanja, item, stok, buktiMap = {}, setModal }) {
                   return Math.abs(sel) >= 1 ? (
                     <div className="mt-1 text-[11px] text-amber-300">
                       Dibayar {fmtRp(b.total)} · {sel < 0 ? "potongan" : "lebih bayar"} {fmtRp(Math.abs(sel))} dari jumlah × harga satuan
+                      {sel > 0 && (
+                        <>
+                          {" "}
+                          · untuk: <span className="font-semibold">{b.selisih_ket || "(belum ada keterangan)"}</span> · tidak masuk harga beli
+                        </>
+                      )}
                     </div>
                   ) : null;
                 })()}
@@ -982,6 +992,7 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
   const sumAwal = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga_satuan) || 0), 0);
   const [totalManual, setTotalManual] = useState(!!belanja && Math.round(Number(belanja.total) || 0) !== Math.round(sumAwal));
   const [totalBayar, setTotalBayar] = useState(belanja ? Number(belanja.total) || 0 : "");
+  const [selisihKet, setSelisihKet] = useState(belanja?.selisih_ket || ""); // untuk apa lebih bayar (admin, ongkir, biaya lain)
 
   const barangOptions = stok.map((p) => ({ value: String(p.id), label: `${p.nama} (${p.satuan})` }));
   const supplierOptions = (suppliers || []).map((s) => ({ value: s.nama, label: s.nama }));
@@ -1038,7 +1049,15 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
       const totalFinal = totalManual ? Math.max(0, Number(totalBayar) || 0) : subtotalFinal;
 
       // 3. Header + rincian.
-      const header = { tanggal, supplier: namaSupplier || null, catatan: catatan.trim() || null, total: totalFinal };
+      const lebihFinal = Math.max(0, Math.round(totalFinal - subtotalFinal));
+      const header = {
+        tanggal,
+        supplier: namaSupplier || null,
+        catatan: catatan.trim() || null,
+        total: totalFinal,
+        // Kolom selisih_ket hanya dikirim kalau perlu (butuh sql/2026-11-27_belanja_selisih.sql).
+        ...(lebihFinal > 0 || belanja?.selisih_ket ? { selisih_ket: lebihFinal > 0 ? selisihKet.trim() || null : null } : {}),
+      };
       let belanjaId = belanja?.id;
       if (belanja) {
         await sb(`belanja_habis_pakai?id=eq.${belanja.id}`, { method: "PATCH", body: JSON.stringify(header) });
@@ -1162,7 +1181,7 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
           }}
         />
         <div className="text-[10px] text-slate-500 mt-1">
-          Ubah kalau uang yang dibayar tidak sama dengan jumlah × harga satuan (diskon, paket, pembulatan). Total inilah yang dicatat sebagai pengeluaran di Keuangan dan menjadi harga beli persediaan.
+          Ubah kalau uang yang dibayar tidak sama dengan jumlah × harga satuan. Potongan (diskon, paket) menurunkan harga beli. Lebih bayar (admin, ongkir, biaya lain) TIDAK masuk harga beli: cukup tulis untuk apa di bawah, nanti dicatat terpisah di Keuangan.
         </div>
       </Field>
       {totalManual && Math.round(total) !== Math.round(subtotal) && (
@@ -1181,6 +1200,22 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
             Samakan dengan harga satuan
           </button>
         </div>
+      )}
+      {totalManual && Math.round(total) > Math.round(subtotal) && (
+        <Field label="Lebih bayar untuk apa?">
+          <input
+            className={inputClass}
+            list="saran-selisih-belanja"
+            value={selisihKet}
+            onChange={(e) => setSelisihKet(e.target.value)}
+            placeholder="mis. Biaya admin, Ongkir, Biaya lain"
+          />
+          <datalist id="saran-selisih-belanja">
+            <option value="Biaya admin" />
+            <option value="Ongkir" />
+            <option value="Biaya lain" />
+          </datalist>
+        </Field>
       )}
       <button
         disabled={!bisaSimpan}
@@ -1202,12 +1237,13 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
   const [saving, setSaving] = useState(false);
   const nama = useMemo(() => Object.fromEntries(stok.map((p) => [p.id, p])), [stok]);
 
-  // Harga beli persediaan = uang yang benar-benar dibayar (belanja.total), dibagi ke tiap barang secara proporsional
-  // terhadap jumlah × harga satuan. Kalau total = jumlah × harga satuan, hasilnya sama dengan harga satuan.
+  // Harga beli persediaan = harga satuan. Kalau ada POTONGAN (total < jumlah × harga satuan), total dibagi ke tiap barang secara
+  // proporsional. Kalau LEBIH BAYAR (admin, ongkir, dst.), selisihnya TIDAK ikut harga beli (dicatat terpisah di Keuangan).
   const sumHarga = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga_satuan) || 0), 0);
   const sumJumlah = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0), 0);
   const hppRow = (r) => {
-    const tot = Number(belanja.total) || 0;
+    const totalBayar = Number(belanja.total) || 0;
+    const tot = sumHarga > 0 ? Math.min(totalBayar, sumHarga) : totalBayar;
     const h = Number(r.harga_satuan) || 0;
     const v = sumHarga > 0 ? (h * tot) / sumHarga : sumJumlah > 0 ? tot / sumJumlah : 0;
     return Math.round(v * 100) / 100;
@@ -1246,10 +1282,16 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
         {itemBelanja.map((r) => (
           <div key={r.id}>
             + {fmtJumlah(r.jumlah)} {nama[r.perlengkapan_id]?.satuan} {nama[r.perlengkapan_id]?.nama}
-            {Math.round(hppRow(r)) !== Math.round(Number(r.harga_satuan) || 0) && ` — harga beli ${fmtRp(hppRow(r))}/${nama[r.perlengkapan_id]?.satuan || "satuan"} (sesuai uang yang dibayar)`}
+            {Math.round(hppRow(r)) !== Math.round(Number(r.harga_satuan) || 0) && ` — harga beli ${fmtRp(hppRow(r))}/${nama[r.perlengkapan_id]?.satuan || "satuan"} (sudah dipotong diskon)`}
           </div>
         ))}
       </div>
+      {Math.round((Number(belanja.total) || 0) - sumHarga) > 0 && (
+        <div className="text-[11px] text-amber-300 mb-3">
+          Lebih bayar {fmtRp((Number(belanja.total) || 0) - sumHarga)}
+          {belanja.selisih_ket ? ` (${belanja.selisih_ket})` : ""} tidak ikut harga beli; harga beli sesuai harga satuan.
+        </div>
+      )}
       <Field label="Tanggal diterima">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
@@ -1270,7 +1312,7 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
 // ---------------------------------------------------------
 // FORM: CATAT PEMBAYARAN -> pengeluaran di Keuangan
 // ---------------------------------------------------------
-function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
+function FormBayar({ belanja, itemBelanja = [], master, reload, onClose, onSaved, showToast }) {
   const [tanggal, setTanggal] = useState(todayIso());
   // Rekening pembayaran dibatasi ke PT akun yang login — transaksi mengikuti entitas rekeningnya,
   // jadi rekening PT lain tidak boleh bisa dipilih di sini.
@@ -1291,6 +1333,14 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
     kategoriPilih === KATEGORI_BARU
       ? KATEGORI_KEUANGAN
       : kategoriList.find((m) => m.kode === kategoriPilih)?.label || KATEGORI_KEUANGAN;
+
+  // Lebih bayar (admin, ongkir, dst.) dicatat sebagai transaksi Keuangan TERPISAH dengan kategori sendiri, bukan "Barang Habis Pakai".
+  const sumItem = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga_satuan) || 0), 0);
+  const lebih = itemBelanja.length ? Math.max(0, Math.round((Number(belanja.total) || 0) - sumItem)) : 0;
+  const ketSelisih = String(belanja.selisih_ket || "").trim();
+  const [kategoriSelisih, setKategoriSelisih] = useState(
+    () => kategoriLain.find((m) => ketSelisih && (m.label || "").toLowerCase().includes(ketSelisih.toLowerCase()))?.kode || ""
+  );
 
   const grup = (k) => rekeningList.filter((r) => kasDariRekening(petaKas, r.kode) === k);
 
@@ -1318,15 +1368,42 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
           tipe: "keluar",
           rekening,
           kategori,
-          jumlah: Number(belanja.total),
+          jumlah: Number(belanja.total) - lebih,
           keterangan: `Belanja ${belanja.kode}${belanja.supplier ? ` - ${belanja.supplier}` : ""}`,
           ...(buktiUrls.length ? { bukti_urls: buktiUrls, bukti_url: buktiUrls[0] } : {}),
         }),
       });
       const trx = Array.isArray(res) ? res[0] : res;
+      let trxSelisih = null;
+      if (lebih > 0) {
+        try {
+          const r2 = await sb("keuangan_transaksi", {
+            method: "POST",
+            body: JSON.stringify({
+              tanggal,
+              tipe: "keluar",
+              rekening,
+              kategori: kategoriSelisih,
+              jumlah: lebih,
+              keterangan: `Selisih belanja ${belanja.kode}${ketSelisih ? `: ${ketSelisih}` : ""}${belanja.supplier ? ` - ${belanja.supplier}` : ""}`,
+            }),
+          });
+          trxSelisih = Array.isArray(r2) ? r2[0] : r2;
+        } catch (e) {
+          // Jangan tinggalkan pengeluaran barang saja: batalkan yang sudah dibuat.
+          if (trx?.id) await sb(`keuangan_transaksi?id=eq.${trx.id}`, { method: "DELETE" }).catch(() => {});
+          throw e;
+        }
+      }
       await sb(`belanja_habis_pakai?id=eq.${belanja.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ dibayar: true, rekening, tanggal_bayar: tanggal, keuangan_transaksi_id: trx?.id ?? null }),
+        body: JSON.stringify({
+          dibayar: true,
+          rekening,
+          tanggal_bayar: tanggal,
+          keuangan_transaksi_id: trx?.id ?? null,
+          ...(trxSelisih?.id ? { keuangan_selisih_id: trxSelisih.id } : {}),
+        }),
       });
       reload?.();
       await onSaved("Pembayaran dicatat di Keuangan");
@@ -1372,6 +1449,25 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
           ))}
         </select>
       </Field>
+      {lebih > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 mb-3">
+          <div className="text-xs text-amber-300 mb-2">
+            Lebih bayar {fmtRp(lebih)}
+            {ketSelisih ? ` (${ketSelisih})` : ""} dicatat sebagai pengeluaran terpisah di Keuangan, bukan bagian dari harga beli barang.
+          </div>
+          <Field label="Kategori di Keuangan untuk lebih bayar">
+            <select className={inputClass} value={kategoriSelisih} onChange={(e) => setKategoriSelisih(e.target.value)}>
+              <option value="">Pilih kategori…</option>
+              {kategoriLain.map((m) => (
+                <option key={m.kode} value={m.kode}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            {kategoriLain.length === 0 && <div className="text-[11px] text-amber-400 mt-1">Belum ada kategori lain. Buat dulu di Keuangan → Rekening & Kategori (mis. Biaya Admin).</div>}
+          </Field>
+        </div>
+      )}
       <Field label="Tanggal bayar">
         <InputTanggal value={tanggal} onChange={setTanggal} />
       </Field>
@@ -1379,10 +1475,10 @@ function FormBayar({ belanja, master, reload, onClose, onSaved, showToast }) {
         <BuktiUpload files={files} setFiles={setFiles} disabled={saving} catatan="Foto atau PDF (PDF maks 10 MB). Bukti ikut tersimpan di transaksi Keuangan." />
       </Field>
       <div className="text-[11px] text-slate-500 mb-3">
-        Tercatat sebagai pengeluaran kategori "{labelKategori}" di Keuangan.
+        Tercatat sebagai pengeluaran kategori "{labelKategori}" di Keuangan{lebih > 0 ? ` sebesar ${fmtRp(Number(belanja.total) - lebih)}` : ""}.
       </div>
       <button
-        disabled={!rekening || Number(belanja.total) <= 0 || saving}
+        disabled={!rekening || Number(belanja.total) <= 0 || saving || (lebih > 0 && !kategoriSelisih)}
         onClick={bayar}
         className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold text-sm py-2.5 rounded-lg"
       >
@@ -1402,6 +1498,10 @@ function KonfirmasiHapusBelanja({ belanja, reload, onClose, onSaved, showToast }
     try {
       if (belanja.keuangan_transaksi_id) {
         await sb(`keuangan_transaksi?id=eq.${belanja.keuangan_transaksi_id}`, { method: "DELETE" });
+        reload?.();
+      }
+      if (belanja.keuangan_selisih_id) {
+        await sb(`keuangan_transaksi?id=eq.${belanja.keuangan_selisih_id}`, { method: "DELETE" });
         reload?.();
       }
       // rincian & mutasi stok masuk ikut terhapus (on delete cascade)
