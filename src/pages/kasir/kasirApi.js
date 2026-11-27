@@ -255,6 +255,8 @@ export async function muatStrukDariDb(row, identitas) {
     sb(`kasir_item?select=*&${SKEMA.item.trxId}=eq.${id}`),
     sb(`kasir_pembayaran?select=*&${SKEMA.bayar.trxId}=eq.${id}`),
   ]);
+  // Barang Toko tersimpan dengan kode toko (OPS-xxxx): tampilkan SKU-nya di struk cetak ulang (sama dengan struk asli).
+  await tampilkanSkuGudang(items || []);
   const I = SKEMA.item;
   const B = SKEMA.bayar;
   const daftarItem = (items || []).map((it) => ({ sku: it[I.sku], nama: it[I.nama], qty: it[I.qty], harga: it[I.harga], diskon: it[I.diskon] }));

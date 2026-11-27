@@ -119,7 +119,7 @@ export default function ModalBayar({ total, items, diskonTransaksi, session, kun
           waktu: res.waktu,
           kasir: session?.nama || session?.username,
           pelanggan: sumber === "master" ? pelanggan?.nama : "",
-          items: items.map((it) => ({ sku: it.sku, nama: it.nama, qty: it.qty, harga: it.harga, diskon: hitungItem(it).diskon })),
+          items: items.map((it) => ({ sku: it.sku, skuTampil: it.skuGudang, nama: it.nama, qty: it.qty, harga: it.harga, diskon: hitungItem(it).diskon })),
           diskonTransaksi,
           pembayaran: hb.pembayaran,
           bayar: hb.bayar,

@@ -706,6 +706,8 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
       const dariTokoKeranjang = s.asal === "toko"; // barang Toko di keranjang Grosir (campuran)
       if (harga <= 0) return { ok: false, pesan: dariTokoKeranjang ? `${s.sku}: harga jual belum diisi di Barang Toko` : `${s.sku}: harga ${modeMaster ? (LABEL_KATEGORI_PELANGGAN[kunciHarga] || "grosir").toLowerCase() : "ecer"} belum diisi di Master Barang` };
       if (stok <= 0) return { ok: false, pesan: `${s.sku}: stok habis` };
+      // SKU untuk struk: barang Toko tersimpan dengan kode toko (OPS-xxxx), struk menampilkan SKU gudang / SKU yang diisi di Barang Toko.
+      const skuStruk = s.skuGudang || ((!modeMaster || dariTokoKeranjang) && s.barcode_supplier && s.barcode_supplier !== s.sku ? s.barcode_supplier : "");
       const ada = items.find((it) => it.sku === s.sku);
       if (ada?.manual) return { ok: false, pesan: `${s.sku}: sudah ada sebagai item manual di keranjang` };
       if (ada && ada.qty + 1 > stok) return { ok: false, pesan: `${s.sku}: stok hanya ${stok}` };
@@ -714,7 +716,7 @@ export default function LayarKasir({ session, versiData = 0, pilihMaster = null,
           ? prev.map((it) => (it.sku === s.sku ? { ...it, qty: it.qty + 1, stok } : it))
           : [
               ...prev,
-              { sku: s.sku, nama: namaTampil(s), harga, hpp: Number(s.hpp) || 0, stok, qty: 1, diskonTipe: "rp", diskonNilai: "", promo: dariTokoKeranjang ? null : promoMap.get(s.sku) || null, promoLepas: false, ...(dariTokoKeranjang ? { asal: "toko" } : {}) },
+              { sku: s.sku, nama: namaTampil(s), harga, hpp: Number(s.hpp) || 0, stok, qty: 1, diskonTipe: "rp", diskonNilai: "", promo: dariTokoKeranjang ? null : promoMap.get(s.sku) || null, promoLepas: false, ...(skuStruk ? { skuGudang: skuStruk } : {}), ...(dariTokoKeranjang ? { asal: "toko" } : {}) },
             ]
       );
       return { ok: true, pesan: `${namaTampil(s)} ditambahkan` };

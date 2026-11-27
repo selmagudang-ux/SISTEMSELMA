@@ -38,12 +38,13 @@ export const tglJamId = (v) =>
 //      pembayaran:[{metode,jumlah}], bayar, kembalian, catatan, identitas, salinan }
 // "diskon" per item = diskon rupiah baris itu (bukan persen).
 // Nama barang di struk = SKU (bukan nama produk), supaya penamaan di struk sama persis dengan SKU di layar kasir.
+// Barang Toko disimpan dengan kode toko (OPS-xxxx); kalau barangnya tertaut ke SKU Master Barang, `skuTampil` berisi SKU itu dan dipakai di struk.
 export function susunStruk(d) {
   const items = (d.items || []).map((it) => {
     const qty = Number(it.qty) || 0;
     const harga = Number(it.harga) || 0;
     const diskon = Number(it.diskon) || 0;
-    return { sku: it.sku, nama: String(it.sku || it.nama || ""), qty, harga, diskon, subtotal: Math.round(qty * harga) - diskon };
+    return { sku: it.sku, nama: String(it.skuTampil || it.sku || it.nama || ""), qty, harga, diskon, subtotal: Math.round(qty * harga) - diskon };
   });
   const subtotal = items.reduce((a, i) => a + i.subtotal, 0);
   const diskonTransaksi = Number(d.diskonTransaksi) || 0;
