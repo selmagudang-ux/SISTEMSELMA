@@ -231,3 +231,38 @@
   padding-top: 0;
   padding-bottom: 0;
 }
+
+/* Versi HP (/m): pengaman tampilan untuk halaman versi komputer yang dipakai ulang (tabel lebar, form, jendela pop-up).
+   Semua aturan di bawah HANYA berlaku di dalam .hp-main, jadi tampilan versi komputer dan kasir tidak berubah. */
+/* Tabel lebar: digeser ke samping di dalam kotaknya, bukan memaksa halaman melebar atau menimpa kolom lain. */
+.hp-main table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* Isian, gambar, dan kanvas (mis. barcode) tidak boleh lebih lebar dari layar. */
+.hp-main input,
+.hp-main select,
+.hp-main textarea {
+  max-width: 100%;
+  min-width: 0;
+}
+.hp-main img,
+.hp-main canvas {
+  max-width: 100%;
+  height: auto;
+}
+/* Kata atau kode panjang (SKU, nomor resi, nama file) turun ke baris berikutnya, tidak menembus kartu. */
+.hp-main {
+  overflow-x: hidden;
+  overflow-wrap: break-word;
+}
+/* Jendela pop-up (form, detail): tinggi mengikuti layar HP yang terlihat, supaya tombol Simpan di bawah tidak
+   tertutup bar alamat browser. 85vh dihitung dari layar penuh, bukan layar yang terlihat. */
+.hp-main .max-h-\[85vh\] {
+  max-height: calc(100dvh - 2rem);
+}
+.hp-main .max-h-\[90vh\] {
+  max-height: calc(100dvh - 2rem);
+}
