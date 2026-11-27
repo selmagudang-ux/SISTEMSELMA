@@ -12,6 +12,7 @@ import KodeLiveTiktok from "./KodeLiveTiktok";
 import BarangTiktok from "./kasir/BarangTiktok";
 import PindahKeToko from "./kasir/PindahKeToko";
 import RiwayatPemindahan from "./kasir/RiwayatPemindahan";
+import { PanelMutasiMaster, ChipMutasiSku, useMutasiMaster } from "./kasir/PemberitahuanMutasi";
 import ImporSkuMaster from "../components/ImporSkuMaster";
 import { FormSetMaster, FormIndukMaster, FormHapusSkuTerpilih } from "./FormSetMaster";
 import { olahSetMaster, adalahSet, adalahInduk, adalahKelompok } from "../lib/setMaster";
@@ -65,6 +66,12 @@ function TigaMaster(props) {
   const bolehToko = bisa(session?.role, "sku.barang_toko"); // izin menu (Hak Akses role); Super Appa selalu boleh
   const bolehBarangTiktok = bisa(session?.role, "sku.barang_tiktok"); // izin menu (Hak Akses role); Super Appa selalu boleh
   const [tab, setTab] = useState("master");
+  // Dinaikkan setiap ada mutasi dari tab Barang TikTok / Barang Toko, supaya pemberitahuan di tab Master Barang dimuat ulang.
+  const [versiMutasi, setVersiMutasi] = useState(0);
+  const setelahBerubah = () => {
+    setVersiMutasi((v) => v + 1);
+    reload?.();
+  };
   const daftarTab = [
     { key: "master", label: "Master Barang" },
     { key: "tiktok", label: "Barang TikTok (Kode Live)" },
@@ -89,7 +96,7 @@ function TigaMaster(props) {
         ))}
       </div>
       <div className={tab === "master" ? "" : "hidden"}>
-        <MasterBarang {...props} />
+        <MasterBarang {...props} versiMutasi={versiMutasi} />
       </div>
       {tab === "tiktok" && (
         <div>
@@ -97,7 +104,7 @@ function TigaMaster(props) {
             title="Barang TikTok (Kode Live)"
             description="Barang yang dijual di TikTok: stok sendiri, kode live, harga, dan HPP. Bisa diambil dari Master Barang, dan stoknya bisa dikirim ke Barang Toko. Satu kode live = satu SKU di Master Barang."
           />
-          {bolehBarangTiktok ? <BarangTiktok onBerubah={() => reload?.()} /> : <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />}
+          {bolehBarangTiktok ? <BarangTiktok onBerubah={setelahBerubah} /> : <KodeLiveTiktok skuMaster={skuMaster} showToast={showToast} />}
         </div>
       )}
       {tab === "toko" && bolehToko && (
@@ -106,7 +113,7 @@ function TigaMaster(props) {
             title="Barang Toko (POS)"
             description="Barang yang dijual di aplikasi kasir: harga jual, HPP, dan stok toko. Stok berubah lewat mutasi dari gudang, penjualan kasir, atau opname."
           />
-          <BarangToko inline onBerubah={() => reload?.()} />
+          <BarangToko inline onBerubah={setelahBerubah} />
         </div>
       )}
     </div>
@@ -540,7 +547,7 @@ function AturanMpPanel({ isSuperadmin, master, kodePT, barisTersimpan, sigTersim
   );
 }
 
-function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, setModal, session, reload, showToast, settings }) {
+function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, setModal, session, reload, showToast, settings, versiMutasi = 0 }) {
   const [imporSku, setImporSku] = useState(false);
   // Set = paket dijual (stok & HPP dari isi); SKU Induk = pengelompokan saja (tanpa harga, stok = jumlah stok isi). Lihat lib/setMaster.js.
   const skuMaster = useMemo(() => olahSetMaster(skuMasterAsli), [skuMasterAsli]);
@@ -639,6 +646,8 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
   // Riwayat pemindahan gudang ⇄ toko (komponen yang sama dengan tombol "Riwayat" di Barang Toko).
   const bolehLihatRiwayat = bolehKeToko || bisa(session?.role, "sku.barang_toko");
   const [riwayat, setRiwayat] = useState(false);
+  // Pemberitahuan barang diambil ke / dikembalikan dari Barang Toko & Barang TikTok (panel di atas daftar + chip di kartu SKU).
+  const mutasi = useMutasiMaster(versiMutasi);
 
   // Nama lengkap kategori/subkategori dari Master Data, bukan kode-nya.
   // Kalau kode belum terdaftar di Master Data, tampilkan kode itu sendiri (fallback labelFor).
@@ -1042,10 +1051,12 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
               setSelected(new Set());
               showToast?.(`${h.dibuat} barang masuk ke Barang Toko${h.dipindah ? `, ${h.dipindah} stok dipindah` : ""}`);
               reload?.();
+              mutasi.muat();
             }
           }}
         />
       )}
+      <PanelMutasiMaster {...mutasi} onPilihSku={(sku) => setQ(sku)} />
       <AturanMpPanel
         isSuperadmin={bolehAturMp}
         master={master}
@@ -1285,6 +1296,7 @@ function MasterBarang({ skuMaster: skuMasterAsli, items, master, penempatan, set
                                       {kodeRak}
                                     </span>
                                   )}
+                                  <ChipMutasiSku e={mutasi.perSku.get(s.sku)} dibacaMs={mutasi.dibacaMs} />
                                 </div>
                               </div>
                               <div className="flex-shrink-0 flex flex-col items-end gap-1.5 self-start" onClick={(e) => e.stopPropagation()}>
