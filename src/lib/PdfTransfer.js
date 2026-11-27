@@ -39,6 +39,8 @@ const rapikanNama = (s) => String(s || "transfer").replace(/[^\w-]+/g, "_");
 // ---------------------------------------------------------
 // SURAT JALAN (A5 portrait, otomatis lanjut halaman kalau SKU banyak)
 // Barang habis pakai membawa satuannya sendiri (roll, box, dst); barang dagangan selalu pcs.
+// Skala ukuran huruf surat jalan (1 = ukuran lama). Kalau masih terasa besar/kecil, ubah angka ini.
+const SKALA_HURUF_SURAT = 0.85;
 const satuanItem = (it) => (it?.jenis === "habis_pakai" ? it.satuan || "pcs" : "pcs");
 
 // t: baris transfer_barang { kode, created_at, catatan, items:[{sku, qty, hpp?}] }
@@ -53,6 +55,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   const BOTTOM = H - 40; // sisakan ruang untuk tanda tangan di halaman terakhir
   const BOTTOM_PENUH = H - 12; // batas bawah halaman yang BUKAN terakhir (tanpa ruang tanda tangan)
   const doc = new jsPDF({ unit: "mm", format: "a5" });
+  const fs = (n) => Math.round(n * SKALA_HURUF_SURAT * 10) / 10; // semua ukuran huruf surat jalan dikalikan skala ini
   let y = M;
   const teks = (s, x, opt) => doc.text(String(s ?? ""), x, y, opt);
 
@@ -69,12 +72,12 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
       /* logo gagal dimuat: lanjut tanpa logo */
     }
   }
-  doc.setFont("helvetica", "bold").setFontSize(13);
+  doc.setFont("helvetica", "bold").setFontSize(fs(13));
   doc.splitTextToSize(String(pengirim?.nama || ""), lebarKop).forEach((b) => {
     teks(b, tengah, { align: "center" });
     y += 5;
   });
-  doc.setFont("helvetica", "normal").setFontSize(8);
+  doc.setFont("helvetica", "normal").setFontSize(fs(8));
   (pengirim?.alamat || []).forEach((a) => {
     doc.splitTextToSize(String(a), lebarKop).forEach((b) => {
       teks(b, tengah, { align: "center" });
@@ -90,12 +93,12 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   doc.setDrawColor(150).line(M, y, W - M, y);
   y += 6;
 
-  doc.setFont("helvetica", "bold").setFontSize(13);
+  doc.setFont("helvetica", "bold").setFontSize(fs(13));
   teks("SURAT JALAN", M);
-  doc.setFontSize(9);
+  doc.setFontSize(fs(9));
   teks(t.kode, W - M, { align: "right" });
   y += 5;
-  doc.setFont("helvetica", "normal").setFontSize(8.5);
+  doc.setFont("helvetica", "normal").setFontSize(fs(8.5));
   teks(`Tanggal kirim: ${tglWaktu(t.created_at)}`, M);
   y += 5;
 
@@ -104,20 +107,20 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   const lebar = gambarBarcode(doc, kt, M, y, W - M * 2, 10);
   // Barcode setinggi 10 mm; teks KODE TERIMA diberi jarak ~3 mm di bawahnya supaya tidak menempel.
   if (lebar) y += 15;
-  doc.setFont("helvetica", "bold").setFontSize(9);
+  doc.setFont("helvetica", "bold").setFontSize(fs(9));
   teks(`KODE TERIMA: ${kt}`, M);
-  doc.setFont("helvetica", "normal").setFontSize(7.5);
+  doc.setFont("helvetica", "normal").setFontSize(fs(7.5));
   teks("Scan / ketik kode ini di aplikasi saat menerima barang", W - M, { align: "right" });
   y += 6;
 
   // Kepada
-  doc.setFont("helvetica", "bold").setFontSize(8.5);
+  doc.setFont("helvetica", "bold").setFontSize(fs(8.5));
   teks("KEPADA", M);
   y += 4.5;
-  doc.setFontSize(10);
+  doc.setFontSize(fs(10));
   teks(penerima?.nama || "", M);
   y += 4.5;
-  doc.setFont("helvetica", "normal").setFontSize(8.5);
+  doc.setFont("helvetica", "normal").setFontSize(fs(8.5));
   (penerima?.alamat || []).forEach((a) => {
     doc.splitTextToSize(String(a), W - M * 2).forEach((b) => {
       teks(b, M);
@@ -142,7 +145,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
     : { no: M, sku: M + 8, kode: 100, qty: W - M - 22, cek: W - M, kotak: 14 };
   const kepalaTabel = () => {
     doc.setFillColor(238, 241, 245).rect(M, y - 4, W - M * 2, 6, "F");
-    doc.setFont("helvetica", "bold").setFontSize(8.5);
+    doc.setFont("helvetica", "bold").setFontSize(fs(8.5));
     teks("No", kol.no + 1);
     teks(items.some((x) => x.jenis === "habis_pakai") ? "SKU / Barang" : "SKU", kol.sku);
     if (adaHpp) teks("HPP", kol.hpp, { align: "right" });
@@ -151,7 +154,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
     if (adaHpp) teks("Nilai", kol.nilai, { align: "right" });
     teks(adaHpp ? "Terima" : "Diterima", kol.cek - 1, { align: "right" });
     y += 6;
-    doc.setFont("helvetica", "normal").setFontSize(8.5);
+    doc.setFont("helvetica", "normal").setFontSize(fs(8.5));
   };
   kepalaTabel();
 
@@ -186,12 +189,12 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
   });
 
   y += 1;
-  doc.setFont("helvetica", "bold").setFontSize(9);
+  doc.setFont("helvetica", "bold").setFontSize(fs(9));
   teks(items.some((x) => x.jenis === "habis_pakai") ? `Total: ${items.length} barang · qty ${totalQty}` : `Total: ${items.length} SKU · ${totalQty} pcs`, M);
   if (adaHpp) teks(`Nilai HPP: Rp ${rp(totalNilai)}`, W - M, { align: "right" });
   y += 5;
   if (t.catatan) {
-    doc.setFont("helvetica", "normal").setFontSize(8.5);
+    doc.setFont("helvetica", "normal").setFontSize(fs(8.5));
     doc.splitTextToSize(`Catatan: ${t.catatan}`, W - M * 2).forEach((b) => {
       teks(b, M);
       y += 3.8;
@@ -200,7 +203,7 @@ export function buatSuratJalan({ t, pengirim, penerima }) {
 
   // Tanda tangan di halaman terakhir (posisi tetap di bawah halaman)
   const yTtd = H - 32;
-  doc.setFont("helvetica", "normal").setFontSize(8.5);
+  doc.setFont("helvetica", "normal").setFontSize(fs(8.5));
   const lebarKol = (W - M * 2) / 3;
   ["Pengirim", "Kurir", "Penerima"].forEach((label, i) => {
     const cx = M + lebarKol * i + lebarKol / 2;
