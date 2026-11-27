@@ -43,6 +43,8 @@ export const LAYAR_HP = {
   holding: { muat: () => import("./GrupHp.jsx") },
   // SDM (key menu tetap "absensi"): satu layar (SdmHp.jsx) menangani 4 sub-menu — Rekap Absensi, Penggajian, Data Karyawan, Pengaturan.
   absensi: { muat: () => import("./SdmHp.jsx") },
+  // Kalkulator Harga: menu khusus versi HP (tidak ada di NAV versi komputer), disisipkan di MobileApp.jsx untuk akun yang boleh membuka SKU & Harga.
+  "kalkulator-harga": { muat: () => import("./KalkulatorHargaHp.jsx") },
 };
 
 export const kunciLayar = (menuKey, subKey) => (subKey ? `${menuKey}/${subKey}` : menuKey);

@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid, BellRing, X } from "lucide-react";
+import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid, BellRing, X, Calculator } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { logout, pulihkanSesiIngat } from "../../lib/auth";
@@ -27,6 +27,9 @@ import useNotifHp from "./useNotifHp";
 // =========================================================
 
 const MAKS_PIN = 3;
+
+// Menu khusus versi HP (tidak ada di NAV versi komputer): Kalkulator Harga. Tampil untuk akun yang boleh membuka SKU & Harga.
+const MENU_KALKULATOR = { key: "kalkulator-harga", label: "Kalkulator Harga", icon: Calculator };
 
 const bacaPath = () => {
   try {
@@ -166,7 +169,8 @@ export default function MobileApp() {
   // Menu tingkat atas yang boleh dibuka.
   const tree = useMemo(() => {
     if (!session || !aksesSiap) return [];
-    return filterNavByAllowed(NAV, bolehMenu, session.role);
+    const t = filterNavByAllowed(NAV, bolehMenu, session.role);
+    return bolehMenu.includes("sku-harga") ? [...t, MENU_KALKULATOR] : t;
   }, [session, aksesSiap, bolehMenu]);
 
   // Notifikasi dalam aplikasi: pengajuan dana & permintaan stok yang menunggu persetujuan (lihat useNotifHp.js).
