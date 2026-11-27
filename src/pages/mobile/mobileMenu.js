@@ -43,6 +43,18 @@ export const LAYAR_HP = {
   holding: { muat: () => import("./GrupHp.jsx") },
   // SDM (key menu tetap "absensi"): satu layar (SdmHp.jsx) menangani 4 sub-menu — Rekap Absensi, Penggajian, Data Karyawan, Pengaturan.
   absensi: { muat: () => import("./SdmHp.jsx") },
+  // Penjualan: semua menu di grup PENJUALAN memakai ulang halaman komputer lewat PenjualanHp.jsx (nama ekspor per menu).
+  // Grosir (semua-pesanan / produk-manual / cek-hpp / laporan), Toko Offline (input-harian / pos), Reseller (toko / cekout / penagihan),
+  // Marketplace (shopee / tiktok / lazada), Scan Resi (scan / cancel / retur / rekap) — satu layar menangani semua sub-menunya.
+  grosir: { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.GrosirHp })) },
+  "toko-offline": { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.TokoOfflineHp })) },
+  reseller: { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.ResellerHp })) },
+  // Master Data Grosir: Pelanggan & Toko Pengirim (menu tanpa sub; key "toko" = Toko Pengirim, beda dari sub "toko" milik Reseller).
+  pelanggan: { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.PelangganHp })) },
+  toko: { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.TokoPengirimHp })) },
+  "penjualan-marketplace": { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.MarketplaceHp })) },
+  "scan-resi": { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.ScanResiHp })) },
+  "urut-resi": { muat: () => import("./PenjualanHp.jsx").then((m) => ({ default: m.UrutResiHp })) },
   // Kalkulator Harga: menu khusus versi HP (tidak ada di NAV versi komputer), disisipkan di MobileApp.jsx untuk akun yang boleh membuka SKU & Harga.
   "kalkulator-harga": { muat: () => import("./KalkulatorHargaHp.jsx") },
 };
