@@ -158,8 +158,8 @@ export default function KalkulatorHargaHp() {
             <Baris label="Harga Asli" nilai={fmtRp(hasil.asli)} />
             {dinaikkanKeMinimal && <Baris label="Dipakai (harga asli minimal)" nilai={fmtRp(hasil.hargaDasar)} redup />}
             <Baris label={`HPP (harga asli + ${rumus.hpp_persen}%)`} nilai={fmtRp(hasil.hppTampil)} />
-            <Baris label={`Tengah (HPP × ${pengaliTengah})`} nilai={fmtRp(hasil.tengah)} />
             <Baris label={`Grosir (HPP × ${rumus.grosir_x})`} nilai={fmtRp(hasil.grosir)} />
+            <Baris label={`Tengah (HPP × ${pengaliTengah})`} nilai={fmtRp(hasil.tengah)} />
             <Baris label={`Ecer (Tengah × ${rumus.ecer_x})`} nilai={fmtRp(hasil.ecer)} />
           </div>
 
