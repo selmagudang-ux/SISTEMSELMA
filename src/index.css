@@ -257,6 +257,8 @@
 .hp-main {
   overflow-x: hidden;
   overflow-wrap: break-word;
+  /* Tarik-untuk-segarkan memakai gerakan sendiri (lihat MobileApp.jsx); cegah efek memantul bawaan browser ikut jalan. */
+  overscroll-behavior-y: contain;
 }
 /* Jendela pop-up (form, detail): tinggi mengikuti layar HP yang terlihat, supaya tombol Simpan di bawah tidak
    tertutup bar alamat browser. 85vh dihitung dari layar penuh, bukan layar yang terlihat. */

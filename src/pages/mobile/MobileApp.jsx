@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid, BellRing, X, Calculator } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { LogOut, Loader2, Hammer, ChevronLeft, ChevronRight, ExternalLink, MoreHorizontal, Home, LayoutGrid, BellRing, X, Calculator, RefreshCw } from "lucide-react";
 import Login from "../Login";
 import ThemeToggle from "../../components/ThemeToggle";
 import { logout, pulihkanSesiIngat } from "../../lib/auth";
@@ -239,6 +239,43 @@ export default function MobileApp() {
     };
   }, [kunci]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Tarik ke bawah untuk menyegarkan. Area scroll di HP adalah <main> sendiri (bukan halaman), jadi tarik-untuk-segarkan
+  // bawaan browser tidak jalan. Di sini: tarik dari paling atas layar -> lepas -> halaman dimuat ulang di posisi menu yang sama
+  // (posisi ada di hash, login tetap). Tidak aktif saat mengetik di isian atau saat jendela pop-up terbuka.
+  const [tarik, setTarik] = useState(0);
+  const [menyegarkan, setMenyegarkan] = useState(false);
+  const awalTarik = useRef(null);
+  const AMBANG_TARIK = 50;
+  const mulaiTarik = (e) => {
+    if (menyegarkan) return;
+    const t = e.touches[0];
+    const terlarang = e.target.closest ? e.target.closest("input,textarea,select,[contenteditable],.fixed") : null;
+    awalTarik.current = e.currentTarget.scrollTop <= 0 && !terlarang ? { y: t.clientY, x: t.clientX } : null;
+  };
+  const gerakTarik = (e) => {
+    const a = awalTarik.current;
+    if (!a || menyegarkan) return;
+    const t = e.touches[0];
+    const dy = t.clientY - a.y;
+    const dx = t.clientX - a.x;
+    if (dy <= 0 || Math.abs(dx) > dy || e.currentTarget.scrollTop > 0) {
+      awalTarik.current = null;
+      setTarik(0);
+      return;
+    }
+    setTarik(Math.min(dy * 0.6, 90));
+  };
+  const lepasTarik = () => {
+    const a = awalTarik.current;
+    awalTarik.current = null;
+    if (!a) return;
+    if (tarik >= AMBANG_TARIK) {
+      setMenyegarkan(true);
+      setTarik(AMBANG_TARIK);
+      setTimeout(() => window.location.reload(), 250);
+    } else setTarik(0);
+  };
+
   const keluar = async () => {
     if (!window.confirm("Keluar dari SELMA?")) return;
     await lepasPushServer(); // HP ini berhenti menerima notifikasi akun ini (butuh token sesi, jadi sebelum logout)
@@ -329,7 +366,14 @@ export default function MobileApp() {
         </div>
       )}
 
-      <main className="hp-main flex-1 overflow-y-auto">
+      <main className="hp-main flex-1 overflow-y-auto" onTouchStart={mulaiTarik} onTouchMove={gerakTarik} onTouchEnd={lepasTarik} onTouchCancel={lepasTarik}>
+        {(tarik > 0 || menyegarkan) && (
+          <div style={{ height: tarik }} className="flex items-end justify-center overflow-hidden text-md-on-surface-variant">
+            <span className="pb-2">
+              {menyegarkan ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} style={{ transform: `rotate(${tarik * 4}deg)`, opacity: Math.min(1, tarik / AMBANG_TARIK) }} />}
+            </span>
+          </div>
+        )}
         {dihalamanBeranda ? (
           <Beranda session={session} tree={tree} buka={buka} badges={badges} perlu={perlu} bukaNotif={bukaNotif} />
         ) : adaDaftar ? (
