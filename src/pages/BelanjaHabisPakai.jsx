@@ -31,6 +31,7 @@ import { unggahBuktiBanyak, fileCls } from "./AlurKas";
 // Stok dihitung dari mutasi (bukan angka tunggal) supaya aman dipakai banyak staff.
 // Saat pembelian DIBAYAR, otomatis tercatat sebagai pengeluaran di Keuangan
 // (kategori "Barang Habis Pakai"); rekening default-nya Kas Kecil.
+// Total pembelian (belanja_habis_pakai.total) = uang yang DIBAYAR; boleh beda dari jumlah × harga satuan (diskon/paket). Saat barang diterima, HPP persediaan dihitung dari total ini.
 // PERSEDIAAN: tiap mutasi punya kolom `hpp` (isinya harga BELI per satuan; barang habis pakai tidak punya HPP). Pembelian/stok awal mencatat harga
 // belinya, pemakaian/koreksi/transfer mencatat HPP rata-rata saat itu (view perlengkapan_nilai).
 // Kategori "Barang Habis Pakai" di Keuangan diarahkan ke Neraca; bebannya masuk Laba Rugi
@@ -448,6 +449,16 @@ function TabBelanja({ belanja, item, stok, buktiMap = {}, setModal }) {
                     );
                   })}
                 </div>
+                {(() => {
+                  // Uang yang dibayar (b.total) bisa beda dari jumlah × harga satuan (diskon, paket, pembulatan).
+                  const sum = rincian.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga_satuan) || 0), 0);
+                  const sel = (Number(b.total) || 0) - sum;
+                  return Math.abs(sel) >= 1 ? (
+                    <div className="mt-1 text-[11px] text-amber-300">
+                      Dibayar {fmtRp(b.total)} · {sel < 0 ? "potongan" : "lebih bayar"} {fmtRp(Math.abs(sel))} dari jumlah × harga satuan
+                    </div>
+                  ) : null;
+                })()}
                 {b.catatan && <div className="text-[11px] text-slate-500 mt-2">Catatan: {b.catatan}</div>}
 
                 <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -967,12 +978,18 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
   );
   const [saving, setSaving] = useState(false);
 
+  // Total yang DIBAYAR boleh beda dari jumlah × harga satuan (diskon, paket, pembulatan). Kosong/tidak diubah = otomatis sama.
+  const sumAwal = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga_satuan) || 0), 0);
+  const [totalManual, setTotalManual] = useState(!!belanja && Math.round(Number(belanja.total) || 0) !== Math.round(sumAwal));
+  const [totalBayar, setTotalBayar] = useState(belanja ? Number(belanja.total) || 0 : "");
+
   const barangOptions = stok.map((p) => ({ value: String(p.id), label: `${p.nama} (${p.satuan})` }));
   const supplierOptions = (suppliers || []).map((s) => ({ value: s.nama, label: s.nama }));
 
   const ubah = (key, patch) => setBaris((b) => b.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const barisValid = (r) => (r.perlengkapan_id || r.namaBaru.trim()) && Number(r.jumlah) > 0;
-  const total = baris.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga) || 0), 0);
+  const subtotal = baris.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga) || 0), 0);
+  const total = totalManual ? Math.max(0, Number(totalBayar) || 0) : subtotal;
   const bisaSimpan = baris.some(barisValid) && baris.filter((r) => r.perlengkapan_id || r.namaBaru.trim()).every(barisValid) && !saving;
 
   const simpan = async () => {
@@ -1017,7 +1034,8 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
         }
         rincian.push({ perlengkapan_id: Number(pid), jumlah: Number(r.jumlah), harga_satuan: Number(r.harga) || 0 });
       }
-      const totalFinal = rincian.reduce((a, r) => a + r.jumlah * r.harga_satuan, 0);
+      const subtotalFinal = rincian.reduce((a, r) => a + r.jumlah * r.harga_satuan, 0);
+      const totalFinal = totalManual ? Math.max(0, Number(totalBayar) || 0) : subtotalFinal;
 
       // 3. Header + rincian.
       const header = { tanggal, supplier: namaSupplier || null, catatan: catatan.trim() || null, total: totalFinal };
@@ -1131,10 +1149,39 @@ function FormBelanja({ belanja, itemBelanja, belanjaList, stok, suppliers, reloa
         <input className={inputClass} value={catatan} onChange={(e) => setCatatan(e.target.value)} />
       </Field>
 
-      <div className="flex items-center justify-between text-sm mb-3">
-        <span className="text-slate-400">Total</span>
-        <span className="font-semibold text-slate-100">{fmtRp(total)}</span>
+      <div className="flex items-center justify-between text-sm mb-2">
+        <span className="text-slate-400">Jumlah × harga satuan</span>
+        <span className="text-slate-200">{fmtRp(subtotal)}</span>
       </div>
+      <Field label="Total yang dibayar (Rp)">
+        <InputRupiah
+          value={totalManual ? totalBayar : subtotal}
+          onChange={(v) => {
+            setTotalManual(true);
+            setTotalBayar(v);
+          }}
+        />
+        <div className="text-[10px] text-slate-500 mt-1">
+          Ubah kalau uang yang dibayar tidak sama dengan jumlah × harga satuan (diskon, paket, pembulatan). Total inilah yang dicatat sebagai pengeluaran di Keuangan dan menjadi harga beli persediaan.
+        </div>
+      </Field>
+      {totalManual && Math.round(total) !== Math.round(subtotal) && (
+        <div className="flex items-center justify-between gap-2 text-xs mb-3">
+          <span className="text-amber-300">
+            {total < subtotal ? "Potongan" : "Lebih bayar"} {fmtRp(Math.abs(total - subtotal))}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setTotalManual(false);
+              setTotalBayar("");
+            }}
+            className="text-amber-400 hover:text-amber-300"
+          >
+            Samakan dengan harga satuan
+          </button>
+        </div>
+      )}
       <button
         disabled={!bisaSimpan}
         onClick={simpan}
@@ -1155,6 +1202,17 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
   const [saving, setSaving] = useState(false);
   const nama = useMemo(() => Object.fromEntries(stok.map((p) => [p.id, p])), [stok]);
 
+  // Harga beli persediaan = uang yang benar-benar dibayar (belanja.total), dibagi ke tiap barang secara proporsional
+  // terhadap jumlah × harga satuan. Kalau total = jumlah × harga satuan, hasilnya sama dengan harga satuan.
+  const sumHarga = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0) * (Number(r.harga_satuan) || 0), 0);
+  const sumJumlah = itemBelanja.reduce((a, r) => a + (Number(r.jumlah) || 0), 0);
+  const hppRow = (r) => {
+    const tot = Number(belanja.total) || 0;
+    const h = Number(r.harga_satuan) || 0;
+    const v = sumHarga > 0 ? (h * tot) / sumHarga : sumJumlah > 0 ? tot / sumJumlah : 0;
+    return Math.round(v * 100) / 100;
+  };
+
   const terima = async () => {
     setSaving(true);
     try {
@@ -1170,7 +1228,7 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
             tanggal,
             keterangan: `Belanja ${belanja.kode}`,
             belanja_id: belanja.id,
-            hpp: Number(r.harga_satuan) || 0, // harga beli per satuan = HPP masuk persediaan
+            hpp: hppRow(r), // harga beli per satuan (dari uang yang dibayar) = HPP masuk persediaan
           }))
         ),
       });
@@ -1188,6 +1246,7 @@ function KonfirmasiTerima({ belanja, itemBelanja, stok, onClose, onSaved, showTo
         {itemBelanja.map((r) => (
           <div key={r.id}>
             + {fmtJumlah(r.jumlah)} {nama[r.perlengkapan_id]?.satuan} {nama[r.perlengkapan_id]?.nama}
+            {Math.round(hppRow(r)) !== Math.round(Number(r.harga_satuan) || 0) && ` — harga beli ${fmtRp(hppRow(r))}/${nama[r.perlengkapan_id]?.satuan || "satuan"} (sesuai uang yang dibayar)`}
           </div>
         ))}
       </div>
